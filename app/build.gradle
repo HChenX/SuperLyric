@@ -55,7 +55,7 @@ android {
         applicationId pkg
         minSdk 31
         targetSdk sdk
-        //noinspection HighAppVersionCode
+        // noinspection HighAppVersionCode
         versionCode 2025041000
         versionName "1.1"
 
