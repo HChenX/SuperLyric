@@ -4,45 +4,57 @@ plugins {
 
 android {
     def apk = "SuperLyric"
+    def pkg = "com.hchen.superlyric"
+    def sdk = 36
 
     Properties properties = new Properties()
     InputStream inputStream = project.rootProject.file('local.properties').newDataInputStream()
     properties.load(inputStream)
-
-    def keyKeyStoreFile = file(properties.getProperty('keyStoreFile'))
-    def keyKeyStorePassword = properties.getProperty('keyStorePassword')
-    def keyKeyAlias = properties.getProperty('keyAlias')
-    def keyKeyAliasPassword = properties.getProperty('keyAliasPassword')
+    def keyKeyStorePath = properties.getProperty("keyStoreFile") ?: System.getenv("KEYSTORE_PATH")
+    def keyKeyStoreFile = null
+    def keyKeyStorePassword = null
+    def keyKeyAlias = null
+    def keyKeyAliasPassword = null
+    if (keyKeyStorePath != null) {
+        keyKeyStoreFile = file(keyKeyStorePath)
+        keyKeyStorePassword = properties.getProperty('keyStorePassword') ?: System.getenv("KEYSTORE_PASS")
+        keyKeyAlias = properties.getProperty('keyAlias') ?: System.getenv("KEY_ALIAS")
+        keyKeyAliasPassword = properties.getProperty('keyAliasPassword') ?: System.getenv("KEY_PASSWORD")
+    }
 
     signingConfigs {
         release {
-            storeFile keyKeyStoreFile
-            storePassword keyKeyStorePassword
-            keyAlias keyKeyAlias
-            keyPassword keyKeyAliasPassword
+            if (keyKeyStorePath != null) {
+                storeFile keyKeyStoreFile
+                storePassword keyKeyStorePassword
+                keyAlias keyKeyAlias
+                keyPassword keyKeyAliasPassword
+            }
             enableV2Signing true
             enableV3Signing true
             enableV4Signing true
         }
 
         debug {
-            storeFile keyKeyStoreFile
-            storePassword keyKeyStorePassword
-            keyAlias keyKeyAlias
-            keyPassword keyKeyAliasPassword
+            if (keyKeyStorePath != null) {
+                storeFile keyKeyStoreFile
+                storePassword keyKeyStorePassword
+                keyAlias keyKeyAlias
+                keyPassword keyKeyAliasPassword
+            }
             enableV2Signing true
             enableV3Signing true
             enableV4Signing true
         }
     }
 
-    namespace 'com.hchen.superlyric'
-    compileSdk 35
+    namespace pkg
+    compileSdk sdk
 
     defaultConfig {
-        applicationId "com.hchen.superlyric"
+        applicationId pkg
         minSdk 31
-        targetSdk 35
+        targetSdk sdk
         //noinspection HighAppVersionCode
         versionCode 2025041000
         versionName "1.1"
