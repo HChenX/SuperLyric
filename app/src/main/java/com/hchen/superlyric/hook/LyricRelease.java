@@ -140,22 +140,26 @@ public abstract class LyricRelease extends HCBase {
 
     private static String lastLyric;
 
-    /**
-     * 发送歌词
-     *
-     * @param lyric 歌词
-     */
     public static void sendLyric(String lyric) {
         sendLyric(lyric, 0);
     }
 
-    /**
-     * 发送歌词和当前歌词的持续时间 (ms)
-     *
-     * @param lyric 歌词
-     * @param delay 歌词持续时间 (ms)
-     */
     public static void sendLyric(String lyric, int delay) {
+        sendLyric(lyric, delay, "");
+    }
+
+    public static void sendLyric(String lyric, String base64Icon) {
+        sendLyric(lyric, 0, base64Icon);
+    }
+
+    /**
+     * 发送歌词数据
+     *
+     * @param lyric      歌词
+     * @param delay      歌词持续时间 (ms)
+     * @param base64Icon 小图标
+     */
+    public static void sendLyric(String lyric, int delay, String base64Icon) {
         if (lyric == null) return;
         if (iSuperLyricDistributor == null) return;
 
@@ -170,13 +174,14 @@ public abstract class LyricRelease extends HCBase {
                     .setPackageName(packageName)
                     .setLyric(lyric)
                     .setDelay(delay)
+                    .setBase64Icon(base64Icon)
             );
         } catch (RemoteException e) {
             logE("LyricRelease", "Failed to send lyric!!", e);
             return;
         }
 
-        logD("LyricRelease", delay != 0 ? "Send lyric: " + lyric + ", delay: " + delay : "Send lyric: " + lyric);
+        logD("LyricRelease", "Send lyric: " + lyric + ", delay: " + delay + ", base64Icon:" + base64Icon);
     }
 
     /**

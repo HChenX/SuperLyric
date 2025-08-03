@@ -7,7 +7,7 @@ dexkitcache = "v.0.7"
 gson = "2.13.1"
 hooktool = "v.2.1.6"
 mmkv = "2.2.2"
-superlyricapi = "2.1"
+superlyricapi = "2.3"
 
 [libraries]
 annotation = { module = "androidx.annotation:annotation", version.ref = "annotation" }

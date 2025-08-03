@@ -40,20 +40,6 @@ public class Api extends LyricRelease {
         setStaticField("com.hchen.superlyricapi.SuperLyricTool", "isEnabled", true);
 
         hookMethod("com.hchen.superlyricapi.SuperLyricPush",
-            "onStop",
-            "com.hchen.superlyricapi.SuperLyricData",
-            new IHook() {
-                @Override
-                public void after() {
-                    Parcel parcel = (Parcel) callMethod(getArg(0), "marshall");
-                    if (parcel != null) {
-                        sendStop(SuperLyricData.unmarshall(parcel));
-                    }
-                }
-            }
-        );
-
-        hookMethod("com.hchen.superlyricapi.SuperLyricPush",
             "onSuperLyric",
             "com.hchen.superlyricapi.SuperLyricData",
             new IHook() {
@@ -62,6 +48,20 @@ public class Api extends LyricRelease {
                     Parcel parcel = (Parcel) callMethod(getArg(0), "marshall");
                     if (parcel != null) {
                         sendSuperLyricData(SuperLyricData.unmarshall(parcel));
+                    }
+                }
+            }
+        );
+
+        hookMethod("com.hchen.superlyricapi.SuperLyricPush",
+            "onStop",
+            "com.hchen.superlyricapi.SuperLyricData",
+            new IHook() {
+                @Override
+                public void after() {
+                    Parcel parcel = (Parcel) callMethod(getArg(0), "marshall");
+                    if (parcel != null) {
+                        sendStop(SuperLyricData.unmarshall(parcel));
                     }
                 }
             }

@@ -23,9 +23,13 @@ import static com.hchen.hooktool.core.CoreTool.hookMethod;
 import static com.hchen.hooktool.core.CoreTool.setStaticField;
 import static com.hchen.superlyric.hook.LyricRelease.sendLyric;
 import static com.hchen.superlyric.hook.LyricRelease.sendStop;
+import static com.hchen.superlyricapi.SuperLyricTool.drawableToBase64;
 
+import android.app.AndroidAppHelper;
 import android.app.Notification;
 import android.app.Service;
+import android.content.Context;
+import android.graphics.drawable.Icon;
 
 import com.hchen.hooktool.HCData;
 import com.hchen.hooktool.hook.IHook;
@@ -132,11 +136,25 @@ public class MeizuHelper {
                 Notification notification = (Notification) getArg(2);
                 if (notification == null) return;
 
-                boolean isLyric = ((notification.flags & MeiZuNotification.FLAG_ALWAYS_SHOW_TICKER) != 0
-                    || (notification.flags & MeiZuNotification.FLAG_ONLY_UPDATE_TICKER) != 0);
+                boolean isLyric = ((notification.flags & MeiZuNotification.FLAG_ALWAYS_SHOW_TICKER) != 0 ||
+                    (notification.flags & MeiZuNotification.FLAG_ONLY_UPDATE_TICKER) != 0);
                 if (isLyric) {
                     if (notification.tickerText != null) {
-                        sendLyric(notification.tickerText.toString());
+                        Context context = AndroidAppHelper.currentApplication();
+
+                        String base64Icon = null;
+                        int iconId = notification.extras.getInt("ticker_icon", 0);
+                        Icon smallIcon = notification.getSmallIcon();
+                        int smallIconId = notification.icon;
+                        if (iconId != 0) base64Icon = drawableToBase64(context.getDrawable(iconId));
+                        else if (smallIconId != 0)
+                            base64Icon = drawableToBase64(Icon.createWithResource(context, smallIconId).loadDrawable(context));
+                        else if (smallIcon != null)
+                            base64Icon = drawableToBase64(smallIcon.loadDrawable(context));
+
+                        if (base64Icon != null)
+                            sendLyric(notification.tickerText.toString(), base64Icon);
+                        else sendLyric(notification.tickerText.toString());
                     } else {
                         sendStop();
                     }

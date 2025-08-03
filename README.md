@@ -51,6 +51,8 @@
 - Kde (蓝牙歌词)
 - Apple Music (Hook)
 - Symfonium (Hook)
+- Flamingo (Api 原生支持)
+- 光锥音乐 (Api 原生支持)
 - Poweramp (仅在软件歌词界面可以获取歌词)
 
 ---
