@@ -32,5 +32,7 @@
         <item>com.heytap.music</item>
         <item>com.oppo.music</item>
         <item>app.symfonik.music.player</item>
+        <item>yos.music.player</item>
+        <item>ink.trantor.coneplayer</item>
     </string-array>
 </resources>
