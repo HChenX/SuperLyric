@@ -23,9 +23,14 @@ import static com.hchen.hooktool.core.CoreTool.hookMethod;
 import static com.hchen.hooktool.core.CoreTool.setStaticField;
 import static com.hchen.superlyric.hook.LyricRelease.sendLyric;
 import static com.hchen.superlyric.hook.LyricRelease.sendStop;
+import static com.hchen.superlyricapi.SuperLyricTool.drawableToBase64;
 
+import android.app.AndroidAppHelper;
 import android.app.Notification;
 import android.app.Service;
+import android.content.Context;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.Icon;
 
 import com.hchen.hooktool.HCData;
 import com.hchen.hooktool.hook.IHook;
@@ -47,24 +52,24 @@ public class MeizuHelper {
         setStaticField("android.os.Build", "DISPLAY", "Flyme");
 
         hookMethod(Class.class, "forName", String.class,
-            new IHook() {
-                @Override
-                public void before() {
-                    try {
-                        if ("android.app.Notification".equals(getArg(0))) {
-                            setResult(MeiZuNotification.class);
-                            return;
+                new IHook() {
+                    @Override
+                    public void before() {
+                        try {
+                            if ("android.app.Notification".equals(getArg(0))) {
+                                setResult(MeiZuNotification.class);
+                                return;
+                            }
+                            Class<?> clazz = (Class<?>) callThisStaticMethod(
+                                    "forName",
+                                    getArg(0),
+                                    true, HCData.getClassLoader()
+                            );
+                            setResult(clazz);
+                        } catch (Throwable ignore) {
                         }
-                        Class<?> clazz = (Class<?>) callThisStaticMethod(
-                            "forName",
-                            getArg(0),
-                            true, HCData.getClassLoader()
-                        );
-                        setResult(clazz);
-                    } catch (Throwable ignore) {
                     }
                 }
-            }
         );
     }
 
@@ -80,47 +85,47 @@ public class MeizuHelper {
         setStaticField("android.os.Build", "MODEL", "meizu 16th Plus");
 
         hookMethod(Class.class, "forName", String.class,
-            new IHook() {
-                @Override
-                public void before() {
-                    try {
-                        if ("android.app.Notification".equals(getArg(0))) {
-                            setResult(MeiZuNotification.class);
-                            return;
+                new IHook() {
+                    @Override
+                    public void before() {
+                        try {
+                            if ("android.app.Notification".equals(getArg(0))) {
+                                setResult(MeiZuNotification.class);
+                                return;
+                            }
+                            Class<?> clazz = (Class<?>) callThisStaticMethod(
+                                    "forName",
+                                    getArg(0),
+                                    true, HCData.getClassLoader()
+                            );
+                            setResult(clazz);
+                        } catch (Throwable ignore) {
                         }
-                        Class<?> clazz = (Class<?>) callThisStaticMethod(
-                            "forName",
-                            getArg(0),
-                            true, HCData.getClassLoader()
-                        );
-                        setResult(clazz);
-                    } catch (Throwable ignore) {
                     }
                 }
-            }
         );
     }
 
     public static void hookNotificationLyric() {
         if (existsClass("androidx.media3.common.util.Util")) {
             hookMethod("androidx.media3.common.util.Util",
-                "setForegroundServiceNotification",
-                Service.class, int.class, Notification.class, int.class, String.class,
-                createNotificationHook()
+                    "setForegroundServiceNotification",
+                    Service.class, int.class, Notification.class, int.class, String.class,
+                    createNotificationHook()
             );
         }
         if (existsClass("androidx.core.app.NotificationManagerCompat")) {
             hookMethod("androidx.core.app.NotificationManagerCompat",
-                "notify",
-                String.class, int.class, Notification.class,
-                createNotificationHook()
+                    "notify",
+                    String.class, int.class, Notification.class,
+                    createNotificationHook()
             );
         }
         if (existsClass("android.app.NotificationManager")) {
             hookMethod("android.app.NotificationManager",
-                "notify",
-                String.class, int.class, Notification.class,
-                createNotificationHook()
+                    "notify",
+                    String.class, int.class, Notification.class,
+                    createNotificationHook()
             );
         }
     }
@@ -131,12 +136,33 @@ public class MeizuHelper {
             public void before() {
                 Notification notification = (Notification) getArg(2);
                 if (notification == null) return;
+                Context context = AndroidAppHelper.currentApplication();
 
                 boolean isLyric = ((notification.flags & MeiZuNotification.FLAG_ALWAYS_SHOW_TICKER) != 0
-                    || (notification.flags & MeiZuNotification.FLAG_ONLY_UPDATE_TICKER) != 0);
+                        || (notification.flags & MeiZuNotification.FLAG_ONLY_UPDATE_TICKER) != 0);
+                //状态栏歌词小图标获取
+                int icon = notification.extras.getInt("ticker_icon",0);
+                Icon smallIcon = notification.getSmallIcon();
+                int smallIconId = notification.icon;
                 if (isLyric) {
                     if (notification.tickerText != null) {
-                        sendLyric(notification.tickerText.toString());
+                        //判断状态栏歌词小图标是否存在
+                        if (icon != 0) {
+                            Drawable drawable = context.getDrawable(icon);
+                            String base64 = drawableToBase64(drawable);
+                            sendLyric(notification.tickerText.toString(),0,base64);
+                        } else {
+                            if (smallIconId != 0) {
+                                Icon small = Icon.createWithResource(context, smallIconId);
+                                Drawable drawable = small.loadDrawable(context);
+                                String base64 = drawableToBase64(drawable);
+                                sendLyric(notification.tickerText.toString(),0,base64);
+                            } else {
+                                Drawable drawable = smallIcon.loadDrawable(context);
+                                String base64 = drawableToBase64(drawable);
+                                sendLyric(notification.tickerText.toString(),0,base64);
+                            }
+                        }
                     } else {
                         sendStop();
                     }
