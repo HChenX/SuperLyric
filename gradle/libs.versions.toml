@@ -4,7 +4,7 @@ agp = "8.13.0"
 annotation = "1.9.1"
 # Hook API & Tool
 api = "82"
-hooktool = "v.2.2.3"
+hooktool = "v.2.2.4"
 # Dexkit
 dexkit = "2.0.7"
 dexkitcache = "v.0.9"
