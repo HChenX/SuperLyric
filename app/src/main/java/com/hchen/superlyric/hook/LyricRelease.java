@@ -54,7 +54,7 @@ public abstract class LyricRelease extends HCBase {
 
     @Override
     @CallSuper
-    protected void onApplicationAfter(@NonNull Context context) {
+    protected void initApplicationAfter(@NonNull Context context) {
         packageName = context.getPackageName();
         audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
 
@@ -138,6 +138,10 @@ public abstract class LyricRelease extends HCBase {
         );
     }
 
+    /*
+     * Note: 我们将会允许同样的歌词多次传递，因为部分歌曲可能会持续演唱同一句歌词
+     * */
+    @Deprecated
     private static String lastLyric;
 
     public static void sendLyric(String lyric) {
@@ -165,9 +169,10 @@ public abstract class LyricRelease extends HCBase {
 
         try {
             lyric = lyric.trim();
-            if (Objects.equals(lyric, lastLyric)) return;
             if (lyric.isEmpty()) return;
-            lastLyric = lyric;
+            // 允许同一句歌词多次传递
+            // if (Objects.equals(lyric, lastLyric)) return;
+            // lastLyric = lyric;
 
             iSuperLyricDistributor.onSuperLyric(
                 new SuperLyricData()

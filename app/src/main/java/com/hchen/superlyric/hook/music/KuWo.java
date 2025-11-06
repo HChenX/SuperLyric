@@ -26,6 +26,7 @@ import com.hchen.collect.Collect;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.HCData;
+import com.hchen.hooktool.helper.RangeHelper;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.helper.TimeoutHelper;
 import com.hchen.superlyric.hook.LyricRelease;
@@ -33,7 +34,7 @@ import com.hchen.superlyric.hook.LyricRelease;
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
-import org.luckypray.dexkit.result.base.BaseData;
+import org.luckypray.dexkit.result.ClassData;
 
 import java.util.Objects;
 
@@ -47,8 +48,8 @@ public class KuWo extends LyricRelease {
     }
 
     @Override
-    protected void onApplicationAfter(@NonNull Context context) {
-        super.onApplicationAfter(context);
+    protected void initApplicationAfter(@NonNull Context context) {
+        super.initApplicationAfter(context);
         HCData.setClassLoader(context.getClassLoader());
 
         if (existsClass("cn.kuwo.mod.playcontrol.RemoteControlLyricMgr")) {
@@ -70,9 +71,9 @@ public class KuWo extends LyricRelease {
             if (confMMKVMgrImplClass == null) return;
 
             findMethodPro(confMMKVMgrImplClass)
-                .withReturnType(boolean.class)
-                .withParamCount(3)
-                .withParamTypes(String.class, String.class, boolean.class)
+                .withReturnClass(boolean.class)
+                .withParamCount(3, RangeHelper.EQ)
+                .withParamClasses(String.class, String.class, boolean.class)
                 .single()
                 .hook(new IHook() {
                     @Override
@@ -85,10 +86,10 @@ public class KuWo extends LyricRelease {
 
             fakeBluetoothA2dpEnabled();
 
-            Class<?> clazz = DexkitCache.findMember("kuwo$1", new IDexkit() {
+            Class<?> clazz = DexkitCache.findMember("kuwo$1", new IDexkit<ClassData>() {
                 @NonNull
                 @Override
-                public BaseData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                public ClassData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                     return bridge.findClass(FindClass.create()
                         .matcher(ClassMatcher.create()
                             .usingStrings("正在搜索歌词...", "bluetooth_car_lyric")
@@ -97,8 +98,8 @@ public class KuWo extends LyricRelease {
                 }
             });
             findMethodPro(clazz)
-                .withParamCount(1)
-                .withParamTypes(String.class)
+                .withParamCount(1, RangeHelper.EQ)
+                .withParamClasses(String.class)
                 .single()
                 .hook(new IHook() {
                     @Override

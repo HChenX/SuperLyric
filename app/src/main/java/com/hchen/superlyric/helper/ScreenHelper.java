@@ -24,21 +24,21 @@ import static com.hchen.hooktool.log.XposedLog.logI;
 
 import android.content.Context;
 import android.content.Intent;
+import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 
 import com.hchen.dexkitcache.DexkitCache;
-import com.hchen.dexkitcache.IDexkitList;
+import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.IHook;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
-import org.luckypray.dexkit.result.BaseDataList;
+import org.luckypray.dexkit.result.MethodDataList;
 
 import java.lang.reflect.Method;
 import java.util.Arrays;
-import java.util.Objects;
 
 /**
  * 阻止应用获取息屏广播
@@ -50,10 +50,10 @@ public class ScreenHelper {
 
     public static void screenOffNotStopLyric(@NonNull String... excludes) {
         try {
-            Method[] methods = DexkitCache.findMemberList("screen_helper", new IDexkitList() {
+            Method[] methods = DexkitCache.findMember("screen_helper", new IDexkit<MethodDataList>() {
                 @NonNull
                 @Override
-                public BaseDataList<?> dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                public MethodDataList dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                     return bridge.findMethod(FindMethod.create()
                         .matcher(MethodMatcher.create()
                             .usingStrings("android.intent.action.SCREEN_OFF")
@@ -76,7 +76,7 @@ public class ScreenHelper {
                                 @Override
                                 public void before() {
                                     Intent intent = (Intent) getArg(1);
-                                    if (Objects.equals(intent.getAction(), Intent.ACTION_SCREEN_OFF)) {
+                                    if (TextUtils.equals(intent.getAction(), Intent.ACTION_SCREEN_OFF)) {
                                         returnNull();
                                     }
                                 }
@@ -89,5 +89,4 @@ public class ScreenHelper {
             logE(TAG, e);
         }
     }
-
 }

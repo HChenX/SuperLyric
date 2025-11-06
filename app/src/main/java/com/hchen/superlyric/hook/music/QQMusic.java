@@ -39,7 +39,8 @@ import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.query.matchers.FieldMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.result.ClassData;
-import org.luckypray.dexkit.result.base.BaseData;
+import org.luckypray.dexkit.result.FieldData;
+import org.luckypray.dexkit.result.MethodData;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -66,10 +67,10 @@ public class QQMusic extends LyricRelease {
         Class<?> marqueeLyricViewClass = findClass("com.lyricengine.ui.MarqueeLyricView");
         if (marqueeLyricViewClass == null) return;
 
-        durationField = DexkitCache.findMember("qq_music$1", new IDexkit() {
+        durationField = DexkitCache.findMember("qq_music$1", new IDexkit<FieldData>() {
             @NonNull
             @Override
-            public BaseData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+            public FieldData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                 ClassData classData = bridge.findClass(FindClass.create()
                     .matcher(ClassMatcher.create()
                         .usingStrings("[generateTextBySplit] get singer text failed!")
@@ -89,10 +90,10 @@ public class QQMusic extends LyricRelease {
             }
         });
 
-        Method method = DexkitCache.findMember("qq_music$2", new IDexkit() {
+        Method method = DexkitCache.findMember("qq_music$2", new IDexkit<MethodData>() {
             @NonNull
             @Override
-            public BaseData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+            public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                 return bridge.findMethod(FindMethod.create()
                     .matcher(MethodMatcher.create()
                         .declaredClass(ClassMatcher.create()
@@ -104,10 +105,10 @@ public class QQMusic extends LyricRelease {
             }
         });
         Class<?> clazz = method.getDeclaringClass();
-        Method method1 = DexkitCache.findMember("qq_music$3", new IDexkit() {
+        Method method1 = DexkitCache.findMember("qq_music$3", new IDexkit<MethodData>() {
             @NonNull
             @Override
-            public BaseData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+            public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                 return bridge.findMethod(FindMethod.create()
                     .matcher(MethodMatcher.create()
                         .declaredClass(clazz)
@@ -146,10 +147,10 @@ public class QQMusic extends LyricRelease {
 
         Class<?> marqueeTextViewClass = findClass("com.tencent.qqmusic.ui.MarqueeTextView");
         Class<?> songInfoClass = findClass("com.tencent.qqmusicplayerprocess.songinfo.SongInfo");
-        Method method2 = DexkitCache.findMember("qq_music$6", new IDexkit() {
+        Method method2 = DexkitCache.findMember("qq_music$6", new IDexkit<MethodData>() {
             @NonNull
             @Override
-            public BaseData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+            public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                 return bridge.findMethod(FindMethod.create()
                     .matcher(MethodMatcher.create()
                         .declaredClass(clazz)
@@ -159,10 +160,10 @@ public class QQMusic extends LyricRelease {
             }
         });
         Field field = findFieldPro(clazz)
-            .withFieldType(marqueeTextViewClass)
+            .withFieldClass(marqueeTextViewClass)
             .single();
         Field field1 = findFieldPro(clazz)
-            .withFieldType(songInfoClass)
+            .withFieldClass(songInfoClass)
             .single();
         hook(method2,
             new IHook() {
@@ -228,10 +229,10 @@ public class QQMusic extends LyricRelease {
             }
         );
 
-        Class<?> clazz1 = DexkitCache.findMember("qq_music$5", new IDexkit() {
+        Class<?> clazz1 = DexkitCache.findMember("qq_music$5", new IDexkit<ClassData>() {
             @NonNull
             @Override
-            public BaseData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+            public ClassData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                 return bridge.findClass(FindClass.create()
                     .matcher(ClassMatcher.create()
                         .usingStrings("[addWindowIfNotExist] addView")

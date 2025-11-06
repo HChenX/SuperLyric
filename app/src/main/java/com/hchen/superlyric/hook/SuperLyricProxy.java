@@ -41,6 +41,7 @@ import android.os.IBinder;
 
 import com.hchen.collect.Collect;
 import com.hchen.hooktool.HCBase;
+import com.hchen.hooktool.helper.RangeHelper;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.binder.SuperLyricControllerService;
 import com.hchen.superlyric.binder.SuperLyricService;
@@ -78,8 +79,9 @@ public class SuperLyricProxy extends HCBase {
                 Runnable.class /* goingCallback */, "com.android.server.utils.TimingsTraceAndSlog" /* t */
             );
         } else {
+            // Samsung changed systemReady() method param list, so fuck you samsung
             systemReadyMethod = findMethodPro("com.android.server.am.ActivityManagerService")
-                .withParamCount(2)
+                .withParamCount(2, RangeHelper.EQ)
                 .withMethodName("systemReady")
                 .single()
                 .obtain();
@@ -159,7 +161,6 @@ public class SuperLyricProxy extends HCBase {
 
                     Intent intent = (Intent) getResult();
                     if (intent == null) return;
-                    if (intent.hasExtra(SuperLyricKey.SUPER_LYRIC_INFO)) return;
 
                     String callerPackage = (String) getArg(1);
                     // if (!CollectMap.getAllPackageSet().contains(callerPackage)
@@ -172,10 +173,11 @@ public class SuperLyricProxy extends HCBase {
                     Bundle bundle = new Bundle();
                     bundle.putBinder(SuperLyricKey.SUPER_LYRIC_BINDER, mSuperLyricService);
                     bundle.putBinder(SuperLyricKey.SUPER_LYRIC_CONTROLLER, mSuperLyricControllerService.getBinder());
+                    intent.removeExtra(SuperLyricKey.SUPER_LYRIC_INFO);
                     intent.putExtra(SuperLyricKey.SUPER_LYRIC_INFO, bundle);
                     setResult(intent);
 
-                    logD(TAG, "Return binder: " + mSuperLyricService + ", caller package: " + callerPackage);
+                    logD(TAG, "Return binder: " + mSuperLyricService + ", caller package: " + callerPackage + ", intent extras: " + intent.getExtras());
                 }
             }
         );
@@ -324,19 +326,17 @@ public class SuperLyricProxy extends HCBase {
                     if (mSuperLyricService == null) return;
 
                     Object app = getArg(0);
-                    boolean isKilled = existsMethod(app.getClass(), "isKilled") ?
-                        (boolean) Optional.ofNullable(
-                            callMethod(app, "isKilled")
-                        ).orElse(true) :
-                        existsField(app.getClass(), "mKilled") ?
-                            (boolean) Optional.ofNullable(
-                                getField(app, "mKilled")
-                            ).orElse(true) :
-                            true;
-                    if (isKilled) {
-                        String packageName = (String) getField(getField(app, "info"), "packageName");
-                        String processName = (String) getField(app, "processName");
-                        if (Objects.equals(packageName, processName)) { // 主进程
+                    String packageName = (String) getField(getField(app, "info"), "packageName");
+                    String processName = (String) getField(app, "processName");
+                    if (Objects.equals(packageName, processName)) { // 主进程
+                        boolean isKilled = existsMethod(app.getClass(), "isKilled") ?
+                            (boolean) Optional.ofNullable(callMethod(app, "isKilled")).orElse(true) :
+                            (
+                                existsField(app.getClass(), "mKilled") ?
+                                    (boolean) Optional.ofNullable(getField(app, "mKilled")).orElse(true) :
+                                    true
+                            );
+                        if (isKilled) {
                             if (
                                 // CollectMap.getAllPackageSet().contains(packageName) ||
                                 SuperLyricService.mExemptSet.contains(packageName) ||

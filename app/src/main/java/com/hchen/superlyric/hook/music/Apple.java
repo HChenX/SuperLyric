@@ -39,7 +39,7 @@ import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
 import org.luckypray.dexkit.query.enums.StringMatchType;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
-import org.luckypray.dexkit.result.base.BaseData;
+import org.luckypray.dexkit.result.ClassData;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -113,10 +113,10 @@ public class Apple extends LyricRelease {
         );
 
         // Hook 播放状态变化
-        Class<?> mediaControllerCompatHandlerClass = DexkitCache.findMember("apple$1", new IDexkit() {
+        Class<?> mediaControllerCompatHandlerClass = DexkitCache.findMember("apple$1", new IDexkit<ClassData>() {
             @NonNull
             @Override
-            public BaseData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+            public ClassData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                 return bridge.findClass(FindClass.create()
                     .searchPackages("android.support.v4.media.session")
                     .matcher(ClassMatcher.create()
@@ -127,7 +127,7 @@ public class Apple extends LyricRelease {
             }
         });
         Field playbackStateField = findFieldPro("android.support.v4.media.session.PlaybackStateCompat")
-            .withFieldType(PlaybackState.class)
+            .withFieldClass(PlaybackState.class)
             .single();
 
         // android.support.v4.media.session.MediaControllerCompat$a$b
@@ -151,10 +151,10 @@ public class Apple extends LyricRelease {
         );
 
         // Hook MediaMetadata 变化
-        Class<?> mediaControllerCompatClass = DexkitCache.findMember("apple$2", new IDexkit() {
+        Class<?> mediaControllerCompatClass = DexkitCache.findMember("apple$2", new IDexkit<ClassData>() {
             @NonNull
             @Override
-            public BaseData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+            public ClassData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                 return bridge.findClass(FindClass.create()
                     .searchPackages("android.support.v4.media.session")
                     .matcher(ClassMatcher.create()
@@ -170,7 +170,7 @@ public class Apple extends LyricRelease {
             .obtain();
 
         Field mediaMetadataField = findFieldPro("android.support.v4.media.MediaMetadataCompat")
-            .withFieldType(MediaMetadata.class)
+            .withFieldClass(MediaMetadata.class)
             .single();
 
         // android.support.v4.media.session.MediaControllerCompat$a$a

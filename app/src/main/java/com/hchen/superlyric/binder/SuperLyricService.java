@@ -33,6 +33,8 @@ import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
  * Super Lyric 服务
+ * <p>
+ * 向所有接收方发送歌词等数据
  *
  * @author 焕晨HChen
  */

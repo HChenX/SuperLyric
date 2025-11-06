@@ -26,14 +26,13 @@ import com.hchen.collect.Collect;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.HCData;
-import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.helper.OPPOHelper;
 import com.hchen.superlyric.hook.LyricRelease;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
-import org.luckypray.dexkit.result.base.BaseData;
+import org.luckypray.dexkit.result.MethodData;
 
 import java.lang.reflect.Method;
 
@@ -47,17 +46,17 @@ public class OPPOMusic extends LyricRelease {
     }
 
     @Override
-    protected void onApplicationAfter(@NonNull Context context) {
-        super.onApplicationAfter(context);
+    protected void initApplicationAfter(@NonNull Context context) {
+        super.initApplicationAfter(context);
         HCData.setClassLoader(context.getClassLoader());
 
         OPPOHelper.mockDevice();
         getMediaMetadataCompatLyric();
 
-        Method method = DexkitCache.findMember("oppo_music$1", new IDexkit() {
+        Method method = DexkitCache.findMember("oppo_music$1", new IDexkit<MethodData>() {
             @NonNull
             @Override
-            public BaseData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+            public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                 return bridge.findMethod(FindMethod.create()
                     .matcher(MethodMatcher.create()
                         .declaredClass("com.allsaints.music.player.thirdpart.MediaSessionHelper")
@@ -66,13 +65,6 @@ public class OPPOMusic extends LyricRelease {
                 ).singleOrThrow(() -> new Throwable("Failed to find bluetooth method!!"));
             }
         });
-        hook(method,
-            new IHook() {
-                @Override
-                public void after() {
-                    setResult(true);
-                }
-            }
-        );
+        hook(method, returnResult(true));
     }
 }

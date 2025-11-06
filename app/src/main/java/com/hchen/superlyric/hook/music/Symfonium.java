@@ -30,7 +30,7 @@ import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
-import org.luckypray.dexkit.result.base.BaseData;
+import org.luckypray.dexkit.result.MethodData;
 
 import java.lang.reflect.Method;
 import java.util.Objects;
@@ -46,10 +46,10 @@ public class Symfonium extends LyricRelease {
 
     @Override
     protected void init() {
-        Method method = DexkitCache.findMember("Symfonium$1", new IDexkit() {
+        Method method = DexkitCache.findMember("Symfonium$1", new IDexkit<MethodData>() {
             @NonNull
             @Override
-            public BaseData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+            public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                 return bridge.findMethod(FindMethod.create()
                     .matcher(MethodMatcher.create()
                         .declaredClass(ClassMatcher.create()

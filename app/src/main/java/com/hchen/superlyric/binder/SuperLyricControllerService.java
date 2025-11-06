@@ -42,19 +42,24 @@ import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
  * 控制器注册服务
+ * <p>
+ * 注册控制器后将可向所有接收方发送歌词等数据
  *
  * @author 焕晨HChen
  */
 public class SuperLyricControllerService {
     private static final String TAG = "SuperLyricControllerService";
     private static SuperLyricService mSuperLyricService;
-    public static final CopyOnWriteArraySet<String> mFinalExemptSet = new CopyOnWriteArraySet<>();
+    public static final CopyOnWriteArraySet<String> mFinalExemptSet = new CopyOnWriteArraySet<>() {
+        {
+            add("com.android.systemui");
+        }
+    };
     private static final Messenger mMessengerService = new Messenger(new ControllerHandler(Looper.getMainLooper()));
     private static final ConcurrentHashMap<String, ISuperLyric.Stub> mRegisteredControllerMap = new ConcurrentHashMap<>();
 
     public SuperLyricControllerService(SuperLyricService superLyricService) {
         mSuperLyricService = superLyricService;
-        mFinalExemptSet.add("com.android.systemui");
     }
 
     private static class ControllerHandler extends Handler {
