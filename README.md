@@ -52,7 +52,7 @@
 - Apple Music (Hook)
 - Symfonium (Hook)
 - Flamingo (Api 原生支持)
-- 光锥音乐 (Api 原生支持)
+- [光锥音乐](https://coneplayer.trantor.ink) (Api 原生支持)
 - Poweramp (仅在软件歌词界面可以获取歌词)
 
 ---
