@@ -20,6 +20,7 @@ package com.hchen.superlyric.helper;
 
 import static com.hchen.hooktool.core.CoreTool.existsClass;
 import static com.hchen.hooktool.core.CoreTool.hookMethod;
+import static com.hchen.hooktool.core.CoreTool.invokeOriginalMethod;
 import static com.hchen.hooktool.core.CoreTool.setStaticField;
 import static com.hchen.superlyric.hook.LyricRelease.sendLyric;
 import static com.hchen.superlyric.hook.LyricRelease.sendStop;
@@ -30,6 +31,7 @@ import android.app.Notification;
 import android.app.Service;
 import android.content.Context;
 import android.graphics.drawable.Icon;
+import android.text.TextUtils;
 
 import com.hchen.hooktool.HCData;
 import com.hchen.hooktool.hook.IHook;
@@ -55,16 +57,11 @@ public class MeizuHelper {
                 @Override
                 public void before() {
                     try {
-                        if ("android.app.Notification".equals(getArg(0))) {
+                        if (TextUtils.equals("android.app.Notification", (String) getArg(0))) {
                             setResult(MeiZuNotification.class);
                             return;
                         }
-                        Class<?> clazz = (Class<?>) callThisStaticMethod(
-                            "forName",
-                            getArg(0),
-                            true, HCData.getClassLoader()
-                        );
-                        setResult(clazz);
+                        setResult(invokeOriginalMethod(getMethod(), thisObject(), getArgs()));
                     } catch (Throwable ignore) {
                     }
                 }
@@ -88,7 +85,7 @@ public class MeizuHelper {
                 @Override
                 public void before() {
                     try {
-                        if ("android.app.Notification".equals(getArg(0))) {
+                        if (TextUtils.equals("android.app.Notification", (String) getArg(0))) {
                             setResult(MeiZuNotification.class);
                             return;
                         }
@@ -97,7 +94,7 @@ public class MeizuHelper {
                             getArg(0),
                             true, HCData.getClassLoader()
                         );
-                        setResult(clazz);
+                        setResult(invokeOriginalMethod(getMethod(), thisObject(), getArgs()));
                     } catch (Throwable ignore) {
                     }
                 }

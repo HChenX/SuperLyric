@@ -36,7 +36,8 @@ import org.luckypray.dexkit.query.FindClass;
 import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
-import org.luckypray.dexkit.result.base.BaseData;
+import org.luckypray.dexkit.result.ClassData;
+import org.luckypray.dexkit.result.MethodData;
 
 import java.lang.reflect.Method;
 import java.util.Objects;
@@ -49,7 +50,6 @@ public class Netease extends LyricRelease {
     @Override
     protected void init() {
         hookTencentTinker();
-
         if (existsClass("android.app.Instrumentation")) {
             hookMethod("android.app.Instrumentation",
                 "newApplication",
@@ -68,18 +68,18 @@ public class Netease extends LyricRelease {
     }
 
     @Override
-    protected void onApplicationAfter(@NonNull Context context) {
-        super.onApplicationAfter(context);
+    protected void initApplicationAfter(@NonNull Context context) {
+        super.initApplicationAfter(context);
         HCData.setClassLoader(context.getClassLoader());
 
         if (versionCode >= 8000041) {
             MeizuHelper.shallowLayerDeviceMock();
             MeizuHelper.hookNotificationLyric();
 
-            Method method = DexkitCache.findMember("netease$1", new IDexkit() {
+            Method method = DexkitCache.findMember("netease$1", new IDexkit<MethodData>() {
                 @NonNull
                 @Override
-                public BaseData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                     return bridge.findMethod(FindMethod.create()
                         .matcher(MethodMatcher.create()
                             .declaredClass(ClassMatcher.create()
@@ -92,10 +92,10 @@ public class Netease extends LyricRelease {
             });
             hook(method, returnResult(null));
 
-            Class<?> clazz = DexkitCache.findMember("netease$2", new IDexkit() {
+            Class<?> clazz = DexkitCache.findMember("netease$2", new IDexkit<ClassData>() {
                 @NonNull
                 @Override
-                public BaseData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                public ClassData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                     return bridge.findClass(FindClass.create()
                         .matcher(ClassMatcher.create()
                             .usingStrings("com/netease/cloudmusic/module/lyric/flyme/StatusBarLyricSettingManager.class:setSwitchStatus:(Z)V")
@@ -107,12 +107,7 @@ public class Netease extends LyricRelease {
                 if (m.getReturnType().equals(boolean.class)) {
                     hook(m, returnResult(true));
                 } else if (m.getParameterCount() == 1 && m.getParameterTypes()[0].equals(boolean.class)) {
-                    hook(m, new IHook() {
-                        @Override
-                        public void before() {
-                            setArg(0, true);
-                        }
-                    });
+                    hook(m, setArg(0, true));
                 } else if (m.getReturnType().equals(SharedPreferences.class)) {
                     hook(m, new IHook() {
                         @Override

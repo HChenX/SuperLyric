@@ -25,7 +25,7 @@ import androidx.annotation.NonNull;
 
 import com.hchen.collect.Collect;
 import com.hchen.dexkitcache.DexkitCache;
-import com.hchen.dexkitcache.IDexkitList;
+import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.HCData;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.hook.LyricRelease;
@@ -34,7 +34,7 @@ import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
-import org.luckypray.dexkit.result.BaseDataList;
+import org.luckypray.dexkit.result.MethodDataList;
 
 import java.lang.reflect.Method;
 import java.util.Objects;
@@ -51,8 +51,8 @@ public class KuGouLite extends LyricRelease {
     }
 
     @Override
-    protected void onApplicationAfter(@NonNull Context context) {
-        super.onApplicationAfter(context);
+    protected void initApplicationAfter(@NonNull Context context) {
+        super.initApplicationAfter(context);
         HCData.setClassLoader(context.getClassLoader());
 
         try {
@@ -74,10 +74,10 @@ public class KuGouLite extends LyricRelease {
 
     private boolean enableStatusBarLyric() {
         try {
-            Method[] methodList = DexkitCache.findMemberList("kugoulite$1", new IDexkitList() {
+            Method[] methodList = DexkitCache.findMember("kugoulite$1", new IDexkit<MethodDataList>() {
                 @NonNull
                 @Override
-                public BaseDataList<?> dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                public MethodDataList dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                     return bridge.findMethod(FindMethod.create()
                         .matcher(MethodMatcher.create()
                             .declaredClass(ClassMatcher.create()

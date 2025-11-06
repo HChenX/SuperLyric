@@ -1,13 +1,17 @@
 [versions]
-agp = "8.11.1"
+# Basic
+agp = "8.13.0"
 annotation = "1.9.1"
+# Hook API & Tool
 api = "82"
-dexkit = "2.0.6"
-dexkitcache = "v.0.7"
-gson = "2.13.1"
-hooktool = "v.2.1.6"
-mmkv = "2.2.2"
-superlyricapi = "2.3"
+hooktool = "v.2.2.3"
+# Dexkit
+dexkit = "2.0.7"
+dexkitcache = "v.0.9"
+gson = "2.13.2"
+mmkv = "2.2.4"
+# SuperLyricApi
+superlyricapi = "2.4"
 
 [libraries]
 annotation = { module = "androidx.annotation:annotation", version.ref = "annotation" }

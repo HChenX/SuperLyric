@@ -21,6 +21,7 @@ package com.hchen.superlyric.hook.music;
 import com.hchen.collect.Collect;
 import com.hchen.hooktool.exception.NonSingletonException;
 import com.hchen.hooktool.helper.Any;
+import com.hchen.hooktool.helper.RangeHelper;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.hook.LyricRelease;
 
@@ -37,8 +38,8 @@ public class Poweramp extends LyricRelease {
     @Override
     protected void init() {
         findMethodPro("com.maxmpz.widget.player.list.LyricsFastTextView")
-            .withParamCount(4)
-            .withParamTypes(Any.class, boolean.class, int.class, int.class)
+            .withParamCount(4, RangeHelper.EQ)
+            .withParamClasses(Any.class, boolean.class, int.class, int.class)
             .singleOrThrow(new Supplier<NonSingletonException>() {
                 @Override
                 public NonSingletonException get() {

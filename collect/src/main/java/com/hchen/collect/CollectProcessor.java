@@ -120,7 +120,7 @@ public class CollectProcessor extends AbstractProcessor {
                  */
                 public class CollectMap {
                 
-                    public static List<String> getOnLoadPackageList(String targetPackage) {
+                    public static HashMap<String, List<String>> getOnLoadPackageMap() {
                         HashMap<String, List<String>> collectOnLoadPackageMap = new HashMap<>();
                 """);
             collectMap.forEach(new BiConsumer<String, List<CollectCache>>() {
@@ -139,7 +139,7 @@ public class CollectProcessor extends AbstractProcessor {
                 }
             });
             writer.write("""
-                        return getMapNotNull(collectOnLoadPackageMap, targetPackage);
+                        return collectOnLoadPackageMap;
                     }
                 
                     public static HashMap<String, List<String>> getOnZygoteList() {
@@ -164,7 +164,7 @@ public class CollectProcessor extends AbstractProcessor {
                         return collectOnZygoteMap;
                     }
                 
-                    public static List<String> getOnApplicationList(String targetPackage) {
+                    public static HashMap<String, List<String>> getOnApplicationMap() {
                         HashMap<String, List<String>> collectOnApplicationMap = new HashMap<>();
                 """);
             collectMap.forEach(new BiConsumer<String, List<CollectCache>>() {
@@ -184,10 +184,10 @@ public class CollectProcessor extends AbstractProcessor {
             });
 
             writer.write("""
-                        return getMapNotNull(collectOnApplicationMap, targetPackage);
+                        return collectOnApplicationMap;
                     }
                 
-                    public static Set<String> getAllPackageSet() {
+                    public static Set<String> getTargetPackages() {
                         HashSet<String> set = new HashSet();
                 """);
             collectMap.keySet().forEach(new Consumer<String>() {
@@ -221,7 +221,6 @@ public class CollectProcessor extends AbstractProcessor {
                         List<String> value = map.get(key);
                         return value == null ? new ArrayList<String>() : value;
                     }
-                
                 }
                 """);
         } catch (IOException e) {

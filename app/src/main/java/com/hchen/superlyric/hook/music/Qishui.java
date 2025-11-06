@@ -23,6 +23,7 @@ import androidx.annotation.NonNull;
 import com.hchen.collect.Collect;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
+import com.hchen.hooktool.helper.RangeHelper;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.hook.LyricRelease;
 
@@ -30,7 +31,7 @@ import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.FieldMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
-import org.luckypray.dexkit.result.base.BaseData;
+import org.luckypray.dexkit.result.MethodData;
 
 import java.lang.reflect.Method;
 import java.util.Objects;
@@ -53,10 +54,10 @@ public class Qishui extends LyricRelease {
         BLUETOOTH = getStaticField("com.luna.common.arch.device.OutputDeviceType", "BLUETOOTH");
         Class<?> blueToothLyricStatusClass = findClass("com.luna.biz.playing.lyric.bluetoothlyrics.BlueToothLyricStatus");
 
-        Method method = DexkitCache.findMember("qishui$1", new IDexkit() {
+        Method method = DexkitCache.findMember("qishui$1", new IDexkit<MethodData>() {
             @NonNull
             @Override
-            public BaseData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+            public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                 return bridge.findMethod(FindMethod.create()
                     .matcher(MethodMatcher.create()
                         .paramTypes(null, blueToothLyricStatus, boolean.class, int.class, Object.class)
@@ -65,10 +66,10 @@ public class Qishui extends LyricRelease {
             }
         });
         Class<?> clazz = method.getParameterTypes()[0];
-        Method m = DexkitCache.findMember("qishui$2", new IDexkit() {
+        Method m = DexkitCache.findMember("qishui$2", new IDexkit<MethodData>() {
             @NonNull
             @Override
-            public BaseData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+            public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                 return bridge.findMethod(FindMethod.create()
                     .matcher(MethodMatcher.create()
                         .declaredClass(clazz)
@@ -84,8 +85,8 @@ public class Qishui extends LyricRelease {
         hook(m, doNothing());
 
         Method b = findMethodPro(clazz)
-            .withParamCount(1)
-            .withReturnType(boolean.class)
+            .withParamCount(1, RangeHelper.EQ)
+            .withReturnClass(boolean.class)
             .single()
             .obtain();
 
@@ -107,8 +108,8 @@ public class Qishui extends LyricRelease {
         );
 
         findMethodPro(b.getParameterTypes()[0])
-            .withParamCount(0)
-            .withReturnType(boolean.class)
+            .withParamCount(0, RangeHelper.EQ)
+            .withReturnClass(boolean.class)
             .single()
             .hook(returnResult(true));
 

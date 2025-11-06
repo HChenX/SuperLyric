@@ -20,6 +20,7 @@ package com.hchen.superlyric;
 
 import static com.hchen.hooktool.HCInit.LOG_D;
 import static com.hchen.hooktool.HCInit.LOG_I;
+import static com.hchen.hooktool.log.XposedLog.logE;
 
 import androidx.annotation.NonNull;
 
@@ -28,13 +29,12 @@ import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.hooktool.HCBase;
 import com.hchen.hooktool.HCEntrance;
 import com.hchen.hooktool.HCInit;
-import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyric.hook.music.Api;
 
-import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
-import java.util.List;
-import java.util.function.Consumer;
+import java.util.Map;
+import java.util.Objects;
+import java.util.function.BiFunction;
 
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
@@ -45,7 +45,79 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
  */
 public class InitHook extends HCEntrance {
     private static final String TAG = "SuperLyric";
-    private static final HashMap<String, HCBase> mCacheBaseHCMap = new HashMap<>();
+    private static final HashMap<String, HashMap<String, HookInstanceData>> mHookInstanceDataMap = new HashMap<>();
+
+    static {
+        mHookInstanceDataMap.clear();
+        BiFunction<String, String, HookInstanceData> biFunction = (packageName, fullClassPath) -> {
+            Map<String, HookInstanceData> map = mHookInstanceDataMap.computeIfAbsent(packageName, k -> new HashMap<>());
+
+            return map.computeIfAbsent(fullClassPath, k -> {
+                try {
+                    Class<?> clazz = Objects.requireNonNull(InitHook.class.getClassLoader()).loadClass(fullClassPath);
+                    HCBase hcBase = (HCBase) clazz.getDeclaredConstructor().newInstance();
+                    return new HookInstanceData(hcBase, packageName, fullClassPath, false, false, false);
+                } catch (Throwable throwable) {
+                    logE(TAG, "Failed load class!!", throwable);
+                    return null;
+                }
+            });
+        };
+
+        CollectMap.getOnLoadPackageMap().forEach((packageName, fullClassPaths) -> {
+            for (String fullClassPath : fullClassPaths) {
+                HookInstanceData data = biFunction.apply(packageName, fullClassPath);
+                if (data != null) data.isOnLoadPackage = true;
+            }
+        });
+        CollectMap.getOnApplicationMap().forEach((packageName, fullClassPaths) -> {
+            for (String fullClassPath : fullClassPaths) {
+                HookInstanceData data = biFunction.apply(packageName, fullClassPath);
+                if (data != null) data.isOnApplication = true;
+            }
+        });
+        CollectMap.getOnZygoteList().forEach((packageName, fullClassPaths) -> {
+            for (String fullClassPath : fullClassPaths) {
+                HookInstanceData data = biFunction.apply(packageName, fullClassPath);
+                if (data != null) data.isLoadOnZygote = true;
+            }
+        });
+    }
+
+    private static class HookInstanceData {
+        @NonNull
+        HCBase hcBase;
+        @NonNull
+        String packageName;
+        @NonNull
+        String fullClassPath;
+        boolean isOnLoadPackage;
+        boolean isOnApplication;
+        boolean isLoadOnZygote;
+
+        public HookInstanceData(@NonNull HCBase hcBase, @NonNull String packageName, @NonNull String fullClassPath,
+                                boolean isOnLoadPackage, boolean isOnApplication, boolean isLoadOnZygote) {
+            this.hcBase = hcBase;
+            this.packageName = packageName;
+            this.fullClassPath = fullClassPath;
+            this.isOnLoadPackage = isOnLoadPackage;
+            this.isOnApplication = isOnApplication;
+            this.isLoadOnZygote = isLoadOnZygote;
+        }
+
+        @NonNull
+        @Override
+        public String toString() {
+            return "HookInstanceData{" +
+                "hcBase=" + hcBase +
+                ", packageName='" + packageName + '\'' +
+                ", fullClassPath='" + fullClassPath + '\'' +
+                ", isOnLoadPackage=" + isOnLoadPackage +
+                ", isLoadOnZygote=" + isLoadOnZygote +
+                ", isOnApplication=" + isOnApplication +
+                '}';
+        }
+    }
 
     @NonNull
     @Override
@@ -72,15 +144,13 @@ public class InitHook extends HCEntrance {
 
     @Override
     public void onLoadPackage(@NonNull XC_LoadPackage.LoadPackageParam loadPackageParam) throws Throwable {
-        mCacheBaseHCMap.clear();
-        if (!CollectMap.getAllPackageSet().contains(loadPackageParam.packageName)) {
+        if (!CollectMap.getTargetPackages().contains(loadPackageParam.packageName)) {
             HCInit.initLoadPackageParam(loadPackageParam);
             new Api().onApplication().onLoadPackage();
             return;
         }
 
         try {
-            // DexKitUtils.init(loadPackageParam);
             if (loadPackageParam.appInfo != null) {
                 DexkitCache.init(
                     "superlyric",
@@ -89,68 +159,26 @@ public class InitHook extends HCEntrance {
                     loadPackageParam.appInfo.dataDir
                 );
             }
-            CollectMap.getOnLoadPackageList(loadPackageParam.packageName).forEach(new Consumer<String>() {
-                @Override
-                public void accept(String fullClass) {
-                    try {
-                        HCInit.initLoadPackageParam(loadPackageParam);
-                        Class<?> clazz = getClass().getClassLoader().loadClass(fullClass);
-                        HCBase hcBase = (HCBase) clazz.getDeclaredConstructor().newInstance();
-                        hcBase.onApplication();
-                        mCacheBaseHCMap.put(fullClass, hcBase);
-                    } catch (Throwable ex) {
-                        XposedLog.logE(TAG, "Failed to load class: " + fullClass, ex);
-                    }
+            if (mHookInstanceDataMap.containsKey(loadPackageParam.packageName)) {
+                HCInit.initLoadPackageParam(loadPackageParam);
+                for (HookInstanceData data : Objects.requireNonNull(mHookInstanceDataMap.get(loadPackageParam.packageName)).values()) {
+                    if (data.isOnApplication) data.hcBase.onApplication();
+                    if (data.isOnLoadPackage) data.hcBase.onLoadPackage();
                 }
-            });
-
-            CollectMap.getOnLoadPackageList(loadPackageParam.packageName).forEach(new Consumer<String>() {
-                @Override
-                public void accept(String fullClass) {
-                    try {
-                        if (mCacheBaseHCMap.get(fullClass) != null) {
-                            HCBase hcBase = mCacheBaseHCMap.get(fullClass);
-                            assert hcBase != null;
-                            hcBase.onLoadPackage();
-                        } else {
-                            HCInit.initLoadPackageParam(loadPackageParam);
-                            Class<?> clazz = getClass().getClassLoader().loadClass(fullClass);
-                            HCBase hcBase = (HCBase) clazz.getDeclaredConstructor().newInstance();
-                            hcBase.onLoadPackage();
-                        }
-                    } catch (Throwable ex) {
-                        XposedLog.logE(TAG, "Failed to load class: " + fullClass, ex);
-                    }
-                }
-            });
+            }
         } catch (Throwable e) {
-            XposedLog.logE(TAG, "InitHook error: ", e);
+            logE(TAG, "InitHook error: ", e);
         } finally {
-            // DexKitUtils.close();
             DexkitCache.close();
         }
     }
 
     @Override
     public void onInitZygote(@NonNull StartupParam startupParam) throws Throwable {
-        CollectMap.getOnZygoteList().values().forEach(new Consumer<List<String>>() {
-            @Override
-            public void accept(List<String> fullClassList) {
-                fullClassList.forEach(new Consumer<String>() {
-                    @Override
-                    public void accept(String fullClass) {
-                        try {
-                            Class<?> hookClass = getClass().getClassLoader().loadClass(fullClass);
-                            HCBase hcBase = (HCBase) hookClass.getDeclaredConstructor().newInstance();
-                            hcBase.onZygote();
-                        } catch (ClassNotFoundException | NoSuchMethodException |
-                                 IllegalAccessException | InstantiationException |
-                                 InvocationTargetException e) {
-                            XposedLog.logE(TAG, "Failed to load class: " + fullClass, e);
-                        }
-                    }
-                });
+        for (HashMap<String, HookInstanceData> map : mHookInstanceDataMap.values()) {
+            for (HookInstanceData data : map.values()) {
+                if (data.isLoadOnZygote) data.hcBase.onZygote();
             }
-        });
+        }
     }
 }
