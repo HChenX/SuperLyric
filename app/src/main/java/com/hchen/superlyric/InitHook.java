@@ -20,6 +20,7 @@ package com.hchen.superlyric;
 
 import static com.hchen.hooktool.HCInit.LOG_D;
 import static com.hchen.hooktool.HCInit.LOG_I;
+import static com.hchen.hooktool.log.XposedLog.logD;
 import static com.hchen.hooktool.log.XposedLog.logE;
 
 import androidx.annotation.NonNull;
@@ -31,6 +32,7 @@ import com.hchen.hooktool.HCEntrance;
 import com.hchen.hooktool.HCInit;
 import com.hchen.superlyric.hook.music.Api;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -45,18 +47,17 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
  */
 public class InitHook extends HCEntrance {
     private static final String TAG = "SuperLyric";
-    private static final HashMap<String, HashMap<String, HookInstanceData>> mHookInstanceDataMap = new HashMap<>();
+    private static final HashMap<String, HashMap<String, HookClassData>> mHookClassDataMap = new HashMap<>();
 
     static {
-        mHookInstanceDataMap.clear();
-        BiFunction<String, String, HookInstanceData> biFunction = (packageName, fullClassPath) -> {
-            Map<String, HookInstanceData> map = mHookInstanceDataMap.computeIfAbsent(packageName, k -> new HashMap<>());
+        mHookClassDataMap.clear();
+        BiFunction<String, String, HookClassData> biFunction = (packageName, fullClassPath) -> {
+            Map<String, HookClassData> map = mHookClassDataMap.computeIfAbsent(packageName, k -> new HashMap<>());
 
             return map.computeIfAbsent(fullClassPath, k -> {
                 try {
                     Class<?> clazz = Objects.requireNonNull(InitHook.class.getClassLoader()).loadClass(fullClassPath);
-                    HCBase hcBase = (HCBase) clazz.getDeclaredConstructor().newInstance();
-                    return new HookInstanceData(hcBase, packageName, fullClassPath, false, false, false);
+                    return new HookClassData(clazz, packageName, fullClassPath, false, false, false);
                 } catch (Throwable throwable) {
                     logE(TAG, "Failed load class!!", throwable);
                     return null;
@@ -66,26 +67,27 @@ public class InitHook extends HCEntrance {
 
         CollectMap.getOnLoadPackageMap().forEach((packageName, fullClassPaths) -> {
             for (String fullClassPath : fullClassPaths) {
-                HookInstanceData data = biFunction.apply(packageName, fullClassPath);
+                HookClassData data = biFunction.apply(packageName, fullClassPath);
                 if (data != null) data.isOnLoadPackage = true;
             }
         });
         CollectMap.getOnApplicationMap().forEach((packageName, fullClassPaths) -> {
             for (String fullClassPath : fullClassPaths) {
-                HookInstanceData data = biFunction.apply(packageName, fullClassPath);
+                HookClassData data = biFunction.apply(packageName, fullClassPath);
                 if (data != null) data.isOnApplication = true;
             }
         });
         CollectMap.getOnZygoteList().forEach((packageName, fullClassPaths) -> {
             for (String fullClassPath : fullClassPaths) {
-                HookInstanceData data = biFunction.apply(packageName, fullClassPath);
+                HookClassData data = biFunction.apply(packageName, fullClassPath);
                 if (data != null) data.isLoadOnZygote = true;
             }
         });
     }
 
-    private static class HookInstanceData {
+    private static class HookClassData {
         @NonNull
+        Class<?> clazz;
         HCBase hcBase;
         @NonNull
         String packageName;
@@ -95,9 +97,9 @@ public class InitHook extends HCEntrance {
         boolean isOnApplication;
         boolean isLoadOnZygote;
 
-        public HookInstanceData(@NonNull HCBase hcBase, @NonNull String packageName, @NonNull String fullClassPath,
-                                boolean isOnLoadPackage, boolean isOnApplication, boolean isLoadOnZygote) {
-            this.hcBase = hcBase;
+        public HookClassData(@NonNull Class<?> clazz, @NonNull String packageName, @NonNull String fullClassPath,
+                             boolean isOnLoadPackage, boolean isOnApplication, boolean isLoadOnZygote) {
+            this.clazz = clazz;
             this.packageName = packageName;
             this.fullClassPath = fullClassPath;
             this.isOnLoadPackage = isOnLoadPackage;
@@ -105,16 +107,22 @@ public class InitHook extends HCEntrance {
             this.isLoadOnZygote = isLoadOnZygote;
         }
 
+        public void initialization() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException, InstantiationException {
+            if (hcBase == null) {
+                hcBase = (HCBase) clazz.getDeclaredConstructor().newInstance();
+            }
+        }
+
         @NonNull
         @Override
         public String toString() {
-            return "HookInstanceData{" +
-                "hcBase=" + hcBase +
+            return "HookClassData{" +
+                "clazz=" + clazz +
                 ", packageName='" + packageName + '\'' +
                 ", fullClassPath='" + fullClassPath + '\'' +
                 ", isOnLoadPackage=" + isOnLoadPackage +
-                ", isLoadOnZygote=" + isLoadOnZygote +
                 ", isOnApplication=" + isOnApplication +
+                ", isLoadOnZygote=" + isLoadOnZygote +
                 '}';
         }
     }
@@ -159,11 +167,17 @@ public class InitHook extends HCEntrance {
                     loadPackageParam.appInfo.dataDir
                 );
             }
-            if (mHookInstanceDataMap.containsKey(loadPackageParam.packageName)) {
+            if (mHookClassDataMap.containsKey(loadPackageParam.packageName)) {
                 HCInit.initLoadPackageParam(loadPackageParam);
-                for (HookInstanceData data : Objects.requireNonNull(mHookInstanceDataMap.get(loadPackageParam.packageName)).values()) {
-                    if (data.isOnApplication) data.hcBase.onApplication();
-                    if (data.isOnLoadPackage) data.hcBase.onLoadPackage();
+                for (HookClassData data : Objects.requireNonNull(mHookClassDataMap.get(loadPackageParam.packageName)).values()) {
+                    try {
+                        if (data.isOnApplication || data.isOnLoadPackage) data.initialization();
+                        if (data.isOnApplication) data.hcBase.onApplication();
+                        if (data.isOnLoadPackage) data.hcBase.onLoadPackage();
+                        logD(TAG, "Initialization hook on load package phase: " + data.fullClassPath);
+                    } catch (Throwable throwable) {
+                        logE(TAG, "Failed to load hook on load package phase: " + data.fullClassPath, throwable);
+                    }
                 }
             }
         } catch (Throwable e) {
@@ -175,9 +189,17 @@ public class InitHook extends HCEntrance {
 
     @Override
     public void onInitZygote(@NonNull StartupParam startupParam) throws Throwable {
-        for (HashMap<String, HookInstanceData> map : mHookInstanceDataMap.values()) {
-            for (HookInstanceData data : map.values()) {
-                if (data.isLoadOnZygote) data.hcBase.onZygote();
+        for (HashMap<String, HookClassData> map : mHookClassDataMap.values()) {
+            for (HookClassData data : map.values()) {
+                try {
+                    if (data.isLoadOnZygote) {
+                        data.initialization();
+                        data.hcBase.onZygote();
+                        logD(TAG, "Initialization hook on zygote phase: " + data.fullClassPath);
+                    }
+                } catch (Throwable throwable) {
+                    logE(TAG, "Failed to load hook on zygote phase: " + data.fullClassPath, throwable);
+                }
             }
         }
     }

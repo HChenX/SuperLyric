@@ -30,6 +30,7 @@ android {
                 keyAlias keyKeyAlias
                 keyPassword keyKeyAliasPassword
             }
+            enableV1Signing true
             enableV2Signing true
             enableV3Signing true
             enableV4Signing true
@@ -42,6 +43,7 @@ android {
                 keyAlias keyKeyAlias
                 keyPassword keyKeyAliasPassword
             }
+            enableV1Signing true
             enableV2Signing true
             enableV3Signing true
             enableV4Signing true
@@ -56,7 +58,7 @@ android {
         minSdk 30
         targetSdk sdk
         // noinspection HighAppVersionCode
-        versionCode 2025110600
+        versionCode 2025110601
         versionName "2.8"
 
         ndk {
@@ -86,6 +88,17 @@ android {
     buildFeatures {
         buildConfig true
         aidl true
+    }
+
+    packagingOptions {
+        resources {
+            excludes += "/META-INF/**"
+            excludes += "/kotlin/**"
+            excludes += "/*.txt"
+            excludes += "/*.bin"
+            excludes += "/*.json"
+            excludes += 'DebugProbesKt.bin'
+        }
     }
 
     aaptOptions.additionalParameters '--allow-reserved-package-id', '--package-id', '0x53'

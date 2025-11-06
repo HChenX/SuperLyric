@@ -27,6 +27,7 @@ import android.content.pm.PackageManager;
 import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.RemoteException;
+import android.text.TextUtils;
 
 import androidx.annotation.CallSuper;
 import androidx.annotation.NonNull;
@@ -138,10 +139,6 @@ public abstract class LyricRelease extends HCBase {
         );
     }
 
-    /*
-     * Note: 我们将会允许同样的歌词多次传递，因为部分歌曲可能会持续演唱同一句歌词
-     * */
-    @Deprecated
     private static String lastLyric;
 
     public static void sendLyric(String lyric) {
@@ -170,9 +167,8 @@ public abstract class LyricRelease extends HCBase {
         try {
             lyric = lyric.trim();
             if (lyric.isEmpty()) return;
-            // 允许同一句歌词多次传递
-            // if (Objects.equals(lyric, lastLyric)) return;
-            // lastLyric = lyric;
+            if (TextUtils.equals(lyric, lastLyric)) return;
+            lastLyric = lyric;
 
             iSuperLyricDistributor.onSuperLyric(
                 new SuperLyricData()
