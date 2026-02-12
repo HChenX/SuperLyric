@@ -1,27 +1,32 @@
 [versions]
 # Basic
-agp = "8.13.0"
+agp = "8.13.2"
 annotation = "1.9.1"
 # Hook API & Tool
 api = "82"
-hooktool = "v.2.2.4"
+hooktool = "v.2.2.6"
 # Dexkit
 dexkit = "2.0.7"
 dexkitcache = "v.0.9"
 gson = "2.13.2"
-mmkv = "2.2.4"
+mmkv = "2.3.0"
 # SuperLyricApi
 superlyricapi = "2.4"
+# AutoService
+autoService = "1.1.1"
+javapoet = "1.13.0"
 
 [libraries]
 annotation = { module = "androidx.annotation:annotation", version.ref = "annotation" }
 api = { module = "de.robv.android.xposed:api", version.ref = "api" }
+hooktool = { group = "com.github.HChenX", name = "HookTool", version.ref = "hooktool" }
 dexkit = { module = "org.luckypray:dexkit", version.ref = "dexkit" }
 dexkitcache = { module = "com.github.HChenX:DexkitCache", version.ref = "dexkitcache" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
-hooktool = { group = "com.github.HChenX", name = "HookTool", version.ref = "hooktool" }
 mmkv = { module = "com.tencent:mmkv", version.ref = "mmkv" }
 superlyricapi = { module = "com.github.HChenX:SuperLyricApi", version.ref = "superlyricapi" }
+auto-service = { module = "com.google.auto.service:auto-service", version.ref = "autoService" }
+javapoet = { module = "com.squareup:javapoet", version.ref = "javapoet" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

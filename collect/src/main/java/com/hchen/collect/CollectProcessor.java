@@ -19,16 +19,21 @@
 package com.hchen.collect;
 
 import com.google.auto.service.AutoService;
+import com.squareup.javapoet.ClassName;
+import com.squareup.javapoet.CodeBlock;
+import com.squareup.javapoet.FieldSpec;
+import com.squareup.javapoet.JavaFile;
+import com.squareup.javapoet.ParameterizedTypeName;
+import com.squareup.javapoet.TypeName;
+import com.squareup.javapoet.TypeSpec;
 
 import java.io.IOException;
-import java.io.Writer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
-import java.util.stream.Collectors;
+import java.util.function.Predicate;
 
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.Processor;
@@ -37,6 +42,7 @@ import javax.annotation.processing.SupportedAnnotationTypes;
 import javax.annotation.processing.SupportedSourceVersion;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 
 /**
@@ -48,189 +54,144 @@ import javax.lang.model.element.TypeElement;
 @SupportedAnnotationTypes("com.hchen.collect.Collect")
 @SupportedSourceVersion(SourceVersion.RELEASE_21)
 public class CollectProcessor extends AbstractProcessor {
-    boolean isProcessed = false;
+    private final Map<String, List<Data>> dataMap = new HashMap<>();
 
     @Override
-    public boolean process(Set<? extends TypeElement> set, RoundEnvironment roundEnvironment) {
-        if (isProcessed) return true;
-        isProcessed = true;
+    public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment env) {
+        System.out.println("ENV: " + env);
+        if (env.processingOver()) return true;
 
-        HashMap<String, List<CollectCache>> collectMap = new HashMap<>();
-        roundEnvironment.getElementsAnnotatedWith(Collect.class).forEach(new Consumer<Element>() {
-            @Override
-            public void accept(Element element) {
-                String fullClassName = null;
-                if (element instanceof TypeElement typeElement) {
-                    fullClassName = typeElement.getQualifiedName().toString();
-                    if (fullClassName == null)
-                        throw new RuntimeException("E: Full class name is null!!");
-                } else
-                    throw new RuntimeException("E: element can't cast to TypeElement!!");
-
-                Collect collect = element.getAnnotation(Collect.class);
-                String targetPackage = collect.targetPackage();
-                boolean onLoadPackage = collect.onLoadPackage();
-                boolean onZygote = collect.onZygote();
-                boolean onApplication = collect.onApplication();
-
-                if (collectMap.get(targetPackage) == null) {
-                    ArrayList<CollectCache> collectCacheList = new ArrayList<>();
-                    collectCacheList.add(new CollectCache(fullClassName, onLoadPackage, onZygote, onApplication));
-                    collectMap.put(targetPackage, collectCacheList);
-                } else {
-                    ArrayList<CollectCache> collectCacheList = (ArrayList<CollectCache>) collectMap.get(targetPackage);
-                    collectCacheList.add(new CollectCache(fullClassName, onLoadPackage, onZygote, onApplication));
-                }
+        for (Element element : env.getElementsAnnotatedWith(Collect.class)) {
+            if (!(element instanceof TypeElement typeElement)) {
+                throw new RuntimeException("E: element can't cast to TypeElement!!");
             }
-        });
 
-        try (Writer writer = processingEnv.getFiler().createSourceFile("com.hchen.collect.CollectMap").openWriter()) {
-            writer.write("""
-                /*
-                 * This file is part of SuperLyric.
-                
-                 * SuperLyric is free software: you can redistribute it and/or modify
-                 * it under the terms of the GNU General Public License as
-                 * published by the Free Software Foundation, either version 3 of the
-                 * License.
-                
-                 * This program is distributed in the hope that it will be useful,
-                 * but WITHOUT ANY WARRANTY; without even the implied warranty of
-                 * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-                 * GNU General Public License for more details.
-                
-                 * You should have received a copy of the GNU General Public License
-                 * along with this program. If not, see <https://www.gnu.org/licenses/>.
-                 *
-                 * Copyright (C) 2023-2025 HChenX
-                 */
-                package com.hchen.collect;
-                
-                import java.util.ArrayList;
-                import java.util.Arrays;
-                import java.util.HashMap;
-                import java.util.List;
-                import java.util.Set;
-                import java.util.HashSet;
-                
-                /**
-                 * 注解处理器自动生成的 Map 图
-                 *
-                 * @author 焕晨HChen
-                 */
-                public class CollectMap {
-                
-                    public static HashMap<String, List<String>> getOnLoadPackageMap() {
-                        HashMap<String, List<String>> collectOnLoadPackageMap = new HashMap<>();
-                """);
-            collectMap.forEach(new BiConsumer<String, List<CollectCache>>() {
-                @Override
-                public void accept(String targetPackage, List<CollectCache> collectCaches) {
-                    ArrayList<String> onLoadPackageList = collectCaches.stream()
-                        .filter(collectCache -> collectCache.onLoadPackage)
-                        .map(collectCache -> collectCache.fullClassName)
-                        .collect(Collectors.toCollection(ArrayList::new));
-                    try {
-                        writer.write("        ");
-                        writer.write("collectOnLoadPackageMap.put(\"" + targetPackage + "\", toList(\"" + onLoadPackageList + "\"));\n");
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-            });
-            writer.write("""
-                        return collectOnLoadPackageMap;
-                    }
-                
-                    public static HashMap<String, List<String>> getOnZygoteList() {
-                        HashMap<String, List<String>> collectOnZygoteMap = new HashMap<>();
-                """);
-            collectMap.forEach(new BiConsumer<String, List<CollectCache>>() {
-                @Override
-                public void accept(String targetPackage, List<CollectCache> collectCaches) {
-                    ArrayList<String> onZygoteList = collectCaches.stream()
-                        .filter(collectCache -> collectCache.onZygote)
-                        .map(collectCache -> collectCache.fullClassName)
-                        .collect(Collectors.toCollection(ArrayList::new));
-                    try {
-                        writer.write("        ");
-                        writer.write("collectOnZygoteMap.put(\"" + targetPackage + "\", toList(\"" + onZygoteList + "\"));\n");
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-            });
-            writer.write("""
-                        return collectOnZygoteMap;
-                    }
-                
-                    public static HashMap<String, List<String>> getOnApplicationMap() {
-                        HashMap<String, List<String>> collectOnApplicationMap = new HashMap<>();
-                """);
-            collectMap.forEach(new BiConsumer<String, List<CollectCache>>() {
-                @Override
-                public void accept(String targetPackage, List<CollectCache> collectCaches) {
-                    ArrayList<String> onApplicationList = collectCaches.stream()
-                        .filter(collectCache -> collectCache.onApplication)
-                        .map(collectCache -> collectCache.fullClassName)
-                        .collect(Collectors.toCollection(ArrayList::new));
-                    try {
-                        writer.write("        ");
-                        writer.write("collectOnApplicationMap.put(\"" + targetPackage + "\", toList(\"" + onApplicationList + "\"));\n");
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-            });
+            String fullClass = typeElement.getQualifiedName().toString();
+            Collect collect = element.getAnnotation(Collect.class);
+            if (collect != null) {
+                dataMap
+                    .computeIfAbsent(collect.targetPackage(), k -> new ArrayList<>())
+                    .add(
+                        new Data(
+                            fullClass,
+                            collect.onLoadPackage(),
+                            collect.onZygote(),
+                            collect.onApplication()
+                        )
+                    );
+            }
+        }
 
-            writer.write("""
-                        return collectOnApplicationMap;
-                    }
-                
-                    public static Set<String> getTargetPackages() {
-                        HashSet<String> set = new HashSet();
-                """);
-            collectMap.keySet().forEach(new Consumer<String>() {
-                @Override
-                public void accept(String targetPackage) {
-                    try {
-                        writer.write("        ");
-                        writer.write("set.add(\"" + targetPackage + "\");\n");
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
-            });
-
-            writer.write("""
-                        return set;
-                    }
-                
-                    private static List<String> toList(String fullClassNames) {
-                        String[] fullClassNameArray = fullClassNames.replace("[", "")
-                                    .replace("]", "")
-                                    .replace(" ", "")
-                                    .split(",");
-                
-                        if (fullClassNameArray.length == 0) return new ArrayList<>();
-                        fullClassNameArray =  Arrays.stream(fullClassNameArray).filter(s -> !s.isEmpty()).toArray(String[]::new);
-                        return new ArrayList<>(List.of(fullClassNameArray));
-                    }
-                
-                    private static List<String> getMapNotNull(HashMap<String, List<String>> map, String key) {
-                        List<String> value = map.get(key);
-                        return value == null ? new ArrayList<String>() : value;
-                    }
-                }
-                """);
-        } catch (IOException e) {
-            e.printStackTrace();
+        if (!env.getElementsAnnotatedWith(Collect.class).isEmpty()) {
+            try {
+                generateCollectMap(dataMap);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
         }
 
         return true;
     }
 
-    private record CollectCache(String fullClassName, boolean onLoadPackage, boolean onZygote,
-                                boolean onApplication) {
+    private void generateCollectMap(Map<String, List<Data>> dataMap) throws IOException {
+        TypeName listOfString = ParameterizedTypeName.get(ClassName.get(List.class), ClassName.get(String.class));
+        TypeName mapType =
+            ParameterizedTypeName.get(
+                ClassName.get(Map.class),
+                ClassName.get(String.class),
+                listOfString
+            );
+
+        TypeSpec.Builder clazz =
+            TypeSpec.classBuilder("CollectMap")
+                .addModifiers(Modifier.PUBLIC)
+                .addJavadoc("注解处理器自动生成的 Map 图\n");
+
+        /*
+         * 生成三个 Map 常量
+         */
+        clazz.addField(generateStaticMap(
+            "ON_LOAD_PACKAGE_MAP",
+            dataMap,
+            c -> c.onLoadPackage,
+            mapType
+        ));
+
+        clazz.addField(generateStaticMap(
+            "ON_ZYGOTE_MAP",
+            dataMap,
+            c -> c.onZygote,
+            mapType
+        ));
+
+        clazz.addField(generateStaticMap(
+            "ON_APPLICATION_MAP",
+            dataMap,
+            c -> c.onApplication,
+            mapType
+        ));
+
+        JavaFile.builder("com.hchen.collect", clazz.build())
+            .build()
+            .writeTo(processingEnv.getFiler());
+    }
+
+    /*
+     * 生成 static final Map 常量
+     */
+    private FieldSpec generateStaticMap(
+        String fieldName,
+        Map<String, List<Data>> dataMap,
+        Predicate<Data> filter,
+        TypeName mapType
+    ) {
+        CodeBlock.Builder mapInit = CodeBlock.builder();
+        mapInit.add("$T.ofEntries(\n", Map.class);
+
+        List<String> entries = new ArrayList<>();
+        dataMap.forEach((pkg, data) -> {
+            @SuppressWarnings("NewApi")
+            List<String> values = data.stream()
+                .filter(filter)
+                .map(c -> c.fullClass)
+                .toList();
+
+            if (values.isEmpty()) return;
+
+            CodeBlock.Builder entry = CodeBlock.builder();
+            entry.add("$T.entry($S, $T.of(", Map.class, pkg, List.class);
+
+            for (int i = 0; i < values.size(); i++) {
+                entry.add("$S", values.get(i));
+                if (i != values.size() - 1) {
+                    entry.add(", ");
+                }
+            }
+
+            entry.add("))");
+
+            entries.add(entry.build().toString());
+        });
+
+        for (int i = 0; i < entries.size(); i++) {
+            mapInit.add(entries.get(i));
+            if (i != entries.size() - 1) {
+                mapInit.add(",\n");
+            }
+        }
+
+        mapInit.add("\n)");
+
+        return FieldSpec.builder(mapType, fieldName, Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+            .initializer(mapInit.build())
+            .build();
+    }
+
+    private record Data(
+        String fullClass,
+        boolean onLoadPackage,
+        boolean onZygote,
+        boolean onApplication
+    ) {
     }
 }
