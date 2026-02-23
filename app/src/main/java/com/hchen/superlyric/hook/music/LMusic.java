@@ -26,7 +26,7 @@ import com.hchen.superlyric.hook.LyricRelease;
  * LMusic
  */
 @Collect(targetPackage = "com.lalilu.lmusic")
-public class LMusic extends LyricRelease {
+public final class LMusic extends LyricRelease {
     @Override
     protected void init() {
         MeizuHelper.depthDeviceMock();

@@ -29,7 +29,7 @@ import com.hchen.superlyricapi.SuperLyricData;
  *
  * @author 焕晨HChen
  */
-public class Api extends LyricRelease {
+public final class Api extends LyricRelease {
     @Override
     protected boolean isEnabled() {
         return existsClass("com.hchen.superlyricapi.SuperLyricTool");

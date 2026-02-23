@@ -30,7 +30,7 @@ import com.hchen.superlyric.hook.LyricRelease;
  * 青盐音乐
  */
 @Collect(targetPackage = "com.xuncorp.qinalt.music")
-public class Qinalt extends LyricRelease {
+public final class Qinalt extends LyricRelease {
     @Override
     protected void init() {
         findMethod("com.stub.StubApp",
@@ -41,6 +41,7 @@ public class Qinalt extends LyricRelease {
                 public void after() {
                     Context context = (Context) getArg(0);
                     HCData.setClassLoader(context.getClassLoader());
+
                     MeizuHelper.depthDeviceMock();
                     MeizuHelper.hookNotificationLyric();
                 }

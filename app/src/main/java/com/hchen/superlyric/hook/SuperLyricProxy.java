@@ -59,7 +59,7 @@ import java.util.Optional;
  * @author 焕晨HChen
  */
 @Collect(targetPackage = "android", onApplication = false)
-public class SuperLyricProxy extends HCBase {
+public final class SuperLyricProxy extends HCBase {
     private static SuperLyricService mSuperLyricService;
     private static SuperLyricControllerService mSuperLyricControllerService;
 

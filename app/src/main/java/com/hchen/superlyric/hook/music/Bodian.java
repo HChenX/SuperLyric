@@ -26,7 +26,6 @@ import androidx.annotation.NonNull;
 import com.hchen.collect.Collect;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.HCData;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.hook.LyricRelease;
 
@@ -44,7 +43,7 @@ import java.util.Objects;
  * @author 焕晨HChen
  */
 @Collect(targetPackage = "cn.wenyu.bodian")
-public class Bodian extends LyricRelease {
+public final class Bodian extends LyricRelease {
     @Override
     protected void init() {
     }
@@ -52,7 +51,6 @@ public class Bodian extends LyricRelease {
     @Override
     protected void initApplicationAfter(@NonNull Context context) {
         super.initApplicationAfter(context);
-        HCData.setClassLoader(context.getClassLoader());
 
         Class<?> deskLyricViewClass = findClass("cn.kuwo.player.util.DeskLyricView");
         if (deskLyricViewClass == null) return;

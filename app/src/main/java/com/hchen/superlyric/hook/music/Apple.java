@@ -49,7 +49,7 @@ import java.util.LinkedList;
  * Apple Music
  */
 @Collect(targetPackage = "com.apple.android.music")
-public class Apple extends LyricRelease {
+public final class Apple extends LyricRelease {
     private Object currentSongInfo;
     private LyricsLinePtrHelper lyricsLinePtrHelper;
     private PlaybackState playbackState;

@@ -25,7 +25,6 @@ import androidx.annotation.NonNull;
 import com.hchen.collect.Collect;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.HCData;
 import com.hchen.superlyric.helper.OPPOHelper;
 import com.hchen.superlyric.hook.LyricRelease;
 
@@ -40,7 +39,7 @@ import java.lang.reflect.Method;
  * OPPO 音乐
  */
 @Collect(targetPackage = "com.heytap.music")
-public class HeytapMusic extends LyricRelease {
+public final class HeytapMusic extends LyricRelease {
     @Override
     protected void init() {
     }
@@ -48,7 +47,6 @@ public class HeytapMusic extends LyricRelease {
     @Override
     protected void initApplicationAfter(@NonNull Context context) {
         super.initApplicationAfter(context);
-        HCData.setClassLoader(context.getClassLoader());
 
         OPPOHelper.mockDevice();
         getMediaMetadataLyric();

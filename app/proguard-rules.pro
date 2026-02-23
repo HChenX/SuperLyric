@@ -20,10 +20,16 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
+-keep class com.hchen.superlyric.InitHook {
+    <init>();
+}
 -keep class * extends com.hchen.hooktool.HCEntrance
 -keep class * extends com.hchen.hooktool.HCBase
 -keep class com.hchen.superlyric.hook.**
 -keep class com.hchen.superlyric.hook.**$*
+-keep class com.hchen.superlyric.hook.** {
+    <init>();
+}
 -keep class  com.hchen.hooktool.HCState {
     static boolean isXposedEnabled();
     static java.lang.String getFramework();

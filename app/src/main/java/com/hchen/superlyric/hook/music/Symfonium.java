@@ -41,7 +41,7 @@ import java.util.Objects;
  * @author 焕晨HChen
  */
 @Collect(targetPackage = "app.symfonik.music.player")
-public class Symfonium extends LyricRelease {
+public final class Symfonium extends LyricRelease {
     private String lastLyric;
 
     @Override

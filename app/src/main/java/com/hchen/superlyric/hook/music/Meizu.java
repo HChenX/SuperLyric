@@ -27,7 +27,7 @@ import com.hchen.superlyric.hook.LyricRelease;
  * 魅族音乐
  */
 @Collect(targetPackage = "com.meizu.media.music")
-public class Meizu extends LyricRelease {
+public final class Meizu extends LyricRelease {
     @Override
     protected void init() {
         if (QQLiteHelper.isSupportQQLite())

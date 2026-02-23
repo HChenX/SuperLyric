@@ -18,12 +18,7 @@
  */
 package com.hchen.superlyric.hook.music;
 
-import android.content.Context;
-
-import androidx.annotation.NonNull;
-
 import com.hchen.collect.Collect;
-import com.hchen.hooktool.HCData;
 import com.hchen.superlyric.hook.LyricRelease;
 
 /**
@@ -32,16 +27,9 @@ import com.hchen.superlyric.hook.LyricRelease;
  * @author 焕晨HChen
  */
 @Collect(targetPackage = "com.hiby.music")
-public class HiBy extends LyricRelease {
+public final class HiBy extends LyricRelease {
     @Override
     protected void init() {
-    }
-
-    @Override
-    protected void initApplicationAfter(@NonNull Context context) {
-        super.initApplicationAfter(context);
-        HCData.setClassLoader(context.getClassLoader());
-
         getMediaMetadataLyric();
     }
 }

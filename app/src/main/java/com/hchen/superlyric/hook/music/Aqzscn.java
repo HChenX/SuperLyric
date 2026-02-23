@@ -26,7 +26,7 @@ import com.hchen.superlyric.hook.LyricRelease;
  * Aqzscn
  */
 @Collect(targetPackage = "cn.aqzscn.stream_music")
-public class Aqzscn extends LyricRelease {
+public final class Aqzscn extends LyricRelease {
     @Override
     protected void init() {
         MeizuHelper.depthDeviceMock();

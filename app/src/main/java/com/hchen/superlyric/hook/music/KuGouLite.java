@@ -26,7 +26,6 @@ import androidx.annotation.NonNull;
 import com.hchen.collect.Collect;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.HCData;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.hook.LyricRelease;
 
@@ -43,7 +42,7 @@ import java.util.Objects;
  * 酷狗音乐概念版
  */
 @Collect(targetPackage = "com.kugou.android.lite")
-public class KuGouLite extends LyricRelease {
+public final class KuGouLite extends LyricRelease {
 
     @Override
     protected void init() {
@@ -53,7 +52,6 @@ public class KuGouLite extends LyricRelease {
     @Override
     protected void initApplicationAfter(@NonNull Context context) {
         super.initApplicationAfter(context);
-        HCData.setClassLoader(context.getClassLoader());
 
         try {
             if (Objects.equals(loadPackageParam.processName, "com.kugou.android.lite.support"))

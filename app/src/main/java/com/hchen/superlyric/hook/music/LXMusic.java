@@ -35,7 +35,7 @@ import java.util.ArrayList;
  * LX Music
  */
 @Collect(targetPackage = "cn.toside.music.mobile")
-public class LXMusic extends LyricRelease {
+public final class LXMusic extends LyricRelease {
     @Override
     protected void init() {
         // 所需 setCurrentLyric 类是混淆的，从 LyricModule 类逆向获取

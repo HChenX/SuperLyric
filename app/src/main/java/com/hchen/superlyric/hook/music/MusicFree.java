@@ -27,7 +27,7 @@ import com.hchen.superlyric.hook.LyricRelease;
  * MusicFree
  */
 @Collect(targetPackage = "fun.upup.musicfree")
-public class MusicFree extends LyricRelease {
+public final class MusicFree extends LyricRelease {
     @Override
     protected void init() {
         hookMethod("fun.upup.musicfree.lyricUtil.LyricUtilModule",

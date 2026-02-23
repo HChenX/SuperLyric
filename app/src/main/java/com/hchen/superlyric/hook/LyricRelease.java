@@ -56,6 +56,8 @@ public abstract class LyricRelease extends HCBase {
     @Override
     @CallSuper
     protected void initApplicationAfter(@NonNull Context context) {
+        HCData.setClassLoader(context.getClassLoader());
+
         packageName = context.getPackageName();
         audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
 

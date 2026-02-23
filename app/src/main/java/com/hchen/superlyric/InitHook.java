@@ -43,7 +43,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
  *
  * @author 焕晨HChen
  */
-public class InitHook extends HCEntrance {
+public final class InitHook extends HCEntrance {
     private static final String TAG = "SuperLyric";
 
     @NonNull

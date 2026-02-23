@@ -34,7 +34,7 @@ import java.util.regex.Pattern;
  * Poweramp
  */
 @Collect(targetPackage = "com.maxmpz.audioplayer")
-public class Poweramp extends LyricRelease {
+public final class Poweramp extends LyricRelease {
     @Override
     protected void init() {
         findMethodPro("com.maxmpz.widget.player.list.LyricsFastTextView")

@@ -26,7 +26,7 @@ import com.hchen.superlyric.hook.LyricRelease;
  * 小米音乐
  */
 @Collect(targetPackage = "com.miui.player")
-public class MiPlayer extends LyricRelease {
+public final class MiPlayer extends LyricRelease {
     @Override
     protected void init() {
         QQLiteHelper.hookLyric();

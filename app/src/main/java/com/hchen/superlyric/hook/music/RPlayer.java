@@ -30,7 +30,7 @@ import com.hchen.superlyric.hook.LyricRelease;
  * RPlayer
  */
 @Collect(targetPackage = "com.r.rplayer")
-public class RPlayer extends LyricRelease {
+public final class RPlayer extends LyricRelease {
     @Override
     protected void init() {
         findMethod("com.stub.StubApp",

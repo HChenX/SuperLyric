@@ -26,7 +26,7 @@ import com.hchen.superlyric.hook.LyricRelease;
  * Mimicry
  */
 @Collect(targetPackage = "com.mimicry.mymusic")
-public class Mimicry extends LyricRelease {
+public final class Mimicry extends LyricRelease {
     @Override
     protected void init() {
         MeizuHelper.hookNotificationLyric();

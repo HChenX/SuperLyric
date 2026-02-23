@@ -26,7 +26,7 @@ import com.hchen.superlyric.hook.LyricRelease;
  * MobileMusic
  */
 @Collect(targetPackage = "cmccwm.mobilemusic")
-public class MobileMusic extends LyricRelease {
+public final class MobileMusic extends LyricRelease {
     @Override
     protected void init() {
         MeizuHelper.depthDeviceMock();

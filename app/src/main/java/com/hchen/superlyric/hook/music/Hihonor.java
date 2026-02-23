@@ -26,7 +26,6 @@ import androidx.annotation.NonNull;
 import com.hchen.collect.Collect;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.HCData;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.hook.LyricRelease;
@@ -46,7 +45,7 @@ import java.util.Objects;
  * 荣耀音乐
  */
 @Collect(targetPackage = "com.hihonor.cloudmusic")
-public class Hihonor extends LyricRelease {
+public final class Hihonor extends LyricRelease {
     @Override
     protected void init() {
         hookTencentTinker();
@@ -70,7 +69,6 @@ public class Hihonor extends LyricRelease {
     @Override
     protected void initApplicationAfter(@NonNull Context context) {
         super.initApplicationAfter(context);
-        HCData.setClassLoader(context.getClassLoader());
 
         MeizuHelper.shallowLayerDeviceMock();
         MeizuHelper.hookNotificationLyric();

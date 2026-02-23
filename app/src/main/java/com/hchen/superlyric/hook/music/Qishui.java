@@ -43,7 +43,7 @@ import java.util.List;
  * @author 焕晨HChen
  */
 @Collect(targetPackage = "com.luna.music")
-public class Qishui extends LyricRelease {
+public final class Qishui extends LyricRelease {
 
     @Override
     protected void init() {

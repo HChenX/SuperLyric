@@ -26,7 +26,7 @@ import com.hchen.superlyric.hook.LyricRelease;
  * APlayer
  */
 @Collect(targetPackage = "remix.myplayer")
-public class APlayer extends LyricRelease {
+public final class APlayer extends LyricRelease {
     @Override
     protected void init() {
         MeizuHelper.depthDeviceMock();

@@ -28,7 +28,7 @@ import java.util.Arrays;
  * 华为音乐
  */
 @Collect(targetPackage = "com.huawei.music")
-public class Huawei extends LyricRelease {
+public final class Huawei extends LyricRelease {
     @Override
     protected void init() {
         hookAllMethod("com.android.mediacenter.localmusic.VehicleLyricControl",

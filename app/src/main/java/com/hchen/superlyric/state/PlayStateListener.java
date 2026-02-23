@@ -44,7 +44,7 @@ import java.util.function.BiConsumer;
  *
  * @author 焕晨HChen
  */
-public class PlayStateListener {
+public final class PlayStateListener {
     @NonNull
     private final Context mContext;
     @NonNull

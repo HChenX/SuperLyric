@@ -26,7 +26,7 @@ import com.hchen.superlyric.hook.LyricRelease;
  * 椒盐音乐
  */
 @Collect(targetPackage = "com.salt.music")
-public class SaltMusic extends LyricRelease {
+public final class SaltMusic extends LyricRelease {
     @Override
     protected void init() {
         MeizuHelper.hookNotificationLyric();

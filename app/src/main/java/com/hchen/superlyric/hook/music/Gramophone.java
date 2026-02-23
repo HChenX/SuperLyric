@@ -26,7 +26,7 @@ import com.hchen.superlyric.hook.LyricRelease;
  * Gramophone [留声机]
  */
 @Collect(targetPackage = "org.akanework.gramophone")
-public class Gramophone extends LyricRelease {
+public final class Gramophone extends LyricRelease {
     @Override
     protected void init() {
         MeizuHelper.hookNotificationLyric();

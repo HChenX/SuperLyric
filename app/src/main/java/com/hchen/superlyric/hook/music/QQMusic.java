@@ -53,7 +53,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * @author 焕晨HChen
  */
 @Collect(targetPackage = "com.tencent.qqmusic")
-public class QQMusic extends LyricRelease {
+public final class QQMusic extends LyricRelease {
     private final CopyOnWriteArrayList<LyricData> lyricDataList = new CopyOnWriteArrayList<>();
     private Field lyricField;
     private Field durationField;

@@ -26,7 +26,7 @@ import com.hchen.superlyric.hook.LyricRelease;
  * 糖醋音乐
  */
 @Collect(targetPackage = "com.xuncorp.suvine.music")
-public class SuvineMusic extends LyricRelease {
+public final class SuvineMusic extends LyricRelease {
     @Override
     protected void init() {
         MeizuHelper.hookNotificationLyric();

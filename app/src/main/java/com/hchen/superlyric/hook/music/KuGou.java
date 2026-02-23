@@ -26,7 +26,6 @@ import androidx.annotation.NonNull;
 import com.hchen.collect.Collect;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.HCData;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.hook.LyricRelease;
 
@@ -43,7 +42,7 @@ import java.util.Objects;
  * 酷狗音乐
  */
 @Collect(targetPackage = "com.kugou.android")
-public class KuGou extends LyricRelease {
+public final class KuGou extends LyricRelease {
     @Override
     protected void init() {
         hookTencentTinker();
@@ -52,7 +51,6 @@ public class KuGou extends LyricRelease {
     @Override
     protected void initApplicationAfter(@NonNull Context context) {
         super.initApplicationAfter(context);
-        HCData.setClassLoader(context.getClassLoader());
 
         try {
             if (Objects.equals(loadPackageParam.processName, "com.kugou.android.support")) return;

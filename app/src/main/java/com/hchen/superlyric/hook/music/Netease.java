@@ -26,7 +26,6 @@ import androidx.annotation.NonNull;
 import com.hchen.collect.Collect;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.HCData;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.hook.LyricRelease;
@@ -46,7 +45,7 @@ import java.util.Objects;
  * 网易云音乐
  */
 @Collect(targetPackage = "com.netease.cloudmusic")
-public class Netease extends LyricRelease {
+public final class Netease extends LyricRelease {
     @Override
     protected void init() {
         hookTencentTinker();
@@ -70,7 +69,6 @@ public class Netease extends LyricRelease {
     @Override
     protected void initApplicationAfter(@NonNull Context context) {
         super.initApplicationAfter(context);
-        HCData.setClassLoader(context.getClassLoader());
 
         if (versionCode >= 8000041) {
             MeizuHelper.shallowLayerDeviceMock();

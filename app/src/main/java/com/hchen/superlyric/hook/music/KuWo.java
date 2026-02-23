@@ -25,7 +25,6 @@ import androidx.annotation.NonNull;
 import com.hchen.collect.Collect;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.HCData;
 import com.hchen.hooktool.helper.RangeHelper;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.helper.TimeoutHelper;
@@ -42,7 +41,7 @@ import java.util.Objects;
  * 酷我音乐
  */
 @Collect(targetPackage = "cn.kuwo.player")
-public class KuWo extends LyricRelease {
+public final class KuWo extends LyricRelease {
     @Override
     protected void init() {
     }
@@ -50,7 +49,6 @@ public class KuWo extends LyricRelease {
     @Override
     protected void initApplicationAfter(@NonNull Context context) {
         super.initApplicationAfter(context);
-        HCData.setClassLoader(context.getClassLoader());
 
         if (existsClass("cn.kuwo.mod.playcontrol.RemoteControlLyricMgr")) {
             hookAllMethod("cn.kuwo.mod.playcontrol.RemoteControlLyricMgr",
