@@ -120,9 +120,25 @@ public abstract class LyricRelease extends HCBase {
     }
 
     /**
-     * 获取 MediaMetadataCompat 中的歌词数据
+     * 获取 MediaMetadata/Compat 中的歌词数据
      */
-    public static void getMediaMetadataCompatLyric() {
+    public static void getMediaMetadataLyric() {
+        hookMethod("android.media.MediaMetadata$Builder",
+            "putString",
+            String.class, String.class,
+            new IHook() {
+                @Override
+                public void after() {
+                    if (TextUtils.equals("android.media.metadata.TITLE", (String) getArg(0))) {
+                        String lyric = (String) getArg(1);
+                        if (lyric != null) {
+                            sendLyric(lyric);
+                        }
+                    }
+                }
+            }
+        );
+
         hookMethod("android.support.v4.media.MediaMetadataCompat$Builder",
             "putString",
             String.class, String.class,

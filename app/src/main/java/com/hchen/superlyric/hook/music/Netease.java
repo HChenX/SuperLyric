@@ -119,7 +119,7 @@ public class Netease extends LyricRelease {
                 }
             }
         } else {
-            getMediaMetadataCompatLyric();
+            getMediaMetadataLyric();
         }
     }
 }

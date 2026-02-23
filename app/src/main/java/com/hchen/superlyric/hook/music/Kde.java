@@ -28,6 +28,6 @@ import com.hchen.superlyric.hook.LyricRelease;
 public class Kde extends LyricRelease {
     @Override
     protected void init() {
-        getMediaMetadataCompatLyric();
+        getMediaMetadataLyric();
     }
 }

@@ -51,7 +51,7 @@ public class OPPOMusic extends LyricRelease {
         HCData.setClassLoader(context.getClassLoader());
 
         OPPOHelper.mockDevice();
-        getMediaMetadataCompatLyric();
+        getMediaMetadataLyric();
 
         Method method = DexkitCache.findMember("oppo_music$1", new IDexkit<MethodData>() {
             @NonNull

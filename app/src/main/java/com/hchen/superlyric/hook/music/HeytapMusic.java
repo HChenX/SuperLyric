@@ -51,7 +51,7 @@ public class HeytapMusic extends LyricRelease {
         HCData.setClassLoader(context.getClassLoader());
 
         OPPOHelper.mockDevice();
-        getMediaMetadataCompatLyric();
+        getMediaMetadataLyric();
 
         Method method = DexkitCache.findMember("heytap$1", new IDexkit<MethodData>() {
             @NonNull

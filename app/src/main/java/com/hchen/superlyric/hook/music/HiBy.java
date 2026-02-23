@@ -20,32 +20,28 @@ package com.hchen.superlyric.hook.music;
 
 import android.content.Context;
 
+import androidx.annotation.NonNull;
+
 import com.hchen.collect.Collect;
 import com.hchen.hooktool.HCData;
-import com.hchen.hooktool.hook.IHook;
-import com.hchen.superlyric.helper.ScreenHelper;
 import com.hchen.superlyric.hook.LyricRelease;
 
 /**
- * RPlayer
+ * 海贝音乐
+ *
+ * @author 焕晨HChen
  */
-@Collect(targetPackage = "com.r.rplayer")
-public class RPlayer extends LyricRelease {
+@Collect(targetPackage = "com.hiby.music")
+public class HiBy extends LyricRelease {
     @Override
     protected void init() {
-        findMethod("com.stub.StubApp",
-            "attachBaseContext",
-            Context.class,
-            new IHook() {
-                @Override
-                public void after() {
-                    Context context = (Context) getArg(0);
-                    HCData.setClassLoader(context.getClassLoader());
+    }
 
-                    getMediaMetadataLyric();
-                    ScreenHelper.screenOffNotStopLyric();
-                }
-            }
-        );
+    @Override
+    protected void initApplicationAfter(@NonNull Context context) {
+        super.initApplicationAfter(context);
+        HCData.setClassLoader(context.getClassLoader());
+
+        getMediaMetadataLyric();
     }
 }
