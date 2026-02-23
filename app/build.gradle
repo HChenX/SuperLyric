@@ -92,10 +92,12 @@ android {
 
 androidComponents {
     onVariants(selector()) { variant ->
+        def buildType = variant.buildType
+
         variant.outputs.forEach { output ->
             def vName = output.versionName.get()
             def vCode = output.versionCode.get()
-            output.outputFileName.set("SuperLyric-v${vName}(${vCode}).apk")
+            output.outputFileName.set("SuperLyric-v${vName}-${vCode}-${buildType}.apk")
         }
     }
 }
