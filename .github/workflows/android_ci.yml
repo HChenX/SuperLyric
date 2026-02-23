@@ -68,8 +68,8 @@ jobs:
 
       - name: Calculate SHA256
         run: |
-          echo "APK_RELEASE_SHA256=$(sha256sum ${{ env.APK_RELEASE_PATH }} | awk '{print $1}')" >> $GITHUB_ENV
-          echo "APK_DEBUG_SHA256=$(sha256sum ${{ env.APK_DEBUG_PATH }} | awk '{print $1}')" >> $GITHUB_ENV
+          echo "APK_RELEASE_SHA256=$(sha256sum \"${{ env.APK_RELEASE_PATH }}\" | awk '{print $1}')" >> $GITHUB_ENV
+          echo "APK_DEBUG_SHA256=$(sha256sum \"${{ env.APK_DEBUG_PATH }}\" | awk '{print $1}')" >> $GITHUB_ENV
 
       - name: Show Apks SHA256
         run: |

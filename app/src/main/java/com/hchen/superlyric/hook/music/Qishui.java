@@ -135,18 +135,21 @@ public final class Qishui extends LyricRelease {
                         long startTime = (long) callMethod(sentence, "getStartTimeMs");
                         long endTime = (long) callMethod(sentence, "getEndTimeMs");
 
-                        List<?> wordList = (List<?>) callMethod(sentence, "wordList");
-                        SuperLyricData.EnhancedLRCData[] data = new SuperLyricData.EnhancedLRCData[wordList.size()];
-                        for (int i = 0; i < wordList.size(); i++) {
-                            CharSequence content = (CharSequence) getField(wordList.get(i), "content");
-                            long startTimeMs = (long) getField(wordList.get(i), "startTimeMs");
-                            long endTimeMs = (long) getField(wordList.get(i), "endTimeMs");
+                        SuperLyricData.EnhancedLRCData[] data = null;
+                        List<?> wordList = (List<?>) callMethod(sentence, "getWordList");
+                        if (wordList != null) {
+                            data = new SuperLyricData.EnhancedLRCData[wordList.size()];
+                            for (int i = 0; i < wordList.size(); i++) {
+                                CharSequence content = (CharSequence) getField(wordList.get(i), "content");
+                                long startTimeMs = (long) getField(wordList.get(i), "startTimeMs");
+                                long endTimeMs = (long) getField(wordList.get(i), "endTimeMs");
 
-                            data[i] = new SuperLyricData.EnhancedLRCData((String) content, (int) startTimeMs, (int) endTimeMs);
+                                data[i] = new SuperLyricData.EnhancedLRCData((String) content, (int) startTimeMs, (int) endTimeMs);
+                            }
                         }
 
                         sendLyric((String) lyric, (int) (endTime - startTime), data);
-                        // logD(TAG, sentence.toString());
+                        // AndroidLog.logI(TAG, sentence.toString());
                     }
                 }
             }
