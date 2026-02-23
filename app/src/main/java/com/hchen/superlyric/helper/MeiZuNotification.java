@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
 
- * Copyright (C) 2023-2025 HChenX
+ * Copyright (C) 2025-2026 HChenX
  */
 package com.hchen.superlyric.helper;
 
@@ -25,7 +25,7 @@ import android.app.Notification;
  *
  * @author 焕晨HChen
  */
-public class MeiZuNotification extends Notification {
+public final class MeiZuNotification extends Notification {
     public static final int FLAG_ALWAYS_SHOW_TICKER = 0x01000000;
     public static final int FLAG_ONLY_UPDATE_TICKER = 0x02000000;
 }

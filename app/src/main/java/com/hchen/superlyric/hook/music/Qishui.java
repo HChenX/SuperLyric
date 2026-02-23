@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
 
- * Copyright (C) 2023-2025 HChenX
+ * Copyright (C) 2025-2026 HChenX
  */
 package com.hchen.superlyric.hook.music;
 
@@ -23,18 +23,19 @@ import androidx.annotation.NonNull;
 import com.hchen.collect.Collect;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.helper.RangeHelper;
+import com.hchen.hooktool.helper.FieldHelper;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyricapi.SuperLyricData;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
-import org.luckypray.dexkit.query.matchers.FieldMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.result.MethodData;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.util.Objects;
+import java.util.List;
 
 /**
  * 汽水音乐
@@ -43,82 +44,112 @@ import java.util.Objects;
  */
 @Collect(targetPackage = "com.luna.music")
 public class Qishui extends LyricRelease {
-    private static Object BLUETOOTH;
 
     @Override
     protected void init() {
         fakeBluetoothA2dpEnabled();
-        getMediaMetadataCompatLyric();
 
-        Class<?> blueToothLyricStatus = findClass("com.luna.biz.playing.lyric.bluetoothlyrics.BlueToothLyricStatus");
-        BLUETOOTH = getStaticField("com.luna.common.arch.device.OutputDeviceType", "BLUETOOTH");
-        Class<?> blueToothLyricStatusClass = findClass("com.luna.biz.playing.lyric.bluetoothlyrics.BlueToothLyricStatus");
-
-        Method method = DexkitCache.findMember("qishui$1", new IDexkit<MethodData>() {
+        // 此方法判断外接设备是否为蓝牙
+        Method m = DexkitCache.findMember("qishui$1", new IDexkit<MethodData>() {
             @NonNull
             @Override
             public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                 return bridge.findMethod(FindMethod.create()
                     .matcher(MethodMatcher.create()
-                        .paramTypes(null, blueToothLyricStatus, boolean.class, int.class, Object.class)
+                        .declaredClass(findClass("com.luna.biz.playing.lyric.bluetoothlyrics.BlueToothLyricsManager"))
+                        .paramCount(1)
+                        .returnType(boolean.class)
                     )
                 ).single();
             }
         });
-        Class<?> clazz = method.getParameterTypes()[0];
-        Method m = DexkitCache.findMember("qishui$2", new IDexkit<MethodData>() {
+        hook(m, returnResult(true));
+
+        Method m1 = DexkitCache.findMember("qishui$2", new IDexkit<MethodData>() {
             @NonNull
             @Override
             public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                 return bridge.findMethod(FindMethod.create()
                     .matcher(MethodMatcher.create()
-                        .declaredClass(clazz)
-                        .addUsingField(
-                            FieldMatcher.create()
-                                .declaredClass(blueToothLyricStatusClass)
-                                .name("PAUSE")
-                        )
+                        .declaredClass(findClass("com.luna.common.arch.device.OutputDevice"))
+                        .paramCount(0)
+                        .returnType(boolean.class)
                     )
                 ).single();
             }
         });
-        hook(m, doNothing());
+        hook(m1, returnResult(true));
 
-        Method b = findMethodPro(clazz)
-            .withParamCount(1, RangeHelper.EQ)
-            .withReturnClass(boolean.class)
-            .single()
-            .obtain();
+        // 阻止触发蓝牙断连逻辑，防止终止蓝牙歌词事件
+        Method m2 = DexkitCache.findMember("qishui$3", new IDexkit<MethodData>() {
+            @NonNull
+            @Override
+            public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                return bridge.findMethod(FindMethod.create()
+                    .matcher(MethodMatcher.create()
+                        .declaredClass(findClass("com.luna.biz.playing.lyric.bluetoothlyrics.BlueToothLyricsManager"))
+                        .usingNumbers(13)
+                    )
+                ).single();
+            }
+        });
+        hook(m2, doNothing());
 
-        hook(b,
-            new IHook() {
-                @Override
-                public void before() {
-                    Object N = getArg(0);
-                    if (N == null) {
-                        setResult(true);
-                    } else {
-                        Object type = callMethod(N, "getType");
-                        if (Objects.equals(type, BLUETOOTH)) {
-                            setResult(true);
+        // 发布蓝牙歌词信息的方法
+        Method m3 = DexkitCache.findMember("qishui$4", new IDexkit<MethodData>() {
+            @NonNull
+            @Override
+            public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                return bridge.findMethod(FindMethod.create()
+                    .matcher(MethodMatcher.create()
+                        .declaredClass(findClass("com.luna.biz.playing.lyric.bluetoothlyrics.BlueToothLyricViewModel"))
+                        .paramTypes(findClass("com.luna.common.arch.playable.TrackPlayable"), long.class)
+                        .returnType(void.class)
+                    )
+                ).single();
+            }
+        });
+        // 此字段存储歌词信息
+        Field e = new FieldHelper(findClass("com.luna.biz.playing.lyric.bluetoothlyrics.BlueToothLyricViewModel"))
+            .withFieldClass(findClass("kotlin.Pair"))
+            .single();
+        // 此字段存储当前播放歌词的索引位置
+        Field g = new FieldHelper(findClass("com.luna.biz.playing.lyric.bluetoothlyrics.BlueToothLyricViewModel"))
+            .withFieldClass(Integer.class)
+            .single();
+
+        hook(m3, new IHook() {
+            private int lastIndex = -1;
+
+            @Override
+            public void after() {
+                Integer index = (Integer) getThisField(g);
+                if (index != null) {
+                    if (lastIndex == -1 || index != lastIndex) {
+                        lastIndex = index;
+                        Object pair = getThisField(e);
+                        List<?> second = (List<?>) callMethod(pair, "getSecond");
+                        Object sentence = second.get(index);
+
+                        CharSequence lyric = (CharSequence) callMethod(sentence, "getContent");
+                        long startTime = (long) callMethod(sentence, "getStartTimeMs");
+                        long endTime = (long) callMethod(sentence, "getEndTimeMs");
+
+                        List<?> wordList = (List<?>) callMethod(sentence, "wordList");
+                        SuperLyricData.EnhancedLRCData[] data = new SuperLyricData.EnhancedLRCData[wordList.size()];
+                        for (int i = 0; i < wordList.size(); i++) {
+                            CharSequence content = (CharSequence) getField(wordList.get(i), "content");
+                            long startTimeMs = (long) getField(wordList.get(i), "startTimeMs");
+                            long endTimeMs = (long) getField(wordList.get(i), "endTimeMs");
+
+                            data[i] = new SuperLyricData.EnhancedLRCData((String) content, (int) startTimeMs, (int) endTimeMs);
                         }
+
+                        sendLyric((String) lyric, (int) (endTime - startTime), data);
+                        // logD(TAG, sentence.toString());
                     }
                 }
             }
-        );
-
-        findMethodPro(b.getParameterTypes()[0])
-            .withParamCount(0, RangeHelper.EQ)
-            .withReturnClass(boolean.class)
-            .single()
-            .hook(returnResult(true));
-
-        // 保持 蓝牙歌词功能 为开启状态
-        // 无需强制保持开启状态，应该由用户自主选择
-        // findMethodPro(clazz)
-        //     .withReturnType(boolean.class)
-        //     .withParamCount(0)
-        //     .single()
-        //     .hook(returnResult(true));
+        });
     }
 }

@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
 
- * Copyright (C) 2023-2025 HChenX
+ * Copyright (C) 2025-2026 HChenX
  */
 package com.hchen.superlyric.hook;
 
@@ -64,10 +64,10 @@ public abstract class LyricRelease extends HCBase {
         context.sendBroadcast(intent);
 
         Intent intentBinder = context.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-        Objects.requireNonNull(intentBinder, "Failed to obtain designated binder intent, can't use SuperLyric!!");
+        Objects.requireNonNull(intentBinder, "[Intent#ACTION_BATTERY_CHANGED] Return must not be null!!");
 
         Bundle bundle = intentBinder.getBundleExtra(SuperLyricKey.SUPER_LYRIC_INFO);
-        Objects.requireNonNull(bundle, "Failed to obtain designated binder bundle, please try to reboot system!!");
+        Objects.requireNonNull(bundle, "[SUPER_LYRIC_INFO] Return must not be null!! try reboot system!!");
 
         iSuperLyricDistributor = ISuperLyricDistributor.Stub.asInterface(bundle.getBinder(SuperLyricKey.SUPER_LYRIC_BINDER));
 
@@ -75,12 +75,12 @@ public abstract class LyricRelease extends HCBase {
             PackageInfo packageInfo = context.getPackageManager().getPackageInfo(packageName, 0);
             versionName = packageInfo.versionName;
             versionCode = packageInfo.getLongVersionCode();
-            logI(TAG, "App package: " + packageName + ", version: " + versionName + ", code: " + versionCode);
+            logI(TAG, "App: " + packageName + ", version: " + versionName + ", code: " + versionCode);
         } catch (PackageManager.NameNotFoundException e) {
-            logW(TAG, "Failed to obtain package info!!", e);
+            logW(TAG, e);
         }
 
-        logD(TAG, "Success to obtain binder: " + iSuperLyricDistributor + ", caller package: " + packageName);
+        logD(TAG, "Success to obtain super lyric distributor: " + iSuperLyricDistributor + ", caller: " + packageName);
     }
 
     /**
@@ -129,10 +129,11 @@ public abstract class LyricRelease extends HCBase {
             new IHook() {
                 @Override
                 public void after() {
-                    if (Objects.equals("android.media.metadata.TITLE", getArg(0))) {
+                    if (TextUtils.equals("android.media.metadata.TITLE", (String) getArg(0))) {
                         String lyric = (String) getArg(1);
-                        if (lyric == null) return;
-                        sendLyric(lyric);
+                        if (lyric != null) {
+                            sendLyric(lyric);
+                        }
                     }
                 }
             }
@@ -142,15 +143,27 @@ public abstract class LyricRelease extends HCBase {
     private static String lastLyric;
 
     public static void sendLyric(String lyric) {
-        sendLyric(lyric, 0);
+        sendLyric(lyric, 0, "", null);
     }
 
     public static void sendLyric(String lyric, int delay) {
-        sendLyric(lyric, delay, "");
+        sendLyric(lyric, delay, "", null);
     }
 
     public static void sendLyric(String lyric, String base64Icon) {
-        sendLyric(lyric, 0, base64Icon);
+        sendLyric(lyric, 0, base64Icon, null);
+    }
+
+    public static void sendLyric(String lyric, SuperLyricData.EnhancedLRCData[] data) {
+        sendLyric(lyric, 0, "", data);
+    }
+
+    public static void sendLyric(String lyric, int delay, SuperLyricData.EnhancedLRCData[] data) {
+        sendLyric(lyric, delay, "", data);
+    }
+
+    public static void sendLyric(String lyric, int delay, String base64Icon) {
+        sendLyric(lyric, delay, base64Icon, null);
     }
 
     /**
@@ -160,7 +173,7 @@ public abstract class LyricRelease extends HCBase {
      * @param delay      歌词持续时间 (ms)
      * @param base64Icon 小图标
      */
-    public static void sendLyric(String lyric, int delay, String base64Icon) {
+    public static void sendLyric(String lyric, int delay, String base64Icon, SuperLyricData.EnhancedLRCData[] data) {
         if (lyric == null) return;
         if (iSuperLyricDistributor == null) return;
 
@@ -176,6 +189,7 @@ public abstract class LyricRelease extends HCBase {
                     .setLyric(lyric)
                     .setDelay(delay)
                     .setBase64Icon(base64Icon)
+                    .setEnhancedLRCData(data)
             );
         } catch (RemoteException e) {
             logE("LyricRelease", "Failed to send lyric!!", e);
@@ -219,7 +233,7 @@ public abstract class LyricRelease extends HCBase {
             return;
         }
 
-        logD("LyricRelease", "Stop lyric: " + data);
+        logD("LyricRelease", "Send stop: " + data);
     }
 
     /**

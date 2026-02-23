@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
 
- * Copyright (C) 2023-2025 HChenX
+ * Copyright (C) 2025-2026 HChenX
  */
 package com.hchen.collect;
 
@@ -66,14 +66,14 @@ public class CollectProcessor extends AbstractProcessor {
                 throw new RuntimeException("E: element can't cast to TypeElement!!");
             }
 
-            String fullClass = typeElement.getQualifiedName().toString();
+            String classPath = typeElement.getQualifiedName().toString();
             Collect collect = element.getAnnotation(Collect.class);
             if (collect != null) {
                 dataMap
                     .computeIfAbsent(collect.targetPackage(), k -> new ArrayList<>())
                     .add(
                         new Data(
-                            fullClass,
+                            classPath,
                             collect.onLoadPackage(),
                             collect.onZygote(),
                             collect.onApplication()
@@ -111,23 +111,23 @@ public class CollectProcessor extends AbstractProcessor {
          * 生成三个 Map 常量
          */
         clazz.addField(generateStaticMap(
-            "ON_LOAD_PACKAGE_MAP",
+            "ON_ZYGOTE_MAP",
             dataMap,
-            c -> c.onLoadPackage,
+            data -> data.onZygote,
             mapType
         ));
 
         clazz.addField(generateStaticMap(
-            "ON_ZYGOTE_MAP",
+            "ON_LOAD_PACKAGE_MAP",
             dataMap,
-            c -> c.onZygote,
+            data -> data.onLoadPackage,
             mapType
         ));
 
         clazz.addField(generateStaticMap(
             "ON_APPLICATION_MAP",
             dataMap,
-            c -> c.onApplication,
+            data -> data.onApplication,
             mapType
         ));
 
@@ -153,7 +153,7 @@ public class CollectProcessor extends AbstractProcessor {
             @SuppressWarnings("NewApi")
             List<String> values = data.stream()
                 .filter(filter)
-                .map(c -> c.fullClass)
+                .map(d -> d.classPath)
                 .toList();
 
             if (values.isEmpty()) return;
@@ -188,7 +188,7 @@ public class CollectProcessor extends AbstractProcessor {
     }
 
     private record Data(
-        String fullClass,
+        String classPath,
         boolean onLoadPackage,
         boolean onZygote,
         boolean onApplication

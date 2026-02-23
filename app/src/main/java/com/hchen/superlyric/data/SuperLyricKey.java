@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
 
- * Copyright (C) 2023-2025 HChenX
+ * Copyright (C) 2025-2026 HChenX
  */
 package com.hchen.superlyric.data;
 
@@ -31,7 +31,7 @@ import java.util.Objects;
  *
  * @author 焕晨HChen
  */
-public class SuperLyricKey {
+public final class SuperLyricKey {
     public static final String SUPER_LYRIC = "super_lyric";
     @Deprecated
     public static final String SUPER_LYRIC_OLD = "Super_Lyric";

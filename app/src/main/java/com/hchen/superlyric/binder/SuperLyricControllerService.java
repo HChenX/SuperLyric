@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
 
- * Copyright (C) 2023-2025 HChenX
+ * Copyright (C) 2025-2026 HChenX
  */
 package com.hchen.superlyric.binder;
 
@@ -47,22 +47,26 @@ import java.util.concurrent.CopyOnWriteArraySet;
  *
  * @author 焕晨HChen
  */
-public class SuperLyricControllerService {
+public final class SuperLyricControllerService {
     private static final String TAG = "SuperLyricControllerService";
-    private static SuperLyricService mSuperLyricService;
+    @NonNull
     public static final CopyOnWriteArraySet<String> mFinalExemptSet = new CopyOnWriteArraySet<>() {
         {
             add("com.android.systemui");
         }
     };
-    private static final Messenger mMessengerService = new Messenger(new ControllerHandler(Looper.getMainLooper()));
-    private static final ConcurrentHashMap<String, ISuperLyric.Stub> mRegisteredControllerMap = new ConcurrentHashMap<>();
+    @NonNull
+    private final SuperLyricService mSuperLyricService;
+    @NonNull
+    private final Messenger mMessengerService = new Messenger(new ControllerHandler(Looper.getMainLooper()));
+    @NonNull
+    private final ConcurrentHashMap<String, ISuperLyric.Stub> mRegisteredControllerMap = new ConcurrentHashMap<>();
 
-    public SuperLyricControllerService(SuperLyricService superLyricService) {
+    public SuperLyricControllerService(@NonNull SuperLyricService superLyricService) {
         mSuperLyricService = superLyricService;
     }
 
-    private static class ControllerHandler extends Handler {
+    private class ControllerHandler extends Handler {
         public ControllerHandler(@NonNull Looper looper) {
             super(looper);
         }
@@ -111,7 +115,7 @@ public class SuperLyricControllerService {
         }
     }
 
-    private static ISuperLyric.Stub createSuperLyricStub() {
+    private ISuperLyric.Stub createSuperLyricStub() {
         return new ISuperLyric.Stub() {
             @Override
             public void onSuperLyric(SuperLyricData superLyricData) throws RemoteException {
@@ -120,7 +124,7 @@ public class SuperLyricControllerService {
                 try {
                     mSuperLyricService.onSuperLyric(superLyricData);
                 } catch (Throwable e) {
-                    AndroidLog.logE(TAG, "[onSuperLyric]: Error!!", e);
+                    AndroidLog.logE(TAG, e);
                 }
             }
 
@@ -131,7 +135,7 @@ public class SuperLyricControllerService {
                 try {
                     mSuperLyricService.onStop(superLyricData);
                 } catch (Throwable e) {
-                    AndroidLog.logE(TAG, "[onStop]: Error!!", e);
+                    AndroidLog.logE(TAG, e);
                 }
             }
         };

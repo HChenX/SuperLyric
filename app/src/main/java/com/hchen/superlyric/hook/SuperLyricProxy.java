@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
 
- * Copyright (C) 2023-2025 HChenX
+ * Copyright (C) 2025-2026 HChenX
  */
 package com.hchen.superlyric.hook;
 
@@ -38,10 +38,10 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.Bundle;
 import android.os.IBinder;
+import android.text.TextUtils;
 
 import com.hchen.collect.Collect;
 import com.hchen.hooktool.HCBase;
-import com.hchen.hooktool.helper.RangeHelper;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.binder.SuperLyricControllerService;
 import com.hchen.superlyric.binder.SuperLyricService;
@@ -65,34 +65,8 @@ public class SuperLyricProxy extends HCBase {
 
     @Override
     protected void init() {
-        Method systemReadyMethod;
-        if (
-            existsMethod(
-                "com.android.server.am.ActivityManagerService",
-                "systemReady",
-                Runnable.class, "com.android.server.utils.TimingsTraceAndSlog"
-            )
-        ) {
-            systemReadyMethod = findMethod(
-                "com.android.server.am.ActivityManagerService",
-                "systemReady",
-                Runnable.class /* goingCallback */, "com.android.server.utils.TimingsTraceAndSlog" /* t */
-            );
-        } else {
-            // Samsung changed systemReady() method param list, so fuck you samsung
-            systemReadyMethod = findMethodPro("com.android.server.am.ActivityManagerService")
-                .withParamCount(2, RangeHelper.EQ)
-                .withMethodName("systemReady")
-                .single()
-                .obtain();
-        }
-
-        if (systemReadyMethod == null) {
-            logW(TAG, "Failed to find method:[ActivityManagerService#systemReady()]!!");
-            return;
-        }
-
-        hook(systemReadyMethod,
+        hookAllMethod("com.android.server.am.ActivityManagerService",
+            "systemReady",
             new IHook() {
                 @Override
                 public void after() {
@@ -101,20 +75,19 @@ public class SuperLyricProxy extends HCBase {
                             mSuperLyricService = new SuperLyricService();
                             mSuperLyricControllerService = new SuperLyricControllerService(mSuperLyricService);
 
-                            Context context = (Context) getThisField("mContext");
-                            new PlayStateListener(context, mSuperLyricService).start();
+                            Context mContext = (Context) getThisField("mContext");
+                            new PlayStateListener(mContext, mSuperLyricService).register();
+
+                            logI(TAG, "Super lyric service is all ready!!");
                         }
                     } catch (Throwable e) {
                         logE(TAG, "Failed to init super lyric service!!", e);
-                        return;
                     }
-
-                    logI(TAG, "Super lyric service is all ready!!");
                 }
             }
         );
 
-        Method registerReceiverWithFeatureMethod = null;
+        Method registerReceiverWithFeature = null;
         if (
             existsMethod(
                 "com.android.server.am.ActivityManagerService",
@@ -122,8 +95,8 @@ public class SuperLyricProxy extends HCBase {
                 "android.app.IApplicationThread", String.class, String.class, String.class,
                 "android.content.IIntentReceiver", IntentFilter.class, String.class, int.class, int.class
             )
-        )
-            registerReceiverWithFeatureMethod = findMethod(
+        ) {
+            registerReceiverWithFeature = findMethod(
                 "com.android.server.am.ActivityManagerService",
                 "registerReceiverWithFeature",
                 "android.app.IApplicationThread" /* caller */, String.class /* callerPackage */,
@@ -131,66 +104,67 @@ public class SuperLyricProxy extends HCBase {
                 "android.content.IIntentReceiver" /* receiver */, IntentFilter.class /* filter */,
                 String.class /* permission */, int.class /* userId */, int.class /* flags */
             );
-
-        else if (
+        } else if (
             existsMethod(
                 "com.android.server.am.ActivityManagerService",
                 "registerReceiverWithFeature",
-                "android.app.IApplicationThread", String.class, String.class, "android.content.IIntentReceiver",
-                IntentFilter.class, String.class, int.class, int.class
+                "android.app.IApplicationThread", String.class, String.class,
+                "android.content.IIntentReceiver", IntentFilter.class, String.class, int.class, int.class
             )
-        )
-            registerReceiverWithFeatureMethod = findMethod(
+        ) {
+            registerReceiverWithFeature = findMethod(
                 "com.android.server.am.ActivityManagerService",
                 "registerReceiverWithFeature",
                 "android.app.IApplicationThread" /* caller */, String.class /* callerPackage */,
                 String.class /* callerFeatureId */, "android.content.IIntentReceiver" /* receiver */,
                 IntentFilter.class /* filter */, String.class /* permission */, int.class /* userId */, int.class /* flags */
             );
+        }
 
-        if (registerReceiverWithFeatureMethod == null) {
-            logW(TAG, "Failed to find method:[ActivityManagerService#registerReceiverWithFeature]!!");
+        if (registerReceiverWithFeature == null) {
+            logE(TAG, "[ActivityManagerService#registerReceiverWithFeature()] Failed to init super lyric service!!");
             return;
         }
 
-        hook(registerReceiverWithFeatureMethod,
+        hook(registerReceiverWithFeature,
             new IHook() {
                 @Override
                 public void after() {
-                    if (mSuperLyricService == null) return;
+                    if (mSuperLyricService == null) {
+                        return;
+                    }
 
                     Intent intent = (Intent) getResult();
-                    if (intent == null) return;
+                    if (intent != null) {
+                        String callerPackage = (String) getArg(1);
+                        if (!SuperLyricService.mExemptSet.contains(callerPackage) &&
+                            !SuperLyricControllerService.mFinalExemptSet.contains(callerPackage)) {
+                            return;
+                        }
 
-                    String callerPackage = (String) getArg(1);
-                    // if (!CollectMap.getAllPackageSet().contains(callerPackage)
-                    //     && !SuperLyricService.mExemptSet.contains(callerPackage)
-                    // ) return;
-                    if (!SuperLyricService.mExemptSet.contains(callerPackage) &&
-                        !SuperLyricControllerService.mFinalExemptSet.contains(callerPackage))
-                        return;
+                        Bundle bundle = new Bundle();
+                        bundle.putBinder(SuperLyricKey.SUPER_LYRIC_BINDER, mSuperLyricService);
+                        bundle.putBinder(SuperLyricKey.SUPER_LYRIC_CONTROLLER, mSuperLyricControllerService.getBinder());
+                        intent.removeExtra(SuperLyricKey.SUPER_LYRIC_INFO);
+                        intent.putExtra(SuperLyricKey.SUPER_LYRIC_INFO, bundle);
+                        setResult(intent);
 
-                    Bundle bundle = new Bundle();
-                    bundle.putBinder(SuperLyricKey.SUPER_LYRIC_BINDER, mSuperLyricService);
-                    bundle.putBinder(SuperLyricKey.SUPER_LYRIC_CONTROLLER, mSuperLyricControllerService.getBinder());
-                    intent.removeExtra(SuperLyricKey.SUPER_LYRIC_INFO);
-                    intent.putExtra(SuperLyricKey.SUPER_LYRIC_INFO, bundle);
-                    setResult(intent);
-
-                    logD(TAG, "Return binder: " + mSuperLyricService + ", caller package: " + callerPackage + ", intent extras: " + intent.getExtras());
+                        logD(TAG, "Super lyric service: " + mSuperLyricService + ", extras: " + intent.getExtras() + ", caller: " + callerPackage);
+                    }
                 }
             }
         );
 
-        Method broadcastIntentWithFeatureMethod = null;
+        Method broadcastIntentWithFeature = null;
         if (
             existsMethod(
-                "com.android.server.am.ActivityManagerService", "broadcastIntentWithFeature",
+                "com.android.server.am.ActivityManagerService",
+                "broadcastIntentWithFeature",
                 "android.app.IApplicationThread", String.class, Intent.class, String.class, "android.content.IIntentReceiver", int.class,
                 String.class, Bundle.class, String[].class, String[].class, String[].class, int.class, Bundle.class, boolean.class, boolean.class, int.class
             )
-        )
-            broadcastIntentWithFeatureMethod = findMethod(
+        ) {
+            broadcastIntentWithFeature = findMethod(
                 "com.android.server.am.ActivityManagerService",
                 "broadcastIntentWithFeature",
                 "android.app.IApplicationThread" /* caller */, String.class /* callingFeatureId */, Intent.class /* intent */,
@@ -199,14 +173,14 @@ public class SuperLyricProxy extends HCBase {
                 String[].class /* excludedPermissions */, String[].class /* excludedPackages */, int.class /* appOp */,
                 Bundle.class /* bOptions */, boolean.class /* serialized */, boolean.class /* sticky */, int.class /* userId */
             );
-
-        else if (
+        } else if (
             existsMethod(
-                "com.android.server.am.ActivityManagerService", "broadcastIntentWithFeature",
+                "com.android.server.am.ActivityManagerService",
+                "broadcastIntentWithFeature",
                 "android.app.IApplicationThread", String.class, Intent.class, String.class, "android.content.IIntentReceiver", int.class,
                 String.class, Bundle.class, String[].class, String[].class, int.class, Bundle.class, boolean.class, boolean.class, int.class)
-        )
-            broadcastIntentWithFeatureMethod = findMethod(
+        ) {
+            broadcastIntentWithFeature = findMethod(
                 "com.android.server.am.ActivityManagerService",
                 "broadcastIntentWithFeature",
                 "android.app.IApplicationThread" /* caller */, String.class /* callingFeatureId */, Intent.class /* intent */,
@@ -215,51 +189,57 @@ public class SuperLyricProxy extends HCBase {
                 String[].class /* excludedPermissions */, int.class /* appOp */, Bundle.class /* bOptions */,
                 boolean.class /* serialized */, boolean.class /* sticky */, int.class /* userId */
             );
-
-        else if (
+        } else if (
             existsMethod(
-                "com.android.server.am.ActivityManagerService", "broadcastIntentWithFeature",
+                "com.android.server.am.ActivityManagerService",
+                "broadcastIntentWithFeature",
                 "android.app.IApplicationThread", String.class, Intent.class, String.class, "android.content.IIntentReceiver", int.class,
                 String.class, Bundle.class, String[].class, int.class, Bundle.class, boolean.class, boolean.class, int.class)
-        )
-            broadcastIntentWithFeatureMethod = findMethod(
+        ) {
+            broadcastIntentWithFeature = findMethod(
                 "com.android.server.am.ActivityManagerService",
                 "broadcastIntentWithFeature",
                 "android.app.IApplicationThread" /* caller */, String.class /* callingFeatureId */, Intent.class /* intent */,
                 String.class /* resolvedType */, "android.content.IIntentReceiver" /* resultTo */, int.class /* resultCode */,
-                String.class /* resultData */, Bundle.class /* resultExtras */, String[].class /* requiredPermissions */, int.class /* appOp */,
-                Bundle.class /* bOptions */, boolean.class /* serialized */, boolean.class /* sticky */, int.class /* userId */
+                String.class /* resultData */, Bundle.class /* resultExtras */, String[].class /* requiredPermissions */,
+                int.class /* appOp */, Bundle.class /* bOptions */, boolean.class /* serialized */, boolean.class /* sticky */, int.class /* userId */
             );
+        }
 
-        if (broadcastIntentWithFeatureMethod == null) {
-            logW(TAG, "Failed to find method:[ActivityManagerService#broadcastIntentWithFeature]!!");
+        if (broadcastIntentWithFeature == null) {
+            logE(TAG, "[ActivityManagerService#broadcastIntentWithFeature()] Failed to init super lyric service!!");
             return;
         }
 
-        hook(broadcastIntentWithFeatureMethod,
+        hook(broadcastIntentWithFeature,
             new IHook() {
                 @Override
                 public void before() {
                     if (mSuperLyricService == null) return;
                     if (!(getArg(2) instanceof Intent intent)) return;
-                    if (!Objects.equals(intent.getAction(), SUPER_LYRIC_OLD) && !Objects.equals(intent.getAction(), SUPER_LYRIC))
+                    if (!Objects.equals(intent.getAction(), SUPER_LYRIC_OLD) && !Objects.equals(intent.getAction(), SUPER_LYRIC)) {
                         return;
+                    }
 
                     try {
-                        String callerPackage = "unknown";
+                        String caller = "unknown";
                         try {
                             // 获取调用者包名
-                            Object caller = getArg(0);
-                            Object callerApp = callThisMethod("getRecordForAppLOSP", caller);
-                            callerPackage = (String) getField(getField(callerApp, "info"), "packageName");
+                            caller = (String) getField(
+                                getField(
+                                    callThisMethod("getRecordForAppLOSP", getArg(0)),
+                                    "info"
+                                ),
+                                "packageName"
+                            );
                         } catch (Throwable ignore) {
                         }
 
                         // 添加豁免包名，只有豁免的包才会下发 super lyric 服务
                         String exemptPackage = getStringExtra(intent, SUPER_LYRIC_EXEMPT_PACKAGE, SUPER_LYRIC_EXEMPT_PACKAGE_OLD);
-                        if (exemptPackage != null) {
+                        if (exemptPackage != null && !exemptPackage.isEmpty()) {
                             mSuperLyricService.addExemptPackage(exemptPackage);
-                            logD(TAG, "Add exempt package: " + exemptPackage + ", caller package: " + callerPackage);
+                            logD(TAG, "Add exempt package: " + exemptPackage + ", caller: " + caller);
                             return;
                         }
 
@@ -268,7 +248,7 @@ public class SuperLyricProxy extends HCBase {
                         // if (unController != null && !unController.isEmpty()) {
                         //     if (mSuperLyricControllerService != null) {
                         //         mSuperLyricControllerService.removeSuperLyricStubIfNeed(unController);
-                        //         logD(TAG, "Un controller: " + unController + ", caller package: " + callerPackage);
+                        //         logD(TAG, "Un controller: " + unController + ", caller: " + callerPackage);
                         //     }
                         //     return;
                         // }
@@ -277,7 +257,7 @@ public class SuperLyricProxy extends HCBase {
                         String selfControl = getStringExtra(intent, SUPER_LYRIC_SELF_CONTROL, SUPER_LYRIC_SELF_CONTROL_OLD);
                         if (selfControl != null && !selfControl.isEmpty()) {
                             mSuperLyricService.addSelfControlPackage(selfControl);
-                            logD(TAG, "Add self control package: " + selfControl + ", caller package: " + callerPackage);
+                            logD(TAG, "Add self control package: " + selfControl + ", caller: " + caller);
                             return;
                         }
 
@@ -285,28 +265,28 @@ public class SuperLyricProxy extends HCBase {
                         String unSelfControl = getStringExtra(intent, SUPER_LYRIC_UN_SELF_CONTROL, SUPER_LYRIC_UN_SELF_CONTROL_OLD);
                         if (unSelfControl != null && !unSelfControl.isEmpty()) {
                             mSuperLyricService.removeSelfControlPackage(unSelfControl);
-                            logD(TAG, "Remove self control package: " + unSelfControl + ", caller package: " + callerPackage);
+                            logD(TAG, "Remove self control package: " + unSelfControl + ", caller: " + caller);
                             return;
                         }
 
                         Bundle bundle = intent.getExtras();
-                        if (bundle == null) return;
+                        if (bundle != null) {
+                            // 添加歌词接收器
+                            IBinder superLyricBinder = getBinder(bundle, SUPER_LYRIC_REGISTER, SUPER_LYRIC_REGISTER_OLD);
+                            if (superLyricBinder != null) {
+                                ISuperLyric iSuperLyric = ISuperLyric.Stub.asInterface(superLyricBinder);
+                                mSuperLyricService.registerSuperLyricBinder(superLyricBinder, iSuperLyric);
+                                logD(TAG, "Register binder: " + iSuperLyric + ", caller: " + caller);
+                                return;
+                            }
 
-                        // 添加歌词接收器
-                        IBinder superLyricBinder = getBinder(bundle, SUPER_LYRIC_REGISTER, SUPER_LYRIC_REGISTER_OLD);
-                        if (superLyricBinder != null) {
-                            ISuperLyric iSuperLyric = ISuperLyric.Stub.asInterface(superLyricBinder);
-                            mSuperLyricService.registerSuperLyricBinder(superLyricBinder, iSuperLyric);
-                            logD(TAG, "Register binder: " + superLyricBinder + ", super lyric: " + iSuperLyric + ", caller package: " + callerPackage);
-                            return;
-                        }
-
-                        // 移除歌词接收器
-                        superLyricBinder = getBinder(bundle, SUPER_LYRIC_UNREGISTER, SUPER_LYRIC_UNREGISTER_OLD);
-                        if (superLyricBinder != null) {
-                            ISuperLyric iSuperLyric = ISuperLyric.Stub.asInterface(superLyricBinder);
-                            mSuperLyricService.unregisterSuperLyricBinder(superLyricBinder);
-                            logD(TAG, "Unregister binder: " + superLyricBinder + ", super lyric: " + iSuperLyric + ", caller package: " + callerPackage);
+                            // 移除歌词接收器
+                            superLyricBinder = getBinder(bundle, SUPER_LYRIC_UNREGISTER, SUPER_LYRIC_UNREGISTER_OLD);
+                            if (superLyricBinder != null) {
+                                ISuperLyric iSuperLyric = ISuperLyric.Stub.asInterface(superLyricBinder);
+                                mSuperLyricService.unregisterSuperLyricBinder(superLyricBinder);
+                                logD(TAG, "Unregister binder: " + iSuperLyric + ", caller: " + caller);
+                            }
                         }
                     } catch (Throwable e) {
                         logE(TAG, e);
@@ -328,7 +308,7 @@ public class SuperLyricProxy extends HCBase {
                     Object app = getArg(0);
                     String packageName = (String) getField(getField(app, "info"), "packageName");
                     String processName = (String) getField(app, "processName");
-                    if (Objects.equals(packageName, processName)) { // 主进程
+                    if (TextUtils.equals(packageName, processName)) { // 主进程
                         boolean isKilled = existsMethod(app.getClass(), "isKilled") ?
                             (boolean) Optional.ofNullable(callMethod(app, "isKilled")).orElse(true) :
                             (
@@ -337,13 +317,10 @@ public class SuperLyricProxy extends HCBase {
                                     true
                             );
                         if (isKilled) {
-                            if (
-                                // CollectMap.getAllPackageSet().contains(packageName) ||
-                                SuperLyricService.mExemptSet.contains(packageName) ||
-                                    SuperLyricControllerService.mFinalExemptSet.contains(packageName)
-                            ) {
+                            if (SuperLyricService.mExemptSet.contains(packageName) ||
+                                SuperLyricControllerService.mFinalExemptSet.contains(packageName)) {
                                 mSuperLyricService.onPackageDied(packageName);
-                                logD(TAG, "Package is died: " + packageName);
+                                logD(TAG, "App: " + packageName + " is died!!");
                             }
                         }
                     }

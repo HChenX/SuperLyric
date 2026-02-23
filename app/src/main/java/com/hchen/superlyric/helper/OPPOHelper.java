@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
 
- * Copyright (C) 2023-2025 HChenX
+ * Copyright (C) 2025-2026 HChenX
  */
 package com.hchen.superlyric.helper;
 
@@ -25,7 +25,7 @@ import static com.hchen.hooktool.core.CoreTool.setStaticField;
  *
  * @author 焕晨HChen
  */
-public class OPPOHelper {
+public final class OPPOHelper {
     public static void mockDevice() {
         setStaticField("android.os.Build", "BRAND", "oppo");
         setStaticField("android.os.Build", "MANUFACTURER", "Oppo");

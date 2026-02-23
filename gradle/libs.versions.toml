@@ -1,6 +1,6 @@
 [versions]
 # Basic
-agp = "8.13.2"
+agp = "9.0.1"
 annotation = "1.9.1"
 # Hook API & Tool
 api = "82"
@@ -18,13 +18,16 @@ javapoet = "1.13.0"
 
 [libraries]
 annotation = { module = "androidx.annotation:annotation", version.ref = "annotation" }
+
 api = { module = "de.robv.android.xposed:api", version.ref = "api" }
 hooktool = { group = "com.github.HChenX", name = "HookTool", version.ref = "hooktool" }
+
 dexkit = { module = "org.luckypray:dexkit", version.ref = "dexkit" }
 dexkitcache = { module = "com.github.HChenX:DexkitCache", version.ref = "dexkitcache" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 mmkv = { module = "com.tencent:mmkv", version.ref = "mmkv" }
 superlyricapi = { module = "com.github.HChenX:SuperLyricApi", version.ref = "superlyricapi" }
+
 auto-service = { module = "com.google.auto.service:auto-service", version.ref = "autoService" }
 javapoet = { module = "com.squareup:javapoet", version.ref = "javapoet" }
 

@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
 
- * Copyright (C) 2023-2025 HChenX
+ * Copyright (C) 2025-2026 HChenX
  */
 package com.hchen.superlyric.binder;
 
@@ -28,8 +28,10 @@ import com.hchen.superlyricapi.ISuperLyric;
 import com.hchen.superlyricapi.ISuperLyricDistributor;
 import com.hchen.superlyricapi.SuperLyricData;
 
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.function.Predicate;
 
 /**
  * Super Lyric 服务
@@ -38,17 +40,20 @@ import java.util.concurrent.CopyOnWriteArraySet;
  *
  * @author 焕晨HChen
  */
-public class SuperLyricService extends ISuperLyricDistributor.Stub {
+public final class SuperLyricService extends ISuperLyricDistributor.Stub {
     private static final String TAG = "SuperLyricService";
-    private final static ConcurrentHashMap<IBinder, ISuperLyric> mRegisteredBinderMap = new ConcurrentHashMap<>();
+    @NonNull
+    private final ConcurrentHashMap<IBinder, ISuperLyric> mRegisteredBinderMap = new ConcurrentHashMap<>();
+    @NonNull
     public static final CopyOnWriteArraySet<String> mExemptSet = new CopyOnWriteArraySet<>();
+    @NonNull
     public static final CopyOnWriteArraySet<String> mSelfControlSet = new CopyOnWriteArraySet<>();
 
     public void registerSuperLyricBinder(@NonNull IBinder iBinder, @NonNull ISuperLyric iSuperLyric) {
         try {
             mRegisteredBinderMap.putIfAbsent(iBinder, iSuperLyric);
         } catch (Throwable e) {
-            AndroidLog.logE(TAG, "[registerSuperLyricBinder]: Failed to add binder: " + iSuperLyric, e);
+            AndroidLog.logE(TAG, "[registerSuperLyricBinder()] Failed to add binder: " + iSuperLyric, e);
         }
     }
 
@@ -58,66 +63,67 @@ public class SuperLyricService extends ISuperLyricDistributor.Stub {
                 mRegisteredBinderMap.remove(iBinder);
             }
         } catch (Throwable e) {
-            AndroidLog.logE(TAG, "[unregisterSuperLyricBinder]: Failed to remove binder: " + iBinder, e);
+            AndroidLog.logE(TAG, "[unregisterSuperLyricBinder()] Failed to remove binder: " + iBinder, e);
         }
     }
 
-    public void addSelfControlPackage(String packageName) {
-        if (packageName == null || packageName.isEmpty()) return;
+    public void addSelfControlPackage(@NonNull String packageName) {
         mSelfControlSet.add(packageName);
     }
 
-    public void removeSelfControlPackage(String packageName) {
-        if (packageName == null || packageName.isEmpty()) return;
+    public void removeSelfControlPackage(@NonNull String packageName) {
         mSelfControlSet.remove(packageName);
     }
 
     @Override
     public void onSuperLyric(SuperLyricData data) throws RemoteException {
-        mRegisteredBinderMap.entrySet().removeIf(entry -> {
-            ISuperLyric iSuperLyric = entry.getValue();
-            try {
-                iSuperLyric.onSuperLyric(data);
-                return false;
-            } catch (Throwable e) {
-                AndroidLog.logE(TAG, "[onSuperLyric]: Binder died!! remove binder: " + iSuperLyric, e);
-                return true;
+        mRegisteredBinderMap.entrySet().removeIf(new Predicate<Map.Entry<IBinder, ISuperLyric>>() {
+            @Override
+            public boolean test(Map.Entry<IBinder, ISuperLyric> entry) {
+                ISuperLyric iSuperLyric = entry.getValue();
+                try {
+                    iSuperLyric.onSuperLyric(data);
+                    return false;
+                } catch (Throwable e) {
+                    AndroidLog.logE(TAG, "[onSuperLyric()]: Binder is died!! remove binder: " + iSuperLyric, e);
+                    return true;
+                }
             }
         });
     }
 
     @Override
     public void onStop(SuperLyricData data) throws RemoteException {
-        mRegisteredBinderMap.entrySet().removeIf(entry -> {
-            ISuperLyric iSuperLyric = entry.getValue();
-            try {
-                iSuperLyric.onStop(data);
-                return false;
-            } catch (Throwable e) {
-                AndroidLog.logE(TAG, "[onStop]: Binder died!! remove binder: " + iSuperLyric, e);
-                return true;
+        mRegisteredBinderMap.entrySet().removeIf(new Predicate<Map.Entry<IBinder, ISuperLyric>>() {
+            @Override
+            public boolean test(Map.Entry<IBinder, ISuperLyric> entry) {
+                ISuperLyric iSuperLyric = entry.getValue();
+                try {
+                    iSuperLyric.onStop(data);
+                    return false;
+                } catch (Throwable e) {
+                    AndroidLog.logE(TAG, "[onStop()]: Binder is died!! remove binder: " + iSuperLyric, e);
+                    return true;
+                }
             }
         });
     }
 
-    public void addExemptPackage(String packageName) {
+    public void addExemptPackage(@NonNull String packageName) {
         try {
-            if (packageName == null || packageName.isEmpty()) return;
             mExemptSet.add(packageName);
         } catch (Throwable e) {
-            AndroidLog.logE(TAG, "[onExempt]: Error to add exempt package:", e);
+            AndroidLog.logE(TAG, "[addExemptPackage()]: Failed to add exempt package: " + packageName, e);
         }
     }
 
-    public void onPackageDied(String packageName) {
-        if (packageName == null || packageName.isEmpty()) return;
-
+    public void onPackageDied(@NonNull String packageName) {
         try {
             mExemptSet.remove(packageName); // 死后自动移除豁免
             mSelfControlSet.remove(packageName); // 移除自我控制
             onStop(new SuperLyricData().setPackageName(packageName));
         } catch (Throwable e) {
-            AndroidLog.logE(TAG, "Package is died: " + packageName, e);
+            AndroidLog.logE(TAG, "[onPackageDied()] App is died: " + packageName, e);
         }
     }
 }

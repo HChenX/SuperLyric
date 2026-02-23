@@ -3,33 +3,16 @@ plugins {
 }
 
 android {
-    def apk = "SuperLyric"
-    def pkg = "com.hchen.superlyric"
-    def sdk = 36
-
     Properties properties = new Properties()
     InputStream inputStream = project.rootProject.file('local.properties').newDataInputStream()
     properties.load(inputStream)
-    def keyKeyStorePath = properties.getProperty("keyStoreFile") ?: System.getenv("KEYSTORE_PATH")
-    def keyKeyStoreFile = null
-    def keyKeyStorePassword = null
-    def keyKeyAlias = null
-    def keyKeyAliasPassword = null
-    if (keyKeyStorePath != null) {
-        keyKeyStoreFile = file(keyKeyStorePath)
-        keyKeyStorePassword = properties.getProperty('keyStorePassword') ?: System.getenv("KEYSTORE_PASS")
-        keyKeyAlias = properties.getProperty('keyAlias') ?: System.getenv("KEY_ALIAS")
-        keyKeyAliasPassword = properties.getProperty('keyAliasPassword') ?: System.getenv("KEY_PASSWORD")
-    }
 
     signingConfigs {
         release {
-            if (keyKeyStorePath != null) {
-                storeFile keyKeyStoreFile
-                storePassword keyKeyStorePassword
-                keyAlias keyKeyAlias
-                keyPassword keyKeyAliasPassword
-            }
+            storeFile file(properties.getProperty('keyStoreFile'))
+            storePassword properties.getProperty('keyStorePassword')
+            keyAlias properties.getProperty('keyAlias')
+            keyPassword properties.getProperty('keyAliasPassword')
             enableV1Signing true
             enableV2Signing true
             enableV3Signing true
@@ -37,12 +20,10 @@ android {
         }
 
         debug {
-            if (keyKeyStorePath != null) {
-                storeFile keyKeyStoreFile
-                storePassword keyKeyStorePassword
-                keyAlias keyKeyAlias
-                keyPassword keyKeyAliasPassword
-            }
+            storeFile file(properties.getProperty('keyStoreFile'))
+            storePassword properties.getProperty('keyStorePassword')
+            keyAlias properties.getProperty('keyAlias')
+            keyPassword properties.getProperty('keyAliasPassword')
             enableV1Signing true
             enableV2Signing true
             enableV3Signing true
@@ -50,13 +31,15 @@ android {
         }
     }
 
-    namespace pkg
-    compileSdk sdk
+    namespace "com.hchen.superlyric"
+    compileSdk {
+        version = release(36)
+    }
 
     defaultConfig {
-        applicationId pkg
+        applicationId "com.hchen.superlyric"
         minSdk 30
-        targetSdk sdk
+        targetSdk 36
         // noinspection HighAppVersionCode
         versionCode 2025110601
         versionName "2.8"
@@ -70,6 +53,7 @@ android {
     buildTypes {
         release {
             minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.release
         }
@@ -101,13 +85,17 @@ android {
         }
     }
 
-    aaptOptions.additionalParameters '--allow-reserved-package-id', '--package-id', '0x53'
+    buildFeatures {
+        buildConfig true
+    }
+}
 
-    android {
-        applicationVariants.configureEach { variant ->
-            variant.outputs.configureEach { output ->
-                outputFileName = "${apk}-v${variant.versionName}-${variant.versionCode}-${variant.buildType.name}.apk"
-            }
+androidComponents {
+    onVariants(selector()) { variant ->
+        variant.outputs.forEach { output ->
+            def vName = output.versionName.get()
+            def vCode = output.versionCode.get()
+            output.outputFileName.set("SuperLyric-v${vName}(${vCode}).apk")
         }
     }
 }

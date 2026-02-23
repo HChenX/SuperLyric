@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
 
- * Copyright (C) 2023-2025 HChenX
+ * Copyright (C) 2025-2026 HChenX
  */
 package com.hchen.superlyric.state;
 
@@ -37,6 +37,7 @@ import com.hchen.superlyricapi.SuperLyricData;
 
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 
 /**
  * 播放状态监听
@@ -44,33 +45,55 @@ import java.util.concurrent.ConcurrentHashMap;
  * @author 焕晨HChen
  */
 public class PlayStateListener {
+    @NonNull
     private final Context mContext;
-    private static ISuperLyricDistributor mISuperLyricDistributor;
+    @NonNull
+    private final ISuperLyricDistributor mISuperLyricDistributor;
+    @NonNull
     private final MediaSessionManager mMediaSessionManager;
-    private static final ConcurrentHashMap<MediaController, MediaControllerCallback> mCallbackHashMap = new ConcurrentHashMap<>();
-    private final MediaSessionManager.OnActiveSessionsChangedListener mListener = controllers -> {
-        if (controllers == null) return;
+    @NonNull
+    private final ConcurrentHashMap<MediaController, MediaControllerCallback> mCallbackHashMap = new ConcurrentHashMap<>();
+    @NonNull
+    private final MediaSessionManager.OnActiveSessionsChangedListener mListener = new MediaSessionManager.OnActiveSessionsChangedListener() {
+        @Override
+        public void onActiveSessionsChanged(@Nullable List<MediaController> controllers) {
+            if (controllers == null) {
+                return;
+            }
 
-        mCallbackHashMap.forEach(MediaController::unregisterCallback);
-        mCallbackHashMap.clear();
-        controllers.forEach(this::registerMediaControllerCallback);
+            mCallbackHashMap.forEach(new BiConsumer<MediaController, MediaControllerCallback>() {
+                @Override
+                public void accept(MediaController controller, MediaControllerCallback callback) {
+                    controller.unregisterCallback(callback);
+                }
+            });
+            mCallbackHashMap.clear();
+            for (MediaController controller : controllers) {
+                registerMediaControllerCallback(controller);
+            }
+        }
     };
 
-    public PlayStateListener(Context context, ISuperLyricDistributor iSuperLyricDistributor) {
+    public PlayStateListener(@NonNull Context context, @NonNull ISuperLyricDistributor iSuperLyricDistributor) {
         mContext = context;
         mISuperLyricDistributor = iSuperLyricDistributor;
         mMediaSessionManager = (MediaSessionManager) mContext.getSystemService(Context.MEDIA_SESSION_SERVICE);
     }
 
-    public void start() {
-        List<MediaController> list = mMediaSessionManager.getActiveSessions(new ComponentName(mContext, NotificationListenerService.class));
-        list.forEach(this::registerMediaControllerCallback);
-        mMediaSessionManager.addOnActiveSessionsChangedListener(mListener, new ComponentName(mContext, NotificationListenerService.class));
+    public void register() {
+        ComponentName componentName = new ComponentName(mContext, NotificationListenerService.class);
+        for (MediaController controller : mMediaSessionManager.getActiveSessions(componentName)) {
+            registerMediaControllerCallback(controller);
+        }
+
+        mMediaSessionManager.addOnActiveSessionsChangedListener(mListener, componentName);
     }
 
     private void registerMediaControllerCallback(@NonNull MediaController controller) {
-        if (SuperLyricService.mSelfControlSet.contains(controller.getPackageName()))
-            return; // 不监听自我控制的应用
+        // 不监听自我控制的应用
+        if (SuperLyricService.mSelfControlSet.contains(controller.getPackageName())) {
+            return;
+        }
 
         MediaControllerCallback callback = mCallbackHashMap.get(controller);
         if (callback != null) {
@@ -78,15 +101,16 @@ public class PlayStateListener {
             mCallbackHashMap.remove(controller);
         }
 
-        MediaControllerCallback controllerCallback = new MediaControllerCallback(controller);
-        controller.registerCallback(controllerCallback);
-        mCallbackHashMap.put(controller, controllerCallback);
+        callback = new MediaControllerCallback(controller);
+        controller.registerCallback(callback);
+        mCallbackHashMap.put(controller, callback);
     }
 
-    private static class MediaControllerCallback extends MediaController.Callback {
+    private class MediaControllerCallback extends MediaController.Callback {
+        @NonNull
         private final MediaController mController;
 
-        private MediaControllerCallback(MediaController controller) {
+        private MediaControllerCallback(@NonNull MediaController controller) {
             mController = controller;
         }
 
@@ -95,21 +119,20 @@ public class PlayStateListener {
         public void onPlaybackStateChanged(@Nullable PlaybackState state) {
             super.onPlaybackStateChanged(state);
             if (state == null) return;
-            if (unregisterCallbackIfNeed(mController, this))
+            if (unregisterCallbackIfNeed()) {
                 return;
+            }
 
             switch (state.getState()) {
                 case PlaybackState.STATE_BUFFERING, PlaybackState.STATE_PAUSED,
                      PlaybackState.STATE_STOPPED -> {
-                    if (mISuperLyricDistributor != null) {
-                        try {
-                            mISuperLyricDistributor.onStop(
-                                new SuperLyricData()
-                                    .setPackageName(mController.getPackageName())
-                                    .setPlaybackState(state)
-                            );
-                        } catch (RemoteException ignore) {
-                        }
+                    try {
+                        mISuperLyricDistributor.onStop(
+                            new SuperLyricData()
+                                .setPackageName(mController.getPackageName())
+                                .setPlaybackState(state)
+                        );
+                    } catch (RemoteException ignore) {
                     }
                 }
                 default -> {
@@ -121,30 +144,27 @@ public class PlayStateListener {
         public void onMetadataChanged(@Nullable MediaMetadata metadata) {
             super.onMetadataChanged(metadata);
             if (metadata == null) return;
-            if (unregisterCallbackIfNeed(mController, this))
+            if (unregisterCallbackIfNeed()) {
                 return;
+            }
 
-            if (mISuperLyricDistributor != null) {
-                try {
-                    mISuperLyricDistributor.onSuperLyric(
-                        new SuperLyricData()
-                            .setPackageName(mController.getPackageName())
-                            .setMediaMetadata(metadata)
-                    );
-                } catch (RemoteException ignore) {
-                }
+            try {
+                mISuperLyricDistributor.onSuperLyric(
+                    new SuperLyricData()
+                        .setPackageName(mController.getPackageName())
+                        .setMediaMetadata(metadata)
+                );
+            } catch (RemoteException ignore) {
             }
         }
-    }
 
-    private static boolean unregisterCallbackIfNeed(MediaController controller, MediaController.Callback callback) {
-        if (SuperLyricService.mSelfControlSet.contains(controller.getPackageName())) {
-            if (callback != null) {
-                controller.unregisterCallback(callback);
-                mCallbackHashMap.remove(controller);
+        private boolean unregisterCallbackIfNeed() {
+            if (SuperLyricService.mSelfControlSet.contains(mController.getPackageName())) {
+                mController.unregisterCallback(this);
+                mCallbackHashMap.remove(mController);
                 return true;
             }
+            return false;
         }
-        return false;
     }
 }

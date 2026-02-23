@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
 
- * Copyright (C) 2023-2025 HChenX
+ * Copyright (C) 2025-2026 HChenX
  */
 package com.hchen.superlyric.helper;
 
@@ -39,13 +39,14 @@ import org.luckypray.dexkit.result.MethodDataList;
 
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.function.Predicate;
 
 /**
  * 阻止应用获取息屏广播
  *
  * @author 焕晨HChen
  */
-public class ScreenHelper {
+public final class ScreenHelper {
     private static final String TAG = "ScreenHelper";
 
     public static void screenOffNotStopLyric(@NonNull String... excludes) {
@@ -68,7 +69,12 @@ public class ScreenHelper {
             Arrays.stream(methods).forEach(method -> {
                 String className = method.getDeclaringClass().getSimpleName();
                 if (!className.contains("Fragment") && !className.contains("Activity")) {
-                    if (Arrays.stream(excludes).noneMatch(className::contains)) {
+                    if (Arrays.stream(excludes).noneMatch(new Predicate<String>() {
+                        @Override
+                        public boolean test(String exclude) {
+                            return className.contains(exclude);
+                        }
+                    })) {
                         logI(TAG, "[screenOffNotStopLyric]: hook method: " + method);
 
                         hook(method,

@@ -14,7 +14,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
 
- * Copyright (C) 2023-2025 HChenX
+ * Copyright (C) 2025-2026 HChenX
  */
 package com.hchen.superlyric.helper;
 
@@ -29,31 +29,30 @@ import java.util.TimerTask;
  *
  * @author 焕晨HChen
  */
-public class TimeoutHelper {
-    private static Timer timer = new Timer();
+public final class TimeoutHelper {
+    private final static Timer timer = new Timer();
     private static boolean isRunning = false;
+    private final static TimerTask TIMER_TASK = new TimerTask() {
+        @Override
+        public void run() {
+            if (audioManager != null && !audioManager.isMusicActive()) {
+                sendStop();
+                stop();
+            }
+        }
+    };
 
     public static void start() {
-        if (isRunning) return;
-
-        timer = new Timer();
-        timer.schedule(new TimerTask() {
-            @Override
-            public void run() {
-                if (audioManager != null && !audioManager.isMusicActive()) {
-                    sendStop();
-                    stop();
-                }
-            }
-        }, 0, 1000);
-        isRunning = true;
+        if (!isRunning) {
+            timer.schedule(TIMER_TASK, 0, 1000);
+            isRunning = true;
+        }
     }
 
     private static void stop() {
-        if (timer == null || !isRunning) return;
-
-        timer.cancel();
-        timer = null;
-        isRunning = false;
+        if (isRunning) {
+            timer.cancel();
+            isRunning = false;
+        }
     }
 }
