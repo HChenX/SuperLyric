@@ -26,6 +26,7 @@ import com.hchen.collect.Collect;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.helper.ScreenHelper;
 import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyricapi.AcquisitionMode;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -91,7 +92,7 @@ public final class LXMusic extends LyricRelease {
                             String lyric = (String) getArg(0);
                             if (lyric.isEmpty()) return;
 
-                            sendLyric(lyric);
+                            sendLyric(lyric, 0, AcquisitionMode.HOOK_LYRIC);
                         }
                     });
                 }

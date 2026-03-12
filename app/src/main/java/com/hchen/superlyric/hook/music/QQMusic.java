@@ -30,6 +30,7 @@ import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyricapi.AcquisitionMode;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
@@ -173,7 +174,7 @@ public final class QQMusic extends LyricRelease {
                     Object songInfo = getThisField(field1);
                     textView.setVisibility(GONE);
                     if (songInfo != null) {
-                        sendLyric((String) textView.getText());
+                        sendLyric((String) textView.getText(), 0, AcquisitionMode.HOOK_LYRIC);
                     }
                 }
             }
@@ -311,9 +312,9 @@ public final class QQMusic extends LyricRelease {
         // logI(TAG, "lyric data: " + data);
         if (lyric == null || lyric.isEmpty()) return;
         if (data.duration == -1)
-            sendLyric(lyric);
+            sendLyric(lyric, 0, AcquisitionMode.HOOK_LYRIC);
         else
-            sendLyric(lyric, (int) data.duration);
+            sendLyric(lyric, (int) data.duration, AcquisitionMode.HOOK_LYRIC);
     }
 
     private static class LyricData {

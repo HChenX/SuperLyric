@@ -25,6 +25,7 @@ import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyricapi.AcquisitionMode;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
@@ -77,7 +78,7 @@ public final class Symfonium extends LyricRelease {
                             // 裁剪掉翻译
                             lyric = lyric.substring(0, lyric.lastIndexOf("\n"));
                         }
-                        sendLyric(lyric);
+                        sendLyric(lyric, 0, AcquisitionMode.HOOK_LYRIC);
                         lastLyric = lyric;
                     }
                 }

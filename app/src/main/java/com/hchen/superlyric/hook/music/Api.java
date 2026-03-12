@@ -22,6 +22,7 @@ import android.os.Parcel;
 
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyricapi.AcquisitionMode;
 import com.hchen.superlyricapi.SuperLyricData;
 
 /**
@@ -47,7 +48,10 @@ public final class Api extends LyricRelease {
                 public void after() {
                     Parcel parcel = (Parcel) callMethod(getArg(0), "marshall");
                     if (parcel != null) {
-                        sendSuperLyricData(SuperLyricData.unmarshall(parcel));
+                        sendSuperLyricData(
+                            SuperLyricData.unmarshall(parcel)
+                                .setAcquisitionMode(AcquisitionMode.API_LYRIC)
+                        );
                     }
                 }
             }
@@ -61,7 +65,10 @@ public final class Api extends LyricRelease {
                 public void after() {
                     Parcel parcel = (Parcel) callMethod(getArg(0), "marshall");
                     if (parcel != null) {
-                        sendStop(SuperLyricData.unmarshall(parcel));
+                        sendStop(
+                            SuperLyricData.unmarshall(parcel)
+                                .setAcquisitionMode(AcquisitionMode.API_LYRIC)
+                        );
                     }
                 }
             }

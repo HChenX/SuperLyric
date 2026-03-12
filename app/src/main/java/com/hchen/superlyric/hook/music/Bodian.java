@@ -28,6 +28,7 @@ import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyricapi.AcquisitionMode;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
@@ -75,7 +76,7 @@ public final class Bodian extends LyricRelease {
                 @Override
                 public void before() {
                     String lyric = (String) getArg(0);
-                    sendLyric(lyric);
+                    sendLyric(lyric, 0, AcquisitionMode.HOOK_LYRIC);
                 }
             }
         );

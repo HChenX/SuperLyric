@@ -24,6 +24,7 @@ import com.hchen.hooktool.helper.Any;
 import com.hchen.hooktool.helper.RangeHelper;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyricapi.AcquisitionMode;
 
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -58,7 +59,7 @@ public final class Poweramp extends LyricRelease {
                         if (lyric == null || lyric.isEmpty()) return;
                         if (!Objects.equals(lyric, "null")) {
                             if (c != 0) {
-                                sendLyric(lyric);
+                                sendLyric(lyric, 0, AcquisitionMode.HOOK_LYRIC);
                             }
                         } else {
                             sendStop();

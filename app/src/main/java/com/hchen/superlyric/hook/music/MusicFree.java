@@ -22,6 +22,7 @@ import com.hchen.collect.Collect;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.helper.TimeoutHelper;
 import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyricapi.AcquisitionMode;
 
 /**
  * MusicFree
@@ -53,7 +54,7 @@ public final class MusicFree extends LyricRelease {
                     if (lyric.isEmpty()) return;
 
                     TimeoutHelper.start();
-                    sendLyric(lyric);
+                    sendLyric(lyric, 0, AcquisitionMode.HOOK_LYRIC);
                 }
             }
         );

@@ -29,6 +29,7 @@ import com.hchen.hooktool.helper.RangeHelper;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.helper.TimeoutHelper;
 import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyricapi.AcquisitionMode;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
@@ -60,7 +61,7 @@ public final class KuWo extends LyricRelease {
                         if (lyric == null || lyric.isEmpty()) return;
 
                         TimeoutHelper.start();
-                        sendLyric(lyric);
+                        sendLyric(lyric, 0, AcquisitionMode.BLUETOOTH_LYRIC);
                     }
                 }
             );
@@ -106,7 +107,7 @@ public final class KuWo extends LyricRelease {
                         if (lyric == null || lyric.isEmpty()) return;
 
                         TimeoutHelper.start();
-                        sendLyric(lyric);
+                        sendLyric(lyric, 0, AcquisitionMode.BLUETOOTH_LYRIC);
                     }
                 });
         }

@@ -34,6 +34,8 @@ import android.text.TextUtils;
 
 import com.hchen.hooktool.HCData;
 import com.hchen.hooktool.hook.IHook;
+import com.hchen.superlyricapi.AcquisitionMode;
+import com.hchen.superlyricapi.SuperLyricData;
 
 /**
  * 模拟魅族设备
@@ -143,9 +145,21 @@ public final class MeizuHelper {
                         else if (smallIcon != null)
                             base64Icon = drawableToBase64(smallIcon.loadDrawable(context));
 
-                        if (base64Icon != null)
-                            sendLyric(notification.tickerText.toString(), base64Icon);
-                        else sendLyric(notification.tickerText.toString());
+                        if (base64Icon != null) {
+                            sendLyric(
+                                notification.tickerText.toString(),
+                                0,
+                                new SuperLyricData()
+                                    .setBase64Icon(base64Icon)
+                                    .setAcquisitionMode(AcquisitionMode.HOOK_LYRIC)
+                            );
+                        } else {
+                            sendLyric(
+                                notification.tickerText.toString(),
+                                0,
+                                AcquisitionMode.HOOK_LYRIC
+                            );
+                        }
                     } else {
                         sendStop();
                     }

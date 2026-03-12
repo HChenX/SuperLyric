@@ -26,7 +26,9 @@ import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.helper.FieldHelper;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyricapi.AcquisitionMode;
 import com.hchen.superlyricapi.SuperLyricData;
+import com.hchen.superlyricapi.SuperLyricWord;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
@@ -36,6 +38,7 @@ import org.luckypray.dexkit.result.MethodData;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 汽水音乐
@@ -131,28 +134,103 @@ public final class Qishui extends LyricRelease {
                         List<?> second = (List<?>) callMethod(pair, "getSecond");
                         Object sentence = second.get(index);
 
-                        CharSequence lyric = (CharSequence) callMethod(sentence, "getContent");
-                        long startTime = (long) callMethod(sentence, "getStartTimeMs");
-                        long endTime = (long) callMethod(sentence, "getEndTimeMs");
+                        LyricData lyricData = create(sentence);
+                        LyricData translationLyricData = null;
 
-                        SuperLyricData.EnhancedLRCData[] data = null;
-                        List<?> wordList = (List<?>) callMethod(sentence, "getWordList");
-                        if (wordList != null) {
-                            data = new SuperLyricData.EnhancedLRCData[wordList.size()];
-                            for (int i = 0; i < wordList.size(); i++) {
-                                CharSequence content = (CharSequence) getField(wordList.get(i), "content");
-                                long startTimeMs = (long) getField(wordList.get(i), "startTimeMs");
-                                long endTimeMs = (long) getField(wordList.get(i), "endTimeMs");
-
-                                data[i] = new SuperLyricData.EnhancedLRCData((String) content, (int) startTimeMs, (int) endTimeMs);
+                        Map<?, ?> translationMap = (Map<?, ?>) callMethod(sentence, "getTranslationMap");
+                        if (translationMap != null) {
+                            Object CHINESE = getStaticField("com.luna.common.arch.db.entity.lyrics.NetLyricsLanguage", "CHINESE");
+                            if (translationMap.containsKey(CHINESE)) {
+                                Object translationSentence = translationMap.get(CHINESE);
+                                if (translationSentence != null) {
+                                    translationLyricData = create(translationSentence);
+                                }
                             }
                         }
 
-                        sendLyric((String) lyric, (int) (endTime - startTime), data);
+                        SuperLyricData superLyricData = new SuperLyricData().setLyricWordData(lyricData.words);
+                        if (translationLyricData != null) {
+                            superLyricData.setTranslation((String) translationLyricData.lyric)
+                                .setTranslationDelay((int) (translationLyricData.endTime - translationLyricData.startTime))
+                                .setTranslationWordData(translationLyricData.words);
+                        }
+
+                        sendLyric(
+                            (String) lyricData.lyric,
+                            (int) (lyricData.endTime - lyricData.startTime),
+                            superLyricData.setAcquisitionMode(AcquisitionMode.BLUETOOTH_LYRIC)
+                        );
                         // AndroidLog.logI(TAG, sentence.toString());
                     }
                 }
             }
         });
     }
+
+    private LyricData create(Object sentence) {
+        CharSequence lyric = (CharSequence) callMethod(sentence, "getContent");
+        long startTime = (long) callMethod(sentence, "getStartTimeMs");
+        long endTime = (long) callMethod(sentence, "getEndTimeMs");
+
+        SuperLyricWord[] words = null;
+        List<?> wordList = (List<?>) callMethod(sentence, "getWordList");
+        if (wordList != null) {
+            words = new SuperLyricWord[wordList.size()];
+            for (int i = 0; i < wordList.size(); i++) {
+                CharSequence content = (CharSequence) getField(wordList.get(i), "content");
+                long startTimeMs = (long) getField(wordList.get(i), "startTimeMs");
+                long endTimeMs = (long) getField(wordList.get(i), "endTimeMs");
+
+                words[i] = new SuperLyricWord((String) content, (int) startTimeMs, (int) endTimeMs);
+            }
+        }
+
+        return new LyricData(lyric, startTime, endTime, words);
+    }
+
+    private static class LyricData {
+        CharSequence lyric;
+        long startTime;
+        long endTime;
+        SuperLyricWord[] words;
+
+        public LyricData(CharSequence lyric, long startTime, long endTime, SuperLyricWord[] words) {
+            this.lyric = lyric;
+            this.startTime = startTime;
+            this.endTime = endTime;
+            this.words = words;
+        }
+    }
 }
+
+// Sentence(
+// type=ORIGIN,
+// content=輝き放っている,
+// startTimeMs=51130,
+// endTimeMs=54920,
+// wordList=[
+// Word(content=輝, startTimeMs=51130, endTimeMs=52120),
+// Word(content=き, startTimeMs=52120, endTimeMs=52520),
+// Word(content=放, startTimeMs=52520, endTimeMs=52730),
+// Word(content=っ, startTimeMs=52730, endTimeMs=52990),
+// Word(content=て, startTimeMs=52990, endTimeMs=53310),
+// Word(content=い, startTimeMs=53310, endTimeMs=53590),
+// Word(content=る, startTimeMs=53590, endTimeMs=54920)
+// ],
+// translationMap={
+// CHINESE=Sentence(
+// type=ORIGIN,
+// content=令人骄傲的光芒,
+// startTimeMs=51130,
+// endTimeMs=55670,
+// wordList=[
+// Word(content=令, startTimeMs=51130, endTimeMs=51671),
+// Word(content=人, startTimeMs=51671, endTimeMs=52212),
+// Word(content=骄, startTimeMs=52212, endTimeMs=52754),
+// Word(content=傲, startTimeMs=52754, endTimeMs=53295),
+// Word(content=的, startTimeMs=53295, endTimeMs=53837),
+// Word(content=光, startTimeMs=53837, endTimeMs=54378),
+// Word(content=芒, startTimeMs=54378, endTimeMs=54920)],
+// translationMap=null)
+// }
+// )

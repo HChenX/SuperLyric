@@ -20,6 +20,8 @@ package com.hchen.superlyric.hook.music;
 
 import android.content.Context;
 import android.content.Intent;
+import android.text.TextUtils;
+import android.util.Pair;
 
 import androidx.annotation.NonNull;
 
@@ -28,6 +30,9 @@ import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyricapi.AcquisitionMode;
+import com.hchen.superlyricapi.SuperLyricData;
+import com.hchen.superlyricapi.SuperLyricWord;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
@@ -54,15 +59,19 @@ public final class KuGouLite extends LyricRelease {
         super.initApplicationAfter(context);
 
         try {
-            if (Objects.equals(loadPackageParam.processName, "com.kugou.android.lite.support"))
-                return;
             if (!enableStatusBarLyric())
                 return;
 
-            if (versionCode <= 10935)
+            if (versionCode <= 10935) {
                 hookLocalBroadcast("android.support.v4.content.LocalBroadcastManager");
-            else
-                hookLocalBroadcast("androidx.localbroadcastmanager.content.LocalBroadcastManager");
+            } else {
+                try {
+                    hookMeizuLyric();
+                } catch (Throwable e) {
+                    hookLocalBroadcast("androidx.localbroadcastmanager.content.LocalBroadcastManager");
+                    logE(TAG, e);
+                }
+            }
 
             fixProbabilityCollapse();
         } catch (Throwable e) {
@@ -108,6 +117,92 @@ public final class KuGouLite extends LyricRelease {
         return true;
     }
 
+    private Pair<String, Object> pair;
+
+    private void hookMeizuLyric() {
+        hookMethod("com.kugou.android.lyric.j",
+            "d",
+            Context.class, String.class, boolean.class,
+            new IHook() {
+                @Override
+                public void before() {
+                    String lyric = (String) getArg(1);
+                    boolean isClose = (boolean) getArg(2);
+
+                    if (!isClose && lyric != null && !lyric.isEmpty()) {
+                        Object c = callStaticMethod("uv.b", "c");
+                        Object lyricData = callMethod(c, "f", 41);
+                        String hash = (String) callMethod(c, "i", 207);
+                        if (lyricData != null && hash != null) {
+                            pair = new Pair<>(hash, lyricData);
+                        }
+                        if (lyricData == null && pair != null && TextUtils.equals(pair.first, hash)) {
+                            lyricData = pair.second;
+                        }
+                        if (lyricData != null) {
+                            SuperLyricData data = new SuperLyricData();
+
+                            SuperLyricWord[] lyricWords = null;
+                            int currentLine = (int) getThisField("a");
+                            String[][] wordss = (String[][]) getField(lyricData, "f");
+                            long[][] wordBegins = (long[][]) getField(lyricData, "i");
+                            long[][] wordDelays = (long[][]) getField(lyricData, "j");
+                            if (wordss != null) {
+                                String[] words = wordss[currentLine];
+                                if (words == null) {
+                                    return;
+                                }
+
+                                long lyricDelay = 0L;
+                                long[] begins = wordBegins[currentLine];
+                                long[] delays = wordDelays[currentLine];
+                                lyricWords = new SuperLyricWord[words.length];
+                                StringBuilder sb = new StringBuilder();
+                                for (int i = 0; i < words.length; i++) {
+                                    long begin = begins[i];
+                                    long delay = delays[i];
+                                    lyricDelay = lyricDelay + delay;
+
+                                    sb.append(words[i]);
+                                    lyricWords[i] = new SuperLyricWord(words[i], (int) begin, (int) (begin + delay));
+                                }
+
+                                data.setLyric(sb.toString());
+                                data.setDelay(Math.toIntExact(lyricDelay));
+                                data.setLyricWordData(lyricWords);
+                            }
+
+                            String[][] translateWordss = (String[][]) getField(lyricData, "k");
+                            if (translateWordss != null) {
+                                String[] translateWords = translateWordss[currentLine];
+                                if (translateWords != null) {
+                                    StringBuilder sb = new StringBuilder();
+                                    for (String translateWord : translateWords) {
+                                        sb.append(translateWord);
+                                    }
+                                    data.setTranslation(sb.toString());
+                                }
+                            }
+
+                            data.setAcquisitionMode(AcquisitionMode.HOOK_LYRIC);
+                            sendSuperLyricData(data);
+                        }
+                    } else {
+                        sendStop();
+                    }
+                }
+
+                @Override
+                public boolean onThrow(int flag, Throwable e) {
+                    unHookSelf();
+                    hookLocalBroadcast("androidx.localbroadcastmanager.content.LocalBroadcastManager");
+                    logE(TAG, e);
+                    return super.onThrow(flag, e);
+                }
+            }
+        );
+    }
+
     private void hookLocalBroadcast(String clazz) {
         hookMethod(clazz,
             "sendBroadcast",
@@ -123,7 +218,7 @@ public final class KuGouLite extends LyricRelease {
                     if (message == null) return;
 
                     if (Objects.equals(action, "com.kugou.android.update_meizu_lyric")) {
-                        sendLyric(message);
+                        sendLyric(message, 0, AcquisitionMode.HOOK_LYRIC);
                     }
                 }
             }

@@ -21,6 +21,7 @@ package com.hchen.superlyric.hook.music;
 import com.hchen.collect.Collect;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyricapi.AcquisitionMode;
 
 import java.util.Arrays;
 
@@ -48,7 +49,7 @@ public final class Huawei extends LyricRelease {
                 public void before() {
                     Object[] lyric = getArgs();
                     String lyricWithoutBrackets = Arrays.toString(lyric).substring(1, Arrays.toString(lyric).length() - 1);
-                    sendLyric(lyricWithoutBrackets);
+                    sendLyric(lyricWithoutBrackets, 0, AcquisitionMode.BLUETOOTH_LYRIC);
                 }
             }
         );

@@ -11,7 +11,7 @@ dexkitcache = "v.0.9"
 gson = "2.13.2"
 mmkv = "2.3.0"
 # SuperLyricApi
-superlyricapi = "2.4"
+superlyricapi = "2.7"
 # AutoService
 autoService = "1.1.1"
 javapoet = "1.13.0"
