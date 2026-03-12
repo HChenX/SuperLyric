@@ -29,16 +29,29 @@ import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.IHook;
 import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyricapi.AcquisitionMode;
+import com.hchen.superlyricapi.SuperLyricData;
 
+import org.jetbrains.annotations.NotNull;
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
+import org.luckypray.dexkit.query.FindField;
 import org.luckypray.dexkit.query.FindMethod;
+import org.luckypray.dexkit.query.enums.MatchType;
+import org.luckypray.dexkit.query.matchers.AnnotationMatcher;
+import org.luckypray.dexkit.query.matchers.AnnotationsMatcher;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
+import org.luckypray.dexkit.query.matchers.FieldMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.result.ClassData;
+import org.luckypray.dexkit.result.FieldData;
 import org.luckypray.dexkit.result.MethodData;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -72,7 +85,45 @@ public final class Netease extends LyricRelease {
 
         if (versionCode >= 8000041) {
             MeizuHelper.shallowLayerDeviceMock();
-            MeizuHelper.hookNotificationLyric();
+            // MeizuHelper.hookNotificationLyric();
+
+            Field field = DexkitCache.findMember("netease$3", new IDexkit<FieldData>() {
+                @NonNull
+                @Override
+                public FieldData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                    return bridge.findField(FindField.create()
+                        .matcher(FieldMatcher.create()
+                            .declaredClass(ClassMatcher.create()
+                                .usingEqStrings("StatusBarLyricController")
+                            )
+                            .annotations(AnnotationsMatcher.create()
+                                .annotations(Collections.singleton(new AnnotationMatcher().type(NotNull.class)))
+                            )
+                            .modifiers(Modifier.PRIVATE, MatchType.Equals)
+                        )
+                    ).single();
+                }
+            });
+
+            hookMethod(field.getType().toString().replace(" ", "").replace("class", ""),
+                "onLyricText",
+                String.class, String.class,
+                new IHook() {
+                    @Override
+                    public void before() {
+                        List<?> mSentences = (List<?>) getThisField("mSentences");
+                        int mCurLyricIndex = (int) getThisField("mCurLyricIndex");
+
+                        Object mSentence = mSentences.get(mCurLyricIndex);
+                        String lyric = (String) callMethod(mSentence, "getContent");
+                        String translate = (String) callMethod(mSentence, "getTranslateContent");
+                        int endTime = (int) callMethod(mSentence, "getEndTime");
+                        int startTime = (int) callMethod(mSentence, "getStartTime");
+
+                        sendLyric(lyric, endTime - startTime, new SuperLyricData().setTranslation(translate).setAcquisitionMode(AcquisitionMode.HOOK_LYRIC));
+                    }
+                }
+            );
 
             Method method = DexkitCache.findMember("netease$1", new IDexkit<MethodData>() {
                 @NonNull
