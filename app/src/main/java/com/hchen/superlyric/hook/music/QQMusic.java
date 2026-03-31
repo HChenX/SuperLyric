@@ -25,10 +25,11 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.collect.Collect;
+import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.hook.IHook;
+import com.hchen.hooktool.ModuleData;
+import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.hook.LyricRelease;
 import com.hchen.superlyricapi.AcquisitionMode;
 
@@ -45,15 +46,17 @@ import org.luckypray.dexkit.result.MethodData;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Predicate;
 
 /**
  * QQ 音乐
  *
  * @author 焕晨HChen
  */
-@Collect(targetPackage = "com.tencent.qqmusic")
+@AutoHook(targetPackage = "com.tencent.qqmusic")
 public final class QQMusic extends LyricRelease {
     private final CopyOnWriteArrayList<LyricData> lyricDataList = new CopyOnWriteArrayList<>();
     private Field lyricField;
@@ -61,7 +64,7 @@ public final class QQMusic extends LyricRelease {
     private Field playedDurationField;
 
     @Override
-    protected void init() {
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         // MockFlyme.mock();
         // MockFlyme.notificationLyric(this);
 
@@ -80,7 +83,7 @@ public final class QQMusic extends LyricRelease {
 
                 return bridge.findField(FindField.create()
                     .matcher(FieldMatcher.create()
-                        .declaredClass(classData.getInstance(classLoader))
+                        .declaredClass(classData.getInstance(ModuleData.getClassLoader()))
                         .type(long.class)
                         .addReadMethod(MethodMatcher.create()
                             .declaredClass(marqueeLyricViewClass)
@@ -119,7 +122,7 @@ public final class QQMusic extends LyricRelease {
             }
         });
         hook(method1,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
                     lyricDataList.clear();
@@ -137,10 +140,10 @@ public final class QQMusic extends LyricRelease {
         if (viewField == null) return;
         Field finalViewField = viewField;
         hook(method,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
-                    View view = (View) getThisField(finalViewField);
+                    View view = (View) getField(finalViewField, getThisObject());
                     view.setVisibility(GONE);
                 }
             }
@@ -160,18 +163,25 @@ public final class QQMusic extends LyricRelease {
                 ).single();
             }
         });
-        Field field = findFieldPro(clazz)
-            .withFieldClass(marqueeTextViewClass)
-            .single();
-        Field field1 = findFieldPro(clazz)
-            .withFieldClass(songInfoClass)
-            .single();
+        Field field = Arrays.stream(clazz.getDeclaredFields())
+            .filter(new Predicate<Field>() {
+                @Override
+                public boolean test(Field field) {
+                    return Objects.equals(field.getType(), marqueeTextViewClass);
+                }
+            }).findFirst().orElseThrow();
+        Field field1 = Arrays.stream(clazz.getDeclaredFields())
+            .filter(new Predicate<Field>() {
+                @Override public boolean test(Field field) {
+                    return Objects.equals(field.getType(), songInfoClass);
+                }
+            }).findFirst().orElseThrow();
         hook(method2,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
-                    TextView textView = (TextView) getThisField(field);
-                    Object songInfo = getThisField(field1);
+                    TextView textView = (TextView) getField(field, getThisObject());
+                    Object songInfo = getField(field1, getThisObject());
                     textView.setVisibility(GONE);
                     if (songInfo != null) {
                         sendLyric((String) textView.getText(), 0, AcquisitionMode.HOOK_LYRIC);
@@ -196,7 +206,7 @@ public final class QQMusic extends LyricRelease {
         //     }
         // });
         // hook(method2,
-        //     new IHook() {
+        //     new AbsHook() {
         //         @Override
         //         public void before() {
         //             String key = (String) getArg(0);
@@ -208,10 +218,10 @@ public final class QQMusic extends LyricRelease {
         // );
 
         hookAllMethod(marqueeLyricViewClass,
-            "setLyric", new IHook() {
+            "setLyric", new AbsHook() {
                 @Override
                 public void after() {
-                    Object mLyric = getThisField("mLyric");
+                    Object mLyric = getField(getThisObject(), "mLyric");
                     if (mLyric == null) return;
 
                     updateLyricData(mLyric);
@@ -222,7 +232,7 @@ public final class QQMusic extends LyricRelease {
         hookMethod("com.lyricengine.ui.base.BaseLyricView",
             "findCurrentLine",
             int.class, CopyOnWriteArrayList.class, long.class,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
                     sendLyric((Integer) getResult());
@@ -252,7 +262,7 @@ public final class QQMusic extends LyricRelease {
             if (mm == null) return;
 
             hook(mm,
-                new IHook() {
+                new AbsHook() {
                     @Override
                     public void before() {
                         boolean b = (boolean) getArg(1);
@@ -268,7 +278,7 @@ public final class QQMusic extends LyricRelease {
     private void updateLyricData(Object lyric) {
         CopyOnWriteArrayList<?> copyOnWriteArrayList = new CopyOnWriteArrayList<>();
         for (Field field : lyric.getClass().getDeclaredFields()) {
-            Object value = getField(lyric, field);
+            Object value = getField(field, lyric);
             if (value instanceof CopyOnWriteArrayList<?> list) {
                 copyOnWriteArrayList = list;
                 break;
@@ -294,11 +304,11 @@ public final class QQMusic extends LyricRelease {
 
             if (lyricField == null) return;
             if (durationField == null && playedDurationField == null) {
-                lyricDataList.add(new LyricData((String) getField(data, lyricField), -1, -1));
+                lyricDataList.add(new LyricData((String) getField(lyricField, data), -1, -1));
             } else if (durationField != null && playedDurationField == null) {
-                lyricDataList.add(new LyricData((String) getField(data, lyricField), -1, (Long) getField(data, durationField)));
+                lyricDataList.add(new LyricData((String) getField(lyricField, data), -1, (Long) getField(durationField, data)));
             } else if (durationField != null && playedDurationField != null) {
-                lyricDataList.add(new LyricData((String) getField(data, lyricField), (Long) getField(data, playedDurationField), (Long) getField(data, durationField)));
+                lyricDataList.add(new LyricData((String) getField(lyricField, data), (Long) getField(durationField, data), (Long) getField(durationField, data)));
             }
         }
     }

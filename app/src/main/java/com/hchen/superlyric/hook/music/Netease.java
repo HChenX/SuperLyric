@@ -23,50 +23,41 @@ import android.content.SharedPreferences;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.collect.Collect;
+import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.hook.IHook;
+import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.hook.LyricRelease;
 import com.hchen.superlyricapi.AcquisitionMode;
 import com.hchen.superlyricapi.SuperLyricData;
 
-import org.jetbrains.annotations.NotNull;
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
-import org.luckypray.dexkit.query.FindField;
 import org.luckypray.dexkit.query.FindMethod;
-import org.luckypray.dexkit.query.enums.MatchType;
-import org.luckypray.dexkit.query.matchers.AnnotationMatcher;
-import org.luckypray.dexkit.query.matchers.AnnotationsMatcher;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
-import org.luckypray.dexkit.query.matchers.FieldMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.result.ClassData;
-import org.luckypray.dexkit.result.FieldData;
 import org.luckypray.dexkit.result.MethodData;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
 /**
  * 网易云音乐
  */
-@Collect(targetPackage = "com.netease.cloudmusic")
+@AutoHook(targetPackage = "com.netease.cloudmusic")
 public final class Netease extends LyricRelease {
-    @Override
-    protected void init() {
+    @Override 
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         hookTencentTinker();
-        if (existsClass("android.app.Instrumentation")) {
+        if (hasClass("android.app.Instrumentation")) {
             hookMethod("android.app.Instrumentation",
                 "newApplication",
                 ClassLoader.class, String.class, Context.class,
-                new IHook() {
+                new AbsHook() {
                     @Override
                     public void before() {
                         if (Objects.equals("com.netease.nis.wrapper.MyApplication", getArg(1))) {
@@ -79,40 +70,41 @@ public final class Netease extends LyricRelease {
         }
     }
 
-    @Override
-    protected void initApplicationAfter(@NonNull Context context) {
-        super.initApplicationAfter(context);
+    @Override 
+    protected void onApplicationCreated(@NonNull Context context) {
+        super.onApplicationCreated(context);
 
         if (versionCode >= 8000041) {
             MeizuHelper.shallowLayerDeviceMock();
             // MeizuHelper.hookNotificationLyric();
 
-            Field field = DexkitCache.findMember("netease$3", new IDexkit<FieldData>() {
+            Class<?> statusBarLyricController = DexkitCache.findMember("netease$3", new IDexkit<ClassData>() {
                 @NonNull
                 @Override
-                public FieldData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
-                    return bridge.findField(FindField.create()
-                        .matcher(FieldMatcher.create()
-                            .declaredClass(ClassMatcher.create()
-                                .usingEqStrings("StatusBarLyricController")
-                            )
-                            .annotations(AnnotationsMatcher.create()
-                                .annotations(Collections.singleton(new AnnotationMatcher().type(NotNull.class)))
-                            )
-                            .modifiers(Modifier.PRIVATE, MatchType.Equals)
+                public ClassData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                    return bridge.findClass(FindClass.create()
+                        .matcher(ClassMatcher.create()
+                            .usingEqStrings("StatusBarLyricController")
                         )
                     ).single();
                 }
             });
+            Method lyricMethod = null;
+            for (Field declaredField : statusBarLyricController.getDeclaredFields()) {
+                try {
+                    lyricMethod = declaredField.getType().getDeclaredMethod("onLyricText", String.class, String.class);
+                    break;
+                } catch (NoSuchMethodException ignore) {
+                }
+            }
 
-            hookMethod(field.getType().toString().replace(" ", "").replace("class", ""),
-                "onLyricText",
-                String.class, String.class,
-                new IHook() {
+            Objects.requireNonNull(lyricMethod);
+            hook(lyricMethod,
+                new AbsHook() {
                     @Override
                     public void before() {
-                        List<?> mSentences = (List<?>) getThisField("mSentences");
-                        int mCurLyricIndex = (int) getThisField("mCurLyricIndex");
+                        List<?> mSentences = (List<?>) getField(getThisObject(),"mSentences");
+                        int mCurLyricIndex = (int) getField(getThisObject(),"mCurLyricIndex");
 
                         Object mSentence = mSentences.get(mCurLyricIndex);
                         String lyric = (String) callMethod(mSentence, "getContent");
@@ -158,7 +150,7 @@ public final class Netease extends LyricRelease {
                 } else if (m.getParameterCount() == 1 && m.getParameterTypes()[0].equals(boolean.class)) {
                     hook(m, setArg(0, true));
                 } else if (m.getReturnType().equals(SharedPreferences.class)) {
-                    hook(m, new IHook() {
+                    hook(m, new AbsHook() {
                         @Override
                         public void after() {
                             SharedPreferences sp = (SharedPreferences) getResult();

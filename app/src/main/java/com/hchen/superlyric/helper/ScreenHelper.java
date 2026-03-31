@@ -30,7 +30,7 @@ import androidx.annotation.NonNull;
 
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.hook.IHook;
+import com.hchen.hooktool.hook.AbsHook;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
@@ -78,12 +78,12 @@ public final class ScreenHelper {
                         logI(TAG, "[screenOffNotStopLyric]: hook method: " + method);
 
                         hook(method,
-                            new IHook() {
+                            new AbsHook() {
                                 @Override
                                 public void before() {
                                     Intent intent = (Intent) getArg(1);
                                     if (TextUtils.equals(intent.getAction(), Intent.ACTION_SCREEN_OFF)) {
-                                        returnNull();
+                                        setResult(null);
                                     }
                                 }
                             }

@@ -18,16 +18,18 @@
  */
 package com.hchen.superlyric.hook.music;
 
-import com.hchen.collect.Collect;
+import androidx.annotation.NonNull;
+
+import com.hchen.auto.AutoHook;
 import com.hchen.superlyric.hook.LyricRelease;
 
 /**
  * Kde
  */
-@Collect(targetPackage = "org.kde.kdeconnect_tp")
+@AutoHook(targetPackage = "org.kde.kdeconnect_tp")
 public final class Kde extends LyricRelease {
-    @Override
-    protected void init() {
+    @Override 
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         getMediaMetadataLyric();
     }
 }

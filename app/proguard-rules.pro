@@ -23,17 +23,12 @@
 -keep class com.hchen.superlyric.InitHook {
     <init>();
 }
--keep class * extends com.hchen.hooktool.HCEntrance
--keep class * extends com.hchen.hooktool.HCBase
+-keep class * extends com.hchen.hooktool.ModuleEntrance
+-keep class * extends com.hchen.hooktool.AbsModule
 -keep class com.hchen.superlyric.hook.**
 -keep class com.hchen.superlyric.hook.**$*
 -keep class com.hchen.superlyric.hook.** {
     <init>();
-}
--keep class  com.hchen.hooktool.HCState {
-    static boolean isXposedEnabled();
-    static java.lang.String getFramework();
-    static int getVersion();
 }
 -keep class com.hchen.superlyricapi.** {*;}
 -keep class com.hchen.dexkitcache.DexkitCache$MemberData {*;}

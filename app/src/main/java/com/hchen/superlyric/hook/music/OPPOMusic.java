@@ -22,7 +22,7 @@ import android.content.Context;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.collect.Collect;
+import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.superlyric.helper.OPPOHelper;
@@ -38,15 +38,15 @@ import java.lang.reflect.Method;
 /**
  * OPPO 音乐
  */
-@Collect(targetPackage = "com.oppo.music")
+@AutoHook(targetPackage = "com.oppo.music")
 public final class OPPOMusic extends LyricRelease {
-    @Override
-    protected void init() {
+    @Override 
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
     }
 
-    @Override
-    protected void initApplicationAfter(@NonNull Context context) {
-        super.initApplicationAfter(context);
+    @Override 
+    protected void onApplicationCreated(@NonNull Context context) {
+        super.onApplicationCreated(context);
 
         OPPOHelper.mockDevice();
         getMediaMetadataLyric();

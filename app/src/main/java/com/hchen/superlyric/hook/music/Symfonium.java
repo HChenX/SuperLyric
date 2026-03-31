@@ -20,10 +20,10 @@ package com.hchen.superlyric.hook.music;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.collect.Collect;
+import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.hook.IHook;
+import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.hook.LyricRelease;
 import com.hchen.superlyricapi.AcquisitionMode;
 
@@ -41,12 +41,12 @@ import java.util.Objects;
  *
  * @author 焕晨HChen
  */
-@Collect(targetPackage = "app.symfonik.music.player")
+@AutoHook(targetPackage = "app.symfonik.music.player")
 public final class Symfonium extends LyricRelease {
     private String lastLyric;
 
-    @Override
-    protected void init() {
+    @Override 
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         Method method = DexkitCache.findMember("Symfonium$1", new IDexkit<MethodData>() {
             @NonNull
             @Override
@@ -64,7 +64,7 @@ public final class Symfonium extends LyricRelease {
 
         hookConstructor(method.getReturnType(),
             Object.class, Object.class,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
                     Object arg1 = getArg(0);

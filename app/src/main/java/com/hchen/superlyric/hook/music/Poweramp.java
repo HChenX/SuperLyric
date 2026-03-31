@@ -18,55 +18,56 @@
  */
 package com.hchen.superlyric.hook.music;
 
-import com.hchen.collect.Collect;
-import com.hchen.hooktool.exception.NonSingletonException;
-import com.hchen.hooktool.helper.Any;
-import com.hchen.hooktool.helper.RangeHelper;
-import com.hchen.hooktool.hook.IHook;
+import androidx.annotation.NonNull;
+
+import com.hchen.auto.AutoHook;
+import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.hook.LyricRelease;
 import com.hchen.superlyricapi.AcquisitionMode;
 
+import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.Objects;
-import java.util.function.Supplier;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
  * Poweramp
  */
-@Collect(targetPackage = "com.maxmpz.audioplayer")
+@AutoHook(targetPackage = "com.maxmpz.audioplayer")
 public final class Poweramp extends LyricRelease {
     @Override
-    protected void init() {
-        findMethodPro("com.maxmpz.widget.player.list.LyricsFastTextView")
-            .withParamCount(4, RangeHelper.EQ)
-            .withParamClasses(Any.class, boolean.class, int.class, int.class)
-            .singleOrThrow(new Supplier<NonSingletonException>() {
-                @Override
-                public NonSingletonException get() {
-                    return new NonSingletonException("Failed to find method, with 4 params:[Any, boolean, int, int].");
-                }
-            })
-            .hook(
-                new IHook() {
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+        hook(Arrays.stream(findClass("com.maxmpz.widget.player.list.LyricsFastTextView").getDeclaredMethods())
+                .filter(new Predicate<Method>() {
                     @Override
-                    public void before() {
-                        Object xc = getArg(0);
-                        int c = (int) getArg(2);
-                        String lyricData = xc.toString();
-                        String lyric = extractValues(lyricData);
+                    public boolean test(Method method) {
+                        return method.getParameterCount() == 4 &&
+                            Objects.equals(method.getParameterTypes()[1], boolean.class) &&
+                            Objects.equals(method.getParameterTypes()[2], int.class) &&
+                            Objects.equals(method.getParameterTypes()[3], int.class);
+                    }
+                }).findFirst().orElseThrow(),
+            new AbsHook() {
+                @Override
+                public void before() {
+                    Object xc = getArg(0);
+                    int c = (int) getArg(2);
+                    String lyricData = xc.toString();
+                    String lyric = extractValues(lyricData);
 
-                        if (lyric == null || lyric.isEmpty()) return;
-                        if (!Objects.equals(lyric, "null")) {
-                            if (c != 0) {
-                                sendLyric(lyric, 0, AcquisitionMode.HOOK_LYRIC);
-                            }
-                        } else {
-                            sendStop();
+                    if (lyric == null || lyric.isEmpty()) return;
+                    if (!Objects.equals(lyric, "null")) {
+                        if (c != 0) {
+                            sendLyric(lyric, 0, AcquisitionMode.HOOK_LYRIC);
                         }
+                    } else {
+                        sendStop();
                     }
                 }
-            );
+            }
+        );
     }
 
     private static final Pattern pattern = Pattern.compile("text=(.*?)\\s+scenes=");

@@ -46,4 +46,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "SuperLyric"
 include ':app'
-include ':collect'
+include ':auto'
+include ':hidden-api'

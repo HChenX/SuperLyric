@@ -40,9 +40,11 @@ import android.os.Bundle;
 import android.os.IBinder;
 import android.text.TextUtils;
 
-import com.hchen.collect.Collect;
-import com.hchen.hooktool.HCBase;
-import com.hchen.hooktool.hook.IHook;
+import androidx.annotation.NonNull;
+
+import com.hchen.auto.AutoHook;
+import com.hchen.hooktool.AbsModule;
+import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.binder.SuperLyricControllerService;
 import com.hchen.superlyric.binder.SuperLyricService;
 import com.hchen.superlyric.data.SuperLyricKey;
@@ -58,16 +60,16 @@ import java.util.Optional;
  *
  * @author 焕晨HChen
  */
-@Collect(targetPackage = "android", onApplication = false)
-public final class SuperLyricProxy extends HCBase {
+@AutoHook(targetPackage = "system", onSystemStarting = true)
+public final class SuperLyricProxy extends AbsModule {
     private static SuperLyricService mSuperLyricService;
     private static SuperLyricControllerService mSuperLyricControllerService;
 
     @Override
-    protected void init() {
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         hookAllMethod("com.android.server.am.ActivityManagerService",
             "systemReady",
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
                     try {
@@ -75,7 +77,7 @@ public final class SuperLyricProxy extends HCBase {
                             mSuperLyricService = new SuperLyricService();
                             mSuperLyricControllerService = new SuperLyricControllerService(mSuperLyricService);
 
-                            Context mContext = (Context) getThisField("mContext");
+                            Context mContext = (Context) getField(getThisObject(), "mContext");
                             new PlayStateListener(mContext, mSuperLyricService).register();
 
                             logI(TAG, "Super lyric service is all ready!!");
@@ -89,7 +91,7 @@ public final class SuperLyricProxy extends HCBase {
 
         Method registerReceiverWithFeature = null;
         if (
-            existsMethod(
+            hasMethod(
                 "com.android.server.am.ActivityManagerService",
                 "registerReceiverWithFeature",
                 "android.app.IApplicationThread", String.class, String.class, String.class,
@@ -105,7 +107,7 @@ public final class SuperLyricProxy extends HCBase {
                 String.class /* permission */, int.class /* userId */, int.class /* flags */
             );
         } else if (
-            existsMethod(
+            hasMethod(
                 "com.android.server.am.ActivityManagerService",
                 "registerReceiverWithFeature",
                 "android.app.IApplicationThread", String.class, String.class,
@@ -127,7 +129,7 @@ public final class SuperLyricProxy extends HCBase {
         }
 
         hook(registerReceiverWithFeature,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
                     if (mSuperLyricService == null) {
@@ -157,7 +159,7 @@ public final class SuperLyricProxy extends HCBase {
 
         Method broadcastIntentWithFeature = null;
         if (
-            existsMethod(
+            hasMethod(
                 "com.android.server.am.ActivityManagerService",
                 "broadcastIntentWithFeature",
                 "android.app.IApplicationThread", String.class, Intent.class, String.class, "android.content.IIntentReceiver", int.class,
@@ -174,7 +176,7 @@ public final class SuperLyricProxy extends HCBase {
                 Bundle.class /* bOptions */, boolean.class /* serialized */, boolean.class /* sticky */, int.class /* userId */
             );
         } else if (
-            existsMethod(
+            hasMethod(
                 "com.android.server.am.ActivityManagerService",
                 "broadcastIntentWithFeature",
                 "android.app.IApplicationThread", String.class, Intent.class, String.class, "android.content.IIntentReceiver", int.class,
@@ -190,7 +192,7 @@ public final class SuperLyricProxy extends HCBase {
                 boolean.class /* serialized */, boolean.class /* sticky */, int.class /* userId */
             );
         } else if (
-            existsMethod(
+            hasMethod(
                 "com.android.server.am.ActivityManagerService",
                 "broadcastIntentWithFeature",
                 "android.app.IApplicationThread", String.class, Intent.class, String.class, "android.content.IIntentReceiver", int.class,
@@ -212,7 +214,7 @@ public final class SuperLyricProxy extends HCBase {
         }
 
         hook(broadcastIntentWithFeature,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void before() {
                     if (mSuperLyricService == null) return;
@@ -227,7 +229,7 @@ public final class SuperLyricProxy extends HCBase {
                             // 获取调用者包名
                             caller = (String) getField(
                                 getField(
-                                    callThisMethod("getRecordForAppLOSP", getArg(0)),
+                                    callMethod(getThisObject(), "getRecordForAppLOSP", getArg(0)),
                                     "info"
                                 ),
                                 "packageName"
@@ -299,7 +301,7 @@ public final class SuperLyricProxy extends HCBase {
             "appDiedLocked",
             "com.android.server.am.ProcessRecord" /* app */, int.class /* pid */,
             "android.app.IApplicationThread" /* thread */, boolean.class /* fromBinderDied */, String.class /* reason */,
-            new IHook() {
+            new AbsHook() {
                 /** @noinspection SimplifiableConditionalExpression*/
                 @Override
                 public void after() {
@@ -309,10 +311,10 @@ public final class SuperLyricProxy extends HCBase {
                     String packageName = (String) getField(getField(app, "info"), "packageName");
                     String processName = (String) getField(app, "processName");
                     if (TextUtils.equals(packageName, processName)) { // 主进程
-                        boolean isKilled = existsMethod(app.getClass(), "isKilled") ?
+                        boolean isKilled = hasMethod(app.getClass(), "isKilled") ?
                             (boolean) Optional.ofNullable(callMethod(app, "isKilled")).orElse(true) :
                             (
-                                existsField(app.getClass(), "mKilled") ?
+                                hasField(app.getClass(), "mKilled") ?
                                     (boolean) Optional.ofNullable(getField(app, "mKilled")).orElse(true) :
                                     true
                             );

@@ -1,25 +1,32 @@
 [versions]
 # Basic
-agp = "9.0.1"
+agp = "9.1.0"
 annotation = "1.9.1"
 # Hook API & Tool
-api = "82"
-hooktool = "v.2.2.6"
+api = "101.0.1"
+service = "101.0.0"
+hooktool = "3.0.0-rc11"
 # Dexkit
 dexkit = "2.0.7"
 dexkitcache = "v.0.9"
 gson = "2.13.2"
-mmkv = "2.3.0"
+mmkv = "2.4.0"
 # SuperLyricApi
 superlyricapi = "2.7"
 # AutoService
 autoService = "1.1.1"
 javapoet = "1.13.0"
+junit = "4.13.2"
+junitVersion = "1.3.0"
+espressoCore = "3.7.0"
+appcompat = "1.7.1"
+material = "1.13.0"
 
 [libraries]
 annotation = { module = "androidx.annotation:annotation", version.ref = "annotation" }
 
-api = { module = "de.robv.android.xposed:api", version.ref = "api" }
+api = { module = "io.github.libxposed:api", version.ref = "api" }
+service = { module = "io.github.libxposed:service", version.ref = "service" }
 hooktool = { group = "com.github.HChenX", name = "HookTool", version.ref = "hooktool" }
 
 dexkit = { module = "org.luckypray:dexkit", version.ref = "dexkit" }
@@ -30,7 +37,13 @@ superlyricapi = { module = "com.github.HChenX:SuperLyricApi", version.ref = "sup
 
 auto-service = { module = "com.google.auto.service:auto-service", version.ref = "autoService" }
 javapoet = { module = "com.squareup:javapoet", version.ref = "javapoet" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
+espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
+appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
 

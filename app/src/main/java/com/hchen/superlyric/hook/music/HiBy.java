@@ -18,7 +18,9 @@
  */
 package com.hchen.superlyric.hook.music;
 
-import com.hchen.collect.Collect;
+import androidx.annotation.NonNull;
+
+import com.hchen.auto.AutoHook;
 import com.hchen.superlyric.hook.LyricRelease;
 
 /**
@@ -26,10 +28,10 @@ import com.hchen.superlyric.hook.LyricRelease;
  *
  * @author 焕晨HChen
  */
-@Collect(targetPackage = "com.hiby.music")
+@AutoHook(targetPackage = "com.hiby.music")
 public final class HiBy extends LyricRelease {
-    @Override
-    protected void init() {
+    @Override 
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         getMediaMetadataLyric();
     }
 }

@@ -16,7 +16,7 @@
 
  * Copyright (C) 2025-2026 HChenX
  */
-package com.hchen.collect;
+package com.hchen.auto;
 
 import com.google.auto.service.AutoService;
 import com.squareup.javapoet.ClassName;
@@ -51,40 +51,38 @@ import javax.lang.model.element.TypeElement;
  * @author 焕晨HChen
  */
 @AutoService(Processor.class)
-@SupportedAnnotationTypes("com.hchen.collect.Collect")
+@SupportedAnnotationTypes("com.hchen.auto.AutoHook")
 @SupportedSourceVersion(SourceVersion.RELEASE_21)
-public class CollectProcessor extends AbstractProcessor {
-    private final Map<String, List<Data>> dataMap = new HashMap<>();
+public class AutoProcessor extends AbstractProcessor {
+    private final Map<String, List<HookData>> dataMap = new HashMap<>();
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment env) {
         System.out.println("ENV: " + env);
         if (env.processingOver()) return true;
 
-        for (Element element : env.getElementsAnnotatedWith(Collect.class)) {
+        for (Element element : env.getElementsAnnotatedWith(AutoHook.class)) {
             if (!(element instanceof TypeElement typeElement)) {
-                throw new RuntimeException("E: element can't cast to TypeElement!!");
+                throw new RuntimeException("Element can't cast to TypeElement.");
             }
 
-            String classPath = typeElement.getQualifiedName().toString();
-            Collect collect = element.getAnnotation(Collect.class);
-            if (collect != null) {
+            AutoHook autoHook = element.getAnnotation(AutoHook.class);
+            if (autoHook != null) {
                 dataMap
-                    .computeIfAbsent(collect.targetPackage(), k -> new ArrayList<>())
+                    .computeIfAbsent(autoHook.targetPackage(), k -> new ArrayList<>())
                     .add(
-                        new Data(
-                            classPath,
-                            collect.onLoadPackage(),
-                            collect.onZygote(),
-                            collect.onApplication()
+                        new HookData(
+                            typeElement.getQualifiedName().toString(),
+                            autoHook.onPackageLoaded(),
+                            autoHook.onSystemStarting()
                         )
                     );
             }
         }
 
-        if (!env.getElementsAnnotatedWith(Collect.class).isEmpty()) {
+        if (!env.getElementsAnnotatedWith(AutoHook.class).isEmpty()) {
             try {
-                generateCollectMap(dataMap);
+                generateHookData();
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -93,7 +91,7 @@ public class CollectProcessor extends AbstractProcessor {
         return true;
     }
 
-    private void generateCollectMap(Map<String, List<Data>> dataMap) throws IOException {
+    private void generateHookData() throws IOException {
         TypeName listOfString = ParameterizedTypeName.get(ClassName.get(List.class), ClassName.get(String.class));
         TypeName mapType =
             ParameterizedTypeName.get(
@@ -103,35 +101,25 @@ public class CollectProcessor extends AbstractProcessor {
             );
 
         TypeSpec.Builder clazz =
-            TypeSpec.classBuilder("CollectMap")
+            TypeSpec.classBuilder("HookData")
                 .addModifiers(Modifier.PUBLIC)
                 .addJavadoc("注解处理器自动生成的 Map 图\n");
 
-        /*
-         * 生成三个 Map 常量
-         */
         clazz.addField(generateStaticMap(
-            "ON_ZYGOTE_MAP",
+            "ON_SYSTEM_STARTING",
             dataMap,
-            data -> data.onZygote,
+            hookData -> hookData.onSystemStarting,
             mapType
         ));
 
         clazz.addField(generateStaticMap(
-            "ON_LOAD_PACKAGE_MAP",
+            "ON_PACKAGE_LOADED",
             dataMap,
-            data -> data.onLoadPackage,
+            hookData -> hookData.onPackageLoaded,
             mapType
         ));
 
-        clazz.addField(generateStaticMap(
-            "ON_APPLICATION_MAP",
-            dataMap,
-            data -> data.onApplication,
-            mapType
-        ));
-
-        JavaFile.builder("com.hchen.collect", clazz.build())
+        JavaFile.builder("com.hchen.auto", clazz.build())
             .build()
             .writeTo(processingEnv.getFiler());
     }
@@ -141,8 +129,8 @@ public class CollectProcessor extends AbstractProcessor {
      */
     private FieldSpec generateStaticMap(
         String fieldName,
-        Map<String, List<Data>> dataMap,
-        Predicate<Data> filter,
+        Map<String, List<HookData>> dataMap,
+        Predicate<HookData> filter,
         TypeName mapType
     ) {
         CodeBlock.Builder mapInit = CodeBlock.builder();
@@ -187,11 +175,10 @@ public class CollectProcessor extends AbstractProcessor {
             .build();
     }
 
-    private record Data(
+    private record HookData(
         String classPath,
-        boolean onLoadPackage,
-        boolean onZygote,
-        boolean onApplication
+        boolean onPackageLoaded,
+        boolean onSystemStarting
     ) {
     }
 }

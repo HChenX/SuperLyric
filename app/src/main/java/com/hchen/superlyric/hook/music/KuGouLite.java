@@ -25,10 +25,10 @@ import android.util.Pair;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.collect.Collect;
+import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.hook.IHook;
+import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.hook.LyricRelease;
 import com.hchen.superlyricapi.AcquisitionMode;
 import com.hchen.superlyricapi.SuperLyricData;
@@ -46,17 +46,17 @@ import java.util.Objects;
 /**
  * 酷狗音乐概念版
  */
-@Collect(targetPackage = "com.kugou.android.lite")
+@AutoHook(targetPackage = "com.kugou.android.lite")
 public final class KuGouLite extends LyricRelease {
 
     @Override
-    protected void init() {
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         hookTencentTinker();
     }
 
     @Override
-    protected void initApplicationAfter(@NonNull Context context) {
-        super.initApplicationAfter(context);
+    protected void onApplicationCreated(@NonNull Context context) {
+        super.onApplicationCreated(context);
 
         try {
             if (!enableStatusBarLyric())
@@ -102,10 +102,10 @@ public final class KuGouLite extends LyricRelease {
                 else methods[1] = m;
             }
 
-            hook(methods[0], new IHook() {
+            hook(methods[0], new AbsHook() {
                 @Override
                 public void before() {
-                    callThisMethod(methods[1], true);
+                    callMethod(methods[1], getThisObject(), true);
                     setResult(true);
                 }
             });
@@ -123,7 +123,7 @@ public final class KuGouLite extends LyricRelease {
         hookMethod("com.kugou.android.lyric.j",
             "d",
             Context.class, String.class, boolean.class,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void before() {
                     String lyric = (String) getArg(1);
@@ -143,7 +143,7 @@ public final class KuGouLite extends LyricRelease {
                             SuperLyricData data = new SuperLyricData();
 
                             SuperLyricWord[] lyricWords = null;
-                            int currentLine = (int) getThisField("a");
+                            int currentLine = (int) getField(getThisObject(), "a");
                             String[][] wordss = (String[][]) getField(lyricData, "f");
                             long[][] wordBegins = (long[][]) getField(lyricData, "i");
                             long[][] wordDelays = (long[][]) getField(lyricData, "j");
@@ -193,11 +193,11 @@ public final class KuGouLite extends LyricRelease {
                 }
 
                 @Override
-                public boolean onThrow(int flag, Throwable e) {
+                public boolean onThrow(@NonNull StageEnum stage, @NonNull Throwable e) {
                     unHookSelf();
                     hookLocalBroadcast("androidx.localbroadcastmanager.content.LocalBroadcastManager");
                     logE(TAG, e);
-                    return super.onThrow(flag, e);
+                    return super.onThrow(stage, e);
                 }
             }
         );
@@ -207,7 +207,7 @@ public final class KuGouLite extends LyricRelease {
         hookMethod(clazz,
             "sendBroadcast",
             Intent.class,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void before() {
                     Intent intent = (Intent) getArg(0);
@@ -229,10 +229,10 @@ public final class KuGouLite extends LyricRelease {
         hookMethod("com.kugou.framework.hack.ServiceFetcherHacker$FetcherImpl",
             "createServiceObject",
             Context.class, Context.class,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
-                    String mServiceName = (String) getThisField("serviceName");
+                    String mServiceName = (String) getField(getThisObject(), "serviceName");
                     if (mServiceName == null) return;
 
                     if (mServiceName.equals(Context.WIFI_SERVICE)) {

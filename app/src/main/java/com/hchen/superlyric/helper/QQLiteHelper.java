@@ -18,12 +18,12 @@
  */
 package com.hchen.superlyric.helper;
 
-import static com.hchen.hooktool.core.CoreTool.existsClass;
+import static com.hchen.hooktool.core.CoreTool.hasClass;
 import static com.hchen.hooktool.core.CoreTool.hookMethod;
 import static com.hchen.hooktool.core.CoreTool.returnResult;
 import static com.hchen.superlyric.hook.LyricRelease.sendLyric;
 
-import com.hchen.hooktool.hook.IHook;
+import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyricapi.AcquisitionMode;
 
 import java.util.Objects;
@@ -38,7 +38,7 @@ public final class QQLiteHelper {
      * 是否支持 QQLite
      */
     public static boolean isSupportQQLite() {
-        return existsClass("com.tencent.qqmusic.core.song.SongInfo");
+        return hasClass("com.tencent.qqmusic.core.song.SongInfo");
     }
 
     public static void hookLyric() {
@@ -52,7 +52,7 @@ public final class QQLiteHelper {
         hookMethod("com.tencent.qqmusiccommon.util.music.RemoteControlManager",
             "updataMetaData",
             "com.tencent.qqmusic.core.song.SongInfo", String.class,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void before() {
                     String lyric = (String) getArg(1);

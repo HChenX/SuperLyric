@@ -69,7 +69,7 @@
 
 - Uses **Binder** for lyric transmission, abandoning the traditional broadcast method used by other similar APIs.
 - Avoids Hooking system interfaces directly; it is parasitic on the system framework and relies on the module's robust crash handling for greater stability.
-- Utilizes Binder for synchronous inter-process data transfer, offering better performance, lower latency, and the capability to transmit more complex data, and is less likely to trigger broadcast data restrictions.
+- Utilizes Binder for synchronous inter-process hookData transfer, offering better performance, lower latency, and the capability to transmit more complex hookData, and is less likely to trigger broadcast hookData restrictions.
 - Supports free binding or unbinding registration anytime, anywhere; even if not manually unbound, the module handles it automatically.
 
 ---

@@ -18,17 +18,19 @@
  */
 package com.hchen.superlyric.hook.music;
 
-import com.hchen.collect.Collect;
+import androidx.annotation.NonNull;
+
+import com.hchen.auto.AutoHook;
 import com.hchen.superlyric.helper.QQLiteHelper;
 import com.hchen.superlyric.hook.LyricRelease;
 
 /**
  * 小米音乐
  */
-@Collect(targetPackage = "com.miui.player")
+@AutoHook(targetPackage = "com.miui.player")
 public final class MiPlayer extends LyricRelease {
-    @Override
-    protected void init() {
+    @Override 
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         QQLiteHelper.hookLyric();
     }
 }

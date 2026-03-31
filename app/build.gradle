@@ -41,8 +41,8 @@ android {
         minSdk 30
         targetSdk 36
         // noinspection HighAppVersionCode
-        versionCode 2026031200
-        versionName "2.8"
+        versionCode 2026033100
+        versionName "3.0"
 
         ndk {
             // noinspection ChromeOsAbiSupport
@@ -74,20 +74,16 @@ android {
         aidl true
     }
 
-    packagingOptions {
-        resources {
-            excludes += "/META-INF/**"
-            excludes += "/kotlin/**"
-            excludes += "/*.txt"
-            excludes += "/*.bin"
-            excludes += "/*.json"
-            excludes += 'DebugProbesKt.bin'
-        }
-    }
-
-    buildFeatures {
-        buildConfig true
-    }
+    // packagingOptions {
+    //     resources {
+    //         excludes += "/META-INF/**"
+    //         excludes += "/kotlin/**"
+    //         excludes += "/*.txt"
+    //         excludes += "/*.bin"
+    //         excludes += "/*.json"
+    //         excludes += 'DebugProbesKt.bin'
+    //     }
+    // }
 }
 
 androidComponents {
@@ -108,8 +104,10 @@ dependencies {
         resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
     }
 
-    compileOnly libs.api
     implementation libs.annotation
+
+    compileOnly libs.api
+    implementation libs.service
     implementation libs.hooktool
     implementation libs.dexkit
     implementation libs.dexkitcache
@@ -119,6 +117,7 @@ dependencies {
         changing = true
     }
 
-    implementation(project(':collect'))
-    annotationProcessor(project(':collect'))
+    compileOnly(project(':hidden-api'))
+    implementation(project(':auto'))
+    annotationProcessor(project(':auto'))
 }

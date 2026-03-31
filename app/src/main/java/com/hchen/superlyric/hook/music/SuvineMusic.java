@@ -18,17 +18,19 @@
  */
 package com.hchen.superlyric.hook.music;
 
-import com.hchen.collect.Collect;
+import androidx.annotation.NonNull;
+
+import com.hchen.auto.AutoHook;
 import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.hook.LyricRelease;
 
 /**
  * 糖醋音乐
  */
-@Collect(targetPackage = "com.xuncorp.suvine.music")
+@AutoHook(targetPackage = "com.xuncorp.suvine.music")
 public final class SuvineMusic extends LyricRelease {
-    @Override
-    protected void init() {
+    @Override 
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         MeizuHelper.hookNotificationLyric();
     }
 }

@@ -20,27 +20,29 @@ package com.hchen.superlyric.hook.music;
 
 import android.content.Context;
 
-import com.hchen.collect.Collect;
-import com.hchen.hooktool.HCData;
-import com.hchen.hooktool.hook.IHook;
+import androidx.annotation.NonNull;
+
+import com.hchen.auto.AutoHook;
+import com.hchen.hooktool.ModuleData;
+import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.hook.LyricRelease;
 
 /**
  * 青盐音乐
  */
-@Collect(targetPackage = "com.xuncorp.qinalt.music")
+@AutoHook(targetPackage = "com.xuncorp.qinalt.music")
 public final class Qinalt extends LyricRelease {
-    @Override
-    protected void init() {
+    @Override 
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         findMethod("com.stub.StubApp",
             "attachBaseContext",
             Context.class,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
                     Context context = (Context) getArg(0);
-                    HCData.setClassLoader(context.getClassLoader());
+                    ModuleData.setClassLoader(context.getClassLoader());
 
                     MeizuHelper.depthDeviceMock();
                     MeizuHelper.hookNotificationLyric();

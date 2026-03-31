@@ -32,9 +32,9 @@ import android.text.TextUtils;
 import androidx.annotation.CallSuper;
 import androidx.annotation.NonNull;
 
-import com.hchen.hooktool.HCBase;
-import com.hchen.hooktool.HCData;
-import com.hchen.hooktool.hook.IHook;
+import com.hchen.hooktool.AbsModule;
+import com.hchen.hooktool.ModuleData;
+import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.data.SuperLyricKey;
 import com.hchen.superlyricapi.AcquisitionMode;
 import com.hchen.superlyricapi.ISuperLyricDistributor;
@@ -47,17 +47,17 @@ import java.util.Objects;
  *
  * @author 焕晨HChen
  */
-public abstract class LyricRelease extends HCBase {
+public abstract class LyricRelease extends AbsModule {
     private static ISuperLyricDistributor iSuperLyricDistributor;
     public static AudioManager audioManager;
     public static String packageName;
     public static long versionCode = -1L;
     public static String versionName = "unknown";
 
-    @Override
     @CallSuper
-    protected void initApplicationAfter(@NonNull Context context) {
-        HCData.setClassLoader(context.getClassLoader());
+    @Override
+    protected void onApplicationCreated(@NonNull Context context) {
+        ModuleData.setClassLoader(context.getClassLoader());
 
         packageName = context.getPackageName();
         audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
@@ -94,14 +94,14 @@ public abstract class LyricRelease extends HCBase {
             hookMethod("com.tencent.tinker.loader.TinkerLoader",
                 "tryLoad",
                 "com.tencent.tinker.loader.app.TinkerApplication",
-                new IHook() {
+                new AbsHook() {
                     @Override
                     public void after() {
                         Intent intent = (Intent) getResult();
                         Application application = (Application) getArg(0);
                         int code = intent.getIntExtra("intent_return_code", -2);
                         if (code == 0) {
-                            HCData.setClassLoader(application.getClassLoader());
+                            ModuleData.setClassLoader(application.getClassLoader());
                         }
                     }
                 }
@@ -133,7 +133,7 @@ public abstract class LyricRelease extends HCBase {
         hookMethod("android.media.MediaMetadata$Builder",
             "putString",
             String.class, String.class,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
                     if (TextUtils.equals("android.media.metadata.TITLE", (String) getArg(0))) {
@@ -149,7 +149,7 @@ public abstract class LyricRelease extends HCBase {
         hookMethod("android.support.v4.media.MediaMetadataCompat$Builder",
             "putString",
             String.class, String.class,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
                     if (TextUtils.equals("android.media.metadata.TITLE", (String) getArg(0))) {

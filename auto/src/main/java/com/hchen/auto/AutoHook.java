@@ -16,7 +16,7 @@
 
  * Copyright (C) 2025-2026 HChenX
  */
-package com.hchen.collect;
+package com.hchen.auto;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -30,12 +30,10 @@ import java.lang.annotation.Target;
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.TYPE)
-public @interface Collect {
+public @interface AutoHook {
     String targetPackage();
 
-    boolean onLoadPackage() default true;
+    boolean onPackageLoaded() default true;
 
-    boolean onZygote() default false;
-
-    boolean onApplication() default true;
+    boolean onSystemStarting() default false;
 }

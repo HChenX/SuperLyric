@@ -20,7 +20,9 @@ package com.hchen.superlyric.hook.music;
 
 import android.os.Parcel;
 
-import com.hchen.hooktool.hook.IHook;
+import androidx.annotation.NonNull;
+
+import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.hook.LyricRelease;
 import com.hchen.superlyricapi.AcquisitionMode;
 import com.hchen.superlyricapi.SuperLyricData;
@@ -33,17 +35,17 @@ import com.hchen.superlyricapi.SuperLyricData;
 public final class Api extends LyricRelease {
     @Override
     protected boolean isEnabled() {
-        return existsClass("com.hchen.superlyricapi.SuperLyricTool");
+        return hasClass("com.hchen.superlyricapi.SuperLyricTool");
     }
 
-    @Override
-    protected void init() {
+    @Override 
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         setStaticField("com.hchen.superlyricapi.SuperLyricTool", "isEnabled", true);
 
         hookMethod("com.hchen.superlyricapi.SuperLyricPush",
             "onSuperLyric",
             "com.hchen.superlyricapi.SuperLyricData",
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
                     Parcel parcel = (Parcel) callMethod(getArg(0), "marshall");
@@ -60,7 +62,7 @@ public final class Api extends LyricRelease {
         hookMethod("com.hchen.superlyricapi.SuperLyricPush",
             "onStop",
             "com.hchen.superlyricapi.SuperLyricData",
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
                     Parcel parcel = (Parcel) callMethod(getArg(0), "marshall");

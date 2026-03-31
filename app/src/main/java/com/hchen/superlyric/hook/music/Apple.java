@@ -29,10 +29,10 @@ import android.os.SystemClock;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.collect.Collect;
+import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.hook.IHook;
+import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.hook.LyricRelease;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricWord;
@@ -45,14 +45,16 @@ import org.luckypray.dexkit.result.ClassData;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.Objects;
+import java.util.function.Predicate;
 
 /**
  * Apple Music
  */
-@Collect(targetPackage = "com.apple.android.music")
+@AutoHook(targetPackage = "com.apple.android.music")
 public final class Apple extends LyricRelease {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private Handler lyricHandler;
@@ -117,7 +119,7 @@ public final class Apple extends LyricRelease {
     }
 
     @Override
-    protected void init() {
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         // 初始化 Handler
         HandlerThread lyricThread = new HandlerThread("AppleMusicLyricThread");
         lyricThread.start();
@@ -126,11 +128,11 @@ public final class Apple extends LyricRelease {
         // Hook 初始化 LyricViewModel
         hookMethod("com.apple.android.music.AppleMusicApplication",
             "onCreate",
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
                     try {
-                        Application application = (Application) thisObject();
+                        Application application = (Application) getThisObject();
                         Class<?> playerLyricsViewModelClass = findClass("com.apple.android.music.player.viewmodel.PlayerLyricsViewModel");
                         if (playerLyricsViewModelClass != null) {
                             lyricViewModel = newInstance(playerLyricsViewModelClass, application);
@@ -144,10 +146,10 @@ public final class Apple extends LyricRelease {
 
         // Hook PlaybackState 构造
         hookAllConstructor("android.media.session.PlaybackState",
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
-                    playbackState = (PlaybackState) thisObject();
+                    playbackState = (PlaybackState) getThisObject();
                 }
             }
         );
@@ -167,15 +169,23 @@ public final class Apple extends LyricRelease {
                 ).single();
             }
         });
-        Field playbackStateField = findFieldPro("android.support.v4.media.session.PlaybackStateCompat")
-            .withFieldClass(PlaybackState.class)
-            .single();
+
+        Field playbackStateField =
+            Arrays.stream(findClass("android.support.v4.media.session.PlaybackStateCompat").getDeclaredFields())
+                .filter(new Predicate<Field>() {
+                    @Override
+                    public boolean test(Field field) {
+                        return Objects.equals(field.getType(), PlaybackState.class);
+                    }
+                })
+                .findFirst()
+                .orElseThrow();
 
         // android.support.v4.media.session.MediaControllerCompat$a$b
         hookMethod(mediaControllerCompatHandlerClass,
             "handleMessage",
             Message.class,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void before() {
                     Message m = (Message) getArg(0);
@@ -183,7 +193,7 @@ public final class Apple extends LyricRelease {
                         // 获取 PlaybackStateCompat 对象
                         Object playbackStateCompat = m.obj;
                         if (playbackStateCompat != null) {
-                            playbackState = (PlaybackState) getField(playbackStateCompat, playbackStateField);
+                            playbackState = (PlaybackState) getField(playbackStateField, playbackStateCompat);
                             updateLyricPosition();
                         }
                     }
@@ -206,20 +216,29 @@ public final class Apple extends LyricRelease {
                 ).single();
             }
         });
-        Method mediaMetadataCompatStaticMethod = findMethodPro("android.support.v4.media.MediaMetadataCompat")
-            .withStatic()
-            .single()
-            .obtain();
+        Method mediaMetadataCompatStaticMethod =
+            Arrays.stream(findClass("android.support.v4.media.MediaMetadataCompat").getDeclaredMethods())
+                .filter(new Predicate<Method>() {
+                    @Override
+                    public boolean test(Method method) {
+                        return Modifier.isStatic(method.getModifiers());
+                    }
+                }).findFirst().orElseThrow();
 
-        Field mediaMetadataField = findFieldPro("android.support.v4.media.MediaMetadataCompat")
-            .withFieldClass(MediaMetadata.class)
-            .single();
+        Field mediaMetadataField =
+            Arrays.stream(findClass("android.support.v4.media.MediaMetadataCompat").getDeclaredFields())
+            .filter(new Predicate<Field>() {
+                @Override
+                public boolean test(Field field) {
+                    return Objects.equals(field.getType(), MediaMetadata.class);
+                }
+            }).findFirst().orElseThrow();
 
         // android.support.v4.media.session.MediaControllerCompat$a$a
         hookMethod(mediaControllerCompatClass,
             "onMetadataChanged",
             MediaMetadata.class,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void before() {
                     try {
@@ -229,7 +248,7 @@ public final class Apple extends LyricRelease {
                             getArg(0)
                         );
 
-                        MediaMetadata metadata = (MediaMetadata) getField(metadataCompat, mediaMetadataField);
+                        MediaMetadata metadata = (MediaMetadata) getField(mediaMetadataField, metadataCompat);
                         String newTitle = metadata.getString(MediaMetadata.METADATA_KEY_TITLE);
 
                         // 检测歌曲变化
@@ -260,7 +279,7 @@ public final class Apple extends LyricRelease {
         hookMethod("com.apple.android.music.player.viewmodel.PlayerLyricsViewModel",
             "buildTimeRangeToLyricsMap",
             "com.apple.android.music.ttml.javanative.model.SongInfo$SongInfoPtr",
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
                     Object songInfoPtr = getArg(0);
@@ -293,14 +312,14 @@ public final class Apple extends LyricRelease {
         try {
             Class<?> playbackItemClass = findClass("com.apple.android.music.model.PlaybackItem");
 
-            if (existsClass("com.apple.android.music.model.BaseContentItem")) {
+            if (hasClass("com.apple.android.music.model.BaseContentItem")) {
                 hookMethod("com.apple.android.music.model.BaseContentItem",
                     "setId",
                     String.class,
-                    new IHook() {
+                    new AbsHook() {
                         @Override
                         public void before() {
-                            if (playbackItemClass.isInstance(thisObject())) {
+                            if (playbackItemClass.isInstance(getThisObject())) {
                                 String trackId = (String) getArg(0);
                                 if (trackId == null) return;
 
@@ -315,7 +334,7 @@ public final class Apple extends LyricRelease {
                                 }
                                 if (flag[0] == 1 && flag[1] == 1) {
                                     currentTrackId = trackId;
-                                    playbackItem = thisObject();
+                                    playbackItem = getThisObject();
                                     logD(TAG, "Current music ID: " + currentTrackId);
                                 }
                             }

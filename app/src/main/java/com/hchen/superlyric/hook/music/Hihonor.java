@@ -23,10 +23,10 @@ import android.content.SharedPreferences;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.collect.Collect;
+import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.hook.IHook;
+import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.hook.LyricRelease;
 
@@ -44,16 +44,16 @@ import java.util.Objects;
 /**
  * 荣耀音乐
  */
-@Collect(targetPackage = "com.hihonor.cloudmusic")
+@AutoHook(targetPackage = "com.hihonor.cloudmusic")
 public final class Hihonor extends LyricRelease {
-    @Override
-    protected void init() {
+    @Override 
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         hookTencentTinker();
-        if (existsClass("android.app.Instrumentation")) {
+        if (hasClass("android.app.Instrumentation")) {
             hookMethod("android.app.Instrumentation",
                 "newApplication",
                 ClassLoader.class, String.class, Context.class,
-                new IHook() {
+                new AbsHook() {
                     @Override
                     public void before() {
                         if (Objects.equals("com.netease.nis.wrapper.MyApplication", getArg(1))) {
@@ -66,9 +66,9 @@ public final class Hihonor extends LyricRelease {
         }
     }
 
-    @Override
-    protected void initApplicationAfter(@NonNull Context context) {
-        super.initApplicationAfter(context);
+    @Override 
+    protected void onApplicationCreated(@NonNull Context context) {
+        super.onApplicationCreated(context);
 
         MeizuHelper.shallowLayerDeviceMock();
         MeizuHelper.hookNotificationLyric();
@@ -106,7 +106,7 @@ public final class Hihonor extends LyricRelease {
             } else if (m.getParameterCount() == 1 && m.getParameterTypes()[0].equals(boolean.class)) {
                 hook(m, setArg(0, true));
             } else if (m.getReturnType().equals(SharedPreferences.class)) {
-                hook(m, new IHook() {
+                hook(m, new AbsHook() {
                     @Override
                     public void after() {
                         SharedPreferences sp = (SharedPreferences) getResult();

@@ -20,11 +20,10 @@ package com.hchen.superlyric.hook.music;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.collect.Collect;
+import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.helper.FieldHelper;
-import com.hchen.hooktool.hook.IHook;
+import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.hook.LyricRelease;
 import com.hchen.superlyricapi.AcquisitionMode;
 import com.hchen.superlyricapi.SuperLyricData;
@@ -37,19 +36,22 @@ import org.luckypray.dexkit.result.MethodData;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.Predicate;
 
 /**
  * 汽水音乐
  *
  * @author 焕晨HChen
  */
-@Collect(targetPackage = "com.luna.music")
+@AutoHook(targetPackage = "com.luna.music")
 public final class Qishui extends LyricRelease {
 
     @Override
-    protected void init() {
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         fakeBluetoothA2dpEnabled();
 
         // 此方法判断外接设备是否为蓝牙
@@ -113,24 +115,35 @@ public final class Qishui extends LyricRelease {
             }
         });
         // 此字段存储歌词信息
-        Field e = new FieldHelper(findClass("com.luna.biz.playing.lyric.bluetoothlyrics.BlueToothLyricViewModel"))
-            .withFieldClass(findClass("kotlin.Pair"))
-            .single();
-        // 此字段存储当前播放歌词的索引位置
-        Field g = new FieldHelper(findClass("com.luna.biz.playing.lyric.bluetoothlyrics.BlueToothLyricViewModel"))
-            .withFieldClass(Integer.class)
-            .single();
+        Field e = Arrays.stream(findClass("com.luna.biz.playing.lyric.bluetoothlyrics.BlueToothLyricViewModel").getDeclaredFields())
+            .filter(new Predicate<Field>() {
+                final Class<?> c = findClass("kotlin.Pair");
 
-        hook(m3, new IHook() {
+                @Override
+                public boolean test(Field field) {
+                    return Objects.equals(field.getType(), c);
+                }
+            }).findFirst().orElseThrow();
+
+        // 此字段存储当前播放歌词的索引位置
+        Field g = Arrays.stream(findClass("com.luna.biz.playing.lyric.bluetoothlyrics.BlueToothLyricViewModel").getDeclaredFields())
+            .filter(new Predicate<Field>() {
+                @Override
+                public boolean test(Field field) {
+                    return Objects.equals(field.getType(), Integer.class);
+                }
+            }).findFirst().orElseThrow();
+
+        hook(m3, new AbsHook() {
             private int lastIndex = -1;
 
             @Override
             public void after() {
-                Integer index = (Integer) getThisField(g);
+                Integer index = (Integer) getField(g, getThisObject());
                 if (index != null) {
                     if (lastIndex == -1 || index != lastIndex) {
                         lastIndex = index;
-                        Object pair = getThisField(e);
+                        Object pair = getField(e, getThisObject());
                         List<?> second = (List<?>) callMethod(pair, "getSecond");
                         Object sentence = second.get(index);
 

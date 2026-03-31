@@ -18,49 +18,47 @@
  */
 package com.hchen.superlyric;
 
-import static com.hchen.hooktool.HCInit.LOG_D;
-import static com.hchen.hooktool.HCInit.LOG_I;
+import static com.hchen.hooktool.ModuleConfig.LOG_D;
+import static com.hchen.hooktool.ModuleConfig.LOG_I;
+
+import android.content.Context;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.collect.CollectMap;
+import com.hchen.auto.HookData;
 import com.hchen.dexkitcache.DexkitCache;
-import com.hchen.hooktool.HCBase;
-import com.hchen.hooktool.HCEntrance;
-import com.hchen.hooktool.HCInit;
-import com.hchen.hooktool.log.XposedLog;
+import com.hchen.hooktool.AbsModule;
+import com.hchen.hooktool.ModuleConfig;
+import com.hchen.hooktool.ModuleData;
+import com.hchen.hooktool.ModuleEntrance;
 import com.hchen.superlyric.hook.music.Api;
 
-import java.util.HashSet;
+import java.lang.reflect.InvocationTargetException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
-
-import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 /**
  * Hook 入口
  *
  * @author 焕晨HChen
  */
-public final class InitHook extends HCEntrance {
+public final class InitHook extends ModuleEntrance {
     private static final String TAG = "SuperLyric";
 
-    @NonNull
     @Override
-    public HCInit.BasicData initHC(@NonNull HCInit.BasicData basicData) {
-        return basicData
-            .setTag(TAG)
-            .setPrefsName("super_lyric_prefs")
-            .setLogLevel(BuildConfig.DEBUG ? LOG_D : LOG_I)
-            .setModulePackageName(BuildConfig.APPLICATION_ID)
-            .setLogExpandPath("com.hchen.superlyric.hook")
-            .setLogExpandIgnoreClassNames("LyricRelease");
+    public void initModuleConfig() {
+        ModuleConfig.setLogTag(TAG);
+        ModuleConfig.setLogLevel(BuildConfig.DEBUG ? LOG_D : LOG_I);
+        ModuleConfig.setPrefsName("super_lyric_prefs");
+        ModuleConfig.setShowHookSuccessLog(BuildConfig.DEBUG);
+        ModuleConfig.setLogExpandPaths("com.hchen.superlyric.hook");
+        ModuleConfig.setLogExpandIgnoreClassNames("LyricRelease");
     }
 
     @NonNull
     @Override
-    public String[] ignorePackageNameList() {
+    public String[] ignorePackages() {
         return new String[]{
             "com.miui.contentcatcher",
             "com.android.providers.settings",
@@ -69,57 +67,69 @@ public final class InitHook extends HCEntrance {
         };
     }
 
-    @Override
-    public void onLoadPackage(@NonNull XC_LoadPackage.LoadPackageParam loadPackageParam) throws Throwable {
-        if (!CollectMap.ON_LOAD_PACKAGE_MAP.containsKey(loadPackageParam.packageName) && !CollectMap.ON_APPLICATION_MAP.containsKey(loadPackageParam.packageName)) {
-            HCInit.initLoadPackageParam(loadPackageParam);
-            new Api().onApplication().onLoadPackage();
-        } else {
-            try {
-                HCInit.initLoadPackageParam(loadPackageParam);
-                if (loadPackageParam.appInfo != null) {
-                    DexkitCache.init(
-                        "superlyric",
-                        loadPackageParam.classLoader,
-                        loadPackageParam.appInfo.sourceDir,
-                        loadPackageParam.appInfo.dataDir
-                    );
-                }
+    private final List<AbsModule> modules = new ArrayList<>();
 
-                Set<String> processed = new HashSet<>();
-                List<String> onApplicationList = CollectMap.ON_APPLICATION_MAP.get(loadPackageParam.packageName);
-                List<String> onLoadPackageList = CollectMap.ON_LOAD_PACKAGE_MAP.get(loadPackageParam.packageName);
-                if (onApplicationList != null) {
-                    for (String path : onApplicationList) {
-                        try {
-                            HCBase hcBase = (HCBase) Objects.requireNonNull(InitHook.class.getClassLoader()).loadClass(path).getDeclaredConstructor().newInstance();
-                            hcBase.onApplication();
-                            if (onLoadPackageList != null) {
-                                if (onLoadPackageList.contains(path)) {
-                                    hcBase.onLoadPackage();
-                                }
-                            }
-                        } catch (Throwable e) {
-                            XposedLog.logE(TAG, e);
-                        } finally {
-                            processed.add(path);
-                        }
-                    }
-                }
-                if (onLoadPackageList != null) {
-                    for (String path : onLoadPackageList) {
-                        if (!processed.contains(path)) {
-                            try {
-                                HCBase hcBase = (HCBase) Objects.requireNonNull(InitHook.class.getClassLoader()).loadClass(path).getDeclaredConstructor().newInstance();
-                                hcBase.onLoadPackage();
-                            } catch (Throwable e) {
-                                XposedLog.logE(TAG, e);
-                            }
-                        }
+    @Override
+    public void handlePackageReady(@NonNull PackageReadyParam param) {
+        super.handlePackageReady(param);
+
+        if (HookData.ON_PACKAGE_LOADED.containsKey(param.getPackageName())) {
+            try {
+                ModuleData.setClassLoader(param.getClassLoader());
+                DexkitCache.init(
+                    "superlyric",
+                    param.getClassLoader(),
+                    param.getApplicationInfo().sourceDir,
+                    param.getApplicationInfo().dataDir
+                );
+
+                for (String path : Objects.requireNonNull(HookData.ON_PACKAGE_LOADED.get(param.getPackageName()))) {
+                    try {
+                        AbsModule module = (AbsModule) InitHook.class.getClassLoader()
+                            .loadClass(path)
+                            .getDeclaredConstructor()
+                            .newInstance();
+
+                        module.handlePackageReady(param);
+                        modules.add(module);
+                    } catch (IllegalAccessException | InstantiationException |
+                             InvocationTargetException | NoSuchMethodException |
+                             ClassNotFoundException e) {
+                        throw new RuntimeException(e);
                     }
                 }
             } finally {
                 DexkitCache.close();
+            }
+        } else {
+            ModuleData.setClassLoader(param.getClassLoader());
+            new Api().handlePackageReady(param);
+        }
+    }
+
+    @Override
+    public void handleApplicationCreated(@NonNull Context context) {
+        super.handleApplicationCreated(context);
+
+        for (AbsModule module : modules) {
+            module.handleApplicationCreated(context);
+        }
+    }
+
+    @Override
+    public void handleSystemServerStarting(@NonNull SystemServerStartingParam param) {
+        super.handleSystemServerStarting(param);
+
+        for (List<String> value : HookData.ON_SYSTEM_STARTING.values()) {
+            for (String path : value) {
+                try {
+                    AbsModule module = (AbsModule) InitHook.class.getClassLoader().loadClass(path).getDeclaredConstructor().newInstance();
+                    module.handleSystemServerStarting(param);
+                } catch (IllegalAccessException | InstantiationException |
+                         InvocationTargetException | NoSuchMethodException |
+                         ClassNotFoundException e) {
+                    throw new RuntimeException(e);
+                }
             }
         }
     }

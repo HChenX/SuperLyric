@@ -22,11 +22,10 @@ import android.content.Context;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.collect.Collect;
+import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.helper.RangeHelper;
-import com.hchen.hooktool.hook.IHook;
+import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.TimeoutHelper;
 import com.hchen.superlyric.hook.LyricRelease;
 import com.hchen.superlyricapi.AcquisitionMode;
@@ -36,25 +35,28 @@ import org.luckypray.dexkit.query.FindClass;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.result.ClassData;
 
+import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.Objects;
+import java.util.function.Predicate;
 
 /**
  * 酷我音乐
  */
-@Collect(targetPackage = "cn.kuwo.player")
+@AutoHook(targetPackage = "cn.kuwo.player")
 public final class KuWo extends LyricRelease {
     @Override
-    protected void init() {
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
     }
 
     @Override
-    protected void initApplicationAfter(@NonNull Context context) {
-        super.initApplicationAfter(context);
+    protected void onApplicationCreated(@NonNull Context context) {
+        super.onApplicationCreated(context);
 
-        if (existsClass("cn.kuwo.mod.playcontrol.RemoteControlLyricMgr")) {
+        if (hasClass("cn.kuwo.mod.playcontrol.RemoteControlLyricMgr")) {
             hookAllMethod("cn.kuwo.mod.playcontrol.RemoteControlLyricMgr",
                 "updateLyricText",
-                new IHook() {
+                new AbsHook() {
                     @Override
                     public void after() {
                         String lyric = (String) getArg(0);
@@ -67,21 +69,24 @@ public final class KuWo extends LyricRelease {
             );
         } else {
             Class<?> confMMKVMgrImplClass = findClass("cn.kuwo.base.config.ConfMMKVMgrImpl");
-            if (confMMKVMgrImplClass == null) return;
 
-            findMethodPro(confMMKVMgrImplClass)
-                .withReturnClass(boolean.class)
-                .withParamCount(3, RangeHelper.EQ)
-                .withParamClasses(String.class, String.class, boolean.class)
-                .single()
-                .hook(new IHook() {
+            hook(Arrays.stream(confMMKVMgrImplClass.getDeclaredMethods())
+                    .filter(new Predicate<Method>() {
+                        @Override public boolean test(Method method) {
+                            return Objects.equals(method.getReturnType(), boolean.class) &&
+                                method.getParameterCount() == 3 &&
+                                Arrays.deepEquals(new Class<?>[]{String.class, String.class, boolean.class}, method.getParameterTypes());
+                        }
+                    }).findFirst().orElseThrow(),
+                new AbsHook() {
                     @Override
                     public void before() {
                         String key = (String) getArg(1);
                         if (Objects.equals(key, "bluetooth_car_lyric"))
                             setResult(true);
                     }
-                });
+                }
+            );
 
             fakeBluetoothA2dpEnabled();
 
@@ -96,11 +101,15 @@ public final class KuWo extends LyricRelease {
                     ).singleOrThrow(() -> new Throwable("Failed to find bluetooth_car_lyric!"));
                 }
             });
-            findMethodPro(clazz)
-                .withParamCount(1, RangeHelper.EQ)
-                .withParamClasses(String.class)
-                .single()
-                .hook(new IHook() {
+
+            hook(Arrays.stream(clazz.getDeclaredMethods())
+                    .filter(new Predicate<Method>() {
+                        @Override public boolean test(Method method) {
+                            return method.getParameterCount() == 1 &&
+                                Objects.equals(method.getParameterTypes()[0], String.class);
+                        }
+                    }).findFirst().orElseThrow(),
+                new AbsHook() {
                     @Override
                     public void before() {
                         String lyric = (String) getArg(0);
@@ -109,7 +118,8 @@ public final class KuWo extends LyricRelease {
                         TimeoutHelper.start();
                         sendLyric(lyric, 0, AcquisitionMode.BLUETOOTH_LYRIC);
                     }
-                });
+                }
+            );
         }
     }
 }

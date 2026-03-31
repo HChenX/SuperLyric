@@ -22,10 +22,10 @@ import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.collect.Collect;
+import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.hook.IHook;
+import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.hooktool.log.AndroidLog;
 import com.hchen.superlyric.hook.LyricRelease;
 import com.hchen.superlyricapi.SuperLyricData;
@@ -42,16 +42,18 @@ import org.luckypray.dexkit.result.MethodData;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Predicate;
 
 /**
  * 椒盐音乐
  */
-@Collect(targetPackage = "com.salt.music")
+@AutoHook(targetPackage = "com.salt.music")
 public final class SaltMusic extends LyricRelease {
     @Override
-    protected void init() {
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         Class<?> lyricDataClass = DexkitCache.findMember("salt$1", new IDexkit<ClassData>() {
             @NonNull @Override
             public ClassData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
@@ -119,27 +121,36 @@ public final class SaltMusic extends LyricRelease {
                 ).single();
             }
         });
-        Field typeField = findFieldPro(method.getDeclaringClass())
-            .withFieldClass(int.class)
-            .single();
-        Field field = findFieldPro(method.getDeclaringClass())
-            .withFieldClass(Object.class)
-            .single();
+        Field typeField = Arrays.stream(method.getDeclaringClass().getDeclaredFields())
+            .filter(new Predicate<Field>() {
+                @Override
+                public boolean test(Field field) {
+                    return Objects.equals(field.getType(), int.class);
+                }
+            }).findFirst().orElseThrow();
+
+        Field field = Arrays.stream(method.getDeclaringClass().getDeclaredFields())
+            .filter(new Predicate<Field>() {
+                @Override
+                public boolean test(Field field) {
+                    return Objects.equals(field.getType(), Object.class);
+                }
+            }).findFirst().orElseThrow();
 
         Objects.requireNonNull(typeField);
         Objects.requireNonNull(field);
 
-        hook(method, new IHook() {
+        hook(method, new AbsHook() {
                 @Override
                 public void before() {
                     if (timesFileds.isEmpty() || fields.isEmpty()) {
                         return;
                     }
 
-                    int type = (int) getThisField(typeField);
+                    int type = (int) getField(typeField, getThisObject());
                     if (type == 20) {
-                        Object lyricData = getThisField(field);
-                        List<?> lyrics = (List<?>) getField(lyricData, finalLyricListField);
+                        Object lyricData = getField(field, getThisObject());
+                        List<?> lyrics = (List<?>) getField(finalLyricListField, lyricData);
                         if (lyrics != null) {
                             List<LyricData> data = new ArrayList<>();
                             for (Object l : lyrics) {
@@ -149,11 +160,11 @@ public final class SaltMusic extends LyricRelease {
                                 String lyric;
 
                                 for (int i = 0; i < timesFileds.size(); i++) {
-                                    times[i] = (long) getField(l, timesFileds.get(i));
+                                    times[i] = (long) getField(timesFileds.get(i), l);
                                 }
                                 startTime = Math.min(times[0], times[1]);
                                 endTime = Math.max(times[0], times[1]);
-                                lyric = (String) getField(l, finalLyricField);
+                                lyric = (String) getField(finalLyricField, l);
 
                                 data.add(new LyricData(startTime, endTime, lyric));
                             }
@@ -173,7 +184,7 @@ public final class SaltMusic extends LyricRelease {
 
                             String[] strings = new String[2];
                             for (int i = 0; i < fields.size(); i++) {
-                                strings[i] = (String) getField(lyricData, fields.get(i));
+                                strings[i] = (String) getField(fields.get(i), lyricData);
                             }
                             String translation;
                             if (strings[0] == null || strings[1] == null) {

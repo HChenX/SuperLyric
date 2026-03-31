@@ -18,8 +18,10 @@
  */
 package com.hchen.superlyric.hook.music;
 
-import com.hchen.collect.Collect;
-import com.hchen.hooktool.hook.IHook;
+import androidx.annotation.NonNull;
+
+import com.hchen.auto.AutoHook;
+import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.TimeoutHelper;
 import com.hchen.superlyric.hook.LyricRelease;
 import com.hchen.superlyricapi.AcquisitionMode;
@@ -27,19 +29,19 @@ import com.hchen.superlyricapi.AcquisitionMode;
 /**
  * MusicFree
  */
-@Collect(targetPackage = "fun.upup.musicfree")
+@AutoHook(targetPackage = "fun.upup.musicfree")
 public final class MusicFree extends LyricRelease {
-    @Override
-    protected void init() {
+    @Override 
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         hookMethod("fun.upup.musicfree.lyricUtil.LyricUtilModule",
             "showStatusBarLyric",
             String.class, "com.facebook.react.bridge.ReadableMap", "com.facebook.react.bridge.Promise",
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void before() {
                     Object promise = getArg(2);
                     callMethod(promise, "resolve", true);
-                    returnNull();
+                    setResult(null);
                 }
             }
         );
@@ -47,7 +49,7 @@ public final class MusicFree extends LyricRelease {
         hookMethod("fun.upup.musicfree.lyricUtil.LyricUtilModule",
             "setStatusBarLyricText",
             String.class, "com.facebook.react.bridge.Promise",
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void before() {
                     String lyric = (String) getArg(0);
