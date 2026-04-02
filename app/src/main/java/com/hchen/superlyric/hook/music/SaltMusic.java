@@ -27,7 +27,7 @@ import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.hooktool.log.AndroidLog;
-import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyric.hook.AbsPublisher;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricWord;
 
@@ -51,7 +51,7 @@ import java.util.function.Predicate;
  * 椒盐音乐
  */
 @AutoHook(targetPackage = "com.salt.music")
-public final class SaltMusic extends LyricRelease {
+public final class SaltMusic extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         Class<?> lyricDataClass = DexkitCache.findMember("salt$1", new IDexkit<ClassData>() {
@@ -222,6 +222,7 @@ public final class SaltMusic extends LyricRelease {
 
         @Override
         public boolean equals(Object o) {
+            // noinspection DeconstructionCanBeUsed
             if (!(o instanceof LyricData lyricData)) return false;
             return startTime == lyricData.startTime && endTime == lyricData.endTime && lyric.equals(lyricData.lyric);
         }

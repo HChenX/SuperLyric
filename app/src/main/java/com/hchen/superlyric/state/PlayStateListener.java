@@ -32,7 +32,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.hchen.superlyric.binder.SuperLyricService;
-import com.hchen.superlyricapi.ISuperLyricDistributor;
+import com.hchen.superlyricapi.ISuperLyricManager;
 import com.hchen.superlyricapi.SuperLyricData;
 
 import java.util.List;
@@ -48,7 +48,7 @@ public final class PlayStateListener {
     @NonNull
     private final Context mContext;
     @NonNull
-    private final ISuperLyricDistributor mISuperLyricDistributor;
+    private final ISuperLyricManager mManager;
     @NonNull
     private final MediaSessionManager mMediaSessionManager;
     @NonNull
@@ -74,9 +74,9 @@ public final class PlayStateListener {
         }
     };
 
-    public PlayStateListener(@NonNull Context context, @NonNull ISuperLyricDistributor iSuperLyricDistributor) {
+    public PlayStateListener(@NonNull Context context, @NonNull ISuperLyricManager manager) {
         mContext = context;
-        mISuperLyricDistributor = iSuperLyricDistributor;
+        mManager = manager;
         mMediaSessionManager = (MediaSessionManager) mContext.getSystemService(Context.MEDIA_SESSION_SERVICE);
     }
 
@@ -90,8 +90,7 @@ public final class PlayStateListener {
     }
 
     private void registerMediaControllerCallback(@NonNull MediaController controller) {
-        // 不监听自我控制的应用
-        if (SuperLyricService.mSelfControlSet.contains(controller.getPackageName())) {
+        if (SuperLyricService.mNonSystemPlayStateListeners.contains(controller.getPackageName())) {
             return;
         }
 
@@ -127,7 +126,7 @@ public final class PlayStateListener {
                 case PlaybackState.STATE_BUFFERING, PlaybackState.STATE_PAUSED,
                      PlaybackState.STATE_STOPPED -> {
                     try {
-                        mISuperLyricDistributor.onStop(
+                        mManager.sendStop(
                             new SuperLyricData()
                                 .setPackageName(mController.getPackageName())
                                 .setPlaybackState(state)
@@ -149,7 +148,7 @@ public final class PlayStateListener {
             }
 
             try {
-                mISuperLyricDistributor.onSuperLyric(
+                mManager.sendLyric(
                     new SuperLyricData()
                         .setPackageName(mController.getPackageName())
                         .setMediaMetadata(metadata)
@@ -159,7 +158,7 @@ public final class PlayStateListener {
         }
 
         private boolean unregisterCallbackIfNeed() {
-            if (SuperLyricService.mSelfControlSet.contains(mController.getPackageName())) {
+            if (SuperLyricService.mNonSystemPlayStateListeners.contains(mController.getPackageName())) {
                 mController.unregisterCallback(this);
                 mCallbackHashMap.remove(mController);
                 return true;

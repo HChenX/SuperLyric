@@ -28,8 +28,7 @@ import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.MeizuHelper;
-import com.hchen.superlyric.hook.LyricRelease;
-import com.hchen.superlyricapi.AcquisitionMode;
+import com.hchen.superlyric.hook.AbsPublisher;
 import com.hchen.superlyricapi.SuperLyricData;
 
 import org.luckypray.dexkit.DexKitBridge;
@@ -49,8 +48,8 @@ import java.util.Objects;
  * 网易云音乐
  */
 @AutoHook(targetPackage = "com.netease.cloudmusic")
-public final class Netease extends LyricRelease {
-    @Override 
+public final class Netease extends AbsPublisher {
+    @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         hookTencentTinker();
         if (hasClass("android.app.Instrumentation")) {
@@ -70,11 +69,11 @@ public final class Netease extends LyricRelease {
         }
     }
 
-    @Override 
+    @Override
     protected void onApplicationCreated(@NonNull Context context) {
         super.onApplicationCreated(context);
 
-        if (versionCode >= 8000041) {
+        if (mVersionCode >= 8000041) {
             MeizuHelper.shallowLayerDeviceMock();
             // MeizuHelper.hookNotificationLyric();
 
@@ -103,8 +102,8 @@ public final class Netease extends LyricRelease {
                 new AbsHook() {
                     @Override
                     public void before() {
-                        List<?> mSentences = (List<?>) getField(getThisObject(),"mSentences");
-                        int mCurLyricIndex = (int) getField(getThisObject(),"mCurLyricIndex");
+                        List<?> mSentences = (List<?>) getField(getThisObject(), "mSentences");
+                        int mCurLyricIndex = (int) getField(getThisObject(), "mCurLyricIndex");
 
                         Object mSentence = mSentences.get(mCurLyricIndex);
                         String lyric = (String) callMethod(mSentence, "getContent");
@@ -112,7 +111,7 @@ public final class Netease extends LyricRelease {
                         int endTime = (int) callMethod(mSentence, "getEndTime");
                         int startTime = (int) callMethod(mSentence, "getStartTime");
 
-                        sendLyric(lyric, endTime - startTime, new SuperLyricData().setTranslation(translate).setAcquisitionMode(AcquisitionMode.HOOK_LYRIC));
+                        sendLyric(lyric, endTime - startTime, new SuperLyricData().setTranslation(translate));
                     }
                 }
             );
@@ -160,7 +159,7 @@ public final class Netease extends LyricRelease {
                 }
             }
         } else {
-            getMediaMetadataLyric();
+            hookMediaMetadataLyric();
         }
     }
 }

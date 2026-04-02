@@ -27,8 +27,7 @@ import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.TimeoutHelper;
-import com.hchen.superlyric.hook.LyricRelease;
-import com.hchen.superlyricapi.AcquisitionMode;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
@@ -44,7 +43,7 @@ import java.util.function.Predicate;
  * 酷我音乐
  */
 @AutoHook(targetPackage = "cn.kuwo.player")
-public final class KuWo extends LyricRelease {
+public final class KuWo extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
     }
@@ -63,7 +62,7 @@ public final class KuWo extends LyricRelease {
                         if (lyric == null || lyric.isEmpty()) return;
 
                         TimeoutHelper.start();
-                        sendLyric(lyric, 0, AcquisitionMode.BLUETOOTH_LYRIC);
+                        sendLyric(lyric);
                     }
                 }
             );
@@ -116,7 +115,7 @@ public final class KuWo extends LyricRelease {
                         if (lyric == null || lyric.isEmpty()) return;
 
                         TimeoutHelper.start();
-                        sendLyric(lyric, 0, AcquisitionMode.BLUETOOTH_LYRIC);
+                        sendLyric(lyric);
                     }
                 }
             );

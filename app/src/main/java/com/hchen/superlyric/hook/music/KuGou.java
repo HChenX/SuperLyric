@@ -29,8 +29,7 @@ import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.superlyric.hook.LyricRelease;
-import com.hchen.superlyricapi.AcquisitionMode;
+import com.hchen.superlyric.hook.AbsPublisher;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricWord;
 
@@ -55,7 +54,7 @@ import java.util.function.Predicate;
  * 酷狗音乐
  */
 @AutoHook(targetPackage = "com.kugou.android")
-public final class KuGou extends LyricRelease {
+public final class KuGou extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         hookTencentTinker();
@@ -68,7 +67,7 @@ public final class KuGou extends LyricRelease {
         try {
             if (!enableStatusBarLyric()) return;
 
-            if (versionCode <= 12009) {
+            if (mVersionCode <= 12009) {
                 hookLocalBroadcast("android.support.v4.content.LocalBroadcastManager");
             } else {
                 hookMeizuLyric();
@@ -253,7 +252,6 @@ public final class KuGou extends LyricRelease {
                             //     String[] transliterationWords = transliterationWordss[currentLine];
                             //     AndroidLog.logI(TAG, "TransliterationWords: " + Arrays.toString(transliterationWords));
                             // }
-                            data.setAcquisitionMode(AcquisitionMode.HOOK_LYRIC);
                             sendSuperLyricData(data);
                         }
                     } else {
@@ -279,7 +277,7 @@ public final class KuGou extends LyricRelease {
                     if (message == null) return;
 
                     if (Objects.equals(action, "com.kugou.android.update_meizu_lyric")) {
-                        sendLyric(message, 0, AcquisitionMode.HOOK_LYRIC);
+                        sendLyric(message);
                     }
                 }
             }

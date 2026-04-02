@@ -21,15 +21,15 @@ package com.hchen.superlyric.hook.music;
 import androidx.annotation.NonNull;
 
 import com.hchen.auto.AutoHook;
-import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
  * Kde
  */
 @AutoHook(targetPackage = "org.kde.kdeconnect_tp")
-public final class Kde extends LyricRelease {
-    @Override 
+public final class Kde extends AbsPublisher {
+    @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
-        getMediaMetadataLyric();
+        hookMediaMetadataLyric();
     }
 }

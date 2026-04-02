@@ -22,8 +22,7 @@ import androidx.annotation.NonNull;
 
 import com.hchen.auto.AutoHook;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.superlyric.hook.LyricRelease;
-import com.hchen.superlyricapi.AcquisitionMode;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 import java.util.Arrays;
 
@@ -31,7 +30,7 @@ import java.util.Arrays;
  * 华为音乐
  */
 @AutoHook(targetPackage = "com.huawei.music")
-public final class Huawei extends LyricRelease {
+public final class Huawei extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         hookAllMethod("com.android.mediacenter.localmusic.VehicleLyricControl",
@@ -51,7 +50,7 @@ public final class Huawei extends LyricRelease {
                 public void before() {
                     Object[] lyric = getArgs();
                     String lyricWithoutBrackets = Arrays.toString(lyric).substring(1, Arrays.toString(lyric).length() - 1);
-                    sendLyric(lyricWithoutBrackets, 0, AcquisitionMode.BLUETOOTH_LYRIC);
+                    sendLyric(lyricWithoutBrackets);
                 }
             }
         );

@@ -27,8 +27,7 @@ import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.superlyric.hook.LyricRelease;
-import com.hchen.superlyricapi.AcquisitionMode;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
@@ -44,12 +43,12 @@ import java.util.Objects;
  * @author 焕晨HChen
  */
 @AutoHook(targetPackage = "cn.wenyu.bodian")
-public final class Bodian extends LyricRelease {
-    @Override 
+public final class Bodian extends AbsPublisher {
+    @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
     }
 
-    @Override 
+    @Override
     protected void onApplicationCreated(@NonNull Context context) {
         super.onApplicationCreated(context);
 
@@ -74,7 +73,7 @@ public final class Bodian extends LyricRelease {
                 @Override
                 public void before() {
                     String lyric = (String) getArg(0);
-                    sendLyric(lyric, 0, AcquisitionMode.HOOK_LYRIC);
+                    sendLyric(lyric);
                 }
             }
         );

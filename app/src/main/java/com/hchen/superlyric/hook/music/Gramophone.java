@@ -22,14 +22,14 @@ import androidx.annotation.NonNull;
 
 import com.hchen.auto.AutoHook;
 import com.hchen.superlyric.helper.MeizuHelper;
-import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
  * Gramophone [留声机]
  */
 @AutoHook(targetPackage = "org.akanework.gramophone")
-public final class Gramophone extends LyricRelease {
-    @Override 
+public final class Gramophone extends AbsPublisher {
+    @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         MeizuHelper.hookNotificationLyric();
     }

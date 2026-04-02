@@ -19,111 +19,162 @@
 package com.hchen.superlyric.binder;
 
 import android.os.IBinder;
+import android.os.RemoteCallbackList;
 import android.os.RemoteException;
 
 import androidx.annotation.NonNull;
 
 import com.hchen.hooktool.log.AndroidLog;
-import com.hchen.superlyricapi.ISuperLyric;
-import com.hchen.superlyricapi.ISuperLyricDistributor;
+import com.hchen.superlyricapi.ISuperLyricManager;
+import com.hchen.superlyricapi.ISuperLyricReceiver;
 import com.hchen.superlyricapi.SuperLyricData;
 
-import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.function.Predicate;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 
 /**
  * Super Lyric 服务
- * <p>
- * 向所有接收方发送歌词等数据
  *
  * @author 焕晨HChen
  */
-public final class SuperLyricService extends ISuperLyricDistributor.Stub {
+public final class SuperLyricService extends ISuperLyricManager.Stub {
     private static final String TAG = "SuperLyricService";
-    @NonNull
-    private final ConcurrentHashMap<IBinder, ISuperLyric> mRegisteredBinderMap = new ConcurrentHashMap<>();
-    @NonNull
-    public static final CopyOnWriteArraySet<String> mExemptSet = new CopyOnWriteArraySet<>();
-    @NonNull
-    public static final CopyOnWriteArraySet<String> mSelfControlSet = new CopyOnWriteArraySet<>();
-
-    public void registerSuperLyricBinder(@NonNull IBinder iBinder, @NonNull ISuperLyric iSuperLyric) {
-        try {
-            mRegisteredBinderMap.putIfAbsent(iBinder, iSuperLyric);
-        } catch (Throwable e) {
-            AndroidLog.logE(TAG, "[registerSuperLyricBinder()] Failed to add binder: " + iSuperLyric, e);
+    private final Set<IBinder> mReceiverBinders = ConcurrentHashMap.newKeySet();
+    private final RemoteCallbackList<ISuperLyricReceiver> mCallbacks = new RemoteCallbackList<>() {
+        @Override
+        public void onCallbackDied(ISuperLyricReceiver callbackInterface) {
+            super.onCallbackDied(callbackInterface);
+            mReceiverBinders.remove(callbackInterface.asBinder());
+            AndroidLog.logW(TAG, "Receiver died: " + callbackInterface + ", binder: " + callbackInterface.asBinder());
         }
-    }
-
-    public void unregisterSuperLyricBinder(@NonNull IBinder iBinder) {
-        try {
-            if (mRegisteredBinderMap.get(iBinder) != null) {
-                mRegisteredBinderMap.remove(iBinder);
+    };
+    private final ExecutorService mBroadcastExecutor = Executors.newSingleThreadExecutor(
+        new ThreadFactory() {
+            @Override
+            public Thread newThread(Runnable r) {
+                Thread t = new Thread(r, "SuperLyric-Broadcaster");
+                t.setDaemon(true);
+                return t;
             }
-        } catch (Throwable e) {
-            AndroidLog.logE(TAG, "[unregisterSuperLyricBinder()] Failed to remove binder: " + iBinder, e);
         }
-    }
+    );
+    public static final CopyOnWriteArraySet<String> mPublishers = new CopyOnWriteArraySet<>();
+    public static final CopyOnWriteArraySet<String> mNonSystemPlayStateListeners = new CopyOnWriteArraySet<>();
 
-    public void addSelfControlPackage(@NonNull String packageName) {
-        mSelfControlSet.add(packageName);
-    }
-
-    public void removeSelfControlPackage(@NonNull String packageName) {
-        mSelfControlSet.remove(packageName);
+    @Override
+    public void registerPublisher(String packageName) throws RemoteException {
+        if (packageName != null) {
+            mPublishers.add(packageName);
+        }
     }
 
     @Override
-    public void onSuperLyric(SuperLyricData data) throws RemoteException {
-        mRegisteredBinderMap.entrySet().removeIf(new Predicate<Map.Entry<IBinder, ISuperLyric>>() {
+    public void unregisterPublisher(String packageName) throws RemoteException {
+        if (packageName != null) {
+            mPublishers.remove(packageName);
+        }
+    }
+
+    @Override
+    public boolean isPublisherRegistered(String packageName) throws RemoteException {
+        return packageName != null && mPublishers.contains(packageName);
+    }
+
+    @Override
+    public void sendLyric(SuperLyricData data) throws RemoteException {
+        if (data == null) {
+            return;
+        }
+
+        mBroadcastExecutor.execute(new Runnable() {
             @Override
-            public boolean test(Map.Entry<IBinder, ISuperLyric> entry) {
-                ISuperLyric iSuperLyric = entry.getValue();
+            public void run() {
+                int itemCount = mCallbacks.beginBroadcast();
                 try {
-                    iSuperLyric.onSuperLyric(data);
-                    return false;
-                } catch (Throwable e) {
-                    AndroidLog.logE(TAG, "[onSuperLyric()]: Binder is died!! remove binder: " + iSuperLyric, e);
-                    return true;
+                    for (int i = 0; i < itemCount; i++) {
+                        try {
+                            mCallbacks.getBroadcastItem(i).onLyric(data);
+                        } catch (RemoteException e) {
+                            AndroidLog.logW(TAG, "[sendLyric()] RemoteException!!", e);
+                        }
+                    }
+                } finally {
+                    mCallbacks.finishBroadcast();
                 }
             }
         });
     }
 
     @Override
-    public void onStop(SuperLyricData data) throws RemoteException {
-        mRegisteredBinderMap.entrySet().removeIf(new Predicate<Map.Entry<IBinder, ISuperLyric>>() {
+    public void sendStop(SuperLyricData data) throws RemoteException {
+        if (data == null) {
+            return;
+        }
+
+        mBroadcastExecutor.execute(new Runnable() {
             @Override
-            public boolean test(Map.Entry<IBinder, ISuperLyric> entry) {
-                ISuperLyric iSuperLyric = entry.getValue();
+            public void run() {
+                int itemCount = mCallbacks.beginBroadcast();
                 try {
-                    iSuperLyric.onStop(data);
-                    return false;
-                } catch (Throwable e) {
-                    AndroidLog.logE(TAG, "[onStop()]: Binder is died!! remove binder: " + iSuperLyric, e);
-                    return true;
+                    for (int i = 0; i < itemCount; i++) {
+                        try {
+                            mCallbacks.getBroadcastItem(i).onStop(data);
+                        } catch (RemoteException e) {
+                            AndroidLog.logW(TAG, "[sendStop()] RemoteException!!", e);
+                        }
+                    }
+                } finally {
+                    mCallbacks.finishBroadcast();
                 }
             }
         });
     }
 
-    public void addExemptPackage(@NonNull String packageName) {
-        try {
-            mExemptSet.add(packageName);
-        } catch (Throwable e) {
-            AndroidLog.logE(TAG, "[addExemptPackage()]: Failed to add exempt package: " + packageName, e);
+    @Override
+    public void registerReceiver(ISuperLyricReceiver receiver) throws RemoteException {
+        if (receiver != null) {
+            mCallbacks.register(receiver);
+            mReceiverBinders.add(receiver.asBinder());
+        }
+    }
+
+    @Override
+    public void unregisterReceiver(ISuperLyricReceiver receiver) throws RemoteException {
+        if (receiver != null) {
+            mCallbacks.unregister(receiver);
+            mReceiverBinders.remove(receiver.asBinder());
+        }
+    }
+
+    @Override
+    public boolean isReceiverRegistered(ISuperLyricReceiver receiver) throws RemoteException {
+        return receiver != null && mReceiverBinders.contains(receiver.asBinder());
+    }
+
+    @Override
+    public void setSystemPlayStateListenerEnabled(String packageName, boolean enabled) throws RemoteException {
+        if (packageName == null) {
+            return;
+        }
+
+        if (enabled) {
+            mNonSystemPlayStateListeners.add(packageName);
+        } else {
+            mNonSystemPlayStateListeners.remove(packageName);
         }
     }
 
     public void onPackageDied(@NonNull String packageName) {
         try {
-            mExemptSet.remove(packageName); // 死后自动移除豁免
-            mSelfControlSet.remove(packageName); // 移除自我控制
-            onStop(new SuperLyricData().setPackageName(packageName));
-        } catch (Throwable e) {
-            AndroidLog.logE(TAG, "[onPackageDied()] App is died: " + packageName, e);
+            mPublishers.remove(packageName);
+            mNonSystemPlayStateListeners.remove(packageName);
+            sendStop(new SuperLyricData().setPackageName(packageName));
+        } catch (RemoteException e) {
+            AndroidLog.logW(TAG, "[onPackageDied()] RemoteException!!", e);
         }
     }
 }

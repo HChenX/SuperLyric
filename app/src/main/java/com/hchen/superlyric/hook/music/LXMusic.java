@@ -27,8 +27,7 @@ import androidx.annotation.NonNull;
 import com.hchen.auto.AutoHook;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.ScreenHelper;
-import com.hchen.superlyric.hook.LyricRelease;
-import com.hchen.superlyricapi.AcquisitionMode;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -38,8 +37,8 @@ import java.util.ArrayList;
  * LX Music
  */
 @AutoHook(targetPackage = "cn.toside.music.mobile")
-public final class LXMusic extends LyricRelease {
-    @Override 
+public final class LXMusic extends AbsPublisher {
+    @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         // 所需 setCurrentLyric 类是混淆的，从 LyricModule 类逆向获取
         Class<?> lyricModuleClass = findClass("cn.toside.music.mobile.lyric.LyricModule");
@@ -93,7 +92,7 @@ public final class LXMusic extends LyricRelease {
                             String lyric = (String) getArg(0);
                             if (lyric.isEmpty()) return;
 
-                            sendLyric(lyric, 0, AcquisitionMode.HOOK_LYRIC);
+                            sendLyric(lyric);
                         }
                     });
                 }

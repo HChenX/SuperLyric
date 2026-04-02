@@ -33,7 +33,7 @@ import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyric.hook.AbsPublisher;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricWord;
 
@@ -55,7 +55,7 @@ import java.util.function.Predicate;
  * Apple Music
  */
 @AutoHook(targetPackage = "com.apple.android.music")
-public final class Apple extends LyricRelease {
+public final class Apple extends AbsPublisher {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private Handler lyricHandler;
 
@@ -227,12 +227,12 @@ public final class Apple extends LyricRelease {
 
         Field mediaMetadataField =
             Arrays.stream(findClass("android.support.v4.media.MediaMetadataCompat").getDeclaredFields())
-            .filter(new Predicate<Field>() {
-                @Override
-                public boolean test(Field field) {
-                    return Objects.equals(field.getType(), MediaMetadata.class);
-                }
-            }).findFirst().orElseThrow();
+                .filter(new Predicate<Field>() {
+                    @Override
+                    public boolean test(Field field) {
+                        return Objects.equals(field.getType(), MediaMetadata.class);
+                    }
+                }).findFirst().orElseThrow();
 
         // android.support.v4.media.session.MediaControllerCompat$a$a
         hookMethod(mediaControllerCompatClass,

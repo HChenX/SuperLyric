@@ -21,10 +21,9 @@ package com.hchen.superlyric.helper;
 import static com.hchen.hooktool.core.CoreTool.hasClass;
 import static com.hchen.hooktool.core.CoreTool.hookMethod;
 import static com.hchen.hooktool.core.CoreTool.returnResult;
-import static com.hchen.superlyric.hook.LyricRelease.sendLyric;
+import static com.hchen.superlyric.hook.AbsPublisher.sendLyric;
 
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.superlyricapi.AcquisitionMode;
 
 import java.util.Objects;
 
@@ -59,7 +58,7 @@ public final class QQLiteHelper {
                     if (lyric == null || lyric.isEmpty()) return;
                     if (Objects.equals(lyric, "NEED_NOT_UPDATE_TITLE")) return;
 
-                    sendLyric(lyric, 0, AcquisitionMode.HOOK_LYRIC);
+                    sendLyric(lyric);
                 }
             }
         );

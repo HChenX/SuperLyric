@@ -26,14 +26,14 @@ import com.hchen.auto.AutoHook;
 import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.MeizuHelper;
-import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
  * 青盐音乐
  */
 @AutoHook(targetPackage = "com.xuncorp.qinalt.music")
-public final class Qinalt extends LyricRelease {
-    @Override 
+public final class Qinalt extends AbsPublisher {
+    @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         findMethod("com.stub.StubApp",
             "attachBaseContext",

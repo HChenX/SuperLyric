@@ -31,10 +31,9 @@ import com.hchen.hooktool.AbsModule;
 import com.hchen.hooktool.ModuleConfig;
 import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.ModuleEntrance;
-import com.hchen.superlyric.hook.music.Api;
 
 import java.lang.reflect.InvocationTargetException;
-import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
 
@@ -67,7 +66,7 @@ public final class InitHook extends ModuleEntrance {
         };
     }
 
-    private final List<AbsModule> modules = new ArrayList<>();
+    private final HashMap<String, AbsModule> modules = new HashMap<>();
 
     @Override
     public void handlePackageReady(@NonNull PackageReadyParam param) {
@@ -83,6 +82,13 @@ public final class InitHook extends ModuleEntrance {
                     param.getApplicationInfo().dataDir
                 );
 
+                if (modules.containsKey(param.getPackageName())) {
+                    AbsModule module = Objects.requireNonNull(modules.get(param.getPackageName()));
+                    module.handlePackageReady(param);
+
+                    modules.remove(param.getPackageName());
+                }
+
                 for (String path : Objects.requireNonNull(HookData.ON_PACKAGE_LOADED.get(param.getPackageName()))) {
                     try {
                         AbsModule module = (AbsModule) InitHook.class.getClassLoader()
@@ -91,7 +97,7 @@ public final class InitHook extends ModuleEntrance {
                             .newInstance();
 
                         module.handlePackageReady(param);
-                        modules.add(module);
+                        modules.put(param.getPackageName(), module);
                     } catch (IllegalAccessException | InstantiationException |
                              InvocationTargetException | NoSuchMethodException |
                              ClassNotFoundException e) {
@@ -101,9 +107,6 @@ public final class InitHook extends ModuleEntrance {
             } finally {
                 DexkitCache.close();
             }
-        } else {
-            ModuleData.setClassLoader(param.getClassLoader());
-            new Api().handlePackageReady(param);
         }
     }
 
@@ -111,8 +114,10 @@ public final class InitHook extends ModuleEntrance {
     public void handleApplicationCreated(@NonNull Context context) {
         super.handleApplicationCreated(context);
 
-        for (AbsModule module : modules) {
-            module.handleApplicationCreated(context);
+        for (AbsModule module : modules.values()) {
+            if (module != null) {
+                module.handleApplicationCreated(context);
+            }
         }
     }
 
@@ -120,10 +125,14 @@ public final class InitHook extends ModuleEntrance {
     public void handleSystemServerStarting(@NonNull SystemServerStartingParam param) {
         super.handleSystemServerStarting(param);
 
+        ModuleData.setClassLoader(param.getClassLoader());
         for (List<String> value : HookData.ON_SYSTEM_STARTING.values()) {
             for (String path : value) {
                 try {
-                    AbsModule module = (AbsModule) InitHook.class.getClassLoader().loadClass(path).getDeclaredConstructor().newInstance();
+                    AbsModule module = (AbsModule) InitHook.class.getClassLoader()
+                        .loadClass(path)
+                        .getDeclaredConstructor()
+                        .newInstance();
                     module.handleSystemServerStarting(param);
                 } catch (IllegalAccessException | InstantiationException |
                          InvocationTargetException | NoSuchMethodException |

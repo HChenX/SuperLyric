@@ -24,8 +24,7 @@ import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.superlyric.hook.LyricRelease;
-import com.hchen.superlyricapi.AcquisitionMode;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
@@ -42,10 +41,10 @@ import java.util.Objects;
  * @author 焕晨HChen
  */
 @AutoHook(targetPackage = "app.symfonik.music.player")
-public final class Symfonium extends LyricRelease {
+public final class Symfonium extends AbsPublisher {
     private String lastLyric;
 
-    @Override 
+    @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         Method method = DexkitCache.findMember("Symfonium$1", new IDexkit<MethodData>() {
             @NonNull
@@ -78,7 +77,7 @@ public final class Symfonium extends LyricRelease {
                             // 裁剪掉翻译
                             lyric = lyric.substring(0, lyric.lastIndexOf("\n"));
                         }
-                        sendLyric(lyric, 0, AcquisitionMode.HOOK_LYRIC);
+                        sendLyric(lyric);
                         lastLyric = lyric;
                     }
                 }

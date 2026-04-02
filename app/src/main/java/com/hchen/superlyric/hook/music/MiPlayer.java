@@ -22,14 +22,14 @@ import androidx.annotation.NonNull;
 
 import com.hchen.auto.AutoHook;
 import com.hchen.superlyric.helper.QQLiteHelper;
-import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
  * 小米音乐
  */
 @AutoHook(targetPackage = "com.miui.player")
-public final class MiPlayer extends LyricRelease {
-    @Override 
+public final class MiPlayer extends AbsPublisher {
+    @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         QQLiteHelper.hookLyric();
     }

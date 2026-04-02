@@ -24,8 +24,7 @@ import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.superlyric.hook.LyricRelease;
-import com.hchen.superlyricapi.AcquisitionMode;
+import com.hchen.superlyric.hook.AbsPublisher;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricWord;
 
@@ -48,7 +47,7 @@ import java.util.function.Predicate;
  * @author 焕晨HChen
  */
 @AutoHook(targetPackage = "com.luna.music")
-public final class Qishui extends LyricRelease {
+public final class Qishui extends AbsPublisher {
 
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
@@ -171,7 +170,7 @@ public final class Qishui extends LyricRelease {
                         sendLyric(
                             (String) lyricData.lyric,
                             (int) (lyricData.endTime - lyricData.startTime),
-                            superLyricData.setAcquisitionMode(AcquisitionMode.BLUETOOTH_LYRIC)
+                            superLyricData
                         );
                         // AndroidLog.logI(TAG, sentence.toString());
                     }

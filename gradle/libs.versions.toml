@@ -1,29 +1,39 @@
 [versions]
-# Basic
+# android
 agp = "9.1.0"
+kotlin = "2.3.20"
+appcompat = "1.7.1"
 annotation = "1.9.1"
-# Hook API & Tool
+composeBom = "2026.03.01"
+foundationAndroid = "1.10.6"
+activityCompose = "1.13.0"
+# miuix
+miuixAndroid = "0.8.8"
+miuixIconsAndroid = "0.8.8"
+# xposed
 api = "101.0.1"
 service = "101.0.0"
 hooktool = "3.0.0-rc11"
-# Dexkit
+# dexkit
 dexkit = "2.0.7"
 dexkitcache = "v.0.9"
 gson = "2.13.2"
 mmkv = "2.4.0"
-# SuperLyricApi
-superlyricapi = "2.7"
-# AutoService
+# superlyricapi
+superlyricapi = "3.0"
+# auto service
 autoService = "1.1.1"
 javapoet = "1.13.0"
-junit = "4.13.2"
-junitVersion = "1.3.0"
-espressoCore = "3.7.0"
-appcompat = "1.7.1"
-material = "1.13.0"
 
 [libraries]
+appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 annotation = { module = "androidx.annotation:annotation", version.ref = "annotation" }
+activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+foundation-android = { module = "androidx.compose.foundation:foundation-android", version.ref = "foundationAndroid" }
+
+miuix-icons-android = { module = "top.yukonga.miuix.kmp:miuix-icons-android", version.ref = "miuixIconsAndroid" }
+miuix-android = { module = "top.yukonga.miuix.kmp:miuix-android", version.ref = "miuixAndroid" }
 
 api = { module = "io.github.libxposed:api", version.ref = "api" }
 service = { module = "io.github.libxposed:service", version.ref = "service" }
@@ -33,17 +43,13 @@ dexkit = { module = "org.luckypray:dexkit", version.ref = "dexkit" }
 dexkitcache = { module = "com.github.HChenX:DexkitCache", version.ref = "dexkitcache" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 mmkv = { module = "com.tencent:mmkv", version.ref = "mmkv" }
+
 superlyricapi = { module = "com.github.HChenX:SuperLyricApi", version.ref = "superlyricapi" }
 
 auto-service = { module = "com.google.auto.service:auto-service", version.ref = "autoService" }
 javapoet = { module = "com.squareup:javapoet", version.ref = "javapoet" }
-junit = { group = "junit", name = "junit", version.ref = "junit" }
-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
-material = { group = "com.google.android.material", name = "material", version.ref = "material" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
-
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

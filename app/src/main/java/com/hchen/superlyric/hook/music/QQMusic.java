@@ -30,8 +30,7 @@ import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.superlyric.hook.LyricRelease;
-import com.hchen.superlyricapi.AcquisitionMode;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
@@ -57,7 +56,7 @@ import java.util.function.Predicate;
  * @author 焕晨HChen
  */
 @AutoHook(targetPackage = "com.tencent.qqmusic")
-public final class QQMusic extends LyricRelease {
+public final class QQMusic extends AbsPublisher {
     private final CopyOnWriteArrayList<LyricData> lyricDataList = new CopyOnWriteArrayList<>();
     private Field lyricField;
     private Field durationField;
@@ -184,7 +183,7 @@ public final class QQMusic extends LyricRelease {
                     Object songInfo = getField(field1, getThisObject());
                     textView.setVisibility(GONE);
                     if (songInfo != null) {
-                        sendLyric((String) textView.getText(), 0, AcquisitionMode.HOOK_LYRIC);
+                        sendLyric((String) textView.getText());
                     }
                 }
             }
@@ -293,11 +292,11 @@ public final class QQMusic extends LyricRelease {
                     if (Objects.equals(String.class, f.getType())) {
                         lyricField = f;
                         if (durationField == null || playedDurationField != null)
-                            break findField;
+                            break;
                     } else if (!Objects.equals(f, durationField) && Objects.equals(long.class, f.getType())) {
                         playedDurationField = f;
                         if (lyricField != null)
-                            break findField;
+                            break;
                     }
                 }
             }
@@ -322,9 +321,9 @@ public final class QQMusic extends LyricRelease {
         // logI(TAG, "lyric data: " + data);
         if (lyric == null || lyric.isEmpty()) return;
         if (data.duration == -1)
-            sendLyric(lyric, 0, AcquisitionMode.HOOK_LYRIC);
+            sendLyric(lyric);
         else
-            sendLyric(lyric, (int) data.duration, AcquisitionMode.HOOK_LYRIC);
+            sendLyric(lyric, (int) data.duration);
     }
 
     private static class LyricData {

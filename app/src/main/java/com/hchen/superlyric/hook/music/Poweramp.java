@@ -22,8 +22,7 @@ import androidx.annotation.NonNull;
 
 import com.hchen.auto.AutoHook;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.superlyric.hook.LyricRelease;
-import com.hchen.superlyricapi.AcquisitionMode;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 import java.lang.reflect.Method;
 import java.util.Arrays;
@@ -36,7 +35,7 @@ import java.util.regex.Pattern;
  * Poweramp
  */
 @AutoHook(targetPackage = "com.maxmpz.audioplayer")
-public final class Poweramp extends LyricRelease {
+public final class Poweramp extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         hook(Arrays.stream(findClass("com.maxmpz.widget.player.list.LyricsFastTextView").getDeclaredMethods())
@@ -60,7 +59,7 @@ public final class Poweramp extends LyricRelease {
                     if (lyric == null || lyric.isEmpty()) return;
                     if (!Objects.equals(lyric, "null")) {
                         if (c != 0) {
-                            sendLyric(lyric, 0, AcquisitionMode.HOOK_LYRIC);
+                            sendLyric(lyric);
                         }
                     } else {
                         sendStop();

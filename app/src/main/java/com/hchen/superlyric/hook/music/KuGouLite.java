@@ -29,8 +29,7 @@ import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.superlyric.hook.LyricRelease;
-import com.hchen.superlyricapi.AcquisitionMode;
+import com.hchen.superlyric.hook.AbsPublisher;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricWord;
 
@@ -47,7 +46,7 @@ import java.util.Objects;
  * 酷狗音乐概念版
  */
 @AutoHook(targetPackage = "com.kugou.android.lite")
-public final class KuGouLite extends LyricRelease {
+public final class KuGouLite extends AbsPublisher {
 
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
@@ -62,7 +61,7 @@ public final class KuGouLite extends LyricRelease {
             if (!enableStatusBarLyric())
                 return;
 
-            if (versionCode <= 10935) {
+            if (mVersionCode <= 10935) {
                 hookLocalBroadcast("android.support.v4.content.LocalBroadcastManager");
             } else {
                 try {
@@ -184,7 +183,6 @@ public final class KuGouLite extends LyricRelease {
                                 }
                             }
 
-                            data.setAcquisitionMode(AcquisitionMode.HOOK_LYRIC);
                             sendSuperLyricData(data);
                         }
                     } else {
@@ -218,7 +216,7 @@ public final class KuGouLite extends LyricRelease {
                     if (message == null) return;
 
                     if (Objects.equals(action, "com.kugou.android.update_meizu_lyric")) {
-                        sendLyric(message, 0, AcquisitionMode.HOOK_LYRIC);
+                        sendLyric(message);
                     }
                 }
             }

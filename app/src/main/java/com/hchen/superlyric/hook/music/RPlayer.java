@@ -26,14 +26,14 @@ import com.hchen.auto.AutoHook;
 import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.ScreenHelper;
-import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
  * RPlayer
  */
 @AutoHook(targetPackage = "com.r.rplayer")
-public final class RPlayer extends LyricRelease {
-    @Override 
+public final class RPlayer extends AbsPublisher {
+    @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         findMethod("com.stub.StubApp",
             "attachBaseContext",
@@ -44,7 +44,7 @@ public final class RPlayer extends LyricRelease {
                     Context context = (Context) getArg(0);
                     ModuleData.setClassLoader(context.getClassLoader());
 
-                    getMediaMetadataLyric();
+                    hookMediaMetadataLyric();
                     ScreenHelper.screenOffNotStopLyric();
                 }
             }

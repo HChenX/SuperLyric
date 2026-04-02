@@ -23,15 +23,15 @@ import androidx.annotation.NonNull;
 import com.hchen.auto.AutoHook;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.TimeoutHelper;
-import com.hchen.superlyric.hook.LyricRelease;
-import com.hchen.superlyricapi.AcquisitionMode;
+import com.hchen.superlyric.hook.AbsPublisher;
+
 
 /**
  * MusicFree
  */
 @AutoHook(targetPackage = "fun.upup.musicfree")
-public final class MusicFree extends LyricRelease {
-    @Override 
+public final class MusicFree extends AbsPublisher {
+    @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         hookMethod("fun.upup.musicfree.lyricUtil.LyricUtilModule",
             "showStatusBarLyric",
@@ -56,7 +56,7 @@ public final class MusicFree extends LyricRelease {
                     if (lyric.isEmpty()) return;
 
                     TimeoutHelper.start();
-                    sendLyric(lyric, 0, AcquisitionMode.HOOK_LYRIC);
+                    sendLyric(lyric);
                 }
             }
         );

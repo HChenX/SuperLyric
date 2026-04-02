@@ -1,5 +1,8 @@
+import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
+
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -41,7 +44,7 @@ android {
         minSdk 30
         targetSdk 36
         // noinspection HighAppVersionCode
-        versionCode 2026033100
+        versionCode 2026040200
         versionName "3.0"
 
         ndk {
@@ -74,6 +77,16 @@ android {
         aidl true
     }
 
+    androidResources {
+        generateLocaleConfig = true
+    }
+
+    kotlin {
+        compilerOptions {
+            languageVersion = KotlinVersion.KOTLIN_2_3
+        }
+    }
+
     // packagingOptions {
     //     resources {
     //         excludes += "/META-INF/**"
@@ -104,7 +117,14 @@ dependencies {
         resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
     }
 
+    implementation libs.appcompat
     implementation libs.annotation
+
+    implementation platform(libs.compose.bom)
+    implementation libs.foundation.android
+    implementation libs.activity.compose
+    implementation libs.miuix.android
+    implementation libs.miuix.icons.android
 
     compileOnly libs.api
     implementation libs.service

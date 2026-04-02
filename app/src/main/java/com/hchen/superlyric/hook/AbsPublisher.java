@@ -21,12 +21,9 @@ package com.hchen.superlyric.hook;
 import android.app.Application;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.media.AudioManager;
-import android.os.Bundle;
-import android.os.RemoteException;
 import android.text.TextUtils;
 
 import androidx.annotation.CallSuper;
@@ -35,55 +32,40 @@ import androidx.annotation.NonNull;
 import com.hchen.hooktool.AbsModule;
 import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.superlyric.data.SuperLyricKey;
-import com.hchen.superlyricapi.AcquisitionMode;
-import com.hchen.superlyricapi.ISuperLyricDistributor;
 import com.hchen.superlyricapi.SuperLyricData;
-
-import java.util.Objects;
+import com.hchen.superlyricapi.SuperLyricHelper;
 
 /**
  * 歌词发布类
  *
  * @author 焕晨HChen
  */
-public abstract class LyricRelease extends AbsModule {
-    private static ISuperLyricDistributor iSuperLyricDistributor;
-    public static AudioManager audioManager;
-    public static String packageName;
-    public static long versionCode = -1L;
-    public static String versionName = "unknown";
+public abstract class AbsPublisher extends AbsModule {
+    public static AudioManager mAudioManager;
+    public static String mPackageName;
+    public static long mVersionCode = -1L;
+    public static String mVersionName = "unknown";
 
     @CallSuper
     @Override
     protected void onApplicationCreated(@NonNull Context context) {
         ModuleData.setClassLoader(context.getClassLoader());
 
-        packageName = context.getPackageName();
-        audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+        SuperLyricHelper.registerPublisher(context);
 
-        Intent intent = new Intent(SuperLyricKey.SUPER_LYRIC);
-        intent.putExtra(SuperLyricKey.SUPER_LYRIC_EXEMPT_PACKAGE, packageName);
-        context.sendBroadcast(intent);
-
-        Intent intentBinder = context.registerReceiver(null, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
-        Objects.requireNonNull(intentBinder, "[Intent#ACTION_BATTERY_CHANGED] Return must not be null!!");
-
-        Bundle bundle = intentBinder.getBundleExtra(SuperLyricKey.SUPER_LYRIC_INFO);
-        Objects.requireNonNull(bundle, "[SUPER_LYRIC_INFO] Return must not be null!! try reboot system!!");
-
-        iSuperLyricDistributor = ISuperLyricDistributor.Stub.asInterface(bundle.getBinder(SuperLyricKey.SUPER_LYRIC_BINDER));
+        mPackageName = context.getPackageName();
+        mAudioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
 
         try {
-            PackageInfo packageInfo = context.getPackageManager().getPackageInfo(packageName, 0);
-            versionName = packageInfo.versionName;
-            versionCode = packageInfo.getLongVersionCode();
-            logI(TAG, "App: " + packageName + ", version: " + versionName + ", code: " + versionCode);
+            PackageInfo packageInfo = context.getPackageManager().getPackageInfo(mPackageName, 0);
+            mVersionName = packageInfo.versionName;
+            mVersionCode = packageInfo.getLongVersionCode();
+            logI(TAG, "App name: " + mPackageName + ", version name: " + mVersionName + ", version code: " + mVersionCode);
         } catch (PackageManager.NameNotFoundException e) {
             logW(TAG, e);
         }
 
-        logD(TAG, "Success to obtain super lyric distributor: " + iSuperLyricDistributor + ", caller: " + packageName);
+        logD(TAG, "Success to register super lyric publisher service, caller: " + mPackageName);
     }
 
     /**
@@ -106,8 +88,7 @@ public abstract class LyricRelease extends AbsModule {
                     }
                 }
             );
-        } catch (Throwable e) {
-            logE("LyricRelease", e);
+        } catch (Throwable ignore) {
         }
     }
 
@@ -129,7 +110,7 @@ public abstract class LyricRelease extends AbsModule {
     /**
      * 获取 MediaMetadata/Compat 中的歌词数据
      */
-    public static void getMediaMetadataLyric() {
+    public static void hookMediaMetadataLyric() {
         hookMethod("android.media.MediaMetadata$Builder",
             "putString",
             String.class, String.class,
@@ -139,7 +120,7 @@ public abstract class LyricRelease extends AbsModule {
                     if (TextUtils.equals("android.media.metadata.TITLE", (String) getArg(0))) {
                         String lyric = (String) getArg(1);
                         if (lyric != null) {
-                            sendLyric(lyric, 0, AcquisitionMode.BLUETOOTH_LYRIC);
+                            sendLyric(lyric);
                         }
                     }
                 }
@@ -155,7 +136,7 @@ public abstract class LyricRelease extends AbsModule {
                     if (TextUtils.equals("android.media.metadata.TITLE", (String) getArg(0))) {
                         String lyric = (String) getArg(1);
                         if (lyric != null) {
-                            sendLyric(lyric, 0, AcquisitionMode.BLUETOOTH_LYRIC);
+                            sendLyric(lyric);
                         }
                     }
                 }
@@ -163,50 +144,40 @@ public abstract class LyricRelease extends AbsModule {
         );
     }
 
-    private static String lastLyric;
+    private static String mLastLyric;
 
-    public static void sendLyric(String lyric, int delay, @NonNull AcquisitionMode mode) {
-        sendLyric(lyric, delay, new SuperLyricData().setAcquisitionMode(mode));
+    public static void sendLyric(String lyric) {
+        sendLyric(lyric, 0);
     }
 
-    /**
-     * 发送歌词数据
-     */
+    public static void sendLyric(String lyric, int delay) {
+        sendLyric(lyric, delay, new SuperLyricData());
+    }
+
     public static void sendLyric(String lyric, int delay, @NonNull SuperLyricData data) {
         if (lyric == null) return;
-        if (iSuperLyricDistributor == null) return;
 
-        try {
-            lyric = lyric.trim();
-            if (lyric.isEmpty()) return;
-            if (TextUtils.equals(lyric, lastLyric)) return;
-            lastLyric = lyric;
+        lyric = lyric.trim();
+        if (lyric.isEmpty()) return;
+        if (TextUtils.equals(lyric, mLastLyric)) return;
+        mLastLyric = lyric;
 
-            iSuperLyricDistributor.onSuperLyric(
-                data.setPackageName(packageName)
-                    .setLyric(lyric)
-                    .setDelay(delay)
-            );
-        } catch (RemoteException e) {
-            logE("LyricRelease", "Failed to send lyric!!", e);
-            return;
-        }
+        data.setPackageName(mPackageName)
+            .setLyric(lyric)
+            .setDelay(delay);
 
-        logD("LyricRelease", "Send lyric: " + lyric + ", delay: " + delay + ", data:" + data);
+        sendSuperLyricData(data);
     }
 
-    /**
-     * 发送播放状态暂停
-     */
+    public static void sendSuperLyricData(@NonNull SuperLyricData data) {
+        SuperLyricHelper.sendLyric(data);
+        logD("LyricRelease", "Send super lyric data: " + data);
+    }
+
     public static void sendStop() {
-        sendStop(packageName);
+        sendStop(mPackageName);
     }
 
-    /**
-     * 发送播放状态暂停
-     *
-     * @param packageName 暂停播放的音乐软件包名
-     */
     public static void sendStop(@NonNull String packageName) {
         sendStop(
             new SuperLyricData()
@@ -214,39 +185,8 @@ public abstract class LyricRelease extends AbsModule {
         );
     }
 
-    /**
-     * 发送播放状态暂停
-     *
-     * @param data 数据
-     */
     public static void sendStop(@NonNull SuperLyricData data) {
-        if (iSuperLyricDistributor == null) return;
-
-        try {
-            iSuperLyricDistributor.onStop(data);
-        } catch (RemoteException e) {
-            logE("LyricRelease", "Failed to send stop!!", e);
-            return;
-        }
-
+        SuperLyricHelper.sendStop(data);
         logD("LyricRelease", "Send stop: " + data);
-    }
-
-    /**
-     * 发送数据包
-     *
-     * @param data 数据
-     */
-    public static void sendSuperLyricData(@NonNull SuperLyricData data) {
-        if (iSuperLyricDistributor == null) return;
-
-        try {
-            iSuperLyricDistributor.onSuperLyric(data);
-        } catch (RemoteException e) {
-            logE("LyricRelease", "Failed to send data!!", e);
-            return;
-        }
-
-        logD("LyricRelease", "Send data: " + data);
     }
 }

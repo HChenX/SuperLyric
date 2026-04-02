@@ -28,7 +28,7 @@ import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.MeizuHelper;
-import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
@@ -45,8 +45,8 @@ import java.util.Objects;
  * 荣耀音乐
  */
 @AutoHook(targetPackage = "com.hihonor.cloudmusic")
-public final class Hihonor extends LyricRelease {
-    @Override 
+public final class Hihonor extends AbsPublisher {
+    @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         hookTencentTinker();
         if (hasClass("android.app.Instrumentation")) {
@@ -66,7 +66,7 @@ public final class Hihonor extends LyricRelease {
         }
     }
 
-    @Override 
+    @Override
     protected void onApplicationCreated(@NonNull Context context) {
         super.onApplicationCreated(context);
 

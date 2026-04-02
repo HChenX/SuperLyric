@@ -18,8 +18,8 @@
  */
 package com.hchen.superlyric.helper;
 
-import static com.hchen.superlyric.hook.LyricRelease.audioManager;
-import static com.hchen.superlyric.hook.LyricRelease.sendStop;
+import static com.hchen.superlyric.hook.AbsPublisher.mAudioManager;
+import static com.hchen.superlyric.hook.AbsPublisher.sendStop;
 
 import java.util.Timer;
 import java.util.TimerTask;
@@ -35,7 +35,7 @@ public final class TimeoutHelper {
     private final static TimerTask TIMER_TASK = new TimerTask() {
         @Override
         public void run() {
-            if (audioManager != null && !audioManager.isMusicActive()) {
+            if (mAudioManager != null && !mAudioManager.isMusicActive()) {
                 sendStop();
                 stop();
             }
