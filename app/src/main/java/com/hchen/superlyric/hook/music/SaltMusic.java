@@ -150,6 +150,10 @@ public final class SaltMusic extends AbsPublisher {
                     int type = (int) getField(typeField, getThisObject());
                     if (type == 20) {
                         Object lyricData = getField(field, getThisObject());
+                        if (lyricData == null) {
+                            return;
+                        }
+
                         List<?> lyrics = (List<?>) getField(finalLyricListField, lyricData);
                         if (lyrics != null) {
                             List<LyricData> data = new ArrayList<>();
@@ -193,14 +197,18 @@ public final class SaltMusic extends AbsPublisher {
                                 translation = TextUtils.equals(strings[0], sb.toString()) ? strings[1] : strings[0];
                             }
 
-                            sendLyric(
-                                sb.toString(),
-                                (int) delay,
-                                new SuperLyricData()
-                                    .setLyricWordData(words)
-                                    .setTranslation(translation)
-                            );
+                            SuperLyricData superLyricData = new SuperLyricData()
+                                .setLyric(sb.toString())
+                                .setDelay((int) delay)
+                                .setTranslation(translation);
 
+                            if (words.length > 0) {
+                                if (words[0].getWord().length() == 1) {
+                                    superLyricData.setLyricWordData(words);
+                                }
+                            }
+
+                            sendSuperLyricData(superLyricData);
                             AndroidLog.logI(TAG, "LyricData: " + data);
                         }
                     }

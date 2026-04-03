@@ -253,6 +253,7 @@ fun SearchStatus.SearchPager(
     val lazyColumn: @Composable () -> Unit = {
         if (enableRefresh) {
             PullToRefresh(
+                modifier = Modifier.padding(top = 6.dp),
                 isRefreshing = isRefreshing,
                 onRefresh = {
                     isRefreshing = true

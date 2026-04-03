@@ -33,3 +33,6 @@
 -keep class com.hchen.superlyricapi.** {*;}
 -keep class com.hchen.dexkitcache.DexkitCache$MemberData {*;}
 -keep class com.hchen.superlyric.helper.MeiZuNotification {*;}
+
+-dontwarn android.os.ServiceManager
+-dontwarn de.robv.android.xposed.XposedHelpers
