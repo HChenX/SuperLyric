@@ -44,7 +44,7 @@ android {
         minSdk 30
         targetSdk 36
         // noinspection HighAppVersionCode
-        versionCode 2026040200
+        versionCode 2026040300
         versionName "3.0"
 
         ndk {
@@ -112,10 +112,10 @@ androidComponents {
 }
 
 dependencies {
-    configurations.configureEach {
-        resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
-        resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
-    }
+    // configurations.configureEach {
+    //     resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+    //     resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
+    // }
 
     implementation libs.appcompat
     implementation libs.annotation
@@ -123,7 +123,11 @@ dependencies {
     implementation platform(libs.compose.bom)
     implementation libs.foundation.android
     implementation libs.activity.compose
-    implementation libs.miuix.android
+
+    implementation libs.miuix.ui.android
+    // implementation libs.miuix.preference.android
+    // implementation libs.miuix.shapes.android
+    // implementation libs.miuix.blur.android
     implementation libs.miuix.icons.android
 
     compileOnly libs.api
@@ -133,9 +137,10 @@ dependencies {
     implementation libs.dexkitcache
     implementation libs.mmkv
     implementation libs.gson
-    implementation(libs.superlyricapi) {
-        changing = true
-    }
+    implementation(libs.superlyricapi)
+            // {
+            //     changing = true
+            // }
 
     compileOnly(project(':hidden-api'))
     implementation(project(':auto'))

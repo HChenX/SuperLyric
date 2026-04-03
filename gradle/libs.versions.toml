@@ -9,7 +9,6 @@ foundationAndroid = "1.10.6"
 activityCompose = "1.13.0"
 # miuix
 miuixAndroid = "0.8.8"
-miuixIconsAndroid = "0.8.8"
 # xposed
 api = "101.0.1"
 service = "101.0.0"
@@ -20,7 +19,7 @@ dexkitcache = "v.0.9"
 gson = "2.13.2"
 mmkv = "2.4.0"
 # superlyricapi
-superlyricapi = "3.0"
+superlyricapi = "3.1"
 # auto service
 autoService = "1.1.1"
 javapoet = "1.13.0"
@@ -32,8 +31,11 @@ activity-compose = { module = "androidx.activity:activity-compose", version.ref 
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
 foundation-android = { module = "androidx.compose.foundation:foundation-android", version.ref = "foundationAndroid" }
 
-miuix-icons-android = { module = "top.yukonga.miuix.kmp:miuix-icons-android", version.ref = "miuixIconsAndroid" }
-miuix-android = { module = "top.yukonga.miuix.kmp:miuix-android", version.ref = "miuixAndroid" }
+miuix_ui-android = { module = "top.yukonga.miuix.kmp:miuix-android", version.ref = "miuixAndroid" }
+miuix-icons-android = { module = "top.yukonga.miuix.kmp:miuix-icons-android", version.ref = "miuixAndroid" }
+#miuix-preference-android = { module = "top.yukonga.miuix.kmp:miuix-preference-android", version.ref = "miuixAndroid" }
+#miuix-shapes-android = { module = "top.yukonga.miuix.kmp:miuix-shapes-android", version.ref = "miuixAndroid" }
+#miuix_blur-android = { module = "top.yukonga.miuix.kmp:miuix-blur-android", version.ref = "miuixAndroid" }
 
 api = { module = "io.github.libxposed:api", version.ref = "api" }
 service = { module = "io.github.libxposed:service", version.ref = "service" }

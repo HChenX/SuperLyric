@@ -170,7 +170,7 @@ public abstract class AbsPublisher extends AbsModule {
     }
 
     public static void sendSuperLyricData(@NonNull SuperLyricData data) {
-        SuperLyricHelper.sendLyric(data);
+        SuperLyricHelper.sendLyric(data.setPackageName(mPackageName));
         logD("LyricRelease", "Send super lyric data: " + data);
     }
 

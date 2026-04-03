@@ -18,8 +18,6 @@
  */
 package com.hchen.superlyric.hook.system;
 
-import static com.hchen.superlyric.data.SuperLyricKey.SUPER_LYRIC;
-
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.os.IBinder;
@@ -87,9 +85,9 @@ public final class SuperLyricProxy extends AbsModule {
 
                     @SuppressWarnings("unchecked")
                     Map<String, IBinder> mAppBindArgs = (Map<String, IBinder>) getResult();
-                    if (!mAppBindArgs.containsKey(SUPER_LYRIC)) {
-                        mAppBindArgs.put(SUPER_LYRIC, mSuperLyricService);
-                        logI(TAG, "Release super lyric service: " + mAppBindArgs.get(SUPER_LYRIC));
+                    if (!mAppBindArgs.containsKey("super_lyric")) {
+                        mAppBindArgs.put("super_lyric", mSuperLyricService);
+                        logI(TAG, "Release super lyric service: " + mAppBindArgs.get("super_lyric"));
                     }
                 }
             }
