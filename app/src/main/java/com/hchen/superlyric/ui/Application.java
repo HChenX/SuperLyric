@@ -29,6 +29,7 @@ import com.hchen.hooktool.ModuleConfig;
 import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.utils.PrefsTool;
 import com.hchen.superlyric.BuildConfig;
+import com.hchen.superlyricapi.SuperLyricHelper;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -52,6 +53,8 @@ public class Application extends android.app.Application implements XposedServic
 
         PrefsTool.prefs(this, "super_lyric_prefs");
         XposedServiceHelper.registerListener(this);
+
+        SuperLyricHelper.registerPublisher();
     }
 
     public static boolean isXposedActive() {

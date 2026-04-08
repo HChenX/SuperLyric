@@ -34,6 +34,7 @@ import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricHelper;
+import com.hchen.superlyricapi.SuperLyricLine;
 
 /**
  * 歌词发布类
@@ -51,7 +52,7 @@ public abstract class AbsPublisher extends AbsModule {
     protected void onApplicationCreated(@NonNull Context context) {
         ModuleData.setClassLoader(context.getClassLoader());
 
-        SuperLyricHelper.registerPublisher(context);
+        SuperLyricHelper.registerPublisher();
 
         mPackageName = context.getPackageName();
         mAudioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
@@ -162,27 +163,23 @@ public abstract class AbsPublisher extends AbsModule {
         if (TextUtils.equals(lyric, mLastLyric)) return;
         mLastLyric = lyric;
 
-        data.setPackageName(mPackageName)
-            .setLyric(lyric)
-            .setDelay(delay);
+        data.setLyric(
+            new SuperLyricLine(
+                lyric,
+                delay
+            )
+        );
 
         sendSuperLyricData(data);
     }
 
     public static void sendSuperLyricData(@NonNull SuperLyricData data) {
-        SuperLyricHelper.sendLyric(data.setPackageName(mPackageName));
+        SuperLyricHelper.sendLyric(data);
         logD("LyricRelease", "Send super lyric data: " + data);
     }
 
     public static void sendStop() {
-        sendStop(mPackageName);
-    }
-
-    public static void sendStop(@NonNull String packageName) {
-        sendStop(
-            new SuperLyricData()
-                .setPackageName(packageName)
-        );
+        sendStop(new SuperLyricData());
     }
 
     public static void sendStop(@NonNull SuperLyricData data) {

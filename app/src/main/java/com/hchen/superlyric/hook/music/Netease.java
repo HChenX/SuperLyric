@@ -30,6 +30,7 @@ import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 import com.hchen.superlyricapi.SuperLyricData;
+import com.hchen.superlyricapi.SuperLyricLine;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
@@ -111,7 +112,14 @@ public final class Netease extends AbsPublisher {
                         int endTime = (int) callMethod(mSentence, "getEndTime");
                         int startTime = (int) callMethod(mSentence, "getStartTime");
 
-                        sendLyric(lyric, endTime - startTime, new SuperLyricData().setTranslation(translate));
+                        sendLyric(
+                            lyric,
+                            endTime - startTime,
+                            new SuperLyricData()
+                                .setTranslation(
+                                    new SuperLyricLine(translate)
+                                )
+                        );
                     }
                 }
             );

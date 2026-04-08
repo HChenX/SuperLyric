@@ -31,7 +31,6 @@ import com.hchen.hooktool.AbsModule;
 import com.hchen.hooktool.ModuleConfig;
 import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.ModuleEntrance;
-import com.hchen.hooktool.log.AndroidLog;
 import com.hchen.hooktool.utils.PrefsTool;
 
 import java.lang.reflect.InvocationTargetException;
@@ -77,7 +76,6 @@ public final class InitHook extends ModuleEntrance {
         if (HookData.ON_PACKAGE_LOADED.containsKey(param.getPackageName())) {
             try {
                 int version = PrefsTool.prefs().getInt("super_lyric_dexkit_cache_version", 0);
-                AndroidLog.logI(TAG, "Dexkit cache version: " + version);
 
                 ModuleData.setClassLoader(param.getClassLoader());
                 DexkitCache.init(
@@ -92,8 +90,7 @@ public final class InitHook extends ModuleEntrance {
                 if (modules.containsKey(param.getPackageName())) {
                     AbsModule module = Objects.requireNonNull(modules.get(param.getPackageName()));
                     module.handlePackageReady(param);
-
-                    modules.remove(param.getPackageName());
+                    return;
                 }
 
                 for (String path : Objects.requireNonNull(HookData.ON_PACKAGE_LOADED.get(param.getPackageName()))) {

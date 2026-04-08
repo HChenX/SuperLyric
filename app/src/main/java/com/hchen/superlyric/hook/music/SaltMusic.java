@@ -29,6 +29,7 @@ import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.hooktool.log.AndroidLog;
 import com.hchen.superlyric.hook.AbsPublisher;
 import com.hchen.superlyricapi.SuperLyricData;
+import com.hchen.superlyricapi.SuperLyricLine;
 import com.hchen.superlyricapi.SuperLyricWord;
 
 import org.luckypray.dexkit.DexKitBridge;
@@ -45,6 +46,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Predicate;
 
 /**
@@ -197,18 +199,15 @@ public final class SaltMusic extends AbsPublisher {
                                 translation = TextUtils.equals(strings[0], sb.toString()) ? strings[1] : strings[0];
                             }
 
-                            SuperLyricData superLyricData = new SuperLyricData()
-                                .setLyric(sb.toString())
-                                .setDelay((int) delay)
-                                .setTranslation(translation);
-
                             if (words.length > 0) {
-                                if (words[0].getWord().length() == 1) {
-                                    superLyricData.setLyricWordData(words);
+                                if (words[0].getWord().length() != 1) {
+                                    words = null;
                                 }
                             }
 
-                            sendSuperLyricData(superLyricData);
+                            sendSuperLyricData(new SuperLyricData()
+                                .setLyric(new SuperLyricLine(sb.toString(), words, delay))
+                                .setTranslation(new SuperLyricLine(Optional.ofNullable(translation).orElse(""))));
                             AndroidLog.logI(TAG, "LyricData: " + data);
                         }
                     }

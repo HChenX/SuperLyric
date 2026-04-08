@@ -26,6 +26,7 @@ import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.hook.AbsPublisher;
 import com.hchen.superlyricapi.SuperLyricData;
+import com.hchen.superlyricapi.SuperLyricLine;
 import com.hchen.superlyricapi.SuperLyricWord;
 
 import org.luckypray.dexkit.DexKitBridge;
@@ -160,18 +161,26 @@ public final class Qishui extends AbsPublisher {
                             }
                         }
 
-                        SuperLyricData superLyricData = new SuperLyricData().setLyricWordData(lyricData.words);
+                        SuperLyricData superLyricData = new SuperLyricData();
+                        superLyricData.setLyric(
+                            new SuperLyricLine(
+                                (String) lyricData.lyric,
+                                lyricData.words,
+                                lyricData.startTime,
+                                lyricData.endTime
+                            )
+                        );
+
                         if (translationLyricData != null) {
-                            superLyricData.setTranslation((String) translationLyricData.lyric)
-                                .setTranslationDelay((int) (translationLyricData.endTime - translationLyricData.startTime))
-                                .setTranslationWordData(translationLyricData.words);
+                            superLyricData.setTranslation(new SuperLyricLine(
+                                (String) translationLyricData.lyric,
+                                translationLyricData.words,
+                                translationLyricData.startTime,
+                                translationLyricData.endTime
+                            ));
                         }
 
-                        sendLyric(
-                            (String) lyricData.lyric,
-                            (int) (lyricData.endTime - lyricData.startTime),
-                            superLyricData
-                        );
+                        sendSuperLyricData(superLyricData);
                         // AndroidLog.logI(TAG, sentence.toString());
                     }
                 }

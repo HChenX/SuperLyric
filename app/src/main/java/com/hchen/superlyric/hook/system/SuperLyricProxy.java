@@ -28,8 +28,8 @@ import androidx.annotation.NonNull;
 import com.hchen.auto.AutoHook;
 import com.hchen.hooktool.AbsModule;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.superlyric.binder.SuperLyricService;
-import com.hchen.superlyric.state.PlayStateListener;
+import com.hchen.superlyric.service.PlayStateListener;
+import com.hchen.superlyric.service.SuperLyricService;
 
 import java.util.Map;
 import java.util.Optional;
@@ -52,15 +52,14 @@ public final class SuperLyricProxy extends AbsModule {
                 public void after() {
                     try {
                         if (mSuperLyricService == null) {
-                            mSuperLyricService = new SuperLyricService();
-
                             Context mContext = (Context) getField(getThisObject(), "mContext");
                             if (mContext != null) {
+                                mSuperLyricService = new SuperLyricService(getThisObject());
                                 new PlayStateListener(mContext, mSuperLyricService).register();
+
+                                logI(TAG, "Super lyric service is all ready. enjoy it.");
                             }
                         }
-
-                        logI(TAG, "Super lyric service is all ready. enjoy it.");
                     } catch (Throwable e) {
                         logE(TAG, "Failed to load super lyric service.", e);
                     }
@@ -98,7 +97,6 @@ public final class SuperLyricProxy extends AbsModule {
             "com.android.server.am.ProcessRecord" /* app */, int.class /* pid */, "android.app.IApplicationThread" /* thread */,
             boolean.class /* fromBinderDied */, String.class /* reason */,
             new AbsHook() {
-                /** @noinspection SimplifiableConditionalExpression*/
                 @Override
                 public void after() {
                     if (mSuperLyricService == null) {

@@ -36,13 +36,13 @@ android {
 
     namespace "com.hchen.superlyric"
     compileSdk {
-        version = release(36)
+        version = release(37)
     }
 
     defaultConfig {
         applicationId "com.hchen.superlyric"
         minSdk 30
-        targetSdk 36
+        targetSdk 37
         // noinspection HighAppVersionCode
         versionCode 2026040300
         versionName "3.0"
@@ -112,10 +112,10 @@ androidComponents {
 }
 
 dependencies {
-    // configurations.configureEach {
-    //     resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
-    //     resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
-    // }
+    configurations.configureEach {
+        resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+        resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
+    }
 
     implementation libs.appcompat
     implementation libs.annotation
@@ -125,9 +125,9 @@ dependencies {
     implementation libs.activity.compose
 
     implementation libs.miuix.ui.android
-    // implementation libs.miuix.preference.android
-    // implementation libs.miuix.shapes.android
-    // implementation libs.miuix.blur.android
+    implementation libs.miuix.preference.android
+    implementation libs.miuix.shapes.android
+    implementation libs.miuix.blur.android
     implementation libs.miuix.icons.android
 
     compileOnly libs.api
@@ -137,10 +137,9 @@ dependencies {
     implementation libs.dexkitcache
     implementation libs.mmkv
     implementation libs.gson
-    implementation(libs.superlyricapi)
-            // {
-            //     changing = true
-            // }
+    implementation(libs.superlyricapi) {
+        changing = true
+    }
 
     compileOnly(project(':hidden-api'))
     implementation(project(':auto'))

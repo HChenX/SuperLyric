@@ -66,18 +66,16 @@ public class PackageUtils {
                             }
 
                             if (info.applicationInfo != null && info.applicationInfo.metaData != null) {
-                                boolean isXposed = info.applicationInfo.metaData.getBoolean("xposedmodule");
-                                if (!isXposed) {
-                                    boolean isApi = info.applicationInfo.metaData.getBoolean("superlyricapi");
-                                    if (isApi) {
-                                        isXposed = hasXposedModule(info.applicationInfo.sourceDir);
-                                        if (!isXposed) {
-                                            AppData appData = PackageTool.createAppData(pm, info);
-                                            String apiVersionName = info.applicationInfo.metaData.getString("superlyricapi_version_name");
-                                            String apiVersionCode = info.applicationInfo.metaData.getString("superlyricapi_version_code");
+                                boolean isApi = info.applicationInfo.metaData.getBoolean("superlyricapi");
+                                if (isApi) {
+                                    boolean isXposed =
+                                        info.applicationInfo.metaData.getBoolean("xposedmodule") || hasXposedModule(info.applicationInfo.sourceDir);
+                                    if (!isXposed) {
+                                        AppData appData = PackageTool.createAppData(pm, info);
+                                        String apiVersionName = info.applicationInfo.metaData.getString("superlyricapi_version_name");
+                                        String apiVersionCode = info.applicationInfo.metaData.getString("superlyricapi_version_code");
 
-                                            mMediaAppApiList.add(new ApiAppData(appData, apiVersionName, apiVersionCode));
-                                        }
+                                        mMediaAppApiList.add(new ApiAppData(appData, apiVersionName, apiVersionCode));
                                     }
                                 }
                             }

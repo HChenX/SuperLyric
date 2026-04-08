@@ -35,6 +35,7 @@ import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.hook.AbsPublisher;
 import com.hchen.superlyricapi.SuperLyricData;
+import com.hchen.superlyricapi.SuperLyricLine;
 import com.hchen.superlyricapi.SuperLyricWord;
 
 import org.luckypray.dexkit.DexKitBridge;
@@ -458,12 +459,21 @@ public final class Apple extends AbsPublisher {
                 }
 
                 if (currentLine != null && (lastShownLyric == null || lastShownLyric != currentLine)) {
-                    sendLyric(
-                        currentLine.lyric,
-                        currentLine.end - currentLine.start,
+                    sendSuperLyricData(
                         new SuperLyricData()
-                            .setLyricWordData(currentLine.words)
-                            .setTranslation(currentLine.translation)
+                            .setLyric(
+                                new SuperLyricLine(
+                                    currentLine.lyric,
+                                    currentLine.words,
+                                    currentLine.start,
+                                    currentLine.end
+                                )
+                            )
+                            .setTranslation(
+                                new SuperLyricLine(
+                                    currentLine.translation
+                                )
+                            )
                     );
                     lastShownLyric = currentLine;
                 }

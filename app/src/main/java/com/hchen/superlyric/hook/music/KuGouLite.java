@@ -31,6 +31,7 @@ import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.hook.AbsPublisher;
 import com.hchen.superlyricapi.SuperLyricData;
+import com.hchen.superlyricapi.SuperLyricLine;
 import com.hchen.superlyricapi.SuperLyricWord;
 
 import org.luckypray.dexkit.DexKitBridge;
@@ -166,9 +167,13 @@ public final class KuGouLite extends AbsPublisher {
                                     lyricWords[i] = new SuperLyricWord(words[i], (int) begin, (int) (begin + delay));
                                 }
 
-                                data.setLyric(sb.toString());
-                                data.setDelay(Math.toIntExact(lyricDelay));
-                                data.setLyricWordData(lyricWords);
+                                data.setLyric(
+                                    new SuperLyricLine(
+                                        sb.toString(),
+                                        lyricWords,
+                                        lyricDelay
+                                    )
+                                );
                             }
 
                             String[][] translateWordss = (String[][]) getField(lyricData, "k");
@@ -179,7 +184,11 @@ public final class KuGouLite extends AbsPublisher {
                                     for (String translateWord : translateWords) {
                                         sb.append(translateWord);
                                     }
-                                    data.setTranslation(sb.toString());
+                                    data.setTranslation(
+                                        new SuperLyricLine(
+                                            sb.toString()
+                                        )
+                                    );
                                 }
                             }
 

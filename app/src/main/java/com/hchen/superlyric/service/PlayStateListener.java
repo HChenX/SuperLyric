@@ -16,7 +16,7 @@
 
  * Copyright (C) 2025-2026 HChenX
  */
-package com.hchen.superlyric.state;
+package com.hchen.superlyric.service;
 
 import android.annotation.SuppressLint;
 import android.content.ComponentName;
@@ -25,14 +25,11 @@ import android.media.MediaMetadata;
 import android.media.session.MediaController;
 import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
-import android.os.RemoteException;
 import android.service.notification.NotificationListenerService;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.hchen.superlyric.binder.SuperLyricService;
-import com.hchen.superlyricapi.ISuperLyricManager;
 import com.hchen.superlyricapi.SuperLyricData;
 
 import java.util.List;
@@ -48,7 +45,7 @@ public final class PlayStateListener {
     @NonNull
     private final Context mContext;
     @NonNull
-    private final ISuperLyricManager mManager;
+    private final SuperLyricService mService;
     @NonNull
     private final MediaSessionManager mMediaSessionManager;
     @NonNull
@@ -74,9 +71,9 @@ public final class PlayStateListener {
         }
     };
 
-    public PlayStateListener(@NonNull Context context, @NonNull ISuperLyricManager manager) {
+    public PlayStateListener(@NonNull Context context, @NonNull SuperLyricService service) {
         mContext = context;
-        mManager = manager;
+        mService = service;
         mMediaSessionManager = (MediaSessionManager) mContext.getSystemService(Context.MEDIA_SESSION_SERVICE);
     }
 
@@ -122,39 +119,24 @@ public final class PlayStateListener {
                 return;
             }
 
-            switch (state.getState()) {
-                case PlaybackState.STATE_BUFFERING, PlaybackState.STATE_PAUSED,
-                     PlaybackState.STATE_STOPPED -> {
-                    try {
-                        mManager.sendStop(
-                            new SuperLyricData()
-                                .setPackageName(mController.getPackageName())
-                                .setPlaybackState(state)
+            if (isPublisher()) {
+                switch (state.getState()) {
+                    case PlaybackState.STATE_BUFFERING, PlaybackState.STATE_PAUSED,
+                         PlaybackState.STATE_STOPPED -> {
+                        mService.sendSystemEvent(
+                            mController.getPackageName(),
+                            new SuperLyricData().setPlaybackState(state)
                         );
-                    } catch (RemoteException ignore) {
                     }
-                }
-                default -> {
+                    default -> {
+                    }
                 }
             }
         }
 
         @Override
         public void onMetadataChanged(@Nullable MediaMetadata metadata) {
-            super.onMetadataChanged(metadata);
-            if (metadata == null) return;
-            if (unregisterCallbackIfNeed()) {
-                return;
-            }
-
-            try {
-                mManager.sendLyric(
-                    new SuperLyricData()
-                        .setPackageName(mController.getPackageName())
-                        .setMediaMetadata(metadata)
-                );
-            } catch (RemoteException ignore) {
-            }
+            // Do Nothing
         }
 
         private boolean unregisterCallbackIfNeed() {
@@ -164,6 +146,10 @@ public final class PlayStateListener {
                 return true;
             }
             return false;
+        }
+
+        private boolean isPublisher() {
+            return SuperLyricService.mPublishers.contains(mController.getPackageName());
         }
     }
 }

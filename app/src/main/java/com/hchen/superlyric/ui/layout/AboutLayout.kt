@@ -25,15 +25,25 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.captionBar
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -50,22 +60,36 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.net.toUri
+import com.hchen.hooktool.utils.InvokeTool
 import com.hchen.superlyric.BuildConfig
 import com.hchen.superlyric.R
 import com.hchen.superlyric.ui.Application
 import com.hchen.superlyric.ui.data.LocalMiuixScrollBehavior
+import com.hchen.superlyricapi.ISuperLyricReceiver
+import com.hchen.superlyricapi.SuperLyricData
+import com.hchen.superlyricapi.SuperLyricHelper
+import com.hchen.superlyricapi.SuperLyricLine
+import com.hchen.superlyricapi.SuperLyricWord
+import kotlinx.coroutines.flow.MutableStateFlow
+import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TopAppBar
-import top.yukonga.miuix.kmp.extra.DialogDefaults
-import top.yukonga.miuix.kmp.extra.SuperArrow
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Close
+import top.yukonga.miuix.kmp.icon.extended.Ok
+import top.yukonga.miuix.kmp.layout.DialogDefaults
+import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import top.yukonga.miuix.kmp.window.WindowBottomSheet
 
 @Composable
 fun AboutLayout(
@@ -77,21 +101,41 @@ fun AboutLayout(
         context.packageManager.getApplicationIcon(context.packageName)
     }
 
-    val contributor = listOf(
-        "ghhccghk",
-        "YifePlayte",
-        "YuKongA"
-    )
-    val contributorUri = listOf(
-        "https://github.com/ghhccghk",
-        "https://github.com/YifePlayte",
-        "https://github.com/YuKongA"
-    )
-    val contributorIcon = listOf(
-        R.drawable.ghhccghk,
-        R.drawable.yifeplayte,
-        R.drawable.yukonga
-    )
+    val contributor = remember {
+        listOf(
+            "ghhccghk",
+            "YifePlayte",
+            "YuKongA"
+        )
+    }
+    val contributorUri = remember {
+        listOf(
+            "https://github.com/ghhccghk",
+            "https://github.com/YifePlayte",
+            "https://github.com/YuKongA"
+        )
+    }
+    val contributorIcon = remember {
+        listOf(
+            R.drawable.ghhccghk,
+            R.drawable.yifeplayte,
+            R.drawable.yukonga
+        )
+    }
+
+    val state by AnalogReceiver.receiverFlow.collectAsState()
+    val registered by AnalogReceiver.registeredFlow.collectAsState()
+    var show by remember { mutableStateOf(false) }
+
+    LaunchedEffect(show) {
+        if (!show) {
+            if (SuperLyricHelper.isReceiverRegistered(AnalogReceiver.mReceiver)) {
+                SuperLyricHelper.unregisterReceiver(AnalogReceiver.mReceiver)
+                AnalogReceiver.registeredFlow.value = false
+                AnalogReceiver.receiverFlow.value = ReceiverState()
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -157,7 +201,7 @@ fun AboutLayout(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = 6.dp),
-                            text = "${BuildConfig.VERSION_NAME}_${BuildConfig.VERSION_CODE}",
+                            text = "${BuildConfig.VERSION_NAME}_${BuildConfig.VERSION_CODE} | ${BuildConfig.BUILD_TYPE.uppercase()}",
                             fontSize = MiuixTheme.textStyles.body1.fontSize,
                             textAlign = TextAlign.Center,
                             color = DialogDefaults.summaryColor(),
@@ -174,7 +218,7 @@ fun AboutLayout(
                         .padding(horizontal = 12.dp)
                         .padding(bottom = 12.dp)
                 ) {
-                    SuperArrow(
+                    ArrowPreference(
                         title = "焕晨HChen",
                         summary = "Github | Developer",
                         startAction = {
@@ -202,7 +246,7 @@ fun AboutLayout(
                         .padding(bottom = 12.dp)
                 ) {
                     contributor.forEachIndexed { index, name ->
-                        SuperArrow(
+                        ArrowPreference(
                             title = name,
                             summary = "Github | Contributor",
                             startAction = {
@@ -230,7 +274,14 @@ fun AboutLayout(
                         .padding(horizontal = 12.dp)
                         .padding(bottom = 12.dp)
                 ) {
-                    SuperArrow(
+                    ArrowPreference(
+                        title = "API 测试",
+                        summary = "测试 SuperLyricApi 状态",
+                        onClick = {
+                            show = true
+                        }
+                    )
+                    ArrowPreference(
                         title = stringResource(R.string.clear_dexkit_cache),
                         summary = stringResource(R.string.clear_dexkit_cache_summary),
                         onClick = {
@@ -249,13 +300,13 @@ fun AboutLayout(
                         .padding(horizontal = 12.dp)
                         .padding(bottom = 12.dp)
                 ) {
-                    SuperArrow(
+                    ArrowPreference(
                         title = stringResource(R.string.telegram_group),
                         onClick = {
                             openUrl(context, "https://t.me/HChenX_Chat")
                         }
                     )
-                    SuperArrow(
+                    ArrowPreference(
                         title = stringResource(R.string.telegram_channel),
                         onClick = {
                             openUrl(context, "https://t.me/HChen_Module")
@@ -269,7 +320,7 @@ fun AboutLayout(
                         .padding(horizontal = 12.dp)
                         .padding(bottom = 12.dp)
                 ) {
-                    SuperArrow(
+                    ArrowPreference(
                         title = stringResource(R.string.project_url),
                         onClick = {
                             openUrl(context, "https://github.com/HChenX/SuperLyric")
@@ -278,10 +329,182 @@ fun AboutLayout(
                 }
             }
         }
+
+        WindowBottomSheet(
+            show = show,
+            title = "API 测试",
+            allowDismiss = false,
+            startAction = {
+                IconButton(
+                    onClick = { show = false },
+                ) {
+                    Icon(
+                        imageVector = MiuixIcons.Close,
+                        contentDescription = "Cancel",
+                        tint = MiuixTheme.colorScheme.onBackground,
+                    )
+                }
+            },
+            endAction = {
+                IconButton(
+                    onClick = { show = false },
+                ) {
+                    Icon(
+                        imageVector = MiuixIcons.Ok,
+                        contentDescription = "Confirm",
+                        tint = MiuixTheme.colorScheme.onBackground,
+                    )
+                }
+            },
+            onDismissRequest = {
+                show = false
+            }
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .scrollEndHaptic()
+                    .overScrollVertical(),
+                contentPadding = PaddingValues(bottom = 12.dp)
+            ) {
+                item {
+                    SmallTitle(text = "基本状态", insideMargin = PaddingValues(16.dp, 8.dp))
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                        colors = CardDefaults.defaultColors(
+                            color = MiuixTheme.colorScheme.secondaryContainer,
+                        )
+                    ) {
+                        BasicComponent(title = "API 状态：${if (SuperLyricHelper.isAvailable()) "可用" else "不可用"}")
+                        BasicComponent(title = "API 版本：${SuperLyricHelper.getApiVersion()}")
+
+                        BasicComponent(
+                            title = "注册状态：${if (SuperLyricHelper.isPublisherRegistered()) "已注册" else "未注册"}",
+                            summary = "SuperLyricService：${InvokeTool.getStaticField<Any>(SuperLyricHelper::class.java, "mManager")}"
+                        )
+                    }
+
+                    SmallTitle(text = "模拟发布", insideMargin = PaddingValues(16.dp, 8.dp))
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                        colors = CardDefaults.defaultColors(
+                            color = MiuixTheme.colorScheme.secondaryContainer,
+                        )
+                    ) {
+                        ArrowPreference(
+                            title = "测试发布歌词",
+                            onClick = {
+                                SuperLyricHelper.sendLyric(
+                                    SuperLyricData()
+                                        .setLyric(
+                                            SuperLyricLine(
+                                                "测试歌词",
+                                                arrayOf(
+                                                    SuperLyricWord("测", 0, 500),
+                                                    SuperLyricWord("试", 500, 1000),
+                                                    SuperLyricWord("歌", 1000, 1500),
+                                                    SuperLyricWord("词", 1500, 2000)
+                                                ),
+                                                0,
+                                                2000
+                                            )
+                                        )
+                                        .setTranslation(
+                                            SuperLyricLine(
+                                                "测试翻译"
+                                            )
+                                        )
+                                )
+
+                                Toast.makeText(context, "已发布", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                        ArrowPreference(
+                            title = "测试发布停止事件",
+                            onClick = {
+                                SuperLyricHelper.sendStop(SuperLyricData())
+                                Toast.makeText(context, "已发布", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+
+                    SmallTitle(text = "模拟接收", insideMargin = PaddingValues(16.dp, 8.dp))
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.defaultColors(
+                            color = MiuixTheme.colorScheme.secondaryContainer,
+                        )
+                    ) {
+                        ArrowPreference(
+                            title = "注册接收器",
+                            summary = "当前状态：${if (registered) "已注册" else "未注册"}",
+                            onClick = {
+                                if (!SuperLyricHelper.isReceiverRegistered(AnalogReceiver.mReceiver)) {
+                                    SuperLyricHelper.registerReceiver(AnalogReceiver.mReceiver)
+                                    AnalogReceiver.registeredFlow.value = true
+                                    Toast.makeText(context, "已注册", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
+                        ArrowPreference(
+                            title = "注销接收器",
+                            onClick = {
+                                if (SuperLyricHelper.isReceiverRegistered(AnalogReceiver.mReceiver)) {
+                                    SuperLyricHelper.unregisterReceiver(AnalogReceiver.mReceiver)
+                                    AnalogReceiver.registeredFlow.value = false
+                                    AnalogReceiver.receiverFlow.value = ReceiverState()
+                                    Toast.makeText(context, "已销毁", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
+                        BasicComponent(
+                            title = "接收器实时数据",
+                            summary = "Publisher：${state.publisher}\nData：${state.data}"
+                        )
+                    }
+
+                    Spacer(
+                        Modifier.padding(
+                            bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+                                    WindowInsets.captionBar.asPaddingValues().calculateBottomPadding(),
+                        ),
+                    )
+                }
+            }
+        }
     }
 }
 
-fun openUrl(context: Context, url: String) {
+private object AnalogReceiver {
+    val registeredFlow = MutableStateFlow(false)
+    val receiverFlow = MutableStateFlow(ReceiverState())
+    val mReceiver = object : ISuperLyricReceiver.Stub() {
+        override fun onLyric(publisher: String?, data: SuperLyricData?) {
+            receiverFlow.value = ReceiverState(
+                publisher = publisher,
+                data = data
+            )
+        }
+
+        override fun onStop(publisher: String?, data: SuperLyricData?) {
+            receiverFlow.value = ReceiverState(
+                publisher = publisher,
+                data = data
+            )
+        }
+    }
+}
+
+private data class ReceiverState(
+    val publisher: String? = null,
+    val data: SuperLyricData? = null
+)
+
+private fun openUrl(context: Context, url: String) {
     try {
         val uri = url.toUri()
         val intent = Intent(Intent.ACTION_VIEW, uri).apply {
