@@ -40,7 +40,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.function.Predicate;
 
 /**
@@ -91,20 +90,22 @@ public final class Qishui extends AbsPublisher {
             @NonNull
             @Override
             public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
-                return Optional.ofNullable(
-                    bridge.findMethod(FindMethod.create()
+                MethodData data = bridge.findMethod(FindMethod.create()
                     .matcher(MethodMatcher.create()
                         .declaredClass(findClass("com.luna.biz.playing.lyric.bluetoothlyrics.BlueToothLyricsManager"))
                         .usingNumbers(13)
                     )
-                ).singleOrNull()).orElse(
-                    bridge.findMethod(FindMethod.create()
+                ).singleOrNull();
+
+                if (data == null) {
+                    data = bridge.findMethod(FindMethod.create()
                         .matcher(MethodMatcher.create()
                             .declaredClass(findClass("com.luna.biz.playing.lyric.bluetoothlyrics.BlueToothLyricsManager"))
                             .usingNumbers(62535)
                         )
-                    ).single()
-                );
+                    ).single();
+                }
+                return data;
             }
         });
         hook(m2, doNothing());

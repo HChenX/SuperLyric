@@ -69,18 +69,17 @@ public final class SuperLyricProxy extends AbsModule {
             }
         );
 
-        Method servicesMethod = Optional.ofNullable(
-            findMethodIfExists("com.android.server.am.ActivityManagerService",
-                "getCommonServicesLocked",
-                boolean.class /* isolated */, boolean.class /* instant */
-            )
-        ).orElse(
+        Method servicesMethod = findMethodIfExists("com.android.server.am.ActivityManagerService",
+            "getCommonServicesLocked",
+            boolean.class /* isolated */, boolean.class /* instant */
+        );
+        if (servicesMethod == null) {
             findMethodIfExists(
                 "com.android.server.am.ActivityManagerService",
                 "getCommonServicesLocked",
                 boolean.class /* isolated */
-            )
-        );
+            );
+        }
 
         Objects.requireNonNull(servicesMethod, "Failed to load super lyric service, [ActivityManagerService#getCommonServicesLocked()] not found.");
         hook(servicesMethod,
