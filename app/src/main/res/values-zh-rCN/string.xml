@@ -41,7 +41,7 @@
     <string name="apple_music">无需额外设置</string>
     <string name="symfonium_music">无需额外设置</string>
     <string name="kugou_music">无需额外设置</string>
-    <string name="kugou_lite_music">无需额外设置\n仅 5.1.5 版本支持逐字</string>
+    <string name="kugou_lite_music">无需额外设置\n3.0.1 和 5.1.5 版本支持逐字</string>
 
     <string name="haibei_music">未知</string>
 

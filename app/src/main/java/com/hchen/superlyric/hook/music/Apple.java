@@ -135,9 +135,7 @@ public final class Apple extends AbsPublisher {
                     try {
                         Application application = (Application) getThisObject();
                         Class<?> playerLyricsViewModelClass = findClass("com.apple.android.music.player.viewmodel.PlayerLyricsViewModel");
-                        if (playerLyricsViewModelClass != null) {
-                            lyricViewModel = newInstance(playerLyricsViewModelClass, application);
-                        }
+                        lyricViewModel = newInstance(playerLyricsViewModelClass, application);
                     } catch (Exception e) {
                         logE(TAG, "Failed to initialize LyricViewModel!!", e);
                     }

@@ -58,13 +58,21 @@ public final class KuGouLite extends AbsPublisher {
     protected void onApplicationCreated(@NonNull Context context) {
         super.onApplicationCreated(context);
 
-        if (hasMethod("uv.b", "c")) {
-            hookMeizuLyric();
-        } else {
-            hookLocalBroadcast("androidx.localbroadcastmanager.content.LocalBroadcastManager");
-        }
         enableStatusBarLyric();
-        fixProbabilityCollapse();
+        if (mVersionCode <= 10935) {
+            if (mVersionCode == 10645) {
+                hookMeizuLyric2();
+            } else {
+                hookLocalBroadcast("android.support.v4.content.LocalBroadcastManager");
+            }
+        } else {
+            if (mVersionCode == 11450) {
+                hookMeizuLyric1();
+            } else {
+                hookLocalBroadcast("androidx.localbroadcastmanager.content.LocalBroadcastManager");
+            }
+            fixProbabilityCollapse();
+        }
     }
 
     private void enableStatusBarLyric() {
@@ -102,13 +110,12 @@ public final class KuGouLite extends AbsPublisher {
         hook(methods[1], setArg(0, true));
     }
 
-    private Pair<String, Object> pair;
-
-    private void hookMeizuLyric() {
+    private void hookMeizuLyric1() {
         hookMethod("com.kugou.android.lyric.j",
             "d",
             Context.class, String.class, boolean.class,
             new AbsHook() {
+                private Pair<String, Object> pair;
                 @Override
                 public void before() {
                     String lyric = (String) getArg(1);
@@ -125,59 +132,12 @@ public final class KuGouLite extends AbsPublisher {
                             lyricData = pair.second;
                         }
                         if (lyricData != null) {
-                            SuperLyricData data = new SuperLyricData();
-
-                            SuperLyricWord[] lyricWords = null;
                             int currentLine = (int) getField(getThisObject(), "a");
                             String[][] wordss = (String[][]) getField(lyricData, "f");
                             long[][] wordBegins = (long[][]) getField(lyricData, "i");
                             long[][] wordDelays = (long[][]) getField(lyricData, "j");
-                            if (wordss != null) {
-                                String[] words = wordss[currentLine];
-                                if (words == null) {
-                                    return;
-                                }
-
-                                long lyricDelay = 0L;
-                                long[] begins = wordBegins[currentLine];
-                                long[] delays = wordDelays[currentLine];
-                                lyricWords = new SuperLyricWord[words.length];
-                                StringBuilder sb = new StringBuilder();
-                                for (int i = 0; i < words.length; i++) {
-                                    long begin = begins[i];
-                                    long delay = delays[i];
-                                    lyricDelay = lyricDelay + delay;
-
-                                    sb.append(words[i]);
-                                    lyricWords[i] = new SuperLyricWord(words[i], (int) begin, (int) (begin + delay));
-                                }
-
-                                data.setLyric(
-                                    new SuperLyricLine(
-                                        sb.toString(),
-                                        lyricWords,
-                                        lyricDelay
-                                    )
-                                );
-                            }
-
                             String[][] translateWordss = (String[][]) getField(lyricData, "k");
-                            if (translateWordss != null) {
-                                String[] translateWords = translateWordss[currentLine];
-                                if (translateWords != null) {
-                                    StringBuilder sb = new StringBuilder();
-                                    for (String translateWord : translateWords) {
-                                        sb.append(translateWord);
-                                    }
-                                    data.setTranslation(
-                                        new SuperLyricLine(
-                                            sb.toString()
-                                        )
-                                    );
-                                }
-                            }
-
-                            sendSuperLyricData(data);
+                            parseData(currentLine, wordss, translateWordss, wordBegins, wordDelays);
                         }
                     } else {
                         sendStop();
@@ -185,6 +145,86 @@ public final class KuGouLite extends AbsPublisher {
                 }
             }
         );
+    }
+
+    private void hookMeizuLyric2() {
+        hookMethod("com.kugou.android.lyric.e",
+            "a",
+            Context.class, String.class, boolean.class,
+            new AbsHook() {
+                @Override
+                public void before() {
+                    String lyric = (String) getArg(1);
+                    boolean isClose = (boolean) getArg(2);
+
+                    if (!isClose && lyric != null && !lyric.isEmpty()) {
+                        Object lyricData = callMethod(callStaticMethod("com.kugou.framework.lyric.l","a"),"k");
+                        if (lyricData != null) {
+                            int currentLine = (int) getField(getThisObject(), "a");
+                            String[][] wordss = (String[][]) getField(lyricData, "e");
+                            String[][] translateWordss = (String[][]) getField(lyricData, "h");
+                            long[][] wordBegins = (long[][]) getField(lyricData, "f");
+                            long[][] wordDelays = (long[][]) getField(lyricData, "g");
+                            parseData(currentLine, wordss, translateWordss, wordBegins, wordDelays);
+                        }
+                    } else {
+                        sendStop();
+                    }
+                }
+            }
+        );
+    }
+
+    private void parseData(int currentLine, String[][] wordss, String[][] translateWordss, long[][] wordBegins, long[][] wordDelays) {
+        SuperLyricData data = new SuperLyricData();
+
+        SuperLyricWord[] lyricWords = null;
+
+        if (wordss != null) {
+            String[] words = wordss[currentLine];
+            if (words == null) {
+                return;
+            }
+
+            long lyricDelay = 0L;
+            long[] begins = wordBegins[currentLine];
+            long[] delays = wordDelays[currentLine];
+            lyricWords = new SuperLyricWord[words.length];
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < words.length; i++) {
+                long begin = begins[i];
+                long delay = delays[i];
+                lyricDelay = lyricDelay + delay;
+
+                sb.append(words[i]);
+                lyricWords[i] = new SuperLyricWord(words[i], (int) begin, (int) (begin + delay));
+            }
+
+            data.setLyric(
+                new SuperLyricLine(
+                    sb.toString(),
+                    lyricWords,
+                    lyricDelay
+                )
+            );
+        }
+
+        if (translateWordss != null) {
+            String[] translateWords = translateWordss[currentLine];
+            if (translateWords != null) {
+                StringBuilder sb = new StringBuilder();
+                for (String translateWord : translateWords) {
+                    sb.append(translateWord);
+                }
+                data.setTranslation(
+                    new SuperLyricLine(
+                        sb.toString()
+                    )
+                );
+            }
+        }
+
+        sendSuperLyricData(data);
     }
 
     private void hookLocalBroadcast(String clazz) {

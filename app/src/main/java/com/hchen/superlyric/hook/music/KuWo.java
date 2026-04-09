@@ -19,6 +19,7 @@
 package com.hchen.superlyric.hook.music;
 
 import android.content.Context;
+import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 
@@ -97,13 +98,14 @@ public final class KuWo extends AbsPublisher {
                         .matcher(ClassMatcher.create()
                             .usingStrings("正在搜索歌词...", "bluetooth_car_lyric")
                         )
-                    ).singleOrThrow(() -> new Throwable("Failed to find bluetooth_car_lyric!"));
+                    ).single();
                 }
             });
 
             hook(Arrays.stream(clazz.getDeclaredMethods())
                     .filter(new Predicate<Method>() {
-                        @Override public boolean test(Method method) {
+                        @Override
+                        public boolean test(Method method) {
                             return method.getParameterCount() == 1 &&
                                 Objects.equals(method.getParameterTypes()[0], String.class);
                         }
@@ -112,7 +114,13 @@ public final class KuWo extends AbsPublisher {
                     @Override
                     public void before() {
                         String lyric = (String) getArg(0);
-                        if (lyric == null || lyric.isEmpty()) return;
+                        if (lyric == null ||
+                            lyric.isEmpty() ||
+                            TextUtils.equals(lyric, "正在搜索歌词...") ||
+                            TextUtils.equals(lyric, "暂无歌词")
+                        ) {
+                            return;
+                        }
 
                         TimeoutHelper.start();
                         sendLyric(lyric);

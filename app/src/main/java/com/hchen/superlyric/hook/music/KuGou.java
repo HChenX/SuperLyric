@@ -19,6 +19,7 @@
 package com.hchen.superlyric.hook.music;
 
 import android.content.Context;
+import android.content.Intent;
 import android.text.TextUtils;
 import android.util.Pair;
 
@@ -64,9 +65,18 @@ public final class KuGou extends AbsPublisher {
     protected void onApplicationCreated(@NonNull Context context) {
         super.onApplicationCreated(context);
 
-        hookMeizuLyric();
         enableStatusBarLyric();
-        fixProbabilityCollapse();
+        if (mVersionCode <= 12009) {
+            hookLocalBroadcast("android.support.v4.content.LocalBroadcastManager");
+        } else {
+            try {
+                hookMeizuLyric();
+            } catch (Throwable e) {
+                logW(TAG, e);
+                hookLocalBroadcast("androidx.localbroadcastmanager.content.LocalBroadcastManager");
+            }
+            fixProbabilityCollapse();
+        }
     }
 
     private void enableStatusBarLyric() {
@@ -102,6 +112,28 @@ public final class KuGou extends AbsPublisher {
             }
         });
         hook(methods[1], setArg(0, true));
+    }
+
+    private void hookLocalBroadcast(String clazz) {
+        hookMethod(clazz,
+            "sendBroadcast",
+            Intent.class,
+            new AbsHook() {
+                @Override
+                public void before() {
+                    Intent intent = (Intent) getArg(0);
+                    if (intent == null) return;
+
+                    String action = intent.getAction();
+                    String message = intent.getStringExtra("lyric");
+                    if (message == null) return;
+
+                    if (Objects.equals(action, "com.kugou.android.update_meizu_lyric")) {
+                        sendLyric(message);
+                    }
+                }
+            }
+        );
     }
 
     private void hookMeizuLyric() {
