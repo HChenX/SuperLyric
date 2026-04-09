@@ -161,7 +161,34 @@ public final class Qishui extends AbsPublisher {
                             }
                         }
 
+                        String name = null;
+                        String album = null;
+                        String artist = null;
+                        try {
+                            Object trackPlayable = getArg(0);
+                            Object track = getField(trackPlayable, "track");
+                            name = (String) callMethod(track, "getName");
+                            album = (String) callMethod(callMethod(track, "getAlbum"), "getName");
+                            List<?> artists = (List<?>) callMethod(track, "getArtists");
+
+                            StringBuilder sb = new StringBuilder();
+                            if (artists != null) {
+                                for (int i = 0; i < artists.size(); i++) {
+                                    sb.append(callMethod(artists.get(i), "getName"));
+                                    if (artists.size() - 1 != i) {
+                                        sb.append("-");
+                                    }
+                                }
+                            }
+                            artist = sb.toString();
+                        } catch (Throwable ignore) {
+                        }
+
                         SuperLyricData superLyricData = new SuperLyricData();
+                        superLyricData.setTitle(name);
+                        superLyricData.setArtist(artist);
+                        superLyricData.setAlbum(album);
+
                         superLyricData.setLyric(
                             new SuperLyricLine(
                                 (String) lyricData.lyric,

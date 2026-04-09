@@ -26,7 +26,6 @@ import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.hooktool.log.AndroidLog;
 import com.hchen.superlyric.hook.AbsPublisher;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricLine;
@@ -142,6 +141,16 @@ public final class SaltMusic extends AbsPublisher {
         Objects.requireNonNull(typeField);
         Objects.requireNonNull(field);
 
+        Field[] songFields = Arrays.stream(findClass("com.salt.music.service.MusicController").getDeclaredFields()).filter(
+            new Predicate<Field>() {
+                @Override
+                public boolean test(Field field) {
+                    return Objects.equals(field.getType(), findClass("kotlinx.coroutines.flow.MutableStateFlow"));
+                }
+            }
+        ).toArray(Field[]::new);
+        final Field[] songFiled = {null};
+
         hook(method, new AbsHook() {
                 @Override
                 public void before() {
@@ -154,6 +163,16 @@ public final class SaltMusic extends AbsPublisher {
                         Object lyricData = getField(field, getThisObject());
                         if (lyricData == null) {
                             return;
+                        }
+
+                        if (songFiled[0] == null) {
+                            for (Field s : songFields) {
+                                Object value = callMethod(getStaticField(s), "getValue");
+                                if (value != null && Objects.equals(value.getClass(), findClass("com.salt.music.data.entry.Song"))) {
+                                    songFiled[0] = s;
+                                    break;
+                                }
+                            }
                         }
 
                         List<?> lyrics = (List<?>) getField(finalLyricListField, lyricData);
@@ -205,10 +224,25 @@ public final class SaltMusic extends AbsPublisher {
                                 }
                             }
 
+                            String name = null;
+                            String artist = null;
+                            String album = null;
+                            if (songFiled[0] != null) {
+                                Object song = callMethod(getStaticField(songFiled[0]), "getValue");
+                                if (song != null) {
+                                    name = (String) callMethod(song, "getTitle");
+                                    artist = (String) callMethod(song, "getArtist");
+                                    album = (String) callMethod(song, "getAlbum");
+                                }
+                            }
+
                             sendSuperLyricData(new SuperLyricData()
+                                .setTitle(name)
+                                .setArtist(artist)
+                                .setAlbum(album)
                                 .setLyric(new SuperLyricLine(sb.toString(), words, delay))
                                 .setTranslation(new SuperLyricLine(Optional.ofNullable(translation).orElse(""))));
-                            AndroidLog.logI(TAG, "LyricData: " + data);
+                            // AndroidLog.logI(TAG, "LyricData: " + data);
                         }
                     }
                 }

@@ -58,23 +58,13 @@ public final class KuGouLite extends AbsPublisher {
     protected void onApplicationCreated(@NonNull Context context) {
         super.onApplicationCreated(context);
 
-        try {
-            enableStatusBarLyric();
-            if (mVersionCode <= 10935) {
-                hookLocalBroadcast("android.support.v4.content.LocalBroadcastManager");
-            } else {
-                try {
-                    hookMeizuLyric();
-                } catch (Throwable e) {
-                    hookLocalBroadcast("androidx.localbroadcastmanager.content.LocalBroadcastManager");
-                    logE(TAG, e);
-                }
-            }
-
-            fixProbabilityCollapse();
-        } catch (Throwable e) {
-            logE(TAG, e);
+        if (hasMethod("uv.b", "c")) {
+            hookMeizuLyric();
+        } else {
+            hookLocalBroadcast("androidx.localbroadcastmanager.content.LocalBroadcastManager");
         }
+        enableStatusBarLyric();
+        fixProbabilityCollapse();
     }
 
     private void enableStatusBarLyric() {
@@ -192,14 +182,6 @@ public final class KuGouLite extends AbsPublisher {
                     } else {
                         sendStop();
                     }
-                }
-
-                @Override
-                public boolean onThrow(@NonNull StageEnum stage, @NonNull Throwable e) {
-                    unHookSelf();
-                    hookLocalBroadcast("androidx.localbroadcastmanager.content.LocalBroadcastManager");
-                    logE(TAG, e);
-                    return super.onThrow(stage, e);
                 }
             }
         );

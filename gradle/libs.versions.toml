@@ -15,7 +15,7 @@ service = "101.0.0"
 hooktool = "3.0.0-rc12"
 # dexkit
 dexkit = "2.1.0"
-dexkitcache = "v.0.9"
+dexkitcache = "1.0"
 gson = "2.13.2"
 mmkv = "2.4.0"
 # superlyricapi

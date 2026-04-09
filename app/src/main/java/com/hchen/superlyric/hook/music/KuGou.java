@@ -19,7 +19,6 @@
 package com.hchen.superlyric.hook.music;
 
 import android.content.Context;
-import android.content.Intent;
 import android.text.TextUtils;
 import android.util.Pair;
 
@@ -65,17 +64,9 @@ public final class KuGou extends AbsPublisher {
     protected void onApplicationCreated(@NonNull Context context) {
         super.onApplicationCreated(context);
 
-        try {
-            enableStatusBarLyric();
-            if (mVersionCode <= 12009) {
-                hookLocalBroadcast("android.support.v4.content.LocalBroadcastManager");
-            } else {
-                hookMeizuLyric();
-                fixProbabilityCollapse();
-            }
-        } catch (Throwable e) {
-            logE(TAG, e);
-        }
+        hookMeizuLyric();
+        enableStatusBarLyric();
+        fixProbabilityCollapse();
     }
 
     private void enableStatusBarLyric() {
@@ -113,11 +104,7 @@ public final class KuGou extends AbsPublisher {
         hook(methods[1], setArg(0, true));
     }
 
-    private Pair<String, Object> pair;
-
     private void hookMeizuLyric() {
-        Class<?> lyricDataClass = findClass("com.kugou.framework.lyric.LyricData");
-
         Class<?> statusBarLyricClass = DexkitCache.findMember("kugou$2", new IDexkit<ClassData>() {
             @NonNull
             @Override
@@ -162,6 +149,8 @@ public final class KuGou extends AbsPublisher {
 
         Method getLyricDataMethod = Arrays.stream(clazz.getDeclaredMethods())
             .filter(new Predicate<Method>() {
+                final Class<?> lyricDataClass = findClass("com.kugou.framework.lyric.LyricData");
+
                 @Override
                 public boolean test(Method method) {
                     return Objects.equals(method.getReturnType(), lyricDataClass);
@@ -187,7 +176,10 @@ public final class KuGou extends AbsPublisher {
                     }
                 }).findFirst().orElseThrow(),
             new AbsHook() {
-                @Override public void before() {
+                private Pair<String, Object> pair;
+
+                @Override
+                public void before() {
                     String lyric = (String) getArg(1);
                     boolean isClose = (boolean) getArg(2);
 
@@ -201,6 +193,7 @@ public final class KuGou extends AbsPublisher {
                         if (lyricData == null && pair != null && TextUtils.equals(pair.first, hash)) {
                             lyricData = pair.second;
                         }
+
                         if (lyricData != null) {
                             SuperLyricData data = new SuperLyricData();
 
@@ -264,28 +257,6 @@ public final class KuGou extends AbsPublisher {
                         }
                     } else {
                         sendStop();
-                    }
-                }
-            }
-        );
-    }
-
-    private void hookLocalBroadcast(String clazz) {
-        hookMethod(clazz,
-            "sendBroadcast",
-            Intent.class,
-            new AbsHook() {
-                @Override
-                public void before() {
-                    Intent intent = (Intent) getArg(0);
-                    if (intent == null) return;
-
-                    String action = intent.getAction();
-                    String message = intent.getStringExtra("lyric");
-                    if (message == null) return;
-
-                    if (Objects.equals(action, "com.kugou.android.update_meizu_lyric")) {
-                        sendLyric(message);
                     }
                 }
             }
