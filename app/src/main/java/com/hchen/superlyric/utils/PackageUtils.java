@@ -27,8 +27,8 @@ import android.content.pm.PackageManager;
 import androidx.annotation.NonNull;
 
 import com.hchen.hooktool.data.AppData;
-import com.hchen.hooktool.exception.UnexpectedException;
 import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.hooktool.utils.BitmapTool;
 import com.hchen.hooktool.utils.PackageTool;
 import com.hchen.superlyric.data.ApiAppData;
 
@@ -71,11 +71,19 @@ public class PackageUtils {
                                     boolean isXposed =
                                         info.applicationInfo.metaData.getBoolean("xposedmodule") || hasXposedModule(info.applicationInfo.sourceDir);
                                     if (!isXposed) {
-                                        AppData appData = PackageTool.createAppData(pm, info);
-                                        String apiVersionName = info.applicationInfo.metaData.getString("superlyricapi_version_name");
-                                        String apiVersionCode = info.applicationInfo.metaData.getString("superlyricapi_version_code");
+                                        String apiVersionName = String.valueOf(info.applicationInfo.metaData.getFloat("superlyricapi_version_name"));
+                                        String apiVersionCode = String.valueOf(info.applicationInfo.metaData.getInt("superlyricapi_version_code"));
 
-                                        mMediaAppApiList.add(new ApiAppData(appData, apiVersionName, apiVersionCode));
+                                        ApiAppData apiAppData = new ApiAppData();
+                                        apiAppData.icon = BitmapTool.drawableToBitmap(info.applicationInfo.loadIcon(pm));
+                                        apiAppData.label = (String) info.applicationInfo.loadLabel(pm);
+                                        apiAppData.packageName = info.applicationInfo.packageName;
+                                        apiAppData.versionName = info.versionName;
+                                        apiAppData.versionCode = Long.toString(info.getLongVersionCode());
+                                        apiAppData.apiVersionName = apiVersionName;
+                                        apiAppData.apiVersionCode = apiVersionCode;
+
+                                        mMediaAppApiList.add(apiAppData);
                                     }
                                 }
                             }
@@ -118,17 +126,8 @@ public class PackageUtils {
         list.sort(new Comparator<T>() {
             @Override
             public int compare(T o1, T o2) {
-                String label1;
-                String label2;
-                if (o1 instanceof AppData a1 && o2 instanceof AppData a2) {
-                    label1 = a1.getLabel().toUpperCase(Locale.ROOT);
-                    label2 = a2.getLabel().toUpperCase(Locale.ROOT);
-                } else if (o1 instanceof ApiAppData i1 && o2 instanceof ApiAppData i2) {
-                    label1 = i1.getAppData().getLabel().toUpperCase(Locale.ROOT);
-                    label2 = i2.getAppData().getLabel().toUpperCase(Locale.ROOT);
-                } else {
-                    throw new UnexpectedException("Unknown type. o1: " + o1 + ", o2: " + o2);
-                }
+                String label1 = ((AppData) o1).label.toUpperCase(Locale.ROOT);
+                String label2 = ((AppData) o2).label.toUpperCase(Locale.ROOT);
                 return COLLATOR.compare(label1, label2);
             }
         });

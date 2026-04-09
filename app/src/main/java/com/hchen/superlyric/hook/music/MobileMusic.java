@@ -25,7 +25,7 @@ import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
- * MobileMusic
+ * 咪咕音乐
  */
 @AutoHook(targetPackage = "cmccwm.mobilemusic")
 public final class MobileMusic extends AbsPublisher {

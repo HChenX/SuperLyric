@@ -12,7 +12,7 @@ miuixAndroid = "0.9.0"
 # xposed
 api = "101.0.1"
 service = "101.0.0"
-hooktool = "3.0.0-rc11"
+hooktool = "3.0.0-rc12"
 # dexkit
 dexkit = "2.1.0"
 dexkitcache = "v.0.9"

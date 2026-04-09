@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hchen.hooktool.data.AppData
 import com.hchen.superlyric.R
+import com.hchen.superlyric.data.ApiAppData
 import com.hchen.superlyric.data.SupportApps
 import com.hchen.superlyric.ui.base.SearchBox
 import com.hchen.superlyric.ui.base.SearchPager
@@ -123,7 +124,7 @@ fun SupportAppLayout(
     val filteredApiApps = remember(searchStatus.searchText, apiApps) {
         val query = searchStatus.searchText.trim()
         if (query.isEmpty()) emptyList()
-        else apiApps.filter { it.appData.label.contains(query, ignoreCase = true) }
+        else apiApps.filter { it.label.contains(query, ignoreCase = true) }
             .also { PackageUtils.sortAppDataList(it) }
     }
 
@@ -180,9 +181,9 @@ fun SupportAppLayout(
 
                         itemsIndexed(
                             items = filteredApiApps,
-                            key = { _, apiData -> apiData.appData.packageName }
+                            key = { _, apiData -> apiData.packageName }
                         ) { index, apiData ->
-                            AppItemFactory(show, apiData.appData)
+                            AppItemFactory(show, apiData)
                         }
                     }
                     if (filteredHookApps.isNotEmpty()) {
@@ -257,9 +258,9 @@ fun SupportAppLayout(
                                 }
                                 itemsIndexed(
                                     items = apiApps,
-                                    key = { _, apiData -> apiData.appData.packageName }
+                                    key = { _, apiData -> apiData.packageName }
                                 ) { index, apiData ->
-                                    AppItemFactory(show, apiData.appData)
+                                    AppItemFactory(show, apiData)
                                 }
                             }
 
@@ -318,8 +319,14 @@ private fun AppItemFactory(
         title = appData.label,
         summary = appData.packageName,
         icon = appData.icon,
-        versionName = appData.versionName,
-        versionCode = appData.versionCode,
+        versionName = when (appData) {
+            is ApiAppData -> appData.apiVersionName
+            else -> appData.versionName
+        },
+        versionCode = when (appData) {
+            is ApiAppData -> appData.apiVersionCode
+            else -> appData.versionCode
+        },
         onClick = {
             viewModel.handleAction(MainUiAction.CurrentApp(appData))
             show.value = true
@@ -475,7 +482,13 @@ private fun AppDetailsDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(12.dp),
-                text = stringResource(R.string.instructions_for_use, stringResource(SupportApps.mPackageToDetails[appData.packageName] ?: R.string.unknown)),
+                text = stringResource(
+                    R.string.instructions_for_use,
+                    when (appData) {
+                        is ApiAppData -> stringResource(R.string.support_api)
+                        else -> stringResource(SupportApps.mPackageToDetails[appData.packageName] ?: R.string.unknown)
+                    }
+                ),
                 fontSize = MiuixTheme.textStyles.body1.fontSize,
                 color = MiuixTheme.colorScheme.onTertiaryContainer,
             )

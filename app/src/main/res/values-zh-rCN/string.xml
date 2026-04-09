@@ -3,6 +3,9 @@
     <string name="app_name">SuperLyric</string>
     <string name="app_details">歌词获取器</string>
 
+    <string name="home">主页</string>
+    <string name="about">关于</string>
+
     <string name="select_search">搜索应用</string>
     <string name="select_list_empty">应用列表为空</string>
     <string name="select_none">暂无搜索结果</string>
@@ -31,37 +34,41 @@
 
     <string name="instructions_for_use">使用方法：%s</string>
 
-    <string name="unknown">暂无。</string>
-    <string name="jiaoyan_music">无需额外设置。</string>
-    <string name="apple_music">无需额外设置。</string>
-    <string name="symfonium_music">无需额外设置。</string>
-    <string name="kugou_music">无需额外设置。</string>
-    <string name="kugou_lite_music">无需额外设置。仅 5.1.5 版本支持传递逐字。</string>
+    <string name="unknown">未知</string>
+    <string name="support_api">API 原生支持</string>
 
-    <string name="wangyiyun_music">开启设置中的“魅族状态栏歌词”功能即可。</string>
-    <string name="wangyiyun_rongyao_music">开启设置中的“魅族状态栏歌词”功能即可。</string>
-    <string name="migu_music">开启设置中的“魅族状态栏歌词”功能即可。</string>
-    <string name="aplayer_music">开启设置中的“魅族状态栏歌词”功能即可。</string>
-    <string name="lxmusic_music">开启设置中的“魅族状态栏歌词”功能即可。</string>
-    <string name="yinliu_music">开启设置中的“魅族状态栏歌词”功能即可。</string>
-    <string name="meizu_music">开启设置中的“魅族状态栏歌词”功能即可。</string>
-    <string name="tangcu_music">开启设置中的“魅族状态栏歌词”功能即可。</string>
-    <string name="qingyan_music">开启设置中的“魅族状态栏歌词”功能即可。</string>
-    <string name="gramophone_music">开启设置中的“魅族状态栏歌词”功能即可。</string>
+    <string name="jiaoyan_music">无需额外设置</string>
+    <string name="apple_music">无需额外设置</string>
+    <string name="symfonium_music">无需额外设置</string>
+    <string name="kugou_music">无需额外设置</string>
+    <string name="kugou_lite_music">无需额外设置\n仅 5.1.5 版本支持逐字</string>
 
-    <string name="musicfree_music">开启“桌面歌词”功能。</string>
-    <string name="luoxue_music">开启“桌面歌词”功能。</string>
+    <string name="haibei_music">未知</string>
 
-    <string name="bodian_music">开启“状态栏歌词”功能。</string>
-    <string name="qq_music">开启“状态栏歌词”功能。</string>
+    <string name="wangyiyun_music">开启设置中的“魅族状态栏歌词”功能即可</string>
+    <string name="wangyiyun_rongyao_music">开启设置中的“魅族状态栏歌词”功能即可</string>
+    <string name="migu_music">开启设置中的“魅族状态栏歌词”功能即可</string>
+    <string name="aplayer_music">开启设置中的“状态栏歌词”功能即可</string>
+    <string name="lmusic_music">开启设置中的“魅族状态栏歌词”功能即可</string>
+    <string name="yinliu_music">开启设置中的“魅族状态栏歌词”功能即可</string>
+    <string name="meizu_music">开启设置中的“魅族状态栏歌词”功能即可</string>
+    <string name="tangcu_music">开启设置中的“魅族状态栏歌词”功能即可</string>
+    <string name="qingyan_music">开启设置中的“魅族状态栏歌词”功能即可</string>
+    <string name="gramophone_music">开启设置中的“魅族状态栏歌词”功能即可</string>
 
-    <string name="qq_music_xiaomi">开启“蓝牙歌词”功能。</string>
-    <string name="qq_music_meizu">开启“蓝牙歌词”功能。</string>
-    <string name="oppo_music">开启“蓝牙歌词”功能。</string>
-    <string name="rplayer_music">开启“蓝牙歌词”功能。</string>
-    <string name="qishui_music">开启“蓝牙歌词”功能。</string>
-    <string name="kuwo_music">开启“蓝牙歌词”功能。</string>
-    <string name="nisheng_music">开启“蓝牙歌词”功能。</string>
-    <string name="huawei_music">开启“蓝牙歌词”功能。</string>
-    <string name="kde_music">开启“蓝牙歌词”功能。</string>
+    <string name="musicfree_music">开启“桌面歌词”功能</string>
+    <string name="luoxue_music">开启“桌面歌词”功能</string>
+
+    <string name="bodian_music">开启“状态栏歌词”功能</string>
+    <string name="qq_music">开启“状态栏歌词”功能</string>
+
+    <string name="qq_music_xiaomi">开启“车载蓝牙歌词”或“通知栏歌词”功能</string>
+    <string name="qq_music_meizu">开启“蓝牙歌词”功能</string>
+    <string name="oppo_music">开启“蓝牙歌词”功能</string>
+    <string name="rplayer_music">开启“蓝牙歌词”功能</string>
+    <string name="qishui_music">开启“蓝牙歌词”功能</string>
+    <string name="kuwo_music">开启“蓝牙歌词”功能</string>
+    <string name="nisheng_music">开启“蓝牙歌词”功能</string>
+    <string name="huawei_music">开启“蓝牙歌词”功能</string>
+    <string name="kde_music">开启“蓝牙歌词”功能</string>
 </resources>

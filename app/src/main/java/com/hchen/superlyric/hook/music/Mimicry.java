@@ -25,7 +25,7 @@ import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
- * Mimicry
+ * 拟声音乐
  */
 @AutoHook(targetPackage = "com.mimicry.mymusic")
 public final class Mimicry extends AbsPublisher {

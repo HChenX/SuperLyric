@@ -127,9 +127,7 @@ public final class MeizuHelper {
                     (notification.flags & MeiZuNotification.FLAG_ONLY_UPDATE_TICKER) != 0;
                 if (isLyric) {
                     if (notification.tickerText != null) {
-                        sendLyric(
-                            notification.tickerText.toString()
-                        );
+                        sendLyric(notification.tickerText.toString());
                     } else {
                         sendStop();
                     }

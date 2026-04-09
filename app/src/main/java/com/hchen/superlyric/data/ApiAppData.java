@@ -24,50 +24,30 @@ import com.hchen.hooktool.data.AppData;
 
 import java.util.Objects;
 
-@SuppressWarnings("ClassCanBeRecord")
-public class ApiAppData {
-    private final AppData appData;
-    private final String apiVersionName;
-    private final String apiVersionCode;
-
-    public ApiAppData(AppData appData, String apiVersionName, String apiVersionCode) {
-        this.appData = appData;
-        this.apiVersionName = apiVersionName;
-        this.apiVersionCode = apiVersionCode;
-    }
-
-    public AppData getAppData() {
-        return appData;
-    }
-
-    public String getApiVersionName() {
-        return apiVersionName;
-    }
-
-    public String getApiVersionCode() {
-        return apiVersionCode;
-    }
+public class ApiAppData extends AppData {
+    public String apiVersionName;
+    public String apiVersionCode;
 
     @NonNull
     @Override
     public String toString() {
         return "ApiAppData{" +
-            "appData=" + appData +
-            ", apiVersionName='" + apiVersionName + '\'' +
-            ", apiVersionCode=" + apiVersionCode +
-            '}';
+            "apiVersionName='" + apiVersionName + '\'' +
+            ", apiVersionCode='" + apiVersionCode + '\'' +
+            "} " + super.toString();
     }
 
     @Override
     public boolean equals(Object object) {
         if (!(object instanceof ApiAppData that)) return false;
-        return Objects.equals(appData, that.appData) &&
-            Objects.equals(apiVersionName, that.apiVersionName) &&
+        if (!super.equals(object)) return false;
+
+        return Objects.equals(apiVersionName, that.apiVersionName) &&
             Objects.equals(apiVersionCode, that.apiVersionCode);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(appData, apiVersionName, apiVersionCode);
+        return Objects.hash(super.hashCode(), apiVersionName, apiVersionCode);
     }
 }

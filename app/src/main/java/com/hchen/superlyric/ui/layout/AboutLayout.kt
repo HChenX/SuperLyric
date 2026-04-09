@@ -125,6 +125,7 @@ fun AboutLayout(
 
     val state by AnalogReceiver.receiverFlow.collectAsState()
     val registered by AnalogReceiver.registeredFlow.collectAsState()
+    val paused by AnalogReceiver.pausedFlow.collectAsState()
     var show by remember { mutableStateOf(false) }
 
     LaunchedEffect(show) {
@@ -160,7 +161,7 @@ fun AboutLayout(
                 .scrollEndHaptic()
                 .overScrollVertical()
                 .nestedScroll(scrollBehavior.nestedScrollConnection)
-                .padding(top = it.calculateTopPadding(), bottom = it.calculateBottomPadding()),
+                .padding(top = it.calculateTopPadding()),
             contentPadding = PaddingValues(bottom = 12.dp),
             overscrollEffect = null
         ) {
@@ -201,7 +202,7 @@ fun AboutLayout(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = 6.dp),
-                            text = "${BuildConfig.VERSION_NAME}_${BuildConfig.VERSION_CODE} | ${BuildConfig.BUILD_TYPE.uppercase()}",
+                            text = "${BuildConfig.VERSION_NAME}_${BuildConfig.VERSION_CODE} | ${BuildConfig.BUILD_TYPE.replaceFirstChar(Char::titlecase)}",
                             fontSize = MiuixTheme.textStyles.body1.fontSize,
                             textAlign = TextAlign.Center,
                             color = DialogDefaults.summaryColor(),
@@ -286,8 +287,7 @@ fun AboutLayout(
                         summary = stringResource(R.string.clear_dexkit_cache_summary),
                         onClick = {
                             var version = Application.getRemotePreferences().getInt("super_lyric_dexkit_cache_version", 0)
-                            version = if (version > 0) 0 else 1
-                            Application.getRemotePreferences().edit { putInt("super_lyric_dexkit_cache_version", version) }
+                            Application.getRemotePreferences().edit { putInt("super_lyric_dexkit_cache_version", ++version) }
 
                             Toast.makeText(context, context.getString(R.string.cleared), Toast.LENGTH_SHORT).show()
                         }
@@ -440,25 +440,25 @@ fun AboutLayout(
                         )
                     ) {
                         ArrowPreference(
-                            title = "注册接收器",
+                            title = if (!registered) "注册接收器" else "注销接收器",
                             summary = "当前状态：${if (registered) "已注册" else "未注册"}",
                             onClick = {
                                 if (!SuperLyricHelper.isReceiverRegistered(AnalogReceiver.mReceiver)) {
                                     SuperLyricHelper.registerReceiver(AnalogReceiver.mReceiver)
                                     AnalogReceiver.registeredFlow.value = true
                                     Toast.makeText(context, "已注册", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        )
-                        ArrowPreference(
-                            title = "注销接收器",
-                            onClick = {
-                                if (SuperLyricHelper.isReceiverRegistered(AnalogReceiver.mReceiver)) {
+                                } else {
                                     SuperLyricHelper.unregisterReceiver(AnalogReceiver.mReceiver)
                                     AnalogReceiver.registeredFlow.value = false
                                     AnalogReceiver.receiverFlow.value = ReceiverState()
                                     Toast.makeText(context, "已销毁", Toast.LENGTH_SHORT).show()
                                 }
+                            }
+                        )
+                        ArrowPreference(
+                            title = if (!paused) "暂停接收" else "恢复接收",
+                            onClick = {
+                                AnalogReceiver.pausedFlow.value = !paused
                             }
                         )
                         BasicComponent(
@@ -481,9 +481,11 @@ fun AboutLayout(
 
 private object AnalogReceiver {
     val registeredFlow = MutableStateFlow(false)
+    val pausedFlow = MutableStateFlow(false)
     val receiverFlow = MutableStateFlow(ReceiverState())
     val mReceiver = object : ISuperLyricReceiver.Stub() {
         override fun onLyric(publisher: String?, data: SuperLyricData?) {
+            if (pausedFlow.value) return
             receiverFlow.value = ReceiverState(
                 publisher = publisher,
                 data = data
@@ -491,6 +493,7 @@ private object AnalogReceiver {
         }
 
         override fun onStop(publisher: String?, data: SuperLyricData?) {
+            if (pausedFlow.value) return
             receiverFlow.value = ReceiverState(
                 publisher = publisher,
                 data = data

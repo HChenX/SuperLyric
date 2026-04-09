@@ -31,7 +31,9 @@ import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.service.PlayStateListener;
 import com.hchen.superlyric.service.SuperLyricService;
 
+import java.lang.reflect.Method;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -67,9 +69,21 @@ public final class SuperLyricProxy extends AbsModule {
             }
         );
 
-        hookMethod("com.android.server.am.ActivityManagerService",
-            "getCommonServicesLocked",
-            boolean.class /* isolated */, boolean.class /* instant */,
+        Method servicesMethod = Optional.ofNullable(
+            findMethodIfExists("com.android.server.am.ActivityManagerService",
+                "getCommonServicesLocked",
+                boolean.class /* isolated */, boolean.class /* instant */
+            )
+        ).orElse(
+            findMethodIfExists(
+                "com.android.server.am.ActivityManagerService",
+                "getCommonServicesLocked",
+                boolean.class /* isolated */
+            )
+        );
+
+        Objects.requireNonNull(servicesMethod, "Failed to load super lyric service, [ActivityManagerService#getCommonServicesLocked()] not found.");
+        hook(servicesMethod,
             new AbsHook() {
                 @Override
                 public void after() {

@@ -31,6 +31,7 @@ import com.hchen.hooktool.AbsModule;
 import com.hchen.hooktool.ModuleConfig;
 import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.ModuleEntrance;
+import com.hchen.hooktool.log.AndroidLog;
 import com.hchen.hooktool.utils.PrefsTool;
 
 import java.lang.reflect.InvocationTargetException;
@@ -71,6 +72,7 @@ public final class InitHook extends ModuleEntrance {
 
     @Override
     public void handlePackageReady(@NonNull PackageReadyParam param) {
+        AndroidLog.logD(TAG, "handlePackageReady: " + param.getClassLoader() + ", " + param.getAppComponentFactory() + ", " + param);
         super.handlePackageReady(param);
 
         if (HookData.ON_PACKAGE_LOADED.containsKey(param.getPackageName())) {
@@ -116,6 +118,7 @@ public final class InitHook extends ModuleEntrance {
 
     @Override
     public void handleApplicationCreated(@NonNull Context context) {
+        AndroidLog.logD(TAG, "handleApplicationCreated: " + context);
         super.handleApplicationCreated(context);
 
         for (AbsModule module : modules.values()) {

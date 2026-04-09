@@ -51,7 +51,7 @@ public final class KuGouLite extends AbsPublisher {
 
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
-        hookTencentTinker();
+        fuckTencentTinker();
     }
 
     @Override
@@ -59,9 +59,7 @@ public final class KuGouLite extends AbsPublisher {
         super.onApplicationCreated(context);
 
         try {
-            if (!enableStatusBarLyric())
-                return;
-
+            enableStatusBarLyric();
             if (mVersionCode <= 10935) {
                 hookLocalBroadcast("android.support.v4.content.LocalBroadcastManager");
             } else {
@@ -79,42 +77,39 @@ public final class KuGouLite extends AbsPublisher {
         }
     }
 
-    private boolean enableStatusBarLyric() {
-        try {
-            Method[] methodList = DexkitCache.findMember("kugoulite$1", new IDexkit<MethodDataList>() {
-                @NonNull
-                @Override
-                public MethodDataList dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
-                    return bridge.findMethod(FindMethod.create()
-                        .matcher(MethodMatcher.create()
-                            .declaredClass(ClassMatcher.create()
-                                .usingStrings("key_status_bar_lyric_open")
-                            )
+    private void enableStatusBarLyric() {
+        Method[] ms = DexkitCache.findMember("kugoulite$1", new IDexkit<MethodDataList>() {
+            @NonNull
+            @Override
+            public MethodDataList dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                return bridge.findMethod(FindMethod.create()
+                    .matcher(MethodMatcher.create()
+                        .declaredClass(ClassMatcher.create()
                             .usingStrings("key_status_bar_lyric_open")
                         )
-                    );
-                }
-            });
-
-            Method[] methods = new Method[2];
-            for (Method m : methodList) {
-                if (Objects.equals(m.getReturnType(), boolean.class)) methods[0] = m;
-                else methods[1] = m;
+                        .usingStrings("key_status_bar_lyric_open")
+                    )
+                );
             }
+        });
 
-            hook(methods[0], new AbsHook() {
-                @Override
-                public void before() {
-                    callMethod(methods[1], getThisObject(), true);
-                    setResult(true);
-                }
-            });
-            hook(methods[1], setArg(0, true));
-        } catch (Throwable e) {
-            logE(TAG, e);
-            return false;
+        Method[] methods = new Method[2];
+        for (Method m : ms) {
+            if (Objects.equals(m.getReturnType(), boolean.class)) {
+                methods[0] = m;
+            } else {
+                methods[1] = m;
+            }
         }
-        return true;
+
+        hook(methods[0], new AbsHook() {
+            @Override
+            public void before() {
+                callMethod(methods[1], getThisObject(), true);
+                setResult(true);
+            }
+        });
+        hook(methods[1], setArg(0, true));
     }
 
     private Pair<String, Object> pair;

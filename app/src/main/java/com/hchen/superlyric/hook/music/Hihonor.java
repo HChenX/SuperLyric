@@ -48,7 +48,7 @@ import java.util.Objects;
 public final class Hihonor extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
-        hookTencentTinker();
+        fuckTencentTinker();
         if (hasClass("android.app.Instrumentation")) {
             hookMethod("android.app.Instrumentation",
                 "newApplication",

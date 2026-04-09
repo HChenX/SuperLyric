@@ -24,7 +24,6 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.hchen.hooktool.data.AppData
 import com.hchen.superlyric.data.ApiAppData
-import com.hchen.superlyric.ui.Application
 import com.hchen.superlyric.utils.PackageUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,10 +55,10 @@ class MainViewModel : ViewModel() {
 
     // ---------- 初始化 ----------
     init {
-        Application.addPrefsReadyListener {
-            prefs = it
-            loadData()
-        }
+        // Application.addPrefsReadyListener {
+        //     prefs = it
+        //     loadData()
+        // }
         PackageUtils.addAppLoadedListener {
             loadData()
         }

@@ -25,7 +25,7 @@ import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
- * Aqzscn
+ * 音流音乐
  */
 @AutoHook(targetPackage = "cn.aqzscn.stream_music")
 public final class Aqzscn extends AbsPublisher {

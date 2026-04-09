@@ -20,7 +20,6 @@ package com.hchen.superlyric.helper;
 
 import static com.hchen.hooktool.core.CoreTool.hook;
 import static com.hchen.hooktool.log.XposedLog.logE;
-import static com.hchen.hooktool.log.XposedLog.logI;
 
 import android.content.Context;
 import android.content.Intent;
@@ -31,6 +30,7 @@ import androidx.annotation.NonNull;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
+import com.hchen.hooktool.log.AndroidLog;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
@@ -75,7 +75,7 @@ public final class ScreenHelper {
                             return className.contains(exclude);
                         }
                     })) {
-                        logI(TAG, "[screenOffNotStopLyric]: hook method: " + method);
+                        AndroidLog.logI(TAG, "[screenOffNotStopLyric]: hook method: " + method);
 
                         hook(method,
                             new AbsHook() {

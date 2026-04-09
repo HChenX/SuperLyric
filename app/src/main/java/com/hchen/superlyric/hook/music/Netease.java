@@ -19,7 +19,6 @@
 package com.hchen.superlyric.hook.music;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 
 import androidx.annotation.NonNull;
 
@@ -42,8 +41,11 @@ import org.luckypray.dexkit.result.MethodData;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Predicate;
 
 /**
  * 网易云音乐
@@ -52,7 +54,7 @@ import java.util.Objects;
 public final class Netease extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
-        hookTencentTinker();
+        fuckTencentTinker();
         if (hasClass("android.app.Instrumentation")) {
             hookMethod("android.app.Instrumentation",
                 "newApplication",
@@ -73,12 +75,36 @@ public final class Netease extends AbsPublisher {
     @Override
     protected void onApplicationCreated(@NonNull Context context) {
         super.onApplicationCreated(context);
+        MeizuHelper.shallowLayerDeviceMock();
 
-        if (mVersionCode >= 8000041) {
-            MeizuHelper.shallowLayerDeviceMock();
-            // MeizuHelper.hookNotificationLyric();
+        try {
+            Method musicInfoMethod = DexkitCache.findMember("music_info", new IDexkit<MethodData>() {
+                @NonNull
+                @Override
+                public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                    return bridge.findMethod(FindMethod.create()
+                        .matcher(MethodMatcher.create()
+                            .declaredClass(ClassMatcher.create()
+                                .modifiers(Modifier.FINAL)
+                                .usingEqStrings("getPlayingMusicInfo")
+                                .superClass("java.lang.Object")
+                            )
+                            .usingEqStrings("getPlayingMusicInfo")
+                        )
+                    ).single();
+                }
+            });
+            Object p = getStaticField(
+                Arrays.stream(musicInfoMethod.getDeclaringClass().getDeclaredFields())
+                    .filter(new Predicate<Field>() {
+                        @Override
+                        public boolean test(Field field) {
+                            return Modifier.isStatic(field.getModifiers()) && Modifier.isFinal(field.getModifiers());
+                        }
+                    }).findFirst().orElseThrow()
+            );
 
-            Class<?> statusBarLyricController = DexkitCache.findMember("netease$3", new IDexkit<ClassData>() {
+            Class<?> statusBarLyricController = DexkitCache.findMember("status_bar_lyric", new IDexkit<ClassData>() {
                 @NonNull
                 @Override
                 public ClassData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
@@ -103,6 +129,19 @@ public final class Netease extends AbsPublisher {
                 new AbsHook() {
                     @Override
                     public void before() {
+                        String name = null;
+                        String artists = null;
+                        String album = null;
+
+                        if (p != null) {
+                            Object musicInfo = callMethod(musicInfoMethod, p);
+                            if (musicInfo != null) {
+                                name = (String) callMethod(musicInfo, "getName");
+                                artists = (String) callMethod(musicInfo, "getArtistsName");
+                                album = (String) callMethod(musicInfo, "getAlbumName");
+                            }
+                        }
+
                         List<?> mSentences = (List<?>) getField(getThisObject(), "mSentences");
                         int mCurLyricIndex = (int) getField(getThisObject(), "mCurLyricIndex");
 
@@ -112,19 +151,25 @@ public final class Netease extends AbsPublisher {
                         int endTime = (int) callMethod(mSentence, "getEndTime");
                         int startTime = (int) callMethod(mSentence, "getStartTime");
 
-                        sendLyric(
-                            lyric,
-                            endTime - startTime,
+                        sendSuperLyricData(
                             new SuperLyricData()
-                                .setTranslation(
-                                    new SuperLyricLine(translate)
+                                .setTitle(name)
+                                .setArtist(artists)
+                                .setAlbum(album)
+                                .setLyric(
+                                    new SuperLyricLine(
+                                        lyric,
+                                        startTime,
+                                        endTime
+                                    )
                                 )
+                                .setTranslation(new SuperLyricLine(translate))
                         );
                     }
                 }
             );
 
-            Method method = DexkitCache.findMember("netease$1", new IDexkit<MethodData>() {
+            Method method = DexkitCache.findMember("lock_screen", new IDexkit<MethodData>() {
                 @NonNull
                 @Override
                 public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
@@ -139,35 +184,9 @@ public final class Netease extends AbsPublisher {
                 }
             });
             hook(method, returnResult(null));
-
-            Class<?> clazz = DexkitCache.findMember("netease$2", new IDexkit<ClassData>() {
-                @NonNull
-                @Override
-                public ClassData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
-                    return bridge.findClass(FindClass.create()
-                        .matcher(ClassMatcher.create()
-                            .usingStrings("com/netease/cloudmusic/module/lyric/flyme/StatusBarLyricSettingManager.class:setSwitchStatus:(Z)V")
-                        )
-                    ).single();
-                }
-            });
-            for (Method m : clazz.getDeclaredMethods()) {
-                if (m.getReturnType().equals(boolean.class)) {
-                    hook(m, returnResult(true));
-                } else if (m.getParameterCount() == 1 && m.getParameterTypes()[0].equals(boolean.class)) {
-                    hook(m, setArg(0, true));
-                } else if (m.getReturnType().equals(SharedPreferences.class)) {
-                    hook(m, new AbsHook() {
-                        @Override
-                        public void after() {
-                            SharedPreferences sp = (SharedPreferences) getResult();
-                            sp.edit().putBoolean("status_bar_lyric_setting_key", true).apply();
-                        }
-                    });
-                }
-            }
-        } else {
-            hookMediaMetadataLyric();
+        } catch (Throwable throwable) {
+            logW(TAG, throwable);
+            MeizuHelper.hookNotificationLyric();
         }
     }
 }

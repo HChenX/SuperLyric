@@ -124,17 +124,15 @@ class MainActivity : ComponentActivity() {
                 BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                     val isWideScreen = maxWidth > UIConstants.WIDE_SCREEN_THRESHOLD ||
                             (maxWidth > UIConstants.MEDIUM_WIDTH_THRESHOLD && (maxHeight.value / maxWidth.value < UIConstants.PORTRAIT_ASPECT_RATIO_THRESHOLD))
-                    if (isWideScreen) WideScreenLayout(isWideScreen = true)
-                    else CompactScreenLayout(isWideScreen = false)
+                    if (isWideScreen) WideScreenLayout()
+                    else CompactScreenLayout()
                 }
             }
         }
     }
 
     @Composable
-    private fun CompactScreenLayout(
-        isWideScreen: Boolean = false
-    ) {
+    private fun CompactScreenLayout() {
         val isSearching by viewModel.isSearching.collectAsState()
         val pagerState = LocalPagerState.current
         val handePagerChange = LocalHandlePagerChange.current
@@ -149,7 +147,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     NavigationBar {
                         NavigationBarItem(
-                            label = "主页",
+                            label = stringResource(R.string.home),
                             icon = MiuixIcons.HorizontalSplit,
                             selected = pagerState.currentPage == UIConstants.HOME_PAGE_INDEX,
                             onClick = {
@@ -158,7 +156,7 @@ class MainActivity : ComponentActivity() {
                         )
 
                         NavigationBarItem(
-                            label = "其他",
+                            label = stringResource(R.string.about),
                             icon = MiuixIcons.Info,
                             selected = pagerState.currentPage == UIConstants.ABOUT_PAGE_INDEX,
                             onClick = {
@@ -173,15 +171,13 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(bottom = it.calculateBottomPadding()),
-                isWideScreen = isWideScreen
+                isWideScreen = false
             )
         }
     }
 
     @Composable
-    private fun WideScreenLayout(
-        isWideScreen: Boolean = false
-    ) {
+    private fun WideScreenLayout() {
         val windowWidth = LocalWindowInfo.current.containerSize.width
         var weight by remember(windowWidth) { mutableFloatStateOf(0.4f) }
         val dragState = rememberDraggableState { delta ->
@@ -225,13 +221,13 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier.padding(top = 12.dp)
                                 ) {
                                     BasicComponent(
-                                        title = "主页",
+                                        title = stringResource(R.string.home),
                                         onClick = { handePagerChange(true, UIConstants.HOME_PAGE_INDEX) },
                                         holdDownState = pagerState.currentPage == UIConstants.HOME_PAGE_INDEX
                                     )
 
                                     BasicComponent(
-                                        title = "关于",
+                                        title = stringResource(R.string.about),
                                         onClick = { handePagerChange(true, UIConstants.ABOUT_PAGE_INDEX) },
                                         holdDownState = pagerState.currentPage == UIConstants.ABOUT_PAGE_INDEX
                                     )
@@ -256,7 +252,7 @@ class MainActivity : ComponentActivity() {
                         popupHost = {}
                     ) { paddingValues ->
                         AppPager(
-                            isWideScreen = isWideScreen
+                            isWideScreen = true
                         )
                     }
                 }

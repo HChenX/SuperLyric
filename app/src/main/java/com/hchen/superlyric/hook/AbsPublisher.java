@@ -18,9 +18,7 @@
  */
 package com.hchen.superlyric.hook;
 
-import android.app.Application;
 import android.content.Context;
-import android.content.Intent;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.media.AudioManager;
@@ -32,9 +30,12 @@ import androidx.annotation.NonNull;
 import com.hchen.hooktool.AbsModule;
 import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.hook.AbsHook;
+import com.hchen.hooktool.log.AndroidLog;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricHelper;
 import com.hchen.superlyricapi.SuperLyricLine;
+
+import java.lang.reflect.Method;
 
 /**
  * 歌词发布类
@@ -61,34 +62,31 @@ public abstract class AbsPublisher extends AbsModule {
             PackageInfo packageInfo = context.getPackageManager().getPackageInfo(mPackageName, 0);
             mVersionName = packageInfo.versionName;
             mVersionCode = packageInfo.getLongVersionCode();
-            logI(TAG, "App name: " + mPackageName + ", version name: " + mVersionName + ", version code: " + mVersionCode);
+            AndroidLog.logI(TAG, "Package name: " + mPackageName + ", version name: " + mVersionName + ", version code: " + mVersionCode);
         } catch (PackageManager.NameNotFoundException e) {
             logW(TAG, e);
         }
 
-        logD(TAG, "Success to register super lyric publisher service, caller: " + mPackageName);
+        AndroidLog.logI(TAG, "Success to register super lyric publisher service, caller: " + mPackageName);
     }
 
     /**
-     * Hook 热更新服务，用于更改当前 classloader
+     * 干掉热更新服务
      */
-    public static void hookTencentTinker() {
+    public static void fuckTencentTinker() {
         try {
-            hookMethod("com.tencent.tinker.loader.TinkerLoader",
-                "tryLoad",
-                "com.tencent.tinker.loader.app.TinkerApplication",
-                new AbsHook() {
-                    @Override
-                    public void after() {
-                        Intent intent = (Intent) getResult();
-                        Application application = (Application) getArg(0);
-                        int code = intent.getIntExtra("intent_return_code", -2);
-                        if (code == 0) {
-                            ModuleData.setClassLoader(application.getClassLoader());
+            for (Method method : findClass("com.tencent.tinker.loader.shareutil.ShareTinkerInternals").getDeclaredMethods()) {
+                if (method.getName().contains("TinkerEnable")) {
+                    hook(method,
+                        new AbsHook() {
+                            @Override
+                            public void before() {
+                                setResult(false);
+                            }
                         }
-                    }
+                    );
                 }
-            );
+            }
         } catch (Throwable ignore) {
         }
     }
@@ -175,7 +173,7 @@ public abstract class AbsPublisher extends AbsModule {
 
     public static void sendSuperLyricData(@NonNull SuperLyricData data) {
         SuperLyricHelper.sendLyric(data);
-        logD("LyricRelease", "Send super lyric data: " + data);
+        AndroidLog.logD("LyricRelease", "Send super lyric data: " + data);
     }
 
     public static void sendStop() {
@@ -184,6 +182,6 @@ public abstract class AbsPublisher extends AbsModule {
 
     public static void sendStop(@NonNull SuperLyricData data) {
         SuperLyricHelper.sendStop(data);
-        logD("LyricRelease", "Send stop: " + data);
+        AndroidLog.logD("LyricRelease", "Send stop: " + data);
     }
 }

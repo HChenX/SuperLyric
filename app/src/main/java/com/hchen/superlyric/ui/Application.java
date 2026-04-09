@@ -26,7 +26,6 @@ import android.content.SharedPreferences;
 import androidx.annotation.NonNull;
 
 import com.hchen.hooktool.ModuleConfig;
-import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.utils.PrefsTool;
 import com.hchen.superlyric.BuildConfig;
 import com.hchen.superlyricapi.SuperLyricHelper;
@@ -77,7 +76,6 @@ public class Application extends android.app.Application implements XposedServic
     public void onServiceBind(@NonNull XposedService service) {
         isXposedActive = true;
         mRemotePreferences = service.getRemotePreferences(ModuleConfig.getPrefsName());
-        ModuleData.addRemotePreferences(ModuleConfig.getPrefsName(), mRemotePreferences);
 
         for (Consumer<SharedPreferences> l : listeners) {
             l.accept(mRemotePreferences);
@@ -90,6 +88,5 @@ public class Application extends android.app.Application implements XposedServic
         isXposedActive = false;
         mRemotePreferences = null;
         listeners.clear();
-        ModuleData.clearRemotePreferences();
     }
 }

@@ -2,6 +2,9 @@
     <string name="app_name">SuperLyric</string>
     <string name="app_details">Lyrics Finder</string>
 
+    <string name="home">Home</string>
+    <string name="about">About</string>
+
     <string name="select_search">Search app</string>
     <string name="select_list_empty">The app list is empty</string>
     <string name="select_none">No search results available at the moment</string>
@@ -30,37 +33,41 @@
 
     <string name="instructions_for_use">Usage: %s</string>
 
-    <string name="unknown">Not available.</string>
-    <string name="jiaoyan_music">No additional setup required.</string>
-    <string name="apple_music">No additional setup required.</string>
-    <string name="symfonium_music">No additional setup required.</string>
-    <string name="kugou_music">No additional setup required.</string>
-    <string name="kugou_lite_music">No additional setup required. Only version 5.1.5 supports per-word lyrics.</string>
+    <string name="unknown">Not available</string>
+    <string name="support_api">API native support</string>
 
-    <string name="wangyiyun_music">Enable the "Meizu status bar lyrics" option in settings.</string>
-    <string name="wangyiyun_rongyao_music">Enable the "Meizu status bar lyrics" option in settings.</string>
-    <string name="migu_music">Enable the "Meizu status bar lyrics" option in settings.</string>
-    <string name="aplayer_music">Enable the "Meizu status bar lyrics" option in settings.</string>
-    <string name="lxmusic_music">Enable the "Meizu status bar lyrics" option in settings.</string>
-    <string name="yinliu_music">Enable the "Meizu status bar lyrics" option in settings.</string>
-    <string name="meizu_music">Enable the "Meizu status bar lyrics" option in settings.</string>
-    <string name="tangcu_music">Enable the "Meizu status bar lyrics" option in settings.</string>
-    <string name="qingyan_music">Enable the "Meizu status bar lyrics" option in settings.</string>
-    <string name="gramophone_music">Enable the "Meizu status bar lyrics" option in settings.</string>
+    <string name="jiaoyan_music">No additional setup required</string>
+    <string name="apple_music">No additional setup required</string>
+    <string name="symfonium_music">No additional setup required</string>
+    <string name="kugou_music">No additional setup required</string>
+    <string name="kugou_lite_music">No additional setup required\nOnly version 5.1.5 supports per-word lyrics.</string>
 
-    <string name="musicfree_music">Enable the "desktop lyrics" feature.</string>
-    <string name="luoxue_music">Enable the "desktop lyrics" feature.</string>
+    <string name="haibei_music">Unknown</string>
 
-    <string name="bodian_music">Enable the "status bar lyrics" feature.</string>
-    <string name="qq_music">Enable the "status bar lyrics" feature.</string>
+    <string name="wangyiyun_music">Enable the "Meizu status bar lyrics" option in settings</string>
+    <string name="wangyiyun_rongyao_music">Enable the "Meizu status bar lyrics" option in settings</string>
+    <string name="migu_music">Enable the "Meizu status bar lyrics" option in settings</string>
+    <string name="aplayer_music">Enable the "Status bar lyrics" option in settings</string>
+    <string name="lmusic_music">Enable the "Meizu status bar lyrics" option in settings</string>
+    <string name="yinliu_music">Enable the "Meizu status bar lyrics" option in settings</string>
+    <string name="meizu_music">Enable the "Meizu status bar lyrics" option in settings</string>
+    <string name="tangcu_music">Enable the "Meizu status bar lyrics" option in settings</string>
+    <string name="qingyan_music">Enable the "Meizu status bar lyrics" option in settings</string>
+    <string name="gramophone_music">Enable the "Meizu status bar lyrics" option in settings</string>
 
-    <string name="qq_music_xiaomi">Enable the "Bluetooth lyrics" feature.</string>
-    <string name="qq_music_meizu">Enable the "Bluetooth lyrics" feature.</string>
-    <string name="oppo_music">Enable the "Bluetooth lyrics" feature.</string>
-    <string name="rplayer_music">Enable the "Bluetooth lyrics" feature.</string>
-    <string name="qishui_music">Enable the "Bluetooth lyrics" feature.</string>
-    <string name="kuwo_music">Enable the "Bluetooth lyrics" feature.</string>
-    <string name="nisheng_music">Enable the "Bluetooth lyrics" feature.</string>
-    <string name="huawei_music">Enable the "Bluetooth lyrics" feature.</string>
-    <string name="kde_music">Enable the "Bluetooth lyrics" feature.</string>
+    <string name="musicfree_music">Enable the "desktop lyrics" feature</string>
+    <string name="luoxue_music">Enable the "desktop lyrics" feature</string>
+
+    <string name="bodian_music">Enable the "status bar lyrics" feature</string>
+    <string name="qq_music">Enable the "status bar lyrics" feature</string>
+
+    <string name="qq_music_xiaomi">Enable the "Car Bluetooth Lyrics" or "Notification Bar Lyrics" function</string>
+    <string name="qq_music_meizu">Enable the "Bluetooth lyrics" feature</string>
+    <string name="oppo_music">Enable the "Bluetooth lyrics" feature</string>
+    <string name="rplayer_music">Enable the "Bluetooth lyrics" feature</string>
+    <string name="qishui_music">Enable the "Bluetooth lyrics" feature</string>
+    <string name="kuwo_music">Enable the "Bluetooth lyrics" feature</string>
+    <string name="nisheng_music">Enable the "Bluetooth lyrics" feature</string>
+    <string name="huawei_music">Enable the "Bluetooth lyrics" feature</string>
+    <string name="kde_music">Enable the "Bluetooth lyrics" feature</string>
 </resources>
