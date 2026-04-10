@@ -33,6 +33,7 @@ import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.result.MethodData;
+import org.luckypray.dexkit.result.MethodDataList;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -86,29 +87,19 @@ public final class Qishui extends AbsPublisher {
         hook(m1, returnResult(true));
 
         // 阻止触发蓝牙断连逻辑，防止终止蓝牙歌词事件
-        Method m2 = DexkitCache.findMember("qishui$3", new IDexkit<MethodData>() {
+        Method[] m2 = DexkitCache.findMember("qishui$3new", new IDexkit<MethodDataList>() {
             @NonNull
             @Override
-            public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
-                MethodData data = bridge.findMethod(FindMethod.create()
+            public MethodDataList dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                return bridge.findMethod(FindMethod.create()
                     .matcher(MethodMatcher.create()
                         .declaredClass(findClass("com.luna.biz.playing.lyric.bluetoothlyrics.BlueToothLyricsManager"))
-                        .usingNumbers(13)
+                        .paramTypes(findClass("com.luna.common.arch.device.OutputDevice"))
                     )
-                ).singleOrNull();
-
-                if (data == null) {
-                    data = bridge.findMethod(FindMethod.create()
-                        .matcher(MethodMatcher.create()
-                            .declaredClass(findClass("com.luna.biz.playing.lyric.bluetoothlyrics.BlueToothLyricsManager"))
-                            .usingNumbers(62535)
-                        )
-                    ).single();
-                }
-                return data;
+                );
             }
         });
-        hook(m2, doNothing());
+        hookAll(m2, doNothing());
 
         // 发布蓝牙歌词信息的方法
         Method m3 = DexkitCache.findMember("qishui$4", new IDexkit<MethodData>() {

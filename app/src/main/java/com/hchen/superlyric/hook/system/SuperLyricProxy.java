@@ -74,7 +74,7 @@ public final class SuperLyricProxy extends AbsModule {
             boolean.class /* isolated */, boolean.class /* instant */
         );
         if (servicesMethod == null) {
-            findMethodIfExists(
+            servicesMethod = findMethodIfExists(
                 "com.android.server.am.ActivityManagerService",
                 "getCommonServicesLocked",
                 boolean.class /* isolated */
