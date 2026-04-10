@@ -1,39 +1,3 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string-array name="hooks">
-        <item>android</item>
-        <item>com.miui.player</item>
-        <item>com.kugou.android</item>
-        <item>com.kugou.android.lite</item>
-        <item>com.tencent.qqmusic</item>
-        <item>com.netease.cloudmusic</item>
-        <item>com.xuncorp.suvine.music</item>
-        <item>com.salt.music</item>
-        <item>com.hihonor.cloudmusic</item>
-        <item>fun.upup.musicfree</item>
-        <item>com.lalilu.lmusic</item>
-        <item>cn.toside.music.mobile</item>
-        <item>remix.myplayer</item>
-        <item>cn.aqzscn.stream_music</item>
-        <item>org.kde.kdeconnect_tp</item>
-        <item>com.meizu.media.music</item>
-        <item>com.mimicry.mymusic</item>
-        <item>cmccwm.mobilemusic</item>
-        <item>cn.kuwo.player</item>
-        <item>com.apple.android.music</item>
-        <item>statusbar.finder</item>
-        <item>org.akanework.gramophone</item>
-        <item>com.huawei.music</item>
-        <item>cn.wenyu.bodian</item>
-        <item>com.luna.music</item>
-        <item>com.maxmpz.audioplayer</item>
-        <item>com.xuncorp.qinalt.music</item>
-        <item>com.r.rplayer</item>
-        <item>com.heytap.music</item>
-        <item>com.oppo.music</item>
-        <item>app.symfonik.music.player</item>
-        <item>yos.music.player</item>
-        <item>ink.trantor.coneplayer</item>
-        <item>com.hiby.music</item>
-    </string-array>
 </resources>

@@ -20,14 +20,19 @@ package com.hchen.superlyric.hook.music;
 
 import android.content.Context;
 import android.content.Intent;
+import android.text.TextUtils;
+import android.util.Pair;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.collect.Collect;
+import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.hook.IHook;
-import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.hooktool.hook.AbsHook;
+import com.hchen.superlyric.hook.AbsPublisher;
+import com.hchen.superlyricapi.SuperLyricData;
+import com.hchen.superlyricapi.SuperLyricLine;
+import com.hchen.superlyricapi.SuperLyricWord;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
@@ -41,78 +46,192 @@ import java.util.Objects;
 /**
  * 酷狗音乐概念版
  */
-@Collect(targetPackage = "com.kugou.android.lite")
-public final class KuGouLite extends LyricRelease {
+@AutoHook(targetPackage = "com.kugou.android.lite")
+public final class KuGouLite extends AbsPublisher {
 
     @Override
-    protected void init() {
-        hookTencentTinker();
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+        fuckTencentTinker();
     }
 
     @Override
-    protected void initApplicationAfter(@NonNull Context context) {
-        super.initApplicationAfter(context);
+    protected void onApplicationCreated(@NonNull Context context) {
+        super.onApplicationCreated(context);
 
-        try {
-            if (Objects.equals(loadPackageParam.processName, "com.kugou.android.lite.support"))
-                return;
-            if (!enableStatusBarLyric())
-                return;
-
-            if (versionCode <= 10935)
+        enableStatusBarLyric();
+        if (mVersionCode <= 10935) {
+            if (mVersionCode == 10645) {
+                hookMeizuLyric2();
+            } else {
                 hookLocalBroadcast("android.support.v4.content.LocalBroadcastManager");
-            else
+            }
+        } else {
+            if (mVersionCode == 11450) {
+                hookMeizuLyric1();
+            } else {
                 hookLocalBroadcast("androidx.localbroadcastmanager.content.LocalBroadcastManager");
-
+            }
             fixProbabilityCollapse();
-        } catch (Throwable e) {
-            logE(TAG, e);
         }
     }
 
-    private boolean enableStatusBarLyric() {
-        try {
-            Method[] methodList = DexkitCache.findMember("kugoulite$1", new IDexkit<MethodDataList>() {
-                @NonNull
-                @Override
-                public MethodDataList dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
-                    return bridge.findMethod(FindMethod.create()
-                        .matcher(MethodMatcher.create()
-                            .declaredClass(ClassMatcher.create()
-                                .usingStrings("key_status_bar_lyric_open")
-                            )
+    private void enableStatusBarLyric() {
+        Method[] ms = DexkitCache.findMember("kugoulite$1", new IDexkit<MethodDataList>() {
+            @NonNull
+            @Override
+            public MethodDataList dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                return bridge.findMethod(FindMethod.create()
+                    .matcher(MethodMatcher.create()
+                        .declaredClass(ClassMatcher.create()
                             .usingStrings("key_status_bar_lyric_open")
                         )
-                    );
-                }
-            });
-
-            Method[] methods = new Method[2];
-            for (Method m : methodList) {
-                if (Objects.equals(m.getReturnType(), boolean.class)) methods[0] = m;
-                else methods[1] = m;
+                        .usingStrings("key_status_bar_lyric_open")
+                    )
+                );
             }
+        });
 
-            hook(methods[0], new IHook() {
+        Method[] methods = new Method[2];
+        for (Method m : ms) {
+            if (Objects.equals(m.getReturnType(), boolean.class)) {
+                methods[0] = m;
+            } else {
+                methods[1] = m;
+            }
+        }
+
+        hook(methods[0], new AbsHook() {
+            @Override
+            public void before() {
+                callMethod(methods[1], getThisObject(), true);
+                setResult(true);
+            }
+        });
+        hook(methods[1], setArg(0, true));
+    }
+
+    private void hookMeizuLyric1() {
+        hookMethod("com.kugou.android.lyric.j",
+            "d",
+            Context.class, String.class, boolean.class,
+            new AbsHook() {
+                private Pair<String, Object> pair;
                 @Override
                 public void before() {
-                    callThisMethod(methods[1], true);
-                    setResult(true);
+                    String lyric = (String) getArg(1);
+                    boolean isClose = (boolean) getArg(2);
+
+                    if (!isClose && lyric != null && !lyric.isEmpty()) {
+                        Object c = callStaticMethod("uv.b", "c");
+                        Object lyricData = callMethod(c, "f", 41);
+                        String hash = (String) callMethod(c, "i", 207);
+                        if (lyricData != null && hash != null) {
+                            pair = new Pair<>(hash, lyricData);
+                        }
+                        if (lyricData == null && pair != null && TextUtils.equals(pair.first, hash)) {
+                            lyricData = pair.second;
+                        }
+                        if (lyricData != null) {
+                            int currentLine = (int) getField(getThisObject(), "a");
+                            String[][] wordss = (String[][]) getField(lyricData, "f");
+                            long[][] wordBegins = (long[][]) getField(lyricData, "i");
+                            long[][] wordDelays = (long[][]) getField(lyricData, "j");
+                            String[][] translateWordss = (String[][]) getField(lyricData, "k");
+                            parseData(currentLine, wordss, translateWordss, wordBegins, wordDelays);
+                        }
+                    } else {
+                        sendStop();
+                    }
                 }
-            });
-            hook(methods[1], setArg(0, true));
-        } catch (Throwable e) {
-            logE(TAG, e);
-            return false;
+            }
+        );
+    }
+
+    private void hookMeizuLyric2() {
+        hookMethod("com.kugou.android.lyric.e",
+            "a",
+            Context.class, String.class, boolean.class,
+            new AbsHook() {
+                @Override
+                public void before() {
+                    String lyric = (String) getArg(1);
+                    boolean isClose = (boolean) getArg(2);
+
+                    if (!isClose && lyric != null && !lyric.isEmpty()) {
+                        Object lyricData = callMethod(callStaticMethod("com.kugou.framework.lyric.l","a"),"k");
+                        if (lyricData != null) {
+                            int currentLine = (int) getField(getThisObject(), "a");
+                            String[][] wordss = (String[][]) getField(lyricData, "e");
+                            String[][] translateWordss = (String[][]) getField(lyricData, "h");
+                            long[][] wordBegins = (long[][]) getField(lyricData, "f");
+                            long[][] wordDelays = (long[][]) getField(lyricData, "g");
+                            parseData(currentLine, wordss, translateWordss, wordBegins, wordDelays);
+                        }
+                    } else {
+                        sendStop();
+                    }
+                }
+            }
+        );
+    }
+
+    private void parseData(int currentLine, String[][] wordss, String[][] translateWordss, long[][] wordBegins, long[][] wordDelays) {
+        SuperLyricData data = new SuperLyricData();
+
+        SuperLyricWord[] lyricWords = null;
+
+        if (wordss != null) {
+            String[] words = wordss[currentLine];
+            if (words == null) {
+                return;
+            }
+
+            long lyricDelay = 0L;
+            long[] begins = wordBegins[currentLine];
+            long[] delays = wordDelays[currentLine];
+            lyricWords = new SuperLyricWord[words.length];
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < words.length; i++) {
+                long begin = begins[i];
+                long delay = delays[i];
+                lyricDelay = lyricDelay + delay;
+
+                sb.append(words[i]);
+                lyricWords[i] = new SuperLyricWord(words[i], (int) begin, (int) (begin + delay));
+            }
+
+            data.setLyric(
+                new SuperLyricLine(
+                    sb.toString(),
+                    lyricWords,
+                    lyricDelay
+                )
+            );
         }
-        return true;
+
+        if (translateWordss != null) {
+            String[] translateWords = translateWordss[currentLine];
+            if (translateWords != null) {
+                StringBuilder sb = new StringBuilder();
+                for (String translateWord : translateWords) {
+                    sb.append(translateWord);
+                }
+                data.setTranslation(
+                    new SuperLyricLine(
+                        sb.toString()
+                    )
+                );
+            }
+        }
+
+        sendSuperLyricData(data);
     }
 
     private void hookLocalBroadcast(String clazz) {
         hookMethod(clazz,
             "sendBroadcast",
             Intent.class,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void before() {
                     Intent intent = (Intent) getArg(0);
@@ -134,10 +253,10 @@ public final class KuGouLite extends LyricRelease {
         hookMethod("com.kugou.framework.hack.ServiceFetcherHacker$FetcherImpl",
             "createServiceObject",
             Context.class, Context.class,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
-                    String mServiceName = (String) getThisField("serviceName");
+                    String mServiceName = (String) getField(getThisObject(), "serviceName");
                     if (mServiceName == null) return;
 
                     if (mServiceName.equals(Context.WIFI_SERVICE)) {

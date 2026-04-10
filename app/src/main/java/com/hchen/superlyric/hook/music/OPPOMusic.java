@@ -22,11 +22,11 @@ import android.content.Context;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.collect.Collect;
+import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.superlyric.helper.OPPOHelper;
-import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
@@ -38,18 +38,18 @@ import java.lang.reflect.Method;
 /**
  * OPPO 音乐
  */
-@Collect(targetPackage = "com.oppo.music")
-public final class OPPOMusic extends LyricRelease {
+@AutoHook(targetPackage = "com.oppo.music")
+public final class OPPOMusic extends AbsPublisher {
     @Override
-    protected void init() {
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
     }
 
     @Override
-    protected void initApplicationAfter(@NonNull Context context) {
-        super.initApplicationAfter(context);
+    protected void onApplicationCreated(@NonNull Context context) {
+        super.onApplicationCreated(context);
 
         OPPOHelper.mockDevice();
-        getMediaMetadataLyric();
+        hookMediaMetadataLyric();
 
         Method method = DexkitCache.findMember("oppo_music$1", new IDexkit<MethodData>() {
             @NonNull

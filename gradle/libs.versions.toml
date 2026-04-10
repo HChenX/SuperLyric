@@ -1,31 +1,51 @@
 [versions]
-# Basic
-agp = "9.0.1"
-annotation = "1.9.1"
-# Hook API & Tool
-api = "82"
-hooktool = "v.2.2.6"
-# Dexkit
-dexkit = "2.0.7"
-dexkitcache = "v.0.9"
+# android
+agp = "9.1.0"
+kotlin = "2.1.0"
+appcompat = "1.7.1"
+annotation = "1.10.0"
+composeBom = "2026.03.01"
+foundationAndroid = "1.10.6"
+activityCompose = "1.13.0"
+# miuix
+miuixAndroid = "0.9.0"
+# xposed
+api = "101.0.1"
+service = "101.0.0"
+hooktool = "3.0.0-rc12"
+# dexkit
+dexkit = "2.1.0"
+dexkitcache = "1.0"
 gson = "2.13.2"
-mmkv = "2.3.0"
-# SuperLyricApi
-superlyricapi = "2.4"
-# AutoService
+mmkv = "2.4.0"
+# superlyricapi
+superlyricapi = "3.3"
+# auto service
 autoService = "1.1.1"
 javapoet = "1.13.0"
 
 [libraries]
+appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 annotation = { module = "androidx.annotation:annotation", version.ref = "annotation" }
+activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+foundation-android = { module = "androidx.compose.foundation:foundation-android", version.ref = "foundationAndroid" }
 
-api = { module = "de.robv.android.xposed:api", version.ref = "api" }
+miuix_ui-android = { module = "top.yukonga.miuix.kmp:miuix-ui-android", version.ref = "miuixAndroid" }
+miuix-icons-android = { module = "top.yukonga.miuix.kmp:miuix-icons-android", version.ref = "miuixAndroid" }
+miuix-preference-android = { module = "top.yukonga.miuix.kmp:miuix-preference-android", version.ref = "miuixAndroid" }
+miuix-shapes-android = { module = "top.yukonga.miuix.kmp:miuix-shapes-android", version.ref = "miuixAndroid" }
+miuix_blur-android = { module = "top.yukonga.miuix.kmp:miuix-blur-android", version.ref = "miuixAndroid" }
+
+api = { module = "io.github.libxposed:api", version.ref = "api" }
+service = { module = "io.github.libxposed:service", version.ref = "service" }
 hooktool = { group = "com.github.HChenX", name = "HookTool", version.ref = "hooktool" }
 
 dexkit = { module = "org.luckypray:dexkit", version.ref = "dexkit" }
 dexkitcache = { module = "com.github.HChenX:DexkitCache", version.ref = "dexkitcache" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 mmkv = { module = "com.tencent:mmkv", version.ref = "mmkv" }
+
 superlyricapi = { module = "com.github.HChenX:SuperLyricApi", version.ref = "superlyricapi" }
 
 auto-service = { module = "com.google.auto.service:auto-service", version.ref = "autoService" }
@@ -33,4 +53,5 @@ javapoet = { module = "com.squareup:javapoet", version.ref = "javapoet" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-
+android-library = { id = "com.android.library", version.ref = "agp" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

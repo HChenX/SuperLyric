@@ -18,17 +18,19 @@
  */
 package com.hchen.superlyric.hook.music;
 
-import com.hchen.collect.Collect;
+import androidx.annotation.NonNull;
+
+import com.hchen.auto.AutoHook;
 import com.hchen.superlyric.helper.MeizuHelper;
-import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
- * MobileMusic
+ * 咪咕音乐
  */
-@Collect(targetPackage = "cmccwm.mobilemusic")
-public final class MobileMusic extends LyricRelease {
+@AutoHook(targetPackage = "cmccwm.mobilemusic")
+public final class MobileMusic extends AbsPublisher {
     @Override
-    protected void init() {
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         MeizuHelper.depthDeviceMock();
         MeizuHelper.hookNotificationLyric();
     }

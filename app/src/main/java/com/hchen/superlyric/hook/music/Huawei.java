@@ -18,32 +18,34 @@
  */
 package com.hchen.superlyric.hook.music;
 
-import com.hchen.collect.Collect;
-import com.hchen.hooktool.hook.IHook;
-import com.hchen.superlyric.hook.LyricRelease;
+import androidx.annotation.NonNull;
+
+import com.hchen.auto.AutoHook;
+import com.hchen.hooktool.hook.AbsHook;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 import java.util.Arrays;
 
 /**
  * 华为音乐
  */
-@Collect(targetPackage = "com.huawei.music")
-public final class Huawei extends LyricRelease {
+@AutoHook(targetPackage = "com.huawei.music")
+public final class Huawei extends AbsPublisher {
     @Override
-    protected void init() {
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         hookAllMethod("com.android.mediacenter.localmusic.VehicleLyricControl",
             "isEnableRefreshShowLyric",
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void before() {
-                    setThisField("mIsBluetoothA2dpConnect", true);
+                    setField(getThisObject(), "mIsBluetoothA2dpConnect", true);
                 }
             }
         );
 
         hookAllMethod("com.android.mediacenter.localmusic.MediaSessionController",
             "updateLyric",
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void before() {
                     Object[] lyric = getArgs();

@@ -1,2 +1,4 @@
 <resources>
+    <style name="Theme.SuperLyric" parent="Theme.AppCompat.DayNight.NoActionBar">
+    </style>
 </resources>

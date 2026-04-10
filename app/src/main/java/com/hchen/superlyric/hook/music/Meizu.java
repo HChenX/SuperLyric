@@ -18,18 +18,20 @@
  */
 package com.hchen.superlyric.hook.music;
 
-import com.hchen.collect.Collect;
+import androidx.annotation.NonNull;
+
+import com.hchen.auto.AutoHook;
 import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.helper.QQLiteHelper;
-import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
  * 魅族音乐
  */
-@Collect(targetPackage = "com.meizu.media.music")
-public final class Meizu extends LyricRelease {
+@AutoHook(targetPackage = "com.meizu.media.music")
+public final class Meizu extends AbsPublisher {
     @Override
-    protected void init() {
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         if (QQLiteHelper.isSupportQQLite())
             QQLiteHelper.hookLyric();
         else {

@@ -23,11 +23,11 @@ import android.view.View;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.collect.Collect;
+import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.hook.IHook;
-import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.hooktool.hook.AbsHook;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
@@ -42,19 +42,17 @@ import java.util.Objects;
  *
  * @author 焕晨HChen
  */
-@Collect(targetPackage = "cn.wenyu.bodian")
-public final class Bodian extends LyricRelease {
+@AutoHook(targetPackage = "cn.wenyu.bodian")
+public final class Bodian extends AbsPublisher {
     @Override
-    protected void init() {
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
     }
 
     @Override
-    protected void initApplicationAfter(@NonNull Context context) {
-        super.initApplicationAfter(context);
+    protected void onApplicationCreated(@NonNull Context context) {
+        super.onApplicationCreated(context);
 
         Class<?> deskLyricViewClass = findClass("cn.kuwo.player.util.DeskLyricView");
-        if (deskLyricViewClass == null) return;
-
         Method methodData = DexkitCache.findMember("bodian$1", new IDexkit<MethodData>() {
             @NonNull
             @Override
@@ -67,11 +65,11 @@ public final class Bodian extends LyricRelease {
                         .returnType(float.class)
                         .addInvoke("Landroid/graphics/Paint;->measureText(Ljava/lang/String;)F")
                     )
-                ).singleOrThrow(() -> new Throwable("Failed to find lyric method!!"));
+                ).singleOrThrow(() -> new Throwable("Failed to find lyric method."));
             }
         });
         hook(methodData,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void before() {
                     String lyric = (String) getArg(0);
@@ -83,7 +81,7 @@ public final class Bodian extends LyricRelease {
         hookMethod("io.flutter.plugin.common.MethodCall",
             "argument",
             String.class,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void before() {
                     String key = (String) getArg(0);
@@ -95,10 +93,10 @@ public final class Bodian extends LyricRelease {
 
         hookMethod("cn.kuwo.audio_player.StatusBarLyricLayout",
             "getLayoutBinding",
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
-                    View view = (View) thisObject();
+                    View view = (View) getThisObject();
                     view.setAlpha(0f);
                 }
             }

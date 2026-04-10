@@ -29,11 +29,14 @@ import android.os.SystemClock;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.collect.Collect;
+import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.hook.IHook;
-import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.hooktool.hook.AbsHook;
+import com.hchen.superlyric.hook.AbsPublisher;
+import com.hchen.superlyricapi.SuperLyricData;
+import com.hchen.superlyricapi.SuperLyricLine;
+import com.hchen.superlyricapi.SuperLyricWord;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
@@ -43,42 +46,82 @@ import org.luckypray.dexkit.result.ClassData;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.Arrays;
 import java.util.LinkedList;
+import java.util.Objects;
+import java.util.function.Predicate;
 
 /**
  * Apple Music
  */
-@Collect(targetPackage = "com.apple.android.music")
-public final class Apple extends LyricRelease {
+@AutoHook(targetPackage = "com.apple.android.music")
+public final class Apple extends AbsPublisher {
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private Handler lyricHandler;
+
+    private Object lyricViewModel;
+    private PlaybackState playbackState;
     private Object currentSongInfo;
     private LyricsLinePtrHelper lyricsLinePtrHelper;
-    private PlaybackState playbackState;
-    private Object playbackItem;
-    private Object lyricViewModel;
     private final LinkedList<LyricsLine> lyricList = new LinkedList<>();
+    private Object playbackItem;
     private String currentTitle = "";
     private String currentTrackId;
-    private boolean isRunning = false;
-    private Handler mainHandler;
-    private Handler lyricHandler;
     private LyricsLine lastShownLyric;
+    private boolean isRunning = false;
 
-    static class LyricsLine {
+    private static class LyricsLine {
         int start;
         int end;
         String lyric;
+        String translation;
+        SuperLyricWord[] words;
 
-        LyricsLine(int start, int end, String lyric) {
+        LyricsLine(int start, int end, String lyric, SuperLyricWord[] words, String translation) {
             this.start = start;
             this.end = end;
             this.lyric = lyric;
+            this.words = words;
+            this.translation = translation;
+        }
+
+        @Override
+        @NonNull
+        public String toString() {
+            return "LyricsLine{" +
+                "start=" + start +
+                ", end=" + end +
+                ", lyric='" + lyric + '\'' +
+                ", translation='" + translation + '\'' +
+                ", words=" + Arrays.toString(words) +
+                '}';
+        }
+
+        @Override
+        public final boolean equals(Object o) {
+            if (!(o instanceof LyricsLine line)) return false;
+            return start == line.start &&
+                end == line.end &&
+                Objects.equals(lyric, line.lyric) &&
+                Objects.equals(translation, line.translation) &&
+                Arrays.equals(words, line.words);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = start;
+            result = 31 * result + end;
+            result = 31 * result + Objects.hashCode(lyric);
+            result = 31 * result + Objects.hashCode(translation);
+            result = 31 * result + Arrays.hashCode(words);
+            return result;
         }
     }
 
     @Override
-    protected void init() {
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         // 初始化 Handler
-        mainHandler = new Handler(Looper.getMainLooper());
         HandlerThread lyricThread = new HandlerThread("AppleMusicLyricThread");
         lyricThread.start();
         lyricHandler = new Handler(lyricThread.getLooper());
@@ -86,17 +129,15 @@ public final class Apple extends LyricRelease {
         // Hook 初始化 LyricViewModel
         hookMethod("com.apple.android.music.AppleMusicApplication",
             "onCreate",
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
                     try {
-                        Application application = (Application) thisObject();
+                        Application application = (Application) getThisObject();
                         Class<?> playerLyricsViewModelClass = findClass("com.apple.android.music.player.viewmodel.PlayerLyricsViewModel");
-                        if (playerLyricsViewModelClass != null) {
-                            lyricViewModel = newInstance(playerLyricsViewModelClass, application);
-                        }
+                        lyricViewModel = newInstance(playerLyricsViewModelClass, application);
                     } catch (Exception e) {
-                        logE(TAG, "Failed to initialize LyricViewModel", e);
+                        logE(TAG, "Failed to initialize LyricViewModel!!", e);
                     }
                 }
             }
@@ -104,15 +145,16 @@ public final class Apple extends LyricRelease {
 
         // Hook PlaybackState 构造
         hookAllConstructor("android.media.session.PlaybackState",
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
-                    playbackState = (PlaybackState) thisObject();
+                    playbackState = (PlaybackState) getThisObject();
                 }
             }
         );
 
         // Hook 播放状态变化
+        // android.support.v4.media.session.MediaControllerCompat$a$b
         Class<?> mediaControllerCompatHandlerClass = DexkitCache.findMember("apple$1", new IDexkit<ClassData>() {
             @NonNull
             @Override
@@ -126,31 +168,40 @@ public final class Apple extends LyricRelease {
                 ).single();
             }
         });
-        Field playbackStateField = findFieldPro("android.support.v4.media.session.PlaybackStateCompat")
-            .withFieldClass(PlaybackState.class)
-            .single();
+
+        Field playbackStateField =
+            Arrays.stream(findClass("android.support.v4.media.session.PlaybackStateCompat").getDeclaredFields())
+                .filter(new Predicate<Field>() {
+                    @Override
+                    public boolean test(Field field) {
+                        return Objects.equals(field.getType(), PlaybackState.class);
+                    }
+                })
+                .findFirst()
+                .orElseThrow();
 
         // android.support.v4.media.session.MediaControllerCompat$a$b
         hookMethod(mediaControllerCompatHandlerClass,
             "handleMessage",
             Message.class,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void before() {
                     Message m = (Message) getArg(0);
                     if (m.what == 2) {
                         // 获取 PlaybackStateCompat 对象
                         Object playbackStateCompat = m.obj;
-                        if (playbackStateCompat == null) return;
-
-                        playbackState = (PlaybackState) getField(playbackStateCompat, playbackStateField);
-                        updateLyricPosition();
+                        if (playbackStateCompat != null) {
+                            playbackState = (PlaybackState) getField(playbackStateField, playbackStateCompat);
+                            updateLyricPosition();
+                        }
                     }
                 }
             }
         );
 
         // Hook MediaMetadata 变化
+        // android.support.v4.media.session.MediaControllerCompat$a$a
         Class<?> mediaControllerCompatClass = DexkitCache.findMember("apple$2", new IDexkit<ClassData>() {
             @NonNull
             @Override
@@ -164,20 +215,29 @@ public final class Apple extends LyricRelease {
                 ).single();
             }
         });
-        Method mediaMetadataCompatStaticMethod = findMethodPro("android.support.v4.media.MediaMetadataCompat")
-            .withStatic()
-            .single()
-            .obtain();
+        Method mediaMetadataCompatStaticMethod =
+            Arrays.stream(findClass("android.support.v4.media.MediaMetadataCompat").getDeclaredMethods())
+                .filter(new Predicate<Method>() {
+                    @Override
+                    public boolean test(Method method) {
+                        return Modifier.isStatic(method.getModifiers());
+                    }
+                }).findFirst().orElseThrow();
 
-        Field mediaMetadataField = findFieldPro("android.support.v4.media.MediaMetadataCompat")
-            .withFieldClass(MediaMetadata.class)
-            .single();
+        Field mediaMetadataField =
+            Arrays.stream(findClass("android.support.v4.media.MediaMetadataCompat").getDeclaredFields())
+                .filter(new Predicate<Field>() {
+                    @Override
+                    public boolean test(Field field) {
+                        return Objects.equals(field.getType(), MediaMetadata.class);
+                    }
+                }).findFirst().orElseThrow();
 
         // android.support.v4.media.session.MediaControllerCompat$a$a
         hookMethod(mediaControllerCompatClass,
             "onMetadataChanged",
             MediaMetadata.class,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void before() {
                     try {
@@ -187,13 +247,12 @@ public final class Apple extends LyricRelease {
                             getArg(0)
                         );
 
-                        MediaMetadata metadata = (MediaMetadata) getField(metadataCompat, mediaMetadataField);
+                        MediaMetadata metadata = (MediaMetadata) getField(mediaMetadataField, metadataCompat);
                         String newTitle = metadata.getString(MediaMetadata.METADATA_KEY_TITLE);
 
                         // 检测歌曲变化
                         if (newTitle != null && !currentTitle.equals(newTitle)) {
                             // 停止现有歌词
-                            sendLyric("");
                             sendStop();
 
                             // 重置现有状态
@@ -209,7 +268,7 @@ public final class Apple extends LyricRelease {
                             mainHandler.postDelayed(() -> requestLyrics(), 400);
                         }
                     } catch (Exception e) {
-                        logE(TAG, "Error getting MediaMetadata", e);
+                        logE(TAG, "Error getting MediaMetadata!!", e);
                     }
                 }
             }
@@ -219,7 +278,7 @@ public final class Apple extends LyricRelease {
         hookMethod("com.apple.android.music.player.viewmodel.PlayerLyricsViewModel",
             "buildTimeRangeToLyricsMap",
             "com.apple.android.music.ttml.javanative.model.SongInfo$SongInfoPtr",
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
                     Object songInfoPtr = getArg(0);
@@ -228,6 +287,8 @@ public final class Apple extends LyricRelease {
                     currentSongInfo = callMethod(songInfoPtr, "get");
                     if (currentSongInfo == null) return;
 
+                    String currentSystemLyricsLanguage = (String) callStaticMethod("com.apple.android.music.playback.util.LocaleUtil", "getSystemLyricsLanguage");
+                    callMethod(currentSongInfo, "setTranslation", currentSystemLyricsLanguage);
                     Object lyricsSectionVector = callMethod(currentSongInfo, "getSections");
                     if (lyricsSectionVector == null) return;
 
@@ -250,14 +311,14 @@ public final class Apple extends LyricRelease {
         try {
             Class<?> playbackItemClass = findClass("com.apple.android.music.model.PlaybackItem");
 
-            if (existsClass("com.apple.android.music.model.BaseContentItem")) {
+            if (hasClass("com.apple.android.music.model.BaseContentItem")) {
                 hookMethod("com.apple.android.music.model.BaseContentItem",
                     "setId",
                     String.class,
-                    new IHook() {
+                    new AbsHook() {
                         @Override
                         public void before() {
-                            if (playbackItemClass.isInstance(thisObject())) {
+                            if (playbackItemClass.isInstance(getThisObject())) {
                                 String trackId = (String) getArg(0);
                                 if (trackId == null) return;
 
@@ -272,7 +333,7 @@ public final class Apple extends LyricRelease {
                                 }
                                 if (flag[0] == 1 && flag[1] == 1) {
                                     currentTrackId = trackId;
-                                    playbackItem = thisObject();
+                                    playbackItem = getThisObject();
                                     logD(TAG, "Current music ID: " + currentTrackId);
                                 }
                             }
@@ -320,13 +381,37 @@ public final class Apple extends LyricRelease {
                 Integer start = (Integer) callMethod(lyricsLine, "getBegin");
                 Integer end = (Integer) callMethod(lyricsLine, "getEnd");
 
+                SuperLyricWord[] superLyricWords = null;
+                Object words = callMethod(lyricsLine, "getWords");
+                if (words != null) {
+                    long wordSize = (long) callMethod(words, "size");
+                    Object[] wordPtrs = new Object[Math.toIntExact(wordSize)];
+                    for (long l = 0; l < wordSize; l++) {
+                        Object wordPtr = callMethod(words, "get", l);
+                        wordPtrs[Math.toIntExact(l)] = wordPtr;
+                    }
+                    superLyricWords = new SuperLyricWord[wordPtrs.length];
+                    for (int i1 = 0; i1 < wordPtrs.length; i1++) {
+                        Object word = callMethod(wordPtrs[i1], "get");
+                        String text = (String) callMethod(word, "getHtmlLineText");
+                        int subStart = (int) callMethod(word, "getBegin");
+                        int subEnd = (int) callMethod(word, "getEnd");
+                        superLyricWords[i1] = new SuperLyricWord(text, subStart, subEnd);
+                    }
+                }
+
+                String translation = (String) callMethod(lyricsLine, "getHtmlTranslationLineText");
+
                 if (lyric != null && start != null && end != null) {
-                    newLyricList.add(new LyricsLine(start, end, lyric));
+                    LyricsLine line = new LyricsLine(start, end, lyric, superLyricWords, translation);
+                    logD(TAG, "Lyric Line: " + line);
+                    newLyricList.add(line);
                 }
                 i++;
             }
+
             if (!newLyricList.isEmpty()) {
-                if (lyricList.isEmpty() || newLyricList.getFirst().start != lyricList.getFirst().start) {
+                if (lyricList.isEmpty() || !Objects.equals(newLyricList.getFirst(), lyricList.getFirst())) {
                     lyricList.clear();
                     lyricList.addAll(newLyricList);
                 }
@@ -372,7 +457,22 @@ public final class Apple extends LyricRelease {
                 }
 
                 if (currentLine != null && (lastShownLyric == null || lastShownLyric != currentLine)) {
-                    sendLyric(currentLine.lyric);
+                    sendSuperLyricData(
+                        new SuperLyricData()
+                            .setLyric(
+                                new SuperLyricLine(
+                                    currentLine.lyric,
+                                    currentLine.words,
+                                    currentLine.start,
+                                    currentLine.end
+                                )
+                            )
+                            .setTranslation(
+                                new SuperLyricLine(
+                                    currentLine.translation
+                                )
+                            )
+                    );
                     lastShownLyric = currentLine;
                 }
 
@@ -383,41 +483,24 @@ public final class Apple extends LyricRelease {
     }
 
     private record LyricsLinePtrHelper(Object lyricsSectionVector) {
-        public Object getLyricsLinePtr(int i10) {
-            int i11 = 0;
-            int i12 = 0;
+        public Object getLyricsLinePtr(int lineIndex) {
+            int accumulatedLines = 0;
 
-            while (true) {
-                long j10 = i11;
-                if (j10 < (long) callMethod(lyricsSectionVector, "size")) {
-                    Object lyricsLinePtr = callMethod(lyricsSectionVector, "get", j10);
-                    long size = i12 + (long) callMethod(
-                        callMethod(
-                            callMethod(lyricsLinePtr,
-                                "get"
-                            ),
-                            "getLines"
-                        ),
-                        "size"
-                    );
-                    if ((long) i10 >= size) {
-                        i12 = Math.toIntExact(size);
-                        i11++;
-                    } else
-                        return callMethod(
-                            callMethod(
-                                callMethod(
-                                    lyricsLinePtr,
-                                    "get"
-                                ),
-                                "getLines"
-                            ),
-                            "get",
-                            i10 - i12
-                        );
-                } else
-                    return null;
+            long sectionCount = (long) callMethod(lyricsSectionVector, "size");
+            for (int sectionIndex = 0; sectionIndex < sectionCount; sectionIndex++) {
+                Object sectionPtr = callMethod(lyricsSectionVector, "get", sectionIndex);
+                Object section = callMethod(sectionPtr, "get");
+
+                Object lines = callMethod(section, "getLines");
+                long lineCount = (long) callMethod(lines, "size");
+                if (lineIndex < accumulatedLines + lineCount) {
+                    int indexInSection = lineIndex - accumulatedLines;
+                    return callMethod(lines, "get", indexInSection);
+                }
+
+                accumulatedLines += (int) lineCount;
             }
+            return null;
         }
     }
 }

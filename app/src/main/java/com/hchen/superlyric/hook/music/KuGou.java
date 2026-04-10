@@ -20,96 +20,105 @@ package com.hchen.superlyric.hook.music;
 
 import android.content.Context;
 import android.content.Intent;
+import android.text.TextUtils;
+import android.util.Pair;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.collect.Collect;
+import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.hooktool.hook.IHook;
-import com.hchen.superlyric.hook.LyricRelease;
+import com.hchen.hooktool.hook.AbsHook;
+import com.hchen.superlyric.hook.AbsPublisher;
+import com.hchen.superlyricapi.SuperLyricData;
+import com.hchen.superlyricapi.SuperLyricLine;
+import com.hchen.superlyricapi.SuperLyricWord;
 
 import org.luckypray.dexkit.DexKitBridge;
+import org.luckypray.dexkit.query.FindClass;
+import org.luckypray.dexkit.query.FindField;
 import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
+import org.luckypray.dexkit.query.matchers.FieldMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
+import org.luckypray.dexkit.result.ClassData;
+import org.luckypray.dexkit.result.FieldData;
 import org.luckypray.dexkit.result.MethodDataList;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.Objects;
+import java.util.function.Predicate;
 
 /**
  * 酷狗音乐
  */
-@Collect(targetPackage = "com.kugou.android")
-public final class KuGou extends LyricRelease {
+@AutoHook(targetPackage = "com.kugou.android")
+public final class KuGou extends AbsPublisher {
     @Override
-    protected void init() {
-        hookTencentTinker();
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+        fuckTencentTinker();
     }
 
     @Override
-    protected void initApplicationAfter(@NonNull Context context) {
-        super.initApplicationAfter(context);
+    protected void onApplicationCreated(@NonNull Context context) {
+        super.onApplicationCreated(context);
 
-        try {
-            if (Objects.equals(loadPackageParam.processName, "com.kugou.android.support")) return;
-            if (!enableStatusBarLyric()) return;
-
-            if (versionCode <= 12009)
-                hookLocalBroadcast("android.support.v4.content.LocalBroadcastManager");
-            else {
+        enableStatusBarLyric();
+        if (mVersionCode <= 12009) {
+            hookLocalBroadcast("android.support.v4.content.LocalBroadcastManager");
+        } else {
+            try {
+                hookMeizuLyric();
+            } catch (Throwable e) {
+                logW(TAG, e);
                 hookLocalBroadcast("androidx.localbroadcastmanager.content.LocalBroadcastManager");
-                fixProbabilityCollapse();
             }
-        } catch (Throwable e) {
-            logE(TAG, e);
+            fixProbabilityCollapse();
         }
     }
 
-    private boolean enableStatusBarLyric() {
-        try {
-            Method[] methodList = DexkitCache.findMember("kugou$1", new IDexkit<MethodDataList>() {
-                @NonNull
-                @Override
-                public MethodDataList dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
-                    return bridge.findMethod(FindMethod.create()
-                        .matcher(MethodMatcher.create()
-                            .declaredClass(ClassMatcher.create()
-                                .usingStrings("key_status_bar_lyric_open")
-                            )
+    private void enableStatusBarLyric() {
+        Method[] ms = DexkitCache.findMember("kugou$1", new IDexkit<MethodDataList>() {
+            @NonNull
+            @Override
+            public MethodDataList dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                return bridge.findMethod(FindMethod.create()
+                    .matcher(MethodMatcher.create()
+                        .declaredClass(ClassMatcher.create()
                             .usingStrings("key_status_bar_lyric_open")
                         )
-                    );
-                }
-            });
-
-            Method[] methods = new Method[2];
-            for (Method m : methodList) {
-                if (Objects.equals(m.getReturnType(), boolean.class)) methods[0] = m;
-                else methods[1] = m;
+                        .usingStrings("key_status_bar_lyric_open")
+                    )
+                );
             }
+        });
 
-            hook(methods[0], new IHook() {
-                @Override
-                public void before() {
-                    callThisMethod(methods[1], true);
-                    setResult(true);
-                }
-            });
-            hook(methods[1], setArg(0, true));
-        } catch (Throwable e) {
-            logE(TAG, e);
-            return false;
+        Method[] methods = new Method[2];
+        for (Method m : ms) {
+            if (Objects.equals(m.getReturnType(), boolean.class)) {
+                methods[0] = m; // 返回端
+            } else {
+                methods[1] = m; // 设置端
+            }
         }
-        return true;
+
+        hook(methods[0], new AbsHook() {
+            @Override
+            public void before() {
+                callMethod(methods[1], getThisObject(), true);
+                setResult(true);
+            }
+        });
+        hook(methods[1], setArg(0, true));
     }
 
     private void hookLocalBroadcast(String clazz) {
         hookMethod(clazz,
             "sendBroadcast",
             Intent.class,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void before() {
                     Intent intent = (Intent) getArg(0);
@@ -127,14 +136,173 @@ public final class KuGou extends LyricRelease {
         );
     }
 
+    private void hookMeizuLyric() {
+        Class<?> statusBarLyricClass = DexkitCache.findMember("kugou$2", new IDexkit<ClassData>() {
+            @NonNull
+            @Override
+            public ClassData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                return bridge.findClass(FindClass.create()
+                    .matcher(ClassMatcher.create()
+                        .usingEqStrings("RemoteLyricView status bar lyric: ")
+                    )
+                ).single();
+            }
+        });
+        Field currentLineField = DexkitCache.findMember("kugou$3", new IDexkit<FieldData>() {
+            @NonNull
+            @Override
+            public FieldData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                return bridge.findField(FindField.create()
+                    .matcher(FieldMatcher.create()
+                        .declaredClass(statusBarLyricClass)
+                        .type(int.class)
+                    )
+                ).single();
+            }
+        });
+        Class<?> clazz = DexkitCache.findMember("kugou$4", new IDexkit<ClassData>() {
+            @NonNull
+            @Override
+            public ClassData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                return bridge.findClass(FindClass.create()
+                    .matcher(ClassMatcher.create()
+                        .usingEqStrings("GlobalVariableAccess getStChineseConverter stChineseConverter downloadConfig")
+                    )
+                ).single();
+            }
+        });
+        Method staticMethod = Arrays.stream(clazz.getDeclaredMethods())
+            .filter(new Predicate<Method>() {
+                @Override
+                public boolean test(Method method) {
+                    return Objects.equals(method.getReturnType(), clazz);
+                }
+            }).findFirst().orElseThrow();
+
+        Method getLyricDataMethod = Arrays.stream(clazz.getDeclaredMethods())
+            .filter(new Predicate<Method>() {
+                final Class<?> lyricDataClass = findClass("com.kugou.framework.lyric.LyricData");
+
+                @Override
+                public boolean test(Method method) {
+                    return Objects.equals(method.getReturnType(), lyricDataClass);
+                }
+            }).findFirst().orElseThrow();
+
+        Method getHashMethod = Arrays.stream(clazz.getDeclaredMethods())
+            .filter(new Predicate<Method>() {
+                @Override
+                public boolean test(Method method) {
+                    return Objects.equals(method.getReturnType(), String.class) &&
+                        method.getParameterCount() == 1 &&
+                        Objects.equals(method.getParameterTypes()[0], int.class);
+                }
+            }).findFirst().orElseThrow();
+
+        hook(Arrays.stream(statusBarLyricClass.getDeclaredMethods())
+                .filter(new Predicate<Method>() {
+                    @Override
+                    public boolean test(Method method) {
+                        return method.getParameterCount() == 3 &&
+                            Arrays.deepEquals(new Class<?>[]{Context.class, String.class, boolean.class}, method.getParameterTypes());
+                    }
+                }).findFirst().orElseThrow(),
+            new AbsHook() {
+                private Pair<String, Object> pair;
+
+                @Override
+                public void before() {
+                    String lyric = (String) getArg(1);
+                    boolean isClose = (boolean) getArg(2);
+
+                    if (!isClose && lyric != null && !lyric.isEmpty()) {
+                        Object c = callStaticMethod(staticMethod);
+                        Object lyricData = callMethod(getLyricDataMethod, c, 41);
+                        String hash = (String) callMethod(getHashMethod, c, 207);
+                        if (lyricData != null && hash != null) {
+                            pair = new Pair<>(hash, lyricData);
+                        }
+                        if (lyricData == null && pair != null && TextUtils.equals(pair.first, hash)) {
+                            lyricData = pair.second;
+                        }
+
+                        if (lyricData != null) {
+                            SuperLyricData data = new SuperLyricData();
+
+                            SuperLyricWord[] lyricWords = null;
+                            int currentLine = (int) getField(currentLineField, getThisObject());
+                            String[][] wordss = (String[][]) callMethod(lyricData, "getWords");
+                            long[][] wordBegins = (long[][]) callMethod(lyricData, "getWordBeginTime");
+                            long[][] wordDelays = (long[][]) callMethod(lyricData, "getWordDelayTime");
+                            if (wordss != null) {
+                                String[] words = wordss[currentLine];
+                                if (words == null) {
+                                    return;
+                                }
+
+                                long lyricDelay = 0L;
+                                long[] begins = wordBegins[currentLine];
+                                long[] delays = wordDelays[currentLine];
+                                lyricWords = new SuperLyricWord[words.length];
+                                StringBuilder sb = new StringBuilder();
+                                for (int i = 0; i < words.length; i++) {
+                                    long begin = begins[i];
+                                    long delay = delays[i];
+                                    lyricDelay = lyricDelay + delay;
+
+                                    sb.append(words[i]);
+                                    lyricWords[i] = new SuperLyricWord(words[i], (int) begin, (int) (begin + delay));
+                                }
+
+                                data.setLyric(
+                                    new SuperLyricLine(
+                                        sb.toString(),
+                                        lyricWords,
+                                        lyricDelay
+                                    )
+                                );
+                            }
+
+                            String[][] translateWordss = (String[][]) callMethod(lyricData, "getTranslateWords");
+                            if (translateWordss != null) {
+                                String[] translateWords = translateWordss[currentLine];
+                                if (translateWords != null) {
+                                    StringBuilder sb = new StringBuilder();
+                                    for (String translateWord : translateWords) {
+                                        sb.append(translateWord);
+                                    }
+                                    data.setTranslation(
+                                        new SuperLyricLine(
+                                            sb.toString()
+                                        )
+                                    );
+                                }
+                            }
+
+                            // 罗马音之类的
+                            // String[][] transliterationWordss = (String[][]) callMethod(lyricData, "getTransliterationWords");
+                            // if (transliterationWordss != null) {
+                            //     String[] transliterationWords = transliterationWordss[currentLine];
+                            //     AndroidLog.logI(TAG, "TransliterationWords: " + Arrays.toString(transliterationWords));
+                            // }
+                            sendSuperLyricData(data);
+                        }
+                    } else {
+                        sendStop();
+                    }
+                }
+            }
+        );
+    }
+
     private void fixProbabilityCollapse() {
         hookMethod("com.kugou.framework.hack.ServiceFetcherHacker$FetcherImpl",
             "createServiceObject",
             Context.class, Context.class,
-            new IHook() {
+            new AbsHook() {
                 @Override
                 public void after() {
-                    String mServiceName = (String) getThisField("serviceName");
+                    String mServiceName = (String) getField(getThisObject(), "serviceName");
                     if (mServiceName == null) return;
 
                     if (mServiceName.equals(Context.WIFI_SERVICE)) {

@@ -18,11 +18,11 @@
  */
 package com.hchen.superlyric.helper;
 
-import static com.hchen.superlyric.hook.LyricRelease.audioManager;
-import static com.hchen.superlyric.hook.LyricRelease.sendStop;
+import static com.hchen.superlyric.hook.AbsPublisher.mAudioManager;
+import static com.hchen.superlyric.hook.AbsPublisher.sendStop;
 
-import java.util.Timer;
-import java.util.TimerTask;
+import android.os.Handler;
+import android.os.HandlerThread;
 
 /**
  * 超时暂停歌词
@@ -30,29 +30,44 @@ import java.util.TimerTask;
  * @author 焕晨HChen
  */
 public final class TimeoutHelper {
-    private final static Timer timer = new Timer();
+    private static final HandlerThread thread = new HandlerThread("TimeoutHelper") {
+        {
+            start();
+        }
+    };
+    private static final Handler handler = new Handler(thread.getLooper());
     private static boolean isRunning = false;
-    private final static TimerTask TIMER_TASK = new TimerTask() {
+    private static final Runnable runnable = new Runnable() {
         @Override
         public void run() {
-            if (audioManager != null && !audioManager.isMusicActive()) {
+            if (!isRunning) {
+                return;
+            }
+
+            if (mAudioManager != null && !mAudioManager.isMusicActive()) {
                 sendStop();
                 stop();
+            } else {
+                handler.postDelayed(this, 1000);
             }
         }
     };
 
-    public static void start() {
-        if (!isRunning) {
-            timer.schedule(TIMER_TASK, 0, 1000);
-            isRunning = true;
+    public static synchronized void start() {
+        if (isRunning) {
+            return;
         }
+
+        isRunning = true;
+        handler.post(runnable);
     }
 
-    private static void stop() {
-        if (isRunning) {
-            timer.cancel();
-            isRunning = false;
+    public static synchronized void stop() {
+        if (!isRunning) {
+            return;
         }
+
+        isRunning = false;
+        handler.removeCallbacks(runnable);
     }
 }

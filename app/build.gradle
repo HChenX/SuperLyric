@@ -1,5 +1,8 @@
+import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
+
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -33,16 +36,16 @@ android {
 
     namespace "com.hchen.superlyric"
     compileSdk {
-        version = release(36)
+        version = release(37)
     }
 
     defaultConfig {
         applicationId "com.hchen.superlyric"
         minSdk 30
-        targetSdk 36
+        targetSdk 37
         // noinspection HighAppVersionCode
-        versionCode 2025110601
-        versionName "2.8"
+        versionCode 2026041100
+        versionName "3.1"
 
         ndk {
             // noinspection ChromeOsAbiSupport
@@ -74,20 +77,30 @@ android {
         aidl true
     }
 
-    packagingOptions {
-        resources {
-            excludes += "/META-INF/**"
-            excludes += "/kotlin/**"
-            excludes += "/*.txt"
-            excludes += "/*.bin"
-            excludes += "/*.json"
-            excludes += 'DebugProbesKt.bin'
+    androidResources {
+        generateLocaleConfig = true
+    }
+
+    kotlin {
+        compilerOptions {
+            languageVersion = KotlinVersion.KOTLIN_2_1
         }
     }
 
-    buildFeatures {
-        buildConfig true
-    }
+    // lint {
+    //     baseline = file("lint-baseline.xml")
+    // }
+
+    // packagingOptions {
+    //     resources {
+    //         excludes += "/META-INF/**"
+    //         excludes += "/kotlin/**"
+    //         excludes += "/*.txt"
+    //         excludes += "/*.bin"
+    //         excludes += "/*.json"
+    //         excludes += 'DebugProbesKt.bin'
+    //     }
+    // }
 }
 
 androidComponents {
@@ -108,8 +121,21 @@ dependencies {
         resolutionStrategy.cacheDynamicVersionsFor 0, 'seconds'
     }
 
-    compileOnly libs.api
+    implementation libs.appcompat
     implementation libs.annotation
+
+    implementation platform(libs.compose.bom)
+    implementation libs.foundation.android
+    implementation libs.activity.compose
+
+    implementation libs.miuix.ui.android
+    implementation libs.miuix.preference.android
+    implementation libs.miuix.shapes.android
+    implementation libs.miuix.blur.android
+    implementation libs.miuix.icons.android
+
+    compileOnly libs.api
+    implementation libs.service
     implementation libs.hooktool
     implementation libs.dexkit
     implementation libs.dexkitcache
@@ -119,6 +145,7 @@ dependencies {
         changing = true
     }
 
-    implementation(project(':collect'))
-    annotationProcessor(project(':collect'))
+    compileOnly(project(':hidden-api'))
+    implementation(project(':auto'))
+    annotationProcessor(project(':auto'))
 }

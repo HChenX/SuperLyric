@@ -18,18 +18,20 @@
  */
 package com.hchen.superlyric.hook.music;
 
-import com.hchen.collect.Collect;
-import com.hchen.superlyric.hook.LyricRelease;
+import androidx.annotation.NonNull;
+
+import com.hchen.auto.AutoHook;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
  * 海贝音乐
  *
  * @author 焕晨HChen
  */
-@Collect(targetPackage = "com.hiby.music")
-public final class HiBy extends LyricRelease {
+@AutoHook(targetPackage = "com.hiby.music")
+public final class HiBy extends AbsPublisher {
     @Override
-    protected void init() {
-        getMediaMetadataLyric();
+    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+        hookMediaMetadataLyric();
     }
 }
