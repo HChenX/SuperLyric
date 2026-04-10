@@ -62,12 +62,12 @@ public abstract class AbsPublisher extends AbsModule {
             PackageInfo packageInfo = context.getPackageManager().getPackageInfo(mPackageName, 0);
             mVersionName = packageInfo.versionName;
             mVersionCode = packageInfo.getLongVersionCode();
-            AndroidLog.logI(TAG, "Package name: " + mPackageName + ", version name: " + mVersionName + ", version code: " + mVersionCode);
+            logI(TAG, "Package name: " + mPackageName + ", version name: " + mVersionName + ", version code: " + mVersionCode);
         } catch (PackageManager.NameNotFoundException e) {
             logW(TAG, e);
         }
 
-        AndroidLog.logI(TAG, "Success to register super lyric publisher service, caller: " + mPackageName);
+        logI(TAG, "Success to register super lyric publisher service, caller: " + mPackageName);
     }
 
     /**

@@ -72,7 +72,8 @@ public final class KuWo extends AbsPublisher {
 
             hook(Arrays.stream(confMMKVMgrImplClass.getDeclaredMethods())
                     .filter(new Predicate<Method>() {
-                        @Override public boolean test(Method method) {
+                        @Override
+                        public boolean test(Method method) {
                             return Objects.equals(method.getReturnType(), boolean.class) &&
                                 method.getParameterCount() == 3 &&
                                 Arrays.deepEquals(new Class<?>[]{String.class, String.class, boolean.class}, method.getParameterTypes());

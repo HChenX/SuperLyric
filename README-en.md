@@ -10,83 +10,77 @@
 ![language](https://img.shields.io/badge/language-java-purple)
 
 <p><b><a href="README-en.md">English</a> | <a href="README.md">简体中文</a></b></p>
-<p>歌词获取器 | Super Lyric Getter</p>
+<p>Lyrics Fetcher | Super Lyric</p>
 </div>
 
 ---
 
 ## ✨ Module Introduction
 
-- A brand-new lyric getter module, utilizing a completely new API!
+- A lyrics acquisition and publishing module for music applications based on Binder data
+  transmission!
+- Completely abandons the traditional broadcast approach, fully embracing the higher-performance,
+  lower-latency Binder cross-process capabilities!
 
 ---
 
 ## 🛠 Supported Applications
 
-- NetEase Cloud Music (Meizu status bar lyric)
-- NetEase Cloud Music Glory Edition (Meizu status bar lyric)
-- Kugou Music (Meizu status bar lyric)
-- Kugou Music Concept Edition (Meizu status bar lyric)
-- Migu Music (Meizu status bar lyric)
-- APlayer (Meizu status bar lyric)
-- LMusic (Meizu status bar lyric)
-- Yinliu Music (Meizu status bar lyric)
-- Meizu Music (Meizu status bar lyric)
-- Pepper Salt Music (Meizu status bar lyric)
-- Tangcu Music (Meizu status bar lyric)
-- Qinyan Music (Meizu status bar lyric)
-- Gramophone (Meizu status bar lyric)
-- MusicFree (Desktop Lyric)
-- Luoxue Music (Desktop Lyric)
-- Bodian Music (Status bar lyric)
-- QQ Music (Status bar lyric)
-- QQ Music Xiaomi Edition (Bluetooth lyric)
-- QQ Music Meizu Edition (Bluetooth lyric)
-- OPPO Music (In-car Bluetooth lyric)
-- RPlayer (In-car Bluetooth lyric)
-- Qishui Music (In-car Bluetooth lyric)
-- Kuwo Music (Bluetooth lyric)
-- Nisheng Music (Bluetooth lyric)
-- Huawei Music (Bluetooth lyric)
-- Kde (Bluetooth lyric)
-- Apple Music (Hook)
-- Symfonium (Hook)
-- Flamingo (Native API support)
-- [Cone Player](https://coneplayer.trantor.ink) (Native API support)
-- Poweramp (Can only get lyrics on the app's lyric interface)
+- APlayer (remix.myplayer) -> Meizu Status Bar Lyrics
+- Apple Music (com.apple.android.music) -> Hook Acquisition
+- Stream Music (cn.aqzscn.stream_music) -> Meizu Status Bar Lyrics
+- BoDian Music (cn.wenyu.bodian) -> Status Bar Lyrics
+- Gramophone (org.akanework.gramophone) -> Meizu Status Bar Lyrics
+- OPPO Music (com.heytap.music) -> Bluetooth Lyrics
+- HiBy Music (com.hiby.music) -> Bluetooth Lyrics
+- Honor Music (com.hihonor.cloudmusic) -> Meizu Status Bar Lyrics
+- Huawei Music (com.huawei.music) -> Bluetooth Lyrics
+- Kde (org.kde.kdeconnect_tp) -> Bluetooth Lyrics
+- Kugou Music (com.kugou.android) -> Hook Acquisition
+- Kugou Music Lite (com.kugou.android.lite) -> Hook Acquisition
+- Kuwo Music (cn.kuwo.player) -> Bluetooth Lyrics
+- LMusic (com.lalilu.lmusic) -> Meizu Status Bar Lyrics
+- LX Music (cn.toside.music.mobile) -> Desktop Lyrics
+- Meizu Music (com.meizu.media.music) -> Meizu Status Bar Lyrics
+- Mimicry Music (com.mimicry.mymusic) -> Meizu Status Bar Lyrics
+- Mi Music (com.miui.player) -> Bluetooth Lyrics
+- Migu Music (cmccwm.mobilemusic) -> Meizu Status Bar Lyrics
+- MusicFree (fun.upup.musicfree) -> Desktop Lyrics
+- NetEase Cloud Music (com.netease.cloudmusic) -> Meizu Status Bar Lyrics
+- OPPO Music (com.oppo.music) -> Bluetooth Lyrics
+- Poweramp (com.maxmpz.audioplayer) -> Lyrics available only when on the app's lyrics interface
+- QingYan Music (com.xuncorp.qinalt.music) -> Meizu Status Bar Lyrics
+- Soda Music (com.luna.music) -> Bluetooth Lyrics
+- QQ Music (com.tencent.qqmusic) -> Status Bar Lyrics
+- RPlayer (com.r.rplayer) -> Bluetooth Lyrics
+- Salt Music (com.salt.music) -> Hook Acquisition
+- Suvine Music (com.xuncorp.suvine.music) -> Meizu Status Bar Lyrics
+- Symfonium (app.symfonik.music.player) -> Hook Acquisition
+- Flamingo (unknown) -> Native API Support
+- [Cone Player](https://coneplayer.trantor.ink) (ink.trantor.coneplayer) -> Native API Support
 
 ---
 
-## 🛠 Applications Not Supported
+## 🛠 Unsupported Applications
 
 - YouTube Music
 - Spotify
-- If you have good adaptation methods, pull requests are welcome.
+- If you have good adaptation methods, PRs are welcome!
 
 ---
 
-## 🔧 Technical Overview
+## 🌟 API Project
 
-- Uses **Binder** for lyric transmission, abandoning the traditional broadcast method used by other similar APIs.
-- Avoids Hooking system interfaces directly; it is parasitic on the system framework and relies on the module's robust crash handling for greater stability.
-- Utilizes Binder for synchronous inter-process hookData transfer, offering better performance, lower latency, and the capability to transmit more complex hookData, and is less likely to trigger broadcast hookData restrictions.
-- Supports free binding or unbinding registration anytime, anywhere; even if not manually unbound, the module handles it automatically.
+- API Project Repository: [SuperLyricApi](https://github.com/HChenX/SuperLyricApi)
 
 ---
 
-## 🌟 How to Use
+## 📢 Project Statement
 
-- Install this lyric getter module, import the API into your application, and register it with a few simple lines of code.
-- API Project Address: [SuperLyricApi](https://github.com/HChenX/SuperLyricApi)
+- ⚠ **Using this module implies that you are willing to bear all consequences!**
+- ⚠ **This project assumes no responsibility for any derivative projects!**
+- ⚠ **Please credit the author when using code from this project!**
 
----
+## 🎉 Closing
 
-## 📢 Project Declaration
-
-- ⚠ **By using this module, you agree to bear all consequences**!
-- ⚠ **This project is not responsible for any derivative projects**!
-- ⚠ **Plagiarism will lead to the project becoming closed source! Please credit the author!**
-
-## 🎉 Conclusion
-
-💖 **Thank you for your support, Enjoy your day!** 🚀
+💖 **Thank you for your support, and enjoy your day!** 🚀

@@ -19,7 +19,6 @@
 package com.hchen.superlyric.hook.music;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 
 import androidx.annotation.NonNull;
 
@@ -31,11 +30,9 @@ import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
 import org.luckypray.dexkit.DexKitBridge;
-import org.luckypray.dexkit.query.FindClass;
 import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
-import org.luckypray.dexkit.result.ClassData;
 import org.luckypray.dexkit.result.MethodData;
 
 import java.lang.reflect.Method;
@@ -88,32 +85,5 @@ public final class Hihonor extends AbsPublisher {
             }
         });
         hook(method, returnResult(null));
-
-        Class<?> clazz = DexkitCache.findMember("hihonor$2", new IDexkit<ClassData>() {
-            @NonNull
-            @Override
-            public ClassData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
-                return bridge.findClass(FindClass.create()
-                    .matcher(ClassMatcher.create()
-                        .usingStrings("com/netease/cloudmusic/module/lyric/flyme/StatusBarLyricSettingManager.class:setSwitchStatus:(Z)V")
-                    )
-                ).single();
-            }
-        });
-        for (Method m : clazz.getDeclaredMethods()) {
-            if (m.getReturnType().equals(boolean.class)) {
-                hook(m, returnResult(true));
-            } else if (m.getParameterCount() == 1 && m.getParameterTypes()[0].equals(boolean.class)) {
-                hook(m, setArg(0, true));
-            } else if (m.getReturnType().equals(SharedPreferences.class)) {
-                hook(m, new AbsHook() {
-                    @Override
-                    public void after() {
-                        SharedPreferences sp = (SharedPreferences) getResult();
-                        sp.edit().putBoolean("status_bar_lyric_setting_key", true).apply();
-                    }
-                });
-            }
-        }
     }
 }

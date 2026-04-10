@@ -64,12 +64,7 @@ public final class QQMusic extends AbsPublisher {
 
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
-        // MockFlyme.mock();
-        // MockFlyme.notificationLyric(this);
-
         Class<?> marqueeLyricViewClass = findClass("com.lyricengine.ui.MarqueeLyricView");
-        if (marqueeLyricViewClass == null) return;
-
         durationField = DexkitCache.findMember("qq_music$1", new IDexkit<FieldData>() {
             @NonNull
             @Override
@@ -171,7 +166,8 @@ public final class QQMusic extends AbsPublisher {
             }).findFirst().orElseThrow();
         Field field1 = Arrays.stream(clazz.getDeclaredFields())
             .filter(new Predicate<Field>() {
-                @Override public boolean test(Field field) {
+                @Override
+                public boolean test(Field field) {
                     return Objects.equals(field.getType(), songInfoClass);
                 }
             }).findFirst().orElseThrow();
@@ -188,33 +184,6 @@ public final class QQMusic extends AbsPublisher {
                 }
             }
         );
-
-        // 不强开，容易造成误导
-        // Method method2 = DexkitCache.findMember("qq_music$4", new IDexkit() {
-        //     @NonNull
-        //     @Override
-        //     public BaseData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
-        //         return bridge.findMethod(FindMethod.create()
-        //             .matcher(MethodMatcher.create()
-        //                 .declaredClass(ClassMatcher.create()
-        //                     .usingStrings("[ifNeedTransfer] import ")
-        //                 )
-        //                 .name("getInt")
-        //             )
-        //         ).singleOrThrow(() -> new Throwable("Failed to find getInt method!!"));
-        //     }
-        // });
-        // hook(method2,
-        //     new AbsHook() {
-        //         @Override
-        //         public void before() {
-        //             String key = (String) getArg(0);
-        //             if (Objects.equals(key, "KEY_STATUS_BAR_LYRIC_SWITCH")) {
-        //                 setResult(1);
-        //             }
-        //         }
-        //     }
-        // );
 
         hookAllMethod(marqueeLyricViewClass,
             "setLyric", new AbsHook() {

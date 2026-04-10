@@ -96,7 +96,7 @@ public class PackageUtils {
                             listener.run();
                         }
 
-                        AndroidLog.logD(TAG, "[initialPackage()] Success loaded app list.");
+                        AndroidLog.logD(TAG, "Success loaded app list.");
                     } finally {
                         isLoaded = true;
                         mExecutorService.shutdown();

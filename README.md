@@ -10,54 +10,56 @@
 ![language](https://img.shields.io/badge/language-java-purple)
 
 <p><b><a href="README-en.md">English</a> | <a href="README.md">简体中文</a></b></p>
-<p>歌词获取器 | Super Lyric Getter</p>
+<p>歌词获取器 | Super Lyric</p>
 </div>
 
 ---
 
 ## ✨ 模块介绍
 
-- 一款全新的歌词获取器模块，使用了全新的 API！
+- 基于 Binder 数据传递的音乐软件歌词获取与发布模块！
+- 完全抛弃传统的广播模式，全面拥抱更高性能更低延迟的 Binder 跨进程能力！
 
 ---
 
 ## 🛠 支持的软件
 
-- 网易云音乐 (魅族状态栏歌词)
-- 网易云音乐荣耀版 (魅族状态栏歌词)
-- 酷狗音乐 (魅族状态栏歌词)
-- 酷狗音乐概念版 (魅族状态栏歌词)
-- 咪咕音乐 (魅族状态栏歌词)
-- APlayer (魅族状态栏歌词)
-- LMusic (魅族状态栏歌词)
-- 音流音乐 (魅族状态栏歌词)
-- 魅族音乐 (魅族状态栏歌词)
-- 椒盐音乐 (魅族状态栏歌词)
-- 糖醋音乐 (魅族状态栏歌词)
-- 青盐音乐 (魅族状态栏歌词)
-- Gramophone (魅族状态栏歌词)
-- MusicFree (桌面歌词)
-- 洛雪音乐 (桌面歌词)
-- 波点音乐 (状态栏歌词)
-- QQ 音乐 (状态栏歌词)
-- QQ 音乐小米版 (蓝牙歌词)
-- QQ 音乐魅族版 (蓝牙歌词)
-- OPPO 音乐 (车载蓝牙歌词)
-- RPlayer (车载蓝牙歌词)
-- 汽水音乐 (车载蓝牙歌词)
-- 酷我音乐 (蓝牙歌词)
-- 拟声音乐 (蓝牙歌词)
-- 华为音乐 (蓝牙歌词)
-- Kde (蓝牙歌词)
-- Apple Music (Hook)
-- Symfonium (Hook)
-- Flamingo (Api 原生支持)
-- [光锥音乐](https://coneplayer.trantor.ink) (Api 原生支持)
-- Poweramp (仅在软件歌词界面可以获取歌词)
+- APlayer (remix.myplayer) -> 魅族状态栏歌词
+- Apple Music (com.apple.android.music) -> Hook 获取
+- 音流音乐 (cn.aqzscn.stream_music) -> 魅族状态栏歌词
+- 波点音乐 (cn.wenyu.bodian) -> 状态栏歌词
+- 留声机 (org.akanework.gramophone) -> 魅族状态栏歌词
+- OPPO 音乐 (com.heytap.music) -> 蓝牙歌词
+- 海贝音乐 (com.hiby.music) -> 蓝牙歌词
+- 荣耀音乐 (com.hihonor.cloudmusic) -> 魅族状态栏歌词
+- 华为音乐 (com.huawei.music) -> 蓝牙歌词
+- Kde (org.kde.kdeconnect_tp) -> 蓝牙歌词
+- 酷狗音乐 (com.kugou.android) -> Hook 获取
+- 酷狗音乐概念版 (com.kugou.android.lite) -> Hook 获取
+- 酷我音乐 (cn.kuwo.player) -> 蓝牙歌词
+- LMusic (com.lalilu.lmusic) -> 魅族状态栏歌词
+- LX Music (cn.toside.music.mobile) -> 桌面歌词
+- 魅族音乐 (com.meizu.media.music) -> 魅族状态栏歌词
+- 拟声音乐 (com.mimicry.mymusic) -> 魅族状态栏歌词
+- 小米音乐 (com.miui.player) -> 蓝牙歌词
+- 咪咕音乐 (cmccwm.mobilemusic) -> 魅族状态栏歌词
+- MusicFree (fun.upup.musicfree) -> 桌面歌词
+- 网易云音乐 (com.netease.cloudmusic) -> 魅族状态栏歌词
+- OPPO 音乐 (com.oppo.music) -> 蓝牙歌词
+- Poweramp (com.maxmpz.audioplayer) -> 仅处于软件歌词界面时可获取到歌词
+- 青盐音乐 (com.xuncorp.qinalt.music) -> 魅族状态栏歌词
+- 汽水音乐 (com.luna.music) -> 蓝牙歌词
+- QQ 音乐 (com.tencent.qqmusic) -> 状态栏歌词
+- RPlayer (com.r.rplayer) -> 蓝牙歌词
+- 椒盐音乐 (com.salt.music) -> Hook 获取
+- 糖醋音乐 (com.xuncorp.suvine.music) -> 魅族状态栏歌词
+- Symfonium (app.symfonik.music.player) -> Hook 获取
+- Flamingo (unknown) -> Api 原生支持
+- [光锥音乐](https://coneplayer.trantor.ink) (ink.trantor.coneplayer) -> Api 原生支持
 
 ---
 
-## 🛠 不会提供支持的软件
+## 🛠 不支持的软件
 
 - YouTube Music
 - Spotify
@@ -65,27 +67,17 @@
 
 ---
 
-## 🔧 技术简介
+## 🌟 API 项目
 
-- 使用 Binder 进行歌词传递，摈弃了其他类似 API 使用的传统广播方式。
-- 摈弃对系统界面的 Hook ，直接寄生于系统框架，并依赖于模块的健全崩溃处理，会更加稳定。
-- 使用 Binder 进行同步的跨进程数据传递，拥有更佳的性能和更低的延迟与传递更复杂数据的能力，也更不容易触发广播的数据限制。
-- 支持随时随地的自由绑定或解绑注册，就算不手动解绑，模块也会自动处理~
-
----
-
-## 🌟 使用方法
-
-- 安装本歌词获取器模块，并在你的软件中导入 API，即可通过简单几句代码实现注册。
 - API 项目地址：[SuperLyricApi](https://github.com/HChenX/SuperLyricApi)
 
 ---
 
 ## 📢 项目声明
 
-- ⚠ **使用本模块即代表愿意承担一切后果**！
-- ⚠ **任何衍生项目，本项目不承担任何责任**！
-- ⚠ **抄袭将导致项目闭源！请注明作者！**
+- ⚠ **使用本模块即代表愿意承担一切后果！**
+- ⚠ **任何衍生项目，本项目不承担任何责任！**
+- ⚠ **使用本项目代码时请注明作者！**
 
 ## 🎉结尾
 

@@ -30,7 +30,6 @@ import androidx.annotation.NonNull;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.hooktool.log.AndroidLog;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
@@ -39,6 +38,7 @@ import org.luckypray.dexkit.result.MethodDataList;
 
 import java.lang.reflect.Method;
 import java.util.Arrays;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /**
@@ -66,31 +66,33 @@ public final class ScreenHelper {
                 }
             });
 
-            Arrays.stream(methods).forEach(method -> {
-                String className = method.getDeclaringClass().getSimpleName();
-                if (!className.contains("Fragment") && !className.contains("Activity")) {
-                    if (Arrays.stream(excludes).noneMatch(new Predicate<String>() {
-                        @Override
-                        public boolean test(String exclude) {
-                            return className.contains(exclude);
-                        }
-                    })) {
-                        AndroidLog.logI(TAG, "[screenOffNotStopLyric]: hook method: " + method);
-
-                        hook(method,
-                            new AbsHook() {
+            Arrays.stream(methods).forEach(
+                new Consumer<Method>() {
+                    @Override
+                    public void accept(Method method) {
+                        String className = method.getDeclaringClass().getSimpleName();
+                        if (!className.contains("Fragment") && !className.contains("Activity")) {
+                            if (Arrays.stream(excludes).noneMatch(new Predicate<String>() {
                                 @Override
-                                public void before() {
-                                    Intent intent = (Intent) getArg(1);
-                                    if (TextUtils.equals(intent.getAction(), Intent.ACTION_SCREEN_OFF)) {
-                                        setResult(null);
-                                    }
+                                public boolean test(String exclude) {
+                                    return className.contains(exclude);
                                 }
+                            })) {
+                                hook(method,
+                                    new AbsHook() {
+                                        @Override
+                                        public void before() {
+                                            Intent intent = (Intent) getArg(1);
+                                            if (TextUtils.equals(intent.getAction(), Intent.ACTION_SCREEN_OFF)) {
+                                                setResult(null);
+                                            }
+                                        }
+                                    }
+                                );
                             }
-                        );
+                        }
                     }
-                }
-            });
+                });
         } catch (Throwable e) {
             logE(TAG, e);
         }
