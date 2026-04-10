@@ -18,6 +18,7 @@
  */
 package com.hchen.superlyric.ui.layout
 
+import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -99,6 +100,7 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import top.yukonga.miuix.kmp.window.WindowDialog
 
 @Composable
+@SuppressLint("LocalContextGetResourceValueCall")
 fun SupportAppLayout(
     isWideScreen: Boolean = false
 ) {

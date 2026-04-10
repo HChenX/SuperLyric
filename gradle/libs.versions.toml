@@ -3,7 +3,7 @@
 agp = "9.1.0"
 kotlin = "2.1.0"
 appcompat = "1.7.1"
-annotation = "1.9.1"
+annotation = "1.10.0"
 composeBom = "2026.03.01"
 foundationAndroid = "1.10.6"
 activityCompose = "1.13.0"

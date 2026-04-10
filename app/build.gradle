@@ -87,6 +87,10 @@ android {
         }
     }
 
+    // lint {
+    //     baseline = file("lint-baseline.xml")
+    // }
+
     // packagingOptions {
     //     resources {
     //         excludes += "/META-INF/**"

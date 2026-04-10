@@ -18,6 +18,7 @@
  */
 package com.hchen.superlyric.ui.layout
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
@@ -92,6 +93,7 @@ import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import top.yukonga.miuix.kmp.window.WindowBottomSheet
 
 @Composable
+@SuppressLint("LocalContextGetResourceValueCall")
 fun AboutLayout(
     isWideScreen: Boolean = false
 ) {
