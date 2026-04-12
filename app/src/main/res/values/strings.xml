@@ -5,6 +5,9 @@
     <string name="home">Home</string>
     <string name="about">About</string>
 
+    <string name="warn">Warning</string>
+    <string name="service_unavailable">SuperLyric service is unavailable and will not be able to transmit lyrics data properly. Please restart your phone and try again! \Code: $s</string>
+
     <string name="select_search">Search app</string>
     <string name="select_list_empty">The app list is empty</string>
     <string name="select_none">No search results available at the moment</string>

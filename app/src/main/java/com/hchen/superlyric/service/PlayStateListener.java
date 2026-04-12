@@ -125,7 +125,7 @@ public final class PlayStateListener {
                          PlaybackState.STATE_STOPPED -> {
                         mService.sendSystemEvent(
                             mController.getPackageName(),
-                            new SuperLyricData().setPlaybackState(state)
+                            new SuperLyricData()
                         );
                     }
                     default -> {

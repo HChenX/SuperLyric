@@ -53,7 +53,9 @@ public class Application extends android.app.Application implements XposedServic
         PrefsTool.prefs(this, "super_lyric_prefs");
         XposedServiceHelper.registerListener(this);
 
-        SuperLyricHelper.registerPublisher();
+        if (SuperLyricHelper.isAvailable()) {
+            SuperLyricHelper.registerPublisher();
+        }
     }
 
     public static boolean isXposedActive() {

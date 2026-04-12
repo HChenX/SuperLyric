@@ -6,6 +6,9 @@
     <string name="home">主页</string>
     <string name="about">关于</string>
 
+    <string name="warn">警告</string>
+    <string name="service_unavailable">SuperLyric 服务不可用，将无法正常传递歌词数据，请重启手机后重试！\n代码：$s</string>
+
     <string name="select_search">搜索应用</string>
     <string name="select_list_empty">应用列表为空</string>
     <string name="select_none">暂无搜索结果</string>
