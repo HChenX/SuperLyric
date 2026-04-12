@@ -32,6 +32,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
@@ -42,9 +43,11 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -65,13 +68,16 @@ import com.hchen.superlyric.ui.layout.SupportAppLayout
 import com.hchen.superlyric.ui.viewmodel.MainViewModel
 import com.hchen.superlyric.ui.viewmodel.MainViewModelFactory
 import com.hchen.superlyric.utils.PackageUtils
+import com.hchen.superlyricapi.SuperLyricHelper
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.NavigationBar
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.VerticalDivider
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -82,6 +88,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import top.yukonga.miuix.kmp.window.WindowDialog
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels {
@@ -114,6 +121,11 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        var showUnavailable by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            showUnavailable = !SuperLyricHelper.isAvailable()
+        }
+
         CompositionLocalProvider(
             LocalViewModel provides viewModel,
             LocalMiuixScrollBehavior provides scrollBehavior,
@@ -126,6 +138,27 @@ class MainActivity : ComponentActivity() {
                             (maxWidth > UIConstants.MEDIUM_WIDTH_THRESHOLD && (maxHeight.value / maxWidth.value < UIConstants.PORTRAIT_ASPECT_RATIO_THRESHOLD))
                     if (isWideScreen) WideScreenLayout()
                     else CompactScreenLayout()
+                }
+
+                WindowDialog(
+                    show = showUnavailable,
+                    title = stringResource(R.string.warn),
+                    summary = stringResource(
+                        R.string.service_unavailable,
+                        runCatching { SuperLyricHelper.registerPublisher() }
+                            .exceptionOrNull()?.message ?: "Unknown"
+                    )
+                ) {
+                    Row(horizontalArrangement = Arrangement.Absolute.SpaceBetween) {
+                        TextButton(
+                            text = stringResource(android.R.string.ok),
+                            onClick = {
+                                showUnavailable = false
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.textButtonColorsPrimary()
+                        )
+                    }
                 }
             }
         }
@@ -167,7 +200,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         ) {
-            AppPager(
+            UiContent(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(bottom = it.calculateBottomPadding()),
@@ -251,7 +284,7 @@ class MainActivity : ComponentActivity() {
                             .padding(end = 6.dp),
                         popupHost = {}
                     ) { paddingValues ->
-                        AppPager(
+                        UiContent(
                             isWideScreen = true
                         )
                     }
@@ -261,7 +294,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun AppPager(
+    private fun UiContent(
         modifier: Modifier = Modifier,
         isWideScreen: Boolean = false
     ) {
