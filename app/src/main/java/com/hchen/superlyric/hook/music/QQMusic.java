@@ -99,7 +99,7 @@ public final class QQMusic extends AbsPublisher {
                         )
                         .usingStrings("showLyricView operateLyric:true")
                     )
-                ).singleOrThrow(() -> new Throwable("Failed to find visibility method!!"));
+                ).single();
             }
         });
         Class<?> clazz = method.getDeclaringClass();
@@ -112,7 +112,7 @@ public final class QQMusic extends AbsPublisher {
                         .declaredClass(clazz)
                         .usingStrings("showLyricTipsView operateLyric:false")
                     )
-                ).singleOrThrow(() -> new Throwable("Failed to find visibility 1 method!!"));
+                ).single();
             }
         });
         hook(method1,

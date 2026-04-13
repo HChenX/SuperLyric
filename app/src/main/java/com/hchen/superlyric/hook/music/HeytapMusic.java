@@ -60,7 +60,7 @@ public final class HeytapMusic extends AbsPublisher {
                         .declaredClass("com.allsaints.music.player.thirdpart.MediaSessionHelper")
                         .usingStrings("isCarBluetoothConnected 没有蓝牙连接权限")
                     )
-                ).singleOrThrow(() -> new Throwable("Failed to find bluetooth method."));
+                ).single();
             }
         });
         hook(method, returnResult(true));

@@ -50,8 +50,8 @@ public final class InitHook extends ModuleEntrance {
     @Override
     public void initModuleConfig() {
         ModuleConfig.setLogTag(TAG);
-        ModuleConfig.setLogLevel(BuildConfig.DEBUG ? LOG_D : LocalConfig.getLogLevel());
         ModuleConfig.setPrefsName("super_lyric_prefs");
+        ModuleConfig.setLogLevel(BuildConfig.DEBUG ? LOG_D : LocalConfig.getLogLevelForXposed());
         ModuleConfig.setShowHookSuccessLog(BuildConfig.DEBUG);
         ModuleConfig.setLogExpandPaths("com.hchen.superlyric.hook");
         ModuleConfig.setLogExpandIgnoreClassNames("LyricRelease");

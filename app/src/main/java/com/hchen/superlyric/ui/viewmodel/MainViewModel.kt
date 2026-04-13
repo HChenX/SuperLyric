@@ -72,7 +72,9 @@ class MainViewModel : ViewModel() {
 
     private fun loadData() {
         viewModelScope.launch {
-            _logLevel.value = prefs.getInt(PrefsKey.LOG_LEVEL, 0)
+            if (::prefs.isInitialized) {
+                _logLevel.value = prefs.getInt(PrefsKey.LOG_LEVEL, 0)
+            }
             _hookApps.value = PackageUtils.getMediaAppHookList().toList()
             _apiApps.value = PackageUtils.getMediaAppApiList().toList()
         }

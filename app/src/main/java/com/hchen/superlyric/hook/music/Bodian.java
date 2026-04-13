@@ -65,7 +65,7 @@ public final class Bodian extends AbsPublisher {
                         .returnType(float.class)
                         .addInvoke("Landroid/graphics/Paint;->measureText(Ljava/lang/String;)F")
                     )
-                ).singleOrThrow(() -> new Throwable("Failed to find lyric method."));
+                ).single();
             }
         });
         hook(methodData,

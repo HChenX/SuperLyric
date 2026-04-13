@@ -265,7 +265,12 @@ public final class Apple extends AbsPublisher {
                             logD(TAG, "Current song title: " + currentTitle);
 
                             // 请求当前歌词
-                            mainHandler.postDelayed(() -> requestLyrics(), 400);
+                            mainHandler.postDelayed(new Runnable() {
+                                @Override
+                                public void run() {
+                                    requestLyrics();
+                                }
+                            }, 400);
                         }
                     } catch (Exception e) {
                         logE(TAG, "Error getting MediaMetadata!!", e);

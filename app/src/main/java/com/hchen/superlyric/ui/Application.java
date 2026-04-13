@@ -28,6 +28,7 @@ import com.hchen.hooktool.ModuleConfig;
 import com.hchen.hooktool.utils.PrefsTool;
 import com.hchen.superlyric.BuildConfig;
 import com.hchen.superlyric.data.LocalConfig;
+import com.hchen.superlyric.data.PrefsKey;
 import com.hchen.superlyricapi.SuperLyricHelper;
 
 import java.util.ArrayList;
@@ -47,8 +48,8 @@ public class Application extends android.app.Application implements XposedServic
         super.onCreate();
 
         ModuleConfig.setLogTag("SuperLyric");
-        ModuleConfig.setLogLevel(BuildConfig.DEBUG ? LOG_D : LocalConfig.getLogLevel());
         ModuleConfig.setPrefsName("super_lyric_prefs");
+        ModuleConfig.setLogLevel(BuildConfig.DEBUG ? LOG_D : LocalConfig.getLogLevelForModule(this));
 
         PrefsTool.prefs(this, "super_lyric_prefs");
         XposedServiceHelper.registerListener(this);
@@ -78,6 +79,11 @@ public class Application extends android.app.Application implements XposedServic
     public void onServiceBind(@NonNull XposedService service) {
         isXposedActive = true;
         mRemotePreferences = service.getRemotePreferences(ModuleConfig.getPrefsName());
+
+        PrefsTool.prefs(this)
+            .edit()
+            .putInt(PrefsKey.LOG_LEVEL, mRemotePreferences.getInt(PrefsKey.LOG_LEVEL, 0))
+            .apply();
 
         for (Consumer<SharedPreferences> l : listeners) {
             l.accept(mRemotePreferences);

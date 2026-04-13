@@ -62,8 +62,10 @@ import androidx.core.content.edit
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.net.toUri
 import com.hchen.hooktool.utils.InvokeTool
+import com.hchen.hooktool.utils.PrefsTool
 import com.hchen.superlyric.BuildConfig
 import com.hchen.superlyric.R
+import com.hchen.superlyric.data.PrefsKey
 import com.hchen.superlyric.ui.Application
 import com.hchen.superlyric.ui.data.LocalMiuixScrollBehavior
 import com.hchen.superlyric.ui.data.LocalViewModel
@@ -316,6 +318,7 @@ fun AboutLayout(
                         summary = stringResource(R.string.log_level_details),
                         onSelectedIndexChange = {
                             viewModel.handleAction(MainUiAction.UpdateLogLevel(it))
+                            PrefsTool.prefs(context).edit { putInt(PrefsKey.LOG_LEVEL, it) }
                         }
                     )
                 }
