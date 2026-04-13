@@ -457,7 +457,7 @@ public final class Apple extends AbsPublisher {
                 }
 
                 if (currentLine != null && (lastShownLyric == null || lastShownLyric != currentLine)) {
-                    sendSuperLyricData(
+                    sendLyric(
                         new SuperLyricData()
                             .setLyric(
                                 new SuperLyricLine(

@@ -285,7 +285,7 @@ public final class KuGou extends AbsPublisher {
                             //     String[] transliterationWords = transliterationWordss[currentLine];
                             //     AndroidLog.logI(TAG, "TransliterationWords: " + Arrays.toString(transliterationWords));
                             // }
-                            sendSuperLyricData(data);
+                            sendLyric(data);
                         }
                     } else {
                         sendStop();

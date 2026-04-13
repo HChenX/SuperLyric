@@ -27,7 +27,7 @@ import android.os.RemoteException;
 import androidx.annotation.NonNull;
 
 import com.hchen.hooktool.core.CoreTool;
-import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyricapi.ISuperLyricManager;
 import com.hchen.superlyricapi.ISuperLyricReceiver;
 import com.hchen.superlyricapi.SuperLyricData;
@@ -53,7 +53,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         public void onCallbackDied(ISuperLyricReceiver callbackInterface) {
             super.onCallbackDied(callbackInterface);
             mReceiverBinders.remove(callbackInterface.asBinder());
-            AndroidLog.logW(TAG, "Receiver died: " + callbackInterface + ", binder: " + callbackInterface.asBinder());
+            XposedLog.logW(TAG, "Receiver died: " + callbackInterface + ", binder: " + callbackInterface.asBinder());
         }
     };
     private final ExecutorService mBroadcastExecutor = Executors.newSingleThreadExecutor(
@@ -80,7 +80,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         if (!packageName.isEmpty()) {
             mPublishers.add(packageName);
         }
-        AndroidLog.logI(TAG, "Register publisher: " + packageName + ", pid: " + pid);
+        XposedLog.logI(TAG, "Register publisher: " + packageName + ", pid: " + pid);
     }
 
     @Override
@@ -88,7 +88,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         int pid = Binder.getCallingPid();
         String packageName = getPackageNameWithPid(pid);
         mPublishers.remove(packageName);
-        AndroidLog.logI(TAG, "Unregister publisher: " + packageName + ", pid: " + pid);
+        XposedLog.logI(TAG, "Unregister publisher: " + packageName + ", pid: " + pid);
     }
 
     @Override
@@ -106,7 +106,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
         int pid = Binder.getCallingPid();
         String packageName = getPackageNameWithPid(pid);
-        notifyReceiver(packageName, data, new IReceiverCallBack() {
+        notifyReceiver(packageName, data, "lyric", new IReceiverCallBack() {
             @Override
             public void call(ISuperLyricReceiver receiver, String publisher, SuperLyricData data) throws RemoteException {
                 receiver.onLyric(publisher, data);
@@ -122,7 +122,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
         int pid = Binder.getCallingPid();
         String packageName = getPackageNameWithPid(pid);
-        notifyReceiver(packageName, data, new IReceiverCallBack() {
+        notifyReceiver(packageName, data, "stop", new IReceiverCallBack() {
             @Override
             public void call(ISuperLyricReceiver receiver, String publisher, SuperLyricData data) throws RemoteException {
                 receiver.onStop(publisher, data);
@@ -141,7 +141,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
                 mNonSystemPlayStateListeners.remove(packageName);
             }
 
-            AndroidLog.logI(TAG, "System play state listener enabled: " + enabled + ", caller: " + packageName);
+            XposedLog.logI(TAG, "System play state listener enabled: " + enabled + ", caller: " + packageName);
         }
     }
 
@@ -151,7 +151,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
             mCallbacks.register(receiver);
             mReceiverBinders.add(receiver.asBinder());
 
-            AndroidLog.logI(TAG, "Register receiver: " + receiver + ", binder: " + receiver.asBinder());
+            XposedLog.logI(TAG, "Register receiver: " + receiver + ", binder: " + receiver.asBinder());
         }
     }
 
@@ -161,7 +161,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
             mCallbacks.unregister(receiver);
             mReceiverBinders.remove(receiver.asBinder());
 
-            AndroidLog.logI(TAG, "Unregister receiver: " + receiver + ", binder: " + receiver.asBinder());
+            XposedLog.logI(TAG, "Unregister receiver: " + receiver + ", binder: " + receiver.asBinder());
         }
     }
 
@@ -171,7 +171,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     }
 
     public void onPackageDied(@NonNull String packageName) {
-        notifyReceiver(packageName, new SuperLyricData(), new IReceiverCallBack() {
+        notifyReceiver(packageName, new SuperLyricData(), "stop", new IReceiverCallBack() {
             @Override
             public void call(ISuperLyricReceiver receiver, String publisher, SuperLyricData data) throws RemoteException {
                 receiver.onStop(publisher, data);
@@ -183,7 +183,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     }
 
     public void sendSystemEvent(String packageName, SuperLyricData data) {
-        notifyReceiver(packageName, data, new IReceiverCallBack() {
+        notifyReceiver(packageName, data, "system stop", new IReceiverCallBack() {
             @Override
             public void call(ISuperLyricReceiver receiver, String publisher, SuperLyricData data) throws RemoteException {
                 receiver.onStop(publisher, data);
@@ -191,7 +191,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         });
     }
 
-    private void notifyReceiver(String publisher, SuperLyricData data, IReceiverCallBack callBack) {
+    private void notifyReceiver(String publisher, SuperLyricData data, String type, IReceiverCallBack callBack) {
         if (mPublishers.contains(publisher)) {
             mBroadcastExecutor.execute(new Runnable() {
                 @Override
@@ -200,9 +200,11 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
                     try {
                         for (int i = 0; i < itemCount; i++) {
                             try {
-                                callBack.call(mCallbacks.getBroadcastItem(i), publisher, data);
+                                ISuperLyricReceiver receiver = mCallbacks.getBroadcastItem(i);
+                                callBack.call(receiver, publisher, data);
+                                XposedLog.logD(TAG, "Send " + type + " data: " + data + ", publisher: " + publisher + ", receiver: " + receiver);
                             } catch (RemoteException e) {
-                                AndroidLog.logW(TAG, "[sendStop()] RemoteException!!", e);
+                                XposedLog.logW(TAG, e);
                             }
                         }
                     } finally {

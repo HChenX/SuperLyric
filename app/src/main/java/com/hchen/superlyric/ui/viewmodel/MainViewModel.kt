@@ -19,11 +19,14 @@
 package com.hchen.superlyric.ui.viewmodel
 
 import android.content.SharedPreferences
+import androidx.core.content.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.hchen.hooktool.data.AppData
 import com.hchen.superlyric.data.ApiAppData
+import com.hchen.superlyric.data.PrefsKey
+import com.hchen.superlyric.ui.Application
 import com.hchen.superlyric.utils.PackageUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,6 +38,9 @@ class MainViewModel : ViewModel() {
     private lateinit var prefs: SharedPreferences
 
     // ---------- 原始数据 ----------
+    // 日志等级
+    private val _logLevel = MutableStateFlow<Int>(0)
+    val logLevel = _logLevel.asStateFlow()
 
     // 内置应用列表
     private val _hookApps = MutableStateFlow<List<AppData>>(emptyList())
@@ -55,10 +61,10 @@ class MainViewModel : ViewModel() {
 
     // ---------- 初始化 ----------
     init {
-        // Application.addPrefsReadyListener {
-        //     prefs = it
-        //     loadData()
-        // }
+        Application.addPrefsReadyListener {
+            prefs = it
+            loadData()
+        }
         PackageUtils.addAppLoadedListener {
             loadData()
         }
@@ -66,6 +72,7 @@ class MainViewModel : ViewModel() {
 
     private fun loadData() {
         viewModelScope.launch {
+            _logLevel.value = prefs.getInt(PrefsKey.LOG_LEVEL, 0)
             _hookApps.value = PackageUtils.getMediaAppHookList().toList()
             _apiApps.value = PackageUtils.getMediaAppApiList().toList()
         }
@@ -74,6 +81,11 @@ class MainViewModel : ViewModel() {
     // ---------- 事件处理 ----------
     fun handleAction(action: MainUiAction) {
         when (action) {
+            is MainUiAction.UpdateLogLevel -> {
+                prefs.edit { putInt(PrefsKey.LOG_LEVEL, action.value) }
+                _logLevel.value = action.value
+            }
+
             is MainUiAction.Refresh -> {
                 refreshData()
             }
@@ -101,6 +113,7 @@ class MainViewModel : ViewModel() {
 }
 
 sealed class MainUiAction {
+    data class UpdateLogLevel(val value: Int) : MainUiAction()
     data object Refresh : MainUiAction()
     data class Searching(val isSearching: Boolean) : MainUiAction()
     data class CurrentApp(val appData: AppData) : MainUiAction()

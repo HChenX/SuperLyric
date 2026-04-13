@@ -19,7 +19,6 @@
 package com.hchen.superlyric.ui;
 
 import static com.hchen.hooktool.ModuleConfig.LOG_D;
-import static com.hchen.hooktool.ModuleConfig.LOG_I;
 
 import android.content.SharedPreferences;
 
@@ -28,6 +27,7 @@ import androidx.annotation.NonNull;
 import com.hchen.hooktool.ModuleConfig;
 import com.hchen.hooktool.utils.PrefsTool;
 import com.hchen.superlyric.BuildConfig;
+import com.hchen.superlyric.data.LocalConfig;
 import com.hchen.superlyricapi.SuperLyricHelper;
 
 import java.util.ArrayList;
@@ -47,7 +47,7 @@ public class Application extends android.app.Application implements XposedServic
         super.onCreate();
 
         ModuleConfig.setLogTag("SuperLyric");
-        ModuleConfig.setLogLevel(BuildConfig.DEBUG ? LOG_D : LOG_I);
+        ModuleConfig.setLogLevel(BuildConfig.DEBUG ? LOG_D : LocalConfig.getLogLevel());
         ModuleConfig.setPrefsName("super_lyric_prefs");
 
         PrefsTool.prefs(this, "super_lyric_prefs");

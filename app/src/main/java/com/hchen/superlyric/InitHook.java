@@ -19,7 +19,6 @@
 package com.hchen.superlyric;
 
 import static com.hchen.hooktool.ModuleConfig.LOG_D;
-import static com.hchen.hooktool.ModuleConfig.LOG_I;
 
 import android.content.Context;
 
@@ -33,6 +32,7 @@ import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.ModuleEntrance;
 import com.hchen.hooktool.log.AndroidLog;
 import com.hchen.hooktool.utils.PrefsTool;
+import com.hchen.superlyric.data.LocalConfig;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
@@ -50,7 +50,7 @@ public final class InitHook extends ModuleEntrance {
     @Override
     public void initModuleConfig() {
         ModuleConfig.setLogTag(TAG);
-        ModuleConfig.setLogLevel(BuildConfig.DEBUG ? LOG_D : LOG_I);
+        ModuleConfig.setLogLevel(BuildConfig.DEBUG ? LOG_D : LocalConfig.getLogLevel());
         ModuleConfig.setPrefsName("super_lyric_prefs");
         ModuleConfig.setShowHookSuccessLog(BuildConfig.DEBUG);
         ModuleConfig.setLogExpandPaths("com.hchen.superlyric.hook");

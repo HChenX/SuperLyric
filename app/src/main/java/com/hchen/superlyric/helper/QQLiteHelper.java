@@ -24,12 +24,12 @@ import static com.hchen.hooktool.core.CoreTool.hookMethod;
 import static com.hchen.hooktool.core.CoreTool.returnResult;
 import static com.hchen.hooktool.core.CoreTool.setField;
 import static com.hchen.superlyric.hook.AbsPublisher.sendLyric;
-import static com.hchen.superlyric.hook.AbsPublisher.sendSuperLyricData;
 
 import android.os.Message;
 
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.hooktool.log.XposedLog;
+import com.hchen.superlyric.hook.AbsPublisher;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricLine;
 import com.hchen.superlyricapi.SuperLyricWord;
@@ -124,7 +124,7 @@ public final class QQLiteHelper {
                                     }
                                 }
 
-                                sendSuperLyricData(
+                                AbsPublisher.sendLyric(
                                     new SuperLyricData()
                                         .setTitle(mTitle)
                                         .setArtist(mArtist)

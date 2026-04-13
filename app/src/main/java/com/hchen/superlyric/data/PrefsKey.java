@@ -16,18 +16,8 @@
 
  * Copyright (C) 2025-2026 HChenX
  */
-package com.hchen.superlyric.ui.data
+package com.hchen.superlyric.data;
 
-import androidx.compose.foundation.pager.PagerState
-import androidx.compose.runtime.compositionLocalOf
-import com.hchen.superlyric.ui.viewmodel.MainViewModel
-import top.yukonga.miuix.kmp.basic.ScrollBehavior
-
-val LocalViewModel =
-    compositionLocalOf<MainViewModel> { error("No view model.") }
-val LocalMiuixScrollBehavior =
-    compositionLocalOf<ScrollBehavior> { error("No scroll behavior") }
-val LocalPagerState =
-    compositionLocalOf<PagerState> { error("No pager state.") }
-val LocalHandlePagerChange =
-    compositionLocalOf<(Boolean, Int) -> Unit> { error("No handle pager change.") }
+public class PrefsKey {
+    public static final String LOG_LEVEL = "log_level";
+}

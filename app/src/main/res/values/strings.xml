@@ -8,6 +8,14 @@
     <string name="warn">Warning</string>
     <string name="service_unavailable">SuperLyric service is unavailable and will not be able to transmit lyrics data properly. Please restart your phone and try again! \Code: $s</string>
 
+    <string name="log_level">Log level</string>
+    <string name="log_level_details">The modifications can only take full effect after restarting the system</string>
+
+    <string name="log_I">Info</string>
+    <string name="log_W">Warn</string>
+    <string name="log_E">Error</string>
+    <string name="log_D">Debug</string>
+
     <string name="select_search">Search app</string>
     <string name="select_list_empty">The app list is empty</string>
     <string name="select_none">No search results available at the moment</string>

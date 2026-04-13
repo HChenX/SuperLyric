@@ -66,6 +66,8 @@ import com.hchen.superlyric.BuildConfig
 import com.hchen.superlyric.R
 import com.hchen.superlyric.ui.Application
 import com.hchen.superlyric.ui.data.LocalMiuixScrollBehavior
+import com.hchen.superlyric.ui.data.LocalViewModel
+import com.hchen.superlyric.ui.viewmodel.MainUiAction
 import com.hchen.superlyricapi.ISuperLyricReceiver
 import com.hchen.superlyricapi.SuperLyricData
 import com.hchen.superlyricapi.SuperLyricHelper
@@ -87,6 +89,7 @@ import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Ok
 import top.yukonga.miuix.kmp.layout.DialogDefaults
 import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
@@ -97,11 +100,14 @@ import top.yukonga.miuix.kmp.window.WindowBottomSheet
 fun AboutLayout(
     isWideScreen: Boolean = false
 ) {
+    val viewModel = LocalViewModel.current
     val context = LocalContext.current
     val scrollBehavior = LocalMiuixScrollBehavior.current
     val icon = remember {
         context.packageManager.getApplicationIcon(context.packageName)
     }
+
+    val logLevel by viewModel.logLevel.collectAsState()
 
     val contributor = remember {
         listOf(
@@ -122,6 +128,15 @@ fun AboutLayout(
             R.drawable.ghhccghk,
             R.drawable.yifeplayte,
             R.drawable.yukonga
+        )
+    }
+
+    val logLevels = remember {
+        listOf(
+            context.getString(R.string.log_I),
+            context.getString(R.string.log_W),
+            context.getString(R.string.log_E),
+            context.getString(R.string.log_D)
         )
     }
 
@@ -292,6 +307,15 @@ fun AboutLayout(
                             Application.getRemotePreferences().edit { putInt("super_lyric_dexkit_cache_version", ++version) }
 
                             Toast.makeText(context, context.getString(R.string.cleared), Toast.LENGTH_SHORT).show()
+                        }
+                    )
+                    WindowDropdownPreference(
+                        items = logLevels,
+                        selectedIndex = logLevel,
+                        title = stringResource(R.string.log_level),
+                        summary = stringResource(R.string.log_level_details),
+                        onSelectedIndexChange = {
+                            viewModel.handleAction(MainUiAction.UpdateLogLevel(it))
                         }
                     )
                 }

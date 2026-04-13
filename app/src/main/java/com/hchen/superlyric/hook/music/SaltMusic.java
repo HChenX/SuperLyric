@@ -218,10 +218,8 @@ public final class SaltMusic extends AbsPublisher {
                                 translation = TextUtils.equals(strings[0], sb.toString()) ? strings[1] : strings[0];
                             }
 
-                            if (words.length > 0) {
-                                if (words[0].getWord().length() != 1) {
-                                    words = null;
-                                }
+                            if (words.length == 1) {
+                                words = null;
                             }
 
                             String name = null;
@@ -236,7 +234,7 @@ public final class SaltMusic extends AbsPublisher {
                                 }
                             }
 
-                            sendSuperLyricData(new SuperLyricData()
+                            sendLyric(new SuperLyricData()
                                 .setTitle(name)
                                 .setArtist(artist)
                                 .setAlbum(album)

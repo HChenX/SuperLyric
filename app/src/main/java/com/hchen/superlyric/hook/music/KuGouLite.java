@@ -224,7 +224,7 @@ public final class KuGouLite extends AbsPublisher {
             }
         }
 
-        sendSuperLyricData(data);
+        sendLyric(data);
     }
 
     private void hookLocalBroadcast(String clazz) {

@@ -151,7 +151,7 @@ public final class Netease extends AbsPublisher {
                         int endTime = (int) callMethod(mSentence, "getEndTime");
                         int startTime = (int) callMethod(mSentence, "getStartTime");
 
-                        sendSuperLyricData(
+                        sendLyric(
                             new SuperLyricData()
                                 .setTitle(name)
                                 .setArtist(artists)

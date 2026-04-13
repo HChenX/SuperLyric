@@ -30,7 +30,6 @@ import androidx.annotation.NonNull;
 import com.hchen.hooktool.AbsModule;
 import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.hooktool.log.AndroidLog;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricHelper;
 import com.hchen.superlyricapi.SuperLyricLine;
@@ -150,10 +149,6 @@ public abstract class AbsPublisher extends AbsModule {
     }
 
     public static void sendLyric(String lyric, int delay) {
-        sendLyric(lyric, delay, new SuperLyricData());
-    }
-
-    public static void sendLyric(String lyric, int delay, @NonNull SuperLyricData data) {
         if (lyric == null) return;
 
         lyric = lyric.trim();
@@ -161,19 +156,19 @@ public abstract class AbsPublisher extends AbsModule {
         if (TextUtils.equals(lyric, mLastLyric)) return;
         mLastLyric = lyric;
 
-        data.setLyric(
-            new SuperLyricLine(
-                lyric,
-                delay
-            )
+        sendLyric(
+            new SuperLyricData()
+                .setLyric(
+                    new SuperLyricLine(
+                        lyric,
+                        delay
+                    )
+                )
         );
-
-        sendSuperLyricData(data);
     }
 
-    public static void sendSuperLyricData(@NonNull SuperLyricData data) {
+    public static void sendLyric(@NonNull SuperLyricData data) {
         SuperLyricHelper.sendLyric(data);
-        AndroidLog.logD("LyricRelease", "Send super lyric data: " + data);
     }
 
     public static void sendStop() {
@@ -182,6 +177,5 @@ public abstract class AbsPublisher extends AbsModule {
 
     public static void sendStop(@NonNull SuperLyricData data) {
         SuperLyricHelper.sendStop(data);
-        AndroidLog.logD("LyricRelease", "Send stop: " + data);
     }
 }

@@ -208,7 +208,7 @@ public final class Qishui extends AbsPublisher {
                             ));
                         }
 
-                        sendSuperLyricData(superLyricData);
+                        sendLyric(superLyricData);
                         // AndroidLog.logI(TAG, sentence.toString());
                     }
                 }
