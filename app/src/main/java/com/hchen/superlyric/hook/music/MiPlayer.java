@@ -21,7 +21,7 @@ package com.hchen.superlyric.hook.music;
 import androidx.annotation.NonNull;
 
 import com.hchen.auto.AutoHook;
-import com.hchen.superlyric.helper.QQLiteHelper;
+import com.hchen.superlyric.helper.QQMusicInternalHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
@@ -31,6 +31,6 @@ import com.hchen.superlyric.hook.AbsPublisher;
 public final class MiPlayer extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
-        QQLiteHelper.hookLyric();
+        QQMusicInternalHelper.hookLyric();
     }
 }

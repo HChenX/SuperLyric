@@ -16,59 +16,57 @@
 
  * Copyright (C) 2025-2026 HChenX
  */
-package com.hchen.superlyric.hook.music;
+package com.hchen.superlyric.helper;
 
-import android.content.Context;
+import static com.hchen.hooktool.core.CoreTool.hook;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.superlyric.helper.MeizuHelper;
-import com.hchen.superlyric.helper.NeteaseHelper;
+import com.hchen.hooktool.core.CoreTool;
 import com.hchen.superlyric.hook.AbsPublisher;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
-import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.result.MethodData;
 
 import java.lang.reflect.Method;
 
 /**
- * 荣耀音乐
+ * OPPO/Heytap 音乐共享逻辑
+ * <p>
+ * 提取设备模拟、MediaMetadata 歌词拦截和蓝牙连接状态 Hook。
+ *
+ * @author 焕晨HChen
  */
-@AutoHook(targetPackage = "com.hihonor.cloudmusic")
-public final class Hihonor extends AbsPublisher {
-    @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
-        fuckTencentTinker();
-        NeteaseHelper.hookNeteaseWrapperBypass();
+public final class OPPOBaseHelper {
+
+    /**
+     * 执行 OPPO 系音乐应用的通用 Hook 初始化
+     *
+     * @param dexkitKey DexKit 缓存键（区分 OPPO/Heytap）
+     */
+    public static void initHook(@NonNull String dexkitKey) {
+        OPPOHelper.mockDevice();
+        AbsPublisher.hookMediaMetadataLyric();
+        hookCarBluetoothConnected(dexkitKey);
     }
 
-    @Override
-    protected void onApplicationCreated(@NonNull Context context) {
-        super.onApplicationCreated(context);
-
-        MeizuHelper.shallowLayerDeviceMock();
-        MeizuHelper.hookNotificationLyric();
-
-        Method method = DexkitCache.findMember("hihonor$1", new IDexkit<MethodData>() {
+    private static void hookCarBluetoothConnected(@NonNull String dexkitKey) {
+        Method method = DexkitCache.findMember(dexkitKey, new IDexkit<MethodData>() {
             @NonNull
             @Override
             public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                 return bridge.findMethod(FindMethod.create()
                     .matcher(MethodMatcher.create()
-                        .declaredClass(ClassMatcher.create()
-                            .usingStrings("KEY_SHOW_LOCK_SCREEN_PERMISSION")
-                        )
-                        .usingStrings("KEY_SHOW_LOCK_SCREEN_PERMISSION")
+                        .declaredClass("com.allsaints.music.player.thirdpart.MediaSessionHelper")
+                        .usingStrings("isCarBluetoothConnected 没有蓝牙连接权限")
                     )
                 ).single();
             }
         });
-        hook(method, returnResult(null));
+        hook(method, CoreTool.returnResult(true));
     }
 }

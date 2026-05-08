@@ -16,7 +16,7 @@
 
  * Copyright (C) 2025-2026 HChenX
  */
-package com.hchen.superlyric.ui.layout
+package com.hchen.superlyric.ui.screen
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
@@ -69,13 +69,13 @@ import com.hchen.hooktool.data.AppData
 import com.hchen.superlyric.R
 import com.hchen.superlyric.data.ApiAppData
 import com.hchen.superlyric.data.SupportApps
-import com.hchen.superlyric.ui.base.SearchBox
-import com.hchen.superlyric.ui.base.SearchPager
-import com.hchen.superlyric.ui.base.SearchStatus
-import com.hchen.superlyric.ui.base.SearchStatus.Status.COLLAPSED
-import com.hchen.superlyric.ui.base.SearchStatus.Status.COLLAPSING
-import com.hchen.superlyric.ui.base.SearchStatus.Status.EXPANDED
-import com.hchen.superlyric.ui.base.SearchStatus.Status.EXPANDING
+import com.hchen.superlyric.ui.component.SearchBox
+import com.hchen.superlyric.ui.component.SearchPager
+import com.hchen.superlyric.ui.component.SearchStatus
+import com.hchen.superlyric.ui.component.SearchStatus.Status.COLLAPSED
+import com.hchen.superlyric.ui.component.SearchStatus.Status.COLLAPSING
+import com.hchen.superlyric.ui.component.SearchStatus.Status.EXPANDED
+import com.hchen.superlyric.ui.component.SearchStatus.Status.EXPANDING
 import com.hchen.superlyric.ui.data.LocalMiuixScrollBehavior
 import com.hchen.superlyric.ui.data.LocalViewModel
 import com.hchen.superlyric.ui.viewmodel.MainUiAction

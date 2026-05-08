@@ -132,7 +132,7 @@ public final class SuperLyricProxy extends AbsModule {
                         if (TextUtils.equals(info.packageName, processName)) { // 主进程
                             boolean isKilled = (boolean) Optional.ofNullable(getField(app, "mKilled")).orElse(true);
                             if (isKilled) {
-                                if (SuperLyricService.mPublishers.contains(info.packageName)) {
+                                if (SuperLyricService.isPublisher(info.packageName)) {
                                     mSuperLyricService.onPackageDied(info.packageName);
                                     logI(TAG, "App: " + info.packageName + " is died.");
                                 }

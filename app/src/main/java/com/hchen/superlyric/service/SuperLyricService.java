@@ -69,6 +69,14 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     public static final CopyOnWriteArraySet<String> mPublishers = new CopyOnWriteArraySet<>();
     public static final CopyOnWriteArraySet<String> mNonSystemPlayStateListeners = new CopyOnWriteArraySet<>();
 
+    public static boolean isPublisher(@NonNull String packageName) {
+        return mPublishers.contains(packageName);
+    }
+
+    public static boolean isNonSystemPlayStateListener(@NonNull String packageName) {
+        return mNonSystemPlayStateListeners.contains(packageName);
+    }
+
     public SuperLyricService(@NonNull Object ams) {
         this.mAms = ams;
     }

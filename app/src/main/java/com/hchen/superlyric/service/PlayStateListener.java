@@ -87,7 +87,7 @@ public final class PlayStateListener {
     }
 
     private void registerMediaControllerCallback(@NonNull MediaController controller) {
-        if (SuperLyricService.mNonSystemPlayStateListeners.contains(controller.getPackageName())) {
+        if (SuperLyricService.isNonSystemPlayStateListener(controller.getPackageName())) {
             return;
         }
 
@@ -140,7 +140,7 @@ public final class PlayStateListener {
         }
 
         private boolean unregisterCallbackIfNeed() {
-            if (SuperLyricService.mNonSystemPlayStateListeners.contains(mController.getPackageName())) {
+            if (SuperLyricService.isNonSystemPlayStateListener(mController.getPackageName())) {
                 mController.unregisterCallback(this);
                 mCallbackHashMap.remove(mController);
                 return true;
@@ -149,7 +149,7 @@ public final class PlayStateListener {
         }
 
         private boolean isPublisher() {
-            return SuperLyricService.mPublishers.contains(mController.getPackageName());
+            return SuperLyricService.isPublisher(mController.getPackageName());
         }
     }
 }

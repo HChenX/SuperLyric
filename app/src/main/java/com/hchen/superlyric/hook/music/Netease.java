@@ -27,6 +27,7 @@ import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.MeizuHelper;
+import com.hchen.superlyric.helper.NeteaseHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricLine;
@@ -55,21 +56,7 @@ public final class Netease extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
         fuckTencentTinker();
-        if (hasClass("android.app.Instrumentation")) {
-            hookMethod("android.app.Instrumentation",
-                "newApplication",
-                ClassLoader.class, String.class, Context.class,
-                new AbsHook() {
-                    @Override
-                    public void before() {
-                        if (Objects.equals("com.netease.nis.wrapper.MyApplication", getArg(1))) {
-                            setArg(1, "com.netease.cloudmusic.CloudMusicApplication");
-                            logD(TAG, "Hooked netease wrapper class");
-                        }
-                    }
-                }
-            );
-        }
+        NeteaseHelper.hookNeteaseWrapperBypass();
     }
 
     @Override

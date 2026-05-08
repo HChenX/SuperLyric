@@ -21,8 +21,6 @@ package com.hchen.superlyric.helper;
 import static com.hchen.hooktool.core.CoreTool.hasClass;
 import static com.hchen.hooktool.core.CoreTool.hookMethod;
 import static com.hchen.hooktool.core.CoreTool.setStaticField;
-import static com.hchen.superlyric.hook.AbsPublisher.sendLyric;
-import static com.hchen.superlyric.hook.AbsPublisher.sendStop;
 
 import android.app.Notification;
 import android.app.Service;
@@ -30,6 +28,7 @@ import android.text.TextUtils;
 
 import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.hook.AbsHook;
+import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
  * 模拟魅族设备
@@ -53,7 +52,7 @@ public final class MeizuHelper {
                 public void before() {
                     try {
                         if (TextUtils.equals("android.app.Notification", (String) getArg(0))) {
-                            setResult(MeiZuNotification.class);
+                            setResult(MeizuNotification.class);
                             return;
                         }
                         setResult(ModuleData.getClassLoader().loadClass((String) getArg(0)));
@@ -81,7 +80,7 @@ public final class MeizuHelper {
                 public void before() {
                     try {
                         if (TextUtils.equals("android.app.Notification", (String) getArg(0))) {
-                            setResult(MeiZuNotification.class);
+                            setResult(MeizuNotification.class);
                             return;
                         }
                         setResult(ModuleData.getClassLoader().loadClass((String) getArg(0)));
@@ -123,13 +122,13 @@ public final class MeizuHelper {
                 Notification notification = (Notification) getArg(2);
                 if (notification == null) return;
 
-                boolean isLyric = (notification.flags & MeiZuNotification.FLAG_ALWAYS_SHOW_TICKER) != 0 ||
-                    (notification.flags & MeiZuNotification.FLAG_ONLY_UPDATE_TICKER) != 0;
+                boolean isLyric = (notification.flags & MeizuNotification.FLAG_ALWAYS_SHOW_TICKER) != 0 ||
+                    (notification.flags & MeizuNotification.FLAG_ONLY_UPDATE_TICKER) != 0;
                 if (isLyric) {
                     if (notification.tickerText != null) {
-                        sendLyric(notification.tickerText.toString());
+                        AbsPublisher.sendLyric(notification.tickerText.toString());
                     } else {
-                        sendStop();
+                        AbsPublisher.sendStop();
                     }
                 }
             }

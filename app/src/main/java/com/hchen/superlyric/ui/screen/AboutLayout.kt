@@ -16,7 +16,7 @@
 
  * Copyright (C) 2025-2026 HChenX
  */
-package com.hchen.superlyric.ui.layout
+package com.hchen.superlyric.ui.screen
 
 import android.annotation.SuppressLint
 import android.content.Context

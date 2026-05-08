@@ -19,7 +19,6 @@
 package com.hchen.superlyric.hook.music;
 
 import android.content.Context;
-import android.content.Intent;
 import android.text.TextUtils;
 import android.util.Pair;
 
@@ -29,6 +28,7 @@ import com.hchen.auto.AutoHook;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
+import com.hchen.superlyric.helper.KuGouHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricLine;
@@ -37,13 +37,10 @@ import com.hchen.superlyricapi.SuperLyricWord;
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
 import org.luckypray.dexkit.query.FindField;
-import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.query.matchers.FieldMatcher;
-import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.result.ClassData;
 import org.luckypray.dexkit.result.FieldData;
-import org.luckypray.dexkit.result.MethodDataList;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -65,75 +62,18 @@ public final class KuGou extends AbsPublisher {
     protected void onApplicationCreated(@NonNull Context context) {
         super.onApplicationCreated(context);
 
-        enableStatusBarLyric();
+        KuGouHelper.enableStatusBarLyric("kugou$1");
         if (mVersionCode <= 12009) {
-            hookLocalBroadcast("android.support.v4.content.LocalBroadcastManager");
+            KuGouHelper.hookLocalBroadcast("android.support.v4.content.LocalBroadcastManager");
         } else {
             try {
                 hookMeizuLyric();
             } catch (Throwable e) {
                 logW(TAG, e);
-                hookLocalBroadcast("androidx.localbroadcastmanager.content.LocalBroadcastManager");
+                KuGouHelper.hookLocalBroadcast("androidx.localbroadcastmanager.content.LocalBroadcastManager");
             }
-            fixProbabilityCollapse();
+            KuGouHelper.fixProbabilityCollapse();
         }
-    }
-
-    private void enableStatusBarLyric() {
-        Method[] ms = DexkitCache.findMember("kugou$1", new IDexkit<MethodDataList>() {
-            @NonNull
-            @Override
-            public MethodDataList dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
-                return bridge.findMethod(FindMethod.create()
-                    .matcher(MethodMatcher.create()
-                        .declaredClass(ClassMatcher.create()
-                            .usingStrings("key_status_bar_lyric_open")
-                        )
-                        .usingStrings("key_status_bar_lyric_open")
-                    )
-                );
-            }
-        });
-
-        Method[] methods = new Method[2];
-        for (Method m : ms) {
-            if (Objects.equals(m.getReturnType(), boolean.class)) {
-                methods[0] = m; // 返回端
-            } else {
-                methods[1] = m; // 设置端
-            }
-        }
-
-        hook(methods[0], new AbsHook() {
-            @Override
-            public void before() {
-                callMethod(methods[1], getThisObject(), true);
-                setResult(true);
-            }
-        });
-        hook(methods[1], setArg(0, true));
-    }
-
-    private void hookLocalBroadcast(String clazz) {
-        hookMethod(clazz,
-            "sendBroadcast",
-            Intent.class,
-            new AbsHook() {
-                @Override
-                public void before() {
-                    Intent intent = (Intent) getArg(0);
-                    if (intent == null) return;
-
-                    String action = intent.getAction();
-                    String message = intent.getStringExtra("lyric");
-                    if (message == null) return;
-
-                    if (Objects.equals(action, "com.kugou.android.update_meizu_lyric")) {
-                        sendLyric(message);
-                    }
-                }
-            }
-        );
     }
 
     private void hookMeizuLyric() {
@@ -289,27 +229,6 @@ public final class KuGou extends AbsPublisher {
                         }
                     } else {
                         sendStop();
-                    }
-                }
-            }
-        );
-    }
-
-    private void fixProbabilityCollapse() {
-        hookMethod("com.kugou.framework.hack.ServiceFetcherHacker$FetcherImpl",
-            "createServiceObject",
-            Context.class, Context.class,
-            new AbsHook() {
-                @Override
-                public void after() {
-                    String mServiceName = (String) getField(getThisObject(), "serviceName");
-                    if (mServiceName == null) return;
-
-                    if (mServiceName.equals(Context.WIFI_SERVICE)) {
-                        if (getThrowable() != null) {
-                            setThrowable(null);
-                            setResult(null);
-                        }
                     }
                 }
             }

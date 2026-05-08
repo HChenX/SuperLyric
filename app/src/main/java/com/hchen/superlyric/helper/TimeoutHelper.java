@@ -18,11 +18,11 @@
  */
 package com.hchen.superlyric.helper;
 
-import static com.hchen.superlyric.hook.AbsPublisher.mAudioManager;
-import static com.hchen.superlyric.hook.AbsPublisher.sendStop;
-
+import android.media.AudioManager;
 import android.os.Handler;
 import android.os.HandlerThread;
+
+import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
  * 超时暂停歌词
@@ -44,8 +44,9 @@ public final class TimeoutHelper {
                 return;
             }
 
-            if (mAudioManager != null && !mAudioManager.isMusicActive()) {
-                sendStop();
+            AudioManager audioManager = AbsPublisher.getAudioManager();
+            if (audioManager != null && !audioManager.isMusicActive()) {
+                AbsPublisher.sendStop();
                 stop();
             } else {
                 handler.postDelayed(this, 1000);

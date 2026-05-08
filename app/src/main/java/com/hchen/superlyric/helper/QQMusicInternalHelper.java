@@ -23,7 +23,6 @@ import static com.hchen.hooktool.core.CoreTool.hasClass;
 import static com.hchen.hooktool.core.CoreTool.hookMethod;
 import static com.hchen.hooktool.core.CoreTool.returnResult;
 import static com.hchen.hooktool.core.CoreTool.setField;
-import static com.hchen.superlyric.hook.AbsPublisher.sendLyric;
 
 import android.os.Message;
 
@@ -38,24 +37,24 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * 通过 QQLite 获取歌词
+ * 通过 QQ 音乐内部 RemoteLyricController 获取歌词
  *
  * @author 焕晨HChen
  */
-public final class QQLiteHelper {
-    private static final String TAG = "QQLiteHelper";
+public final class QQMusicInternalHelper {
+    private static final String TAG = "QQMusicInternalHelper";
 
     /**
-     * 是否支持 QQLite
+     * 是否支持 QQ 音乐内部歌词接口
      */
-    public static boolean isSupportQQLite() {
+    public static boolean isSupported() {
         return hasClass("com.tencent.qqmusic.core.song.SongInfo");
     }
 
     private static int mLastIndex = -1;
 
     public static void hookLyric() {
-        if (!isSupportQQLite()) return;
+        if (!isSupported()) return;
 
         hookMethod("com.tencent.qqmusiccommon.util.music.RemoteLyricController",
             "BluetoothA2DPConnected",
@@ -158,7 +157,7 @@ public final class QQLiteHelper {
                         if (lyric == null || lyric.isEmpty()) return;
                         if (Objects.equals(lyric, "NEED_NOT_UPDATE_TITLE")) return;
 
-                        sendLyric(lyric);
+                        AbsPublisher.sendLyric(lyric);
                     }
                 }
             );

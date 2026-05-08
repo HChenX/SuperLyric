@@ -42,10 +42,26 @@ import java.lang.reflect.Method;
  * @author 焕晨HChen
  */
 public abstract class AbsPublisher extends AbsModule {
-    public static AudioManager mAudioManager;
-    public static String mPackageName;
-    public static long mVersionCode = -1L;
-    public static String mVersionName = "unknown";
+    protected static AudioManager mAudioManager;
+    protected static String mPackageName;
+    protected static long mVersionCode = -1L;
+    protected static String mVersionName = "unknown";
+
+    public static AudioManager getAudioManager() {
+        return mAudioManager;
+    }
+
+    public static String getPackageName() {
+        return mPackageName;
+    }
+
+    public static long getVersionCode() {
+        return mVersionCode;
+    }
+
+    public static String getVersionName() {
+        return mVersionName;
+    }
 
     @CallSuper
     @Override

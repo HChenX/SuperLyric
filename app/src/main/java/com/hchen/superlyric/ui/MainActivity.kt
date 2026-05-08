@@ -63,8 +63,8 @@ import com.hchen.superlyric.ui.data.LocalMiuixScrollBehavior
 import com.hchen.superlyric.ui.data.LocalPagerState
 import com.hchen.superlyric.ui.data.LocalViewModel
 import com.hchen.superlyric.ui.data.UIConstants
-import com.hchen.superlyric.ui.layout.AboutLayout
-import com.hchen.superlyric.ui.layout.SupportAppLayout
+import com.hchen.superlyric.ui.screen.AboutLayout
+import com.hchen.superlyric.ui.screen.SupportAppLayout
 import com.hchen.superlyric.ui.viewmodel.MainViewModel
 import com.hchen.superlyric.ui.viewmodel.MainViewModelFactory
 import com.hchen.superlyric.utils.PackageUtils
@@ -92,7 +92,10 @@ import top.yukonga.miuix.kmp.window.WindowDialog
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels {
-        MainViewModelFactory()
+        MainViewModelFactory(
+            prefsReadyCallback = { listener -> Application.addPrefsReadyListener(listener) },
+            appLoadedCallback = { listener -> PackageUtils.addAppLoadedListener(listener) }
+        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

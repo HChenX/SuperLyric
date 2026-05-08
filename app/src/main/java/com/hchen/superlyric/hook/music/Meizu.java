@@ -22,7 +22,7 @@ import androidx.annotation.NonNull;
 
 import com.hchen.auto.AutoHook;
 import com.hchen.superlyric.helper.MeizuHelper;
-import com.hchen.superlyric.helper.QQLiteHelper;
+import com.hchen.superlyric.helper.QQMusicInternalHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
@@ -32,8 +32,8 @@ import com.hchen.superlyric.hook.AbsPublisher;
 public final class Meizu extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
-        if (QQLiteHelper.isSupportQQLite())
-            QQLiteHelper.hookLyric();
+        if (QQMusicInternalHelper.isSupported())
+            QQMusicInternalHelper.hookLyric();
         else {
             MeizuHelper.depthDeviceMock();
             MeizuHelper.hookNotificationLyric();

@@ -16,3 +16,5 @@
 .externalNativeBuild
 .cxx
 local.properties
+/auto/bin/
+/auto/bin/**

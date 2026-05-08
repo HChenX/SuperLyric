@@ -26,7 +26,6 @@ import androidx.lifecycle.viewModelScope
 import com.hchen.hooktool.data.AppData
 import com.hchen.superlyric.data.ApiAppData
 import com.hchen.superlyric.data.PrefsKey
-import com.hchen.superlyric.ui.Application
 import com.hchen.superlyric.utils.PackageUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,15 +33,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class MainViewModel : ViewModel() {
+class MainViewModel(
+    private val prefsReadyCallback: ((SharedPreferences) -> Unit) -> Unit,
+    private val appLoadedCallback: (Runnable) -> Unit
+) : ViewModel() {
     private lateinit var prefs: SharedPreferences
 
-    // ---------- 原始数据 ----------
-    // 日志等级
     private val _logLevel = MutableStateFlow<Int>(0)
     val logLevel = _logLevel.asStateFlow()
 
-    // 内置应用列表
     private val _hookApps = MutableStateFlow<List<AppData>>(emptyList())
     val hookApps: StateFlow<List<AppData>> = _hookApps.asStateFlow()
 
@@ -52,22 +51,18 @@ class MainViewModel : ViewModel() {
     private val _currentApp = MutableStateFlow(AppData())
     val currentApp: StateFlow<AppData> = _currentApp.asStateFlow()
 
-    // 刷新相关
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
 
-    // ---------- 初始化 ----------
     init {
-        Application.addPrefsReadyListener {
-            prefs = it
+        prefsReadyCallback { sharedPreferences ->
+            prefs = sharedPreferences
             loadData()
         }
-        PackageUtils.addAppLoadedListener {
-            loadData()
-        }
+        appLoadedCallback(Runnable { loadData() })
     }
 
     private fun loadData() {
@@ -80,7 +75,6 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    // ---------- 事件处理 ----------
     fun handleAction(action: MainUiAction) {
         when (action) {
             is MainUiAction.UpdateLogLevel -> {
@@ -121,8 +115,11 @@ sealed class MainUiAction {
     data class CurrentApp(val appData: AppData) : MainUiAction()
 }
 
-class MainViewModelFactory() : ViewModelProvider.Factory {
+class MainViewModelFactory(
+    private val prefsReadyCallback: ((SharedPreferences) -> Unit) -> Unit,
+    private val appLoadedCallback: (Runnable) -> Unit
+) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        return MainViewModel() as T
+        return MainViewModel(prefsReadyCallback, appLoadedCallback) as T
     }
 }

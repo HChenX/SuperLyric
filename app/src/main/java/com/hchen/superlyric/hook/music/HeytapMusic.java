@@ -23,20 +23,11 @@ import android.content.Context;
 import androidx.annotation.NonNull;
 
 import com.hchen.auto.AutoHook;
-import com.hchen.dexkitcache.DexkitCache;
-import com.hchen.dexkitcache.IDexkit;
-import com.hchen.superlyric.helper.OPPOHelper;
+import com.hchen.superlyric.helper.OPPOBaseHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
-import org.luckypray.dexkit.DexKitBridge;
-import org.luckypray.dexkit.query.FindMethod;
-import org.luckypray.dexkit.query.matchers.MethodMatcher;
-import org.luckypray.dexkit.result.MethodData;
-
-import java.lang.reflect.Method;
-
 /**
- * OPPO 音乐
+ * Heytap 音乐（OPPO 国际版）
  */
 @AutoHook(targetPackage = "com.heytap.music")
 public final class HeytapMusic extends AbsPublisher {
@@ -47,22 +38,6 @@ public final class HeytapMusic extends AbsPublisher {
     @Override
     protected void onApplicationCreated(@NonNull Context context) {
         super.onApplicationCreated(context);
-
-        OPPOHelper.mockDevice();
-        hookMediaMetadataLyric();
-
-        Method method = DexkitCache.findMember("heytap$1", new IDexkit<MethodData>() {
-            @NonNull
-            @Override
-            public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
-                return bridge.findMethod(FindMethod.create()
-                    .matcher(MethodMatcher.create()
-                        .declaredClass("com.allsaints.music.player.thirdpart.MediaSessionHelper")
-                        .usingStrings("isCarBluetoothConnected 没有蓝牙连接权限")
-                    )
-                ).single();
-            }
-        });
-        hook(method, returnResult(true));
+        OPPOBaseHelper.initHook("heytap$1");
     }
 }
