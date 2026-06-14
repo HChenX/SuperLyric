@@ -143,6 +143,6 @@ dependencies {
     }
 
     compileOnly(project(':hidden-api'))
-    implementation implementation(project(':processor'))
-    annotationProcessor annotationProcessor(project(':processor'))
+    implementation project(':processor')
+    annotationProcessor project(':processor')
 }
