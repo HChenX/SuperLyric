@@ -44,7 +44,7 @@ android {
         minSdk 30
         targetSdk 37
         // noinspection HighAppVersionCode
-        versionCode 2026041100
+        versionCode 2026061400
         versionName "3.1"
 
         ndk {
@@ -130,7 +130,6 @@ dependencies {
 
     implementation libs.miuix.ui.android
     implementation libs.miuix.preference.android
-    implementation libs.miuix.shapes.android
     implementation libs.miuix.blur.android
     implementation libs.miuix.icons.android
 

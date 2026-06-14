@@ -25,7 +25,7 @@ import android.app.Notification;
  *
  * @author 焕晨HChen
  */
-public final class MeizuNotification extends Notification {
+public final class MeiZuNotification extends Notification {
     public static final int FLAG_ALWAYS_SHOW_TICKER = 0x01000000;
     public static final int FLAG_ONLY_UPDATE_TICKER = 0x02000000;
 }
