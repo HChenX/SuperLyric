@@ -52,7 +52,7 @@ public final class MeizuHelper {
                 public void before() {
                     try {
                         if (TextUtils.equals("android.app.Notification", (String) getArg(0))) {
-                            setResult(MeizuNotification.class);
+                            setResult(MeiZuNotification.class);
                             return;
                         }
                         setResult(ModuleData.getClassLoader().loadClass((String) getArg(0)));
@@ -80,7 +80,7 @@ public final class MeizuHelper {
                 public void before() {
                     try {
                         if (TextUtils.equals("android.app.Notification", (String) getArg(0))) {
-                            setResult(MeizuNotification.class);
+                            setResult(MeiZuNotification.class);
                             return;
                         }
                         setResult(ModuleData.getClassLoader().loadClass((String) getArg(0)));
@@ -122,8 +122,8 @@ public final class MeizuHelper {
                 Notification notification = (Notification) getArg(2);
                 if (notification == null) return;
 
-                boolean isLyric = (notification.flags & MeizuNotification.FLAG_ALWAYS_SHOW_TICKER) != 0 ||
-                    (notification.flags & MeizuNotification.FLAG_ONLY_UPDATE_TICKER) != 0;
+                boolean isLyric = (notification.flags & MeiZuNotification.FLAG_ALWAYS_SHOW_TICKER) != 0 ||
+                    (notification.flags & MeiZuNotification.FLAG_ONLY_UPDATE_TICKER) != 0;
                 if (isLyric) {
                     if (notification.tickerText != null) {
                         AbsPublisher.sendLyric(notification.tickerText.toString());

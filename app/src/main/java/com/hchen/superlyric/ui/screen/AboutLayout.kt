@@ -115,21 +115,24 @@ fun AboutLayout(
         listOf(
             "ghhccghk",
             "YifePlayte",
-            "YuKongA"
+            "YuKongA",
+            "AnserJim"
         )
     }
     val contributorUri = remember {
         listOf(
             "https://github.com/ghhccghk",
             "https://github.com/YifePlayte",
-            "https://github.com/YuKongA"
+            "https://github.com/YuKongA",
+            "https://github.com/killerprojecte"
         )
     }
     val contributorIcon = remember {
         listOf(
             R.drawable.ghhccghk,
             R.drawable.yifeplayte,
-            R.drawable.yukonga
+            R.drawable.yukonga,
+            R.drawable.anserjim
         )
     }
 

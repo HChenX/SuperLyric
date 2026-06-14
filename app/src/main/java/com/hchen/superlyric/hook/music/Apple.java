@@ -19,13 +19,9 @@
 package com.hchen.superlyric.hook.music;
 
 import android.app.Application;
-import android.media.MediaMetadata;
-import android.media.session.PlaybackState;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
-import android.os.Message;
-import android.os.SystemClock;
 
 import androidx.annotation.NonNull;
 
@@ -40,17 +36,12 @@ import com.hchen.superlyricapi.SuperLyricWord;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
-import org.luckypray.dexkit.query.enums.StringMatchType;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.result.ClassData;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.Objects;
-import java.util.function.Predicate;
 
 /**
  * Apple Music
@@ -61,7 +52,8 @@ public final class Apple extends AbsPublisher {
     private Handler lyricHandler;
 
     private Object lyricViewModel;
-    private PlaybackState playbackState;
+    private int playbackStateValue = 0;
+    private Object playerController;
     private Object currentSongInfo;
     private LyricsLinePtrHelper lyricsLinePtrHelper;
     private final LinkedList<LyricsLine> lyricList = new LinkedList<>();
@@ -143,137 +135,113 @@ public final class Apple extends AbsPublisher {
             }
         );
 
-        // Hook PlaybackState 构造
-        hookAllConstructor("android.media.session.PlaybackState",
-            new AbsHook() {
-                @Override
-                public void after() {
-                    playbackState = (PlaybackState) getThisObject();
-                }
-            }
-        );
-
-        // Hook 播放状态变化
-        // android.support.v4.media.session.MediaControllerCompat$a$b
-        Class<?> mediaControllerCompatHandlerClass = DexkitCache.findMember("apple$1", new IDexkit<ClassData>() {
+        // Hook MediaPlaybackManager (P) via MediaPlayerController.Listener
+        Class<?> mediaPlaybackManagerClass = DexkitCache.findMember("apple$pm", new IDexkit<ClassData>() {
             @NonNull
             @Override
-            public ClassData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+            public ClassData dexkit(@NonNull DexKitBridge bridge) {
                 return bridge.findClass(FindClass.create()
-                    .searchPackages("android.support.v4.media.session")
                     .matcher(ClassMatcher.create()
-                        .className("android.support.v4.media.session.MediaControllerCompat$", StringMatchType.Contains)
-                        .superClass("android.os.Handler")
+                        .usingStrings("Unrecognized PlayerTimedTextItem.AnchorType: ")
                     )
                 ).single();
             }
         });
 
-        Field playbackStateField =
-            Arrays.stream(findClass("android.support.v4.media.session.PlaybackStateCompat").getDeclaredFields())
-                .filter(new Predicate<Field>() {
-                    @Override
-                    public boolean test(Field field) {
-                        return Objects.equals(field.getType(), PlaybackState.class);
-                    }
-                })
-                .findFirst()
-                .orElseThrow();
-
-        // android.support.v4.media.session.MediaControllerCompat$a$b
-        hookMethod(mediaControllerCompatHandlerClass,
-            "handleMessage",
-            Message.class,
-            new AbsHook() {
-                @Override
-                public void before() {
-                    Message m = (Message) getArg(0);
-                    if (m.what == 2) {
-                        // 获取 PlaybackStateCompat 对象
-                        Object playbackStateCompat = m.obj;
-                        if (playbackStateCompat != null) {
-                            playbackState = (PlaybackState) getField(playbackStateField, playbackStateCompat);
-                            updateLyricPosition();
-                        }
-                    }
-                }
-            }
-        );
-
-        // Hook MediaMetadata 变化
-        // android.support.v4.media.session.MediaControllerCompat$a$a
-        Class<?> mediaControllerCompatClass = DexkitCache.findMember("apple$2", new IDexkit<ClassData>() {
-            @NonNull
-            @Override
-            public ClassData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
-                return bridge.findClass(FindClass.create()
-                    .searchPackages("android.support.v4.media.session")
-                    .matcher(ClassMatcher.create()
-                        .className("android.support.v4.media.session.MediaControllerCompat$", StringMatchType.Contains)
-                        .superClass("android.media.session.MediaController$Callback")
-                    )
-                ).single();
-            }
-        });
-        Method mediaMetadataCompatStaticMethod =
-            Arrays.stream(findClass("android.support.v4.media.MediaMetadataCompat").getDeclaredMethods())
-                .filter(new Predicate<Method>() {
-                    @Override
-                    public boolean test(Method method) {
-                        return Modifier.isStatic(method.getModifiers());
-                    }
-                }).findFirst().orElseThrow();
-
-        Field mediaMetadataField =
-            Arrays.stream(findClass("android.support.v4.media.MediaMetadataCompat").getDeclaredFields())
-                .filter(new Predicate<Field>() {
-                    @Override
-                    public boolean test(Field field) {
-                        return Objects.equals(field.getType(), MediaMetadata.class);
-                    }
-                }).findFirst().orElseThrow();
-
-        // android.support.v4.media.session.MediaControllerCompat$a$a
-        hookMethod(mediaControllerCompatClass,
-            "onMetadataChanged",
-            MediaMetadata.class,
+        hookMethod(mediaPlaybackManagerClass,
+            "onCurrentItemChanged",
+            "com.apple.android.music.playback.controller.MediaPlayerController",
+            "com.apple.android.music.playback.model.PlayerQueueItem",
+            "com.apple.android.music.playback.model.PlayerQueueItem",
             new AbsHook() {
                 @Override
                 public void before() {
                     try {
-                        // 获取MediaMetadata实例
-                        Object metadataCompat = callStaticMethod(
-                            mediaMetadataCompatStaticMethod,
-                            getArg(0)
-                        );
+                        Object newItem = getArg(2);
+                        if (newItem == null) return;
 
-                        MediaMetadata metadata = (MediaMetadata) getField(mediaMetadataField, metadataCompat);
-                        String newTitle = metadata.getString(MediaMetadata.METADATA_KEY_TITLE);
+                        Object mediaItem = callMethod(newItem, "getItem");
+                        if (mediaItem == null) return;
 
-                        // 检测歌曲变化
+                        String newTitle = (String) callMethod(mediaItem, "getTitle");
+                        logD(TAG, "onCurrentItemChanged: " + newTitle);
+
                         if (newTitle != null && !currentTitle.equals(newTitle)) {
-                            // 停止现有歌词
                             sendStop();
-
-                            // 重置现有状态
                             lyricList.clear();
                             isRunning = false;
                             lastShownLyric = null;
-
-                            // 更新当前歌曲名
                             currentTitle = newTitle;
-                            logD(TAG, "Current song title: " + currentTitle);
+                            Object pi = getField(mediaItem, "playbackItem");
+                            playbackItem = pi != null ? pi : mediaItem;
+                            logD(TAG, "Current song title: " + currentTitle +
+                                " hasLyrics=" + callMethod(playbackItem, "hasLyrics") +
+                                " id=" + callMethod(playbackItem, "getId") +
+                                " class=" + playbackItem.getClass().getSimpleName());
 
-                            // 请求当前歌词
-                            mainHandler.postDelayed(new Runnable() {
-                                @Override
-                                public void run() {
-                                    requestLyrics();
-                                }
-                            }, 400);
+                            mainHandler.postDelayed(() -> requestLyrics(), 400);
                         }
                     } catch (Exception e) {
-                        logE(TAG, "Error getting MediaMetadata!!", e);
+                        logE(TAG, "Error in onCurrentItemChanged!!", e);
+                    }
+                }
+            }
+        );
+
+        hookMethod(mediaPlaybackManagerClass,
+            "onMetadataUpdated",
+            "com.apple.android.music.playback.controller.MediaPlayerController",
+            "com.apple.android.music.playback.model.PlayerQueueItem",
+            new AbsHook() {
+                @Override
+                public void before() {
+                    try {
+                        Object currentItem = getArg(1);
+                        if (currentItem == null) return;
+
+                        Object mediaItem = callMethod(currentItem, "getItem");
+                        if (mediaItem == null) return;
+
+                        String newTitle = (String) callMethod(mediaItem, "getTitle");
+                        logD(TAG, "onMetadataUpdated: " + newTitle);
+
+                        if (newTitle != null && !currentTitle.equals(newTitle)) {
+                            sendStop();
+                            lyricList.clear();
+                            isRunning = false;
+                            lastShownLyric = null;
+                            currentTitle = newTitle;
+                            Object pi = getField(mediaItem, "playbackItem");
+                            playbackItem = pi != null ? pi : mediaItem;
+                            logD(TAG, "Current song title (metadata): " + currentTitle);
+
+                            mainHandler.postDelayed(() -> requestLyrics(), 400);
+                        }
+                    } catch (Exception e) {
+                        logE(TAG, "Error in onMetadataUpdated!!", e);
+                    }
+                }
+            }
+        );
+
+        hookMethod(mediaPlaybackManagerClass,
+            "onPlaybackStateChanged",
+            "com.apple.android.music.playback.controller.MediaPlayerController",
+            int.class,
+            int.class,
+            new AbsHook() {
+                @Override
+                public void before() {
+                    try {
+                        playerController = getArg(0);
+                        int newState = (int) getArg(2);
+                        playbackStateValue = newState;
+                        logD(TAG, "onPlaybackStateChanged: state=" + newState + " controller=" + playerController);
+                        if (newState == 1) {
+                            updateLyricPosition();
+                        }
+                    } catch (Exception e) {
+                        logE(TAG, "Error in onPlaybackStateChanged!!", e);
                     }
                 }
             }
@@ -287,29 +255,31 @@ public final class Apple extends AbsPublisher {
                 @Override
                 public void after() {
                     Object songInfoPtr = getArg(0);
+                    //logD(TAG, "get song ptr" + songInfoPtr);
                     if (songInfoPtr == null) return;
 
                     currentSongInfo = callMethod(songInfoPtr, "get");
+                    //logD(TAG, "get song info" + currentSongInfo);
                     if (currentSongInfo == null) return;
 
                     String currentSystemLyricsLanguage = (String) callStaticMethod("com.apple.android.music.playback.util.LocaleUtil", "getSystemLyricsLanguage");
                     callMethod(currentSongInfo, "setTranslation", currentSystemLyricsLanguage);
                     Object lyricsSectionVector = callMethod(currentSongInfo, "getSections");
+                    //logD(TAG, "get lyric section" + lyricsSectionVector);
                     if (lyricsSectionVector == null) return;
 
                     lyricsLinePtrHelper = new LyricsLinePtrHelper(lyricsSectionVector);
                     updateLyricList();
+                    if (playbackStateValue == 1 && !lyricList.isEmpty()) {
+                        isRunning = false;
+                        updateLyricPosition();
+                    }
                 }
             }
         );
 
         hookPlaybackItemSetId();
-        logI(
-            TAG,
-            "mediaMetadataCompatStaticMethod: " + mediaMetadataCompatStaticMethod +
-                ", mediaMetadataField: " + mediaMetadataField +
-                ", playbackStateField: " + playbackStateField
-        );
+        logI(TAG, "Apple hooks loaded MediaPlaybackManager: " + mediaPlaybackManagerClass.getName());
     }
 
     private void hookPlaybackItemSetId() {
@@ -435,24 +405,20 @@ public final class Apple extends AbsPublisher {
         lyricHandler.post(new Runnable() {
             @Override
             public void run() {
-                if (!isRunning || playbackState == null) {
+                if (!isRunning || playerController == null) {
+                    logD(TAG, "lyric loop exit: isRunning=" + isRunning + " controller=" + playerController);
                     isRunning = false;
                     return;
                 }
 
-                // 暂停状态处理
-                if (playbackState.getState() == PlaybackState.STATE_PAUSED) {
+                if (playbackStateValue != 1) {
+                    logD(TAG, "lyric loop exit: state=" + playbackStateValue);
                     isRunning = false;
                     return;
                 }
 
-                // 计算当前播放位置
-                long currentPosition = (long) (((SystemClock.elapsedRealtime() -
-                    playbackState.getLastPositionUpdateTime()) *
-                    playbackState.getPlaybackSpeed()) +
-                    playbackState.getPosition());
+                long currentPosition = (long) callMethod(playerController, "getCurrentPosition");
 
-                // 查找并显示当前歌词
                 LyricsLine currentLine = null;
                 for (LyricsLine line : lyricList) {
                     if (currentPosition >= line.start && currentPosition < line.end) {
@@ -481,8 +447,7 @@ public final class Apple extends AbsPublisher {
                     lastShownLyric = currentLine;
                 }
 
-                // 循环获取
-                lyricHandler.postDelayed(this, 400);
+                lyricHandler.postDelayed(this, 100);
             }
         });
     }
