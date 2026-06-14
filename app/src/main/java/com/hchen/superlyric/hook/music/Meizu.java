@@ -20,7 +20,7 @@ package com.hchen.superlyric.hook.music;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.helper.QQMusicInternalHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
@@ -28,7 +28,7 @@ import com.hchen.superlyric.hook.AbsPublisher;
 /**
  * 魅族音乐
  */
-@AutoHook(targetPackage = "com.meizu.media.music")
+@HookThis(targetPackage = "com.meizu.media.music")
 public final class Meizu extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {

@@ -24,7 +24,7 @@ import android.util.Pair;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
@@ -51,7 +51,7 @@ import java.util.function.Predicate;
 /**
  * 酷狗音乐
  */
-@AutoHook(targetPackage = "com.kugou.android")
+@HookThis(targetPackage = "com.kugou.android")
 public final class KuGou extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {

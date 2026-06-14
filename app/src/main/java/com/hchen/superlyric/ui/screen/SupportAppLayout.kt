@@ -27,13 +27,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -76,14 +73,17 @@ import com.hchen.superlyric.ui.component.SearchStatus.Status.COLLAPSED
 import com.hchen.superlyric.ui.component.SearchStatus.Status.COLLAPSING
 import com.hchen.superlyric.ui.component.SearchStatus.Status.EXPANDED
 import com.hchen.superlyric.ui.component.SearchStatus.Status.EXPANDING
-import com.hchen.superlyric.ui.data.LocalMiuixScrollBehavior
+import com.hchen.superlyric.ui.component.TopAppBarAnim
 import com.hchen.superlyric.ui.data.LocalViewModel
+import com.hchen.superlyric.ui.effect.BlurredBar
+import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
 import com.hchen.superlyric.ui.viewmodel.MainUiAction
 import com.hchen.superlyric.ui.viewmodel.MainViewModel
 import com.hchen.superlyric.utils.PackageUtils
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.PullToRefresh
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
@@ -92,9 +92,11 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.layout.DialogDefaults
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import top.yukonga.miuix.kmp.window.WindowDialog
@@ -102,16 +104,20 @@ import top.yukonga.miuix.kmp.window.WindowDialog
 @Composable
 @SuppressLint("LocalContextGetResourceValueCall")
 fun SupportAppLayout(
+    paddingValues: PaddingValues,
     isWideScreen: Boolean = false
 ) {
     val context = LocalContext.current
-    val viewModel = LocalViewModel.current as MainViewModel
+    val viewModel = LocalViewModel.current
     val hookApps by viewModel.hookApps.collectAsState()
     val apiApps by viewModel.apiApps.collectAsState()
     val currentApp by viewModel.currentApp.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
 
-    val scrollBehavior = LocalMiuixScrollBehavior.current
+    val backdrop = rememberBlurBackdrop()
+    val blurActive = backdrop != null
+
+    val scrollBehavior = MiuixScrollBehavior()
     val dynamicTopPadding by remember {
         derivedStateOf { 12.dp * (1f - scrollBehavior.state.collapsedFraction) }
     }
@@ -153,18 +159,22 @@ fun SupportAppLayout(
     Scaffold(
         topBar = {
             searchStatus.TopAppBarAnim {
-                if (isWideScreen) {
-                    SmallTopAppBar(
-                        title = stringResource(R.string.app_name),
-                        scrollBehavior = scrollBehavior,
-                        defaultWindowInsetsPadding = false
-                    )
-                } else {
-                    TopAppBar(
-                        title = stringResource(R.string.app_name),
-                        scrollBehavior = scrollBehavior,
-                        defaultWindowInsetsPadding = false
-                    )
+                BlurredBar(backdrop = backdrop, blurEnabled = blurActive) {
+                    if (isWideScreen) {
+                        SmallTopAppBar(
+                            title = stringResource(R.string.home),
+                            scrollBehavior = scrollBehavior,
+                            defaultWindowInsetsPadding = false,
+                            color = if (blurActive) Color.Transparent else colorScheme.surface,
+                        )
+                    } else {
+                        TopAppBar(
+                            title = stringResource(R.string.home),
+                            scrollBehavior = scrollBehavior,
+                            defaultWindowInsetsPadding = false,
+                            color = if (blurActive) Color.Transparent else colorScheme.surface,
+                        )
+                    }
                 }
             }
         },
@@ -206,15 +216,15 @@ fun SupportAppLayout(
                 }
             )
         }
-    ) { paddingValues ->
+    ) { pv ->
         searchStatus.SearchBox(
+            backdrop = backdrop,
             searchBarTopPadding = dynamicTopPadding,
-            contentPadding = paddingValues,
+            contentPadding = PaddingValues(top = pv.calculateTopPadding()),
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = paddingValues.calculateTopPadding() + it.value)
                     .clipToBounds()
             ) {
                 PullToRefresh(
@@ -226,55 +236,55 @@ fun SupportAppLayout(
                         stringResource(R.string.release_to_refresh),
                         stringResource(R.string.refreshing),
                         stringResource(R.string.refresh_successfully)
-                    )
+                    ),
+                    contentPadding = PaddingValues(top = pv.calculateTopPadding() + it.value)
                 ) {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .scrollEndHaptic()
-                            .overScrollVertical()
-                            .nestedScroll(scrollBehavior.nestedScrollConnection),
-                        contentPadding = PaddingValues(
-                            bottom = if (isWideScreen) {
-                                WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 12.dp
+                    Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .scrollEndHaptic()
+                                .overScrollVertical()
+                                .nestedScroll(scrollBehavior.nestedScrollConnection),
+                            contentPadding = PaddingValues(
+                                top = pv.calculateTopPadding() + it.value,
+                                bottom = paddingValues.calculateBottomPadding()
+                            ),
+                            overscrollEffect = null
+                        ) {
+                            if (hookApps.isEmpty() && apiApps.isEmpty()) {
+                                item {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(top = 12.dp)
+                                    ) {
+                                        EmptyApps(stringResource(R.string.select_list_empty))
+                                    }
+                                }
                             } else {
-                                12.dp
-                            }
-                        ),
-                        overscrollEffect = null
-                    ) {
-                        if (hookApps.isEmpty() && apiApps.isEmpty()) {
-                            item {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(top = 12.dp)
-                                ) {
-                                    EmptyApps(stringResource(R.string.select_list_empty))
+                                if (apiApps.isNotEmpty()) {
+                                    item {
+                                        SmallTitle(text = stringResource(R.string.apps_api_list))
+                                    }
+                                    itemsIndexed(
+                                        items = apiApps,
+                                        key = { _, apiData -> apiData.packageName }
+                                    ) { index, apiData ->
+                                        AppItemFactory(show, apiData)
+                                    }
                                 }
-                            }
-                        } else {
-                            if (apiApps.isNotEmpty()) {
-                                item {
-                                    SmallTitle(text = stringResource(R.string.apps_api_list))
-                                }
-                                itemsIndexed(
-                                    items = apiApps,
-                                    key = { _, apiData -> apiData.packageName }
-                                ) { index, apiData ->
-                                    AppItemFactory(show, apiData)
-                                }
-                            }
 
-                            if (hookApps.isNotEmpty()) {
-                                item {
-                                    SmallTitle(text = stringResource(R.string.apps_hook_list))
-                                }
-                                itemsIndexed(
-                                    items = hookApps,
-                                    key = { _, appData -> appData.packageName }
-                                ) { index, appData ->
-                                    AppItemFactory(show, appData)
+                                if (hookApps.isNotEmpty()) {
+                                    item {
+                                        SmallTitle(text = stringResource(R.string.apps_hook_list))
+                                    }
+                                    itemsIndexed(
+                                        items = hookApps,
+                                        key = { _, appData -> appData.packageName }
+                                    ) { index, appData ->
+                                        AppItemFactory(show, appData)
+                                    }
                                 }
                             }
                         }

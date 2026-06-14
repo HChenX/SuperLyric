@@ -20,14 +20,14 @@ package com.hchen.superlyric.hook.music;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
  * 拟声音乐
  */
-@AutoHook(targetPackage = "com.mimicry.mymusic")
+@HookThis(targetPackage = "com.mimicry.mymusic")
 public final class Mimicry extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {

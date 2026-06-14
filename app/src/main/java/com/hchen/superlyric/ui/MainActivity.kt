@@ -35,6 +35,7 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -53,16 +54,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.hchen.superlyric.R
 import com.hchen.superlyric.ui.data.LocalHandlePagerChange
-import com.hchen.superlyric.ui.data.LocalMiuixScrollBehavior
 import com.hchen.superlyric.ui.data.LocalPagerState
 import com.hchen.superlyric.ui.data.LocalViewModel
 import com.hchen.superlyric.ui.data.UIConstants
+import com.hchen.superlyric.ui.effect.BlurredBar
+import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
 import com.hchen.superlyric.ui.screen.AboutLayout
 import com.hchen.superlyric.ui.screen.SupportAppLayout
 import com.hchen.superlyric.ui.viewmodel.MainViewModel
@@ -80,11 +83,13 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.VerticalDivider
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.HorizontalSplit
 import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.theme.ThemeController
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
@@ -111,7 +116,6 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun App() {
-        val scrollBehavior = MiuixScrollBehavior()
         val pagerState = rememberPagerState(pageCount = { UIConstants.PAGE_COUNT })
         val coroutineScope = rememberCoroutineScope()
         val handlePagerChange: (Boolean, Int) -> Unit = remember(pagerState, coroutineScope) {
@@ -131,7 +135,6 @@ class MainActivity : ComponentActivity() {
 
         CompositionLocalProvider(
             LocalViewModel provides viewModel,
-            LocalMiuixScrollBehavior provides scrollBehavior,
             LocalPagerState provides pagerState,
             LocalHandlePagerChange provides handlePagerChange
         ) {
@@ -139,8 +142,7 @@ class MainActivity : ComponentActivity() {
                 BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                     val isWideScreen = maxWidth > UIConstants.WIDE_SCREEN_THRESHOLD ||
                             (maxWidth > UIConstants.MEDIUM_WIDTH_THRESHOLD && (maxHeight.value / maxWidth.value < UIConstants.PORTRAIT_ASPECT_RATIO_THRESHOLD))
-                    if (isWideScreen) WideScreenLayout()
-                    else CompactScreenLayout()
+                    if (isWideScreen) WideScreenLayout() else CompactScreenLayout()
                 }
             }
 
@@ -173,6 +175,9 @@ class MainActivity : ComponentActivity() {
         val pagerState = LocalPagerState.current
         val handePagerChange = LocalHandlePagerChange.current
 
+        val backdrop = rememberBlurBackdrop()
+        val blurActive = backdrop != null
+
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             bottomBar = {
@@ -181,44 +186,48 @@ class MainActivity : ComponentActivity() {
                     enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
                     exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Bottom)
                 ) {
-                    NavigationBar {
-                        NavigationBarItem(
-                            label = stringResource(R.string.home),
-                            icon = MiuixIcons.HorizontalSplit,
-                            selected = pagerState.currentPage == UIConstants.HOME_PAGE_INDEX,
-                            onClick = {
-                                handePagerChange(false, UIConstants.HOME_PAGE_INDEX)
-                            }
-                        )
+                    BlurredBar(backdrop = backdrop, blurEnabled = blurActive) {
+                        NavigationBar(
+                            color = if (blurActive) Color.Transparent else colorScheme.surface
+                        ) {
+                            NavigationBarItem(
+                                label = stringResource(R.string.home),
+                                icon = MiuixIcons.HorizontalSplit,
+                                selected = pagerState.currentPage == UIConstants.HOME_PAGE_INDEX,
+                                onClick = {
+                                    handePagerChange(false, UIConstants.HOME_PAGE_INDEX)
+                                }
+                            )
 
-                        NavigationBarItem(
-                            label = stringResource(R.string.about),
-                            icon = MiuixIcons.Info,
-                            selected = pagerState.currentPage == UIConstants.ABOUT_PAGE_INDEX,
-                            onClick = {
-                                handePagerChange(false, UIConstants.ABOUT_PAGE_INDEX)
-                            }
-                        )
+                            NavigationBarItem(
+                                label = stringResource(R.string.about),
+                                icon = MiuixIcons.Info,
+                                selected = pagerState.currentPage == UIConstants.ABOUT_PAGE_INDEX,
+                                onClick = {
+                                    handePagerChange(false, UIConstants.ABOUT_PAGE_INDEX)
+                                }
+                            )
+                        }
                     }
                 }
             }
-        ) {
-            UiContent(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(bottom = it.calculateBottomPadding()),
-                isWideScreen = false
-            )
+        ) { paddingValues ->
+            Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
+                UiContent(
+                    paddingValues = PaddingValues(top = paddingValues.calculateTopPadding(), bottom = paddingValues.calculateBottomPadding()),
+                    isWideScreen = false
+                )
+            }
         }
     }
 
     @Composable
     private fun WideScreenLayout() {
         val windowWidth = LocalWindowInfo.current.containerSize.width
-        var weight by remember(windowWidth) { mutableFloatStateOf(0.4f) }
+        var weight by remember(windowWidth) { mutableFloatStateOf(0.25f) }
         val dragState = rememberDraggableState { delta ->
             val nextWeight = weight + delta / windowWidth
-            weight = nextWeight.coerceIn(0.2f, 0.5f)
+            weight = nextWeight.coerceIn(0.25f, 0.3f)
         }
 
         val scrollBehavior = MiuixScrollBehavior()
@@ -278,7 +287,6 @@ class MainActivity : ComponentActivity() {
                             state = dragState,
                             orientation = Orientation.Horizontal
                         )
-                        .padding(horizontal = 6.dp)
                 )
                 Box(modifier = Modifier.weight(weight = 1f - weight)) {
                     Scaffold(
@@ -288,6 +296,7 @@ class MainActivity : ComponentActivity() {
                         popupHost = {}
                     ) { paddingValues ->
                         UiContent(
+                            paddingValues = PaddingValues(top = paddingValues.calculateTopPadding(), bottom = paddingValues.calculateBottomPadding()),
                             isWideScreen = true
                         )
                     }
@@ -298,12 +307,12 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun UiContent(
-        modifier: Modifier = Modifier,
+        paddingValues: PaddingValues,
         isWideScreen: Boolean = false
     ) {
         val pagerState = LocalPagerState.current
         HorizontalPager(
-            modifier = modifier,
+            modifier = Modifier.fillMaxSize(),
             state = pagerState,
             beyondViewportPageCount = 1,
             userScrollEnabled = false,
@@ -312,11 +321,11 @@ class MainActivity : ComponentActivity() {
         ) { page ->
             when (page) {
                 UIConstants.HOME_PAGE_INDEX -> {
-                    SupportAppLayout(isWideScreen)
+                    SupportAppLayout(paddingValues, isWideScreen)
                 }
 
                 UIConstants.ABOUT_PAGE_INDEX -> {
-                    AboutLayout(isWideScreen)
+                    AboutLayout(paddingValues, isWideScreen)
                 }
             }
         }

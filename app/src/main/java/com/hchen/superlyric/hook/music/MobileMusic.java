@@ -20,14 +20,14 @@ package com.hchen.superlyric.hook.music;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
  * 咪咕音乐
  */
-@AutoHook(targetPackage = "cmccwm.mobilemusic")
+@HookThis(targetPackage = "cmccwm.mobilemusic")
 public final class MobileMusic extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {

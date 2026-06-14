@@ -25,7 +25,7 @@ import android.os.Looper;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
@@ -46,7 +46,7 @@ import java.util.Objects;
 /**
  * Apple Music
  */
-@AutoHook(targetPackage = "com.apple.android.music")
+@HookThis(targetPackage = "com.apple.android.music")
 public final class Apple extends AbsPublisher {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private Handler lyricHandler;

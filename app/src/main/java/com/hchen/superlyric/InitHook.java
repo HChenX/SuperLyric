@@ -24,7 +24,7 @@ import android.content.Context;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.HookData;
+import com.hchen.processor.HookMaps;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.hooktool.AbsModule;
 import com.hchen.hooktool.ModuleConfig;
@@ -75,7 +75,7 @@ public final class InitHook extends ModuleEntrance {
         AndroidLog.logD(TAG, "handlePackageReady: " + param.getClassLoader() + ", " + param.getAppComponentFactory() + ", " + param);
         super.handlePackageReady(param);
 
-        if (HookData.ON_PACKAGE_LOADED.containsKey(param.getPackageName())) {
+        if (HookMaps.ON_PACKAGE_LOADED.containsKey(param.getPackageName())) {
             try {
                 int version = PrefsTool.prefs().getInt("super_lyric_dexkit_cache_version", 0);
 
@@ -95,7 +95,7 @@ public final class InitHook extends ModuleEntrance {
                     return;
                 }
 
-                for (String path : Objects.requireNonNull(HookData.ON_PACKAGE_LOADED.get(param.getPackageName()))) {
+                for (String path : Objects.requireNonNull(HookMaps.ON_PACKAGE_LOADED.get(param.getPackageName()))) {
                     try {
                         AbsModule module = (AbsModule) InitHook.class.getClassLoader()
                             .loadClass(path)
@@ -133,7 +133,7 @@ public final class InitHook extends ModuleEntrance {
         super.handleSystemServerStarting(param);
 
         ModuleData.setClassLoader(param.getClassLoader());
-        for (List<String> value : HookData.ON_SYSTEM_STARTING.values()) {
+        for (List<String> value : HookMaps.ON_SYSTEM_STARTING.values()) {
             for (String path : value) {
                 try {
                     AbsModule module = (AbsModule) InitHook.class.getClassLoader()

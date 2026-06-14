@@ -95,6 +95,7 @@ public class PackageUtils {
                         for (Runnable listener : mAppLoadedListeners) {
                             listener.run();
                         }
+                        mAppLoadedListeners.clear();
 
                         AndroidLog.logD(TAG, "Success loaded app list.");
                     } finally {

@@ -22,14 +22,14 @@ import android.content.Context;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.superlyric.helper.OPPOBaseHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
  * Heytap 音乐（OPPO 国际版）
  */
-@AutoHook(targetPackage = "com.heytap.music")
+@HookThis(targetPackage = "com.heytap.music")
 public final class HeytapMusic extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {

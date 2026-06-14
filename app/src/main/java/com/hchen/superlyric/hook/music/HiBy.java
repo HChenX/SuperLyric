@@ -20,7 +20,7 @@ package com.hchen.superlyric.hook.music;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
@@ -28,7 +28,7 @@ import com.hchen.superlyric.hook.AbsPublisher;
  *
  * @author 焕晨HChen
  */
-@AutoHook(targetPackage = "com.hiby.music")
+@HookThis(targetPackage = "com.hiby.music")
 public final class HiBy extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {

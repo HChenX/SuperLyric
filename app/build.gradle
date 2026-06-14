@@ -1,5 +1,3 @@
-import org.jetbrains.kotlin.gradle.dsl.KotlinVersion
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -49,7 +47,7 @@ android {
 
         ndk {
             // noinspection ChromeOsAbiSupport
-            abiFilters 'arm64-v8a', 'armeabi-v7a'
+            abiFilters 'arm64-v8a'
         }
     }
 
@@ -73,18 +71,13 @@ android {
     }
 
     buildFeatures {
-        buildConfig true
         aidl true
+        compose true
+        buildConfig true
     }
 
     androidResources {
         generateLocaleConfig = true
-    }
-
-    kotlin {
-        compilerOptions {
-            languageVersion = KotlinVersion.KOTLIN_2_1
-        }
     }
 
     // lint {
@@ -127,11 +120,16 @@ dependencies {
     implementation platform(libs.compose.bom)
     implementation libs.foundation.android
     implementation libs.activity.compose
+    implementation libs.ui.graphics
+    implementation libs.lifecycle.viewmodel.ktx
 
+    implementation libs.miuix.core.android
     implementation libs.miuix.ui.android
     implementation libs.miuix.preference.android
     implementation libs.miuix.blur.android
     implementation libs.miuix.icons.android
+    implementation libs.miuix.shader.android
+    implementation libs.miuix.squircle.android
 
     compileOnly libs.api
     implementation libs.service
@@ -145,6 +143,6 @@ dependencies {
     }
 
     compileOnly(project(':hidden-api'))
-    implementation(project(':auto'))
-    annotationProcessor(project(':auto'))
+    implementation implementation(project(':processor'))
+    annotationProcessor annotationProcessor(project(':processor'))
 }

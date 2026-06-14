@@ -20,7 +20,7 @@ package com.hchen.superlyric.hook.music;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.TimeoutHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
@@ -29,7 +29,7 @@ import com.hchen.superlyric.hook.AbsPublisher;
 /**
  * MusicFree
  */
-@AutoHook(targetPackage = "fun.upup.musicfree")
+@HookThis(targetPackage = "fun.upup.musicfree")
 public final class MusicFree extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {

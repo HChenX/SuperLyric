@@ -24,7 +24,7 @@ import android.util.Pair;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.KuGouHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
@@ -35,7 +35,7 @@ import com.hchen.superlyricapi.SuperLyricWord;
 /**
  * 酷狗音乐概念版
  */
-@AutoHook(targetPackage = "com.kugou.android.lite")
+@HookThis(targetPackage = "com.kugou.android.lite")
 public final class KuGouLite extends AbsPublisher {
 
     @Override

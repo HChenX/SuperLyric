@@ -20,14 +20,14 @@ package com.hchen.superlyric.hook.music;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
  * APlayer
  */
-@AutoHook(targetPackage = "remix.myplayer")
+@HookThis(targetPackage = "remix.myplayer")
 public final class APlayer extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {

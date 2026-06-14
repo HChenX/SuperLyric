@@ -20,7 +20,7 @@ package com.hchen.superlyric.hook.music;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.hook.AbsPublisher;
 
@@ -29,7 +29,7 @@ import java.util.Arrays;
 /**
  * 华为音乐
  */
-@AutoHook(targetPackage = "com.huawei.music")
+@HookThis(targetPackage = "com.huawei.music")
 public final class Huawei extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {

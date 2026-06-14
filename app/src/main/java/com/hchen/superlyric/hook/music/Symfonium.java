@@ -20,7 +20,7 @@ package com.hchen.superlyric.hook.music;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
@@ -40,7 +40,7 @@ import java.util.Objects;
  *
  * @author 焕晨HChen
  */
-@AutoHook(targetPackage = "app.symfonik.music.player")
+@HookThis(targetPackage = "app.symfonik.music.player")
 public final class Symfonium extends AbsPublisher {
     private String lastLyric;
 

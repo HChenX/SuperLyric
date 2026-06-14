@@ -24,7 +24,7 @@ import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.ScreenHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
@@ -36,7 +36,7 @@ import java.util.ArrayList;
 /**
  * LX Music
  */
-@AutoHook(targetPackage = "cn.toside.music.mobile")
+@HookThis(targetPackage = "cn.toside.music.mobile")
 public final class LXMusic extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {

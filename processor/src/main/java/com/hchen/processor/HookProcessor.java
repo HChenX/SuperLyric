@@ -16,7 +16,7 @@
 
  * Copyright (C) 2025-2026 HChenX
  */
-package com.hchen.auto;
+package com.hchen.processor;
 
 import com.google.auto.service.AutoService;
 import com.squareup.javapoet.ClassName;
@@ -51,36 +51,36 @@ import javax.lang.model.element.TypeElement;
  * @author 焕晨HChen
  */
 @AutoService(Processor.class)
-@SupportedAnnotationTypes("com.hchen.auto.AutoHook")
+@SupportedAnnotationTypes("com.hchen.processor.HookThis")
 @SupportedSourceVersion(SourceVersion.RELEASE_21)
-public class AutoProcessor extends AbstractProcessor {
-    private final Map<String, List<HookData>> dataMap = new HashMap<>();
+public class HookProcessor extends AbstractProcessor {
+    private final Map<String, List<HookData>> maps = new HashMap<>();
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment env) {
         System.out.println("ENV: " + env);
         if (env.processingOver()) return true;
 
-        for (Element element : env.getElementsAnnotatedWith(AutoHook.class)) {
+        for (Element element : env.getElementsAnnotatedWith(HookThis.class)) {
             if (!(element instanceof TypeElement typeElement)) {
                 throw new RuntimeException("Element can't cast to TypeElement.");
             }
 
-            AutoHook autoHook = element.getAnnotation(AutoHook.class);
-            if (autoHook != null) {
-                dataMap
-                    .computeIfAbsent(autoHook.targetPackage(), k -> new ArrayList<>())
+            HookThis hook = element.getAnnotation(HookThis.class);
+            if (hook != null) {
+                maps
+                    .computeIfAbsent(hook.targetPackage(), k -> new ArrayList<>())
                     .add(
                         new HookData(
                             typeElement.getQualifiedName().toString(),
-                            autoHook.onPackageLoaded(),
-                            autoHook.onSystemStarting()
+                            hook.onPackageLoaded(),
+                            hook.onSystemStarting()
                         )
                     );
             }
         }
 
-        if (!env.getElementsAnnotatedWith(AutoHook.class).isEmpty()) {
+        if (!env.getElementsAnnotatedWith(HookThis.class).isEmpty()) {
             try {
                 generateHookData();
             } catch (IOException e) {
@@ -101,25 +101,25 @@ public class AutoProcessor extends AbstractProcessor {
             );
 
         TypeSpec.Builder clazz =
-            TypeSpec.classBuilder("HookData")
+            TypeSpec.classBuilder("HookMaps")
                 .addModifiers(Modifier.PUBLIC)
                 .addJavadoc("注解处理器自动生成的 Map 图\n");
 
         clazz.addField(generateStaticMap(
             "ON_SYSTEM_STARTING",
-            dataMap,
+            maps,
             hookData -> hookData.onSystemStarting,
             mapType
         ));
 
         clazz.addField(generateStaticMap(
             "ON_PACKAGE_LOADED",
-            dataMap,
+            maps,
             hookData -> hookData.onPackageLoaded,
             mapType
         ));
 
-        JavaFile.builder("com.hchen.auto", clazz.build())
+        JavaFile.builder("com.hchen.processor", clazz.build())
             .build()
             .writeTo(processingEnv.getFiler());
     }

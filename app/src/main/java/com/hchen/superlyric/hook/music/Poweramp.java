@@ -20,7 +20,7 @@ package com.hchen.superlyric.hook.music;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.hook.AbsPublisher;
 
@@ -34,7 +34,7 @@ import java.util.regex.Pattern;
 /**
  * Poweramp
  */
-@AutoHook(targetPackage = "com.maxmpz.audioplayer")
+@HookThis(targetPackage = "com.maxmpz.audioplayer")
 public final class Poweramp extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {

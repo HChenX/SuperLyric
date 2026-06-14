@@ -22,14 +22,14 @@ import android.content.Context;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.superlyric.helper.OPPOBaseHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
  * OPPO 音乐
  */
-@AutoHook(targetPackage = "com.oppo.music")
+@HookThis(targetPackage = "com.oppo.music")
 public final class OPPOMusic extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {

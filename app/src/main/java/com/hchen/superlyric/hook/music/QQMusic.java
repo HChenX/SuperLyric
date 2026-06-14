@@ -25,7 +25,7 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.ModuleData;
@@ -55,7 +55,7 @@ import java.util.function.Predicate;
  *
  * @author 焕晨HChen
  */
-@AutoHook(targetPackage = "com.tencent.qqmusic")
+@HookThis(targetPackage = "com.tencent.qqmusic")
 public final class QQMusic extends AbsPublisher {
     private final CopyOnWriteArrayList<LyricData> lyricDataList = new CopyOnWriteArrayList<>();
     private Field lyricField;

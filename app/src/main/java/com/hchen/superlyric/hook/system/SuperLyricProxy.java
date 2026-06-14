@@ -25,7 +25,7 @@ import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.hooktool.AbsModule;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.service.PlayStateListener;
@@ -41,7 +41,7 @@ import java.util.Optional;
  *
  * @author 焕晨HChen
  */
-@AutoHook(targetPackage = "system", onSystemStarting = true)
+@HookThis(targetPackage = "system", onSystemStarting = true)
 public final class SuperLyricProxy extends AbsModule {
     private static SuperLyricService mSuperLyricService;
 

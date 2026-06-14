@@ -1,21 +1,3 @@
-/*
- * This file is part of SuperLyric.
-
- * SuperLyric is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as
- * published by the Free Software Foundation, either version 3 of the
- * License.
-
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
-
- * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
-
- * Copyright (C) 2025-2026 HChenX
- */
 package com.hchen.superlyric.ui.component
 
 import androidx.activity.compose.BackHandler
@@ -70,14 +52,12 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.onClick
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -85,11 +65,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import androidx.compose.ui.zIndex
 import com.hchen.superlyric.R
+import com.hchen.superlyric.ui.effect.BlurredBar
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.InputField
 import top.yukonga.miuix.kmp.basic.PullToRefresh
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
+import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Search
 import top.yukonga.miuix.kmp.icon.basic.SearchCleanup
@@ -108,9 +90,8 @@ class SearchStatus(val label: String) {
 
     fun isExpand() = current == Status.EXPANDED
     fun isCollapsed() = current == Status.COLLAPSED
-    fun shouldExpand() = current == Status.EXPANDED || current == Status.EXPANDING
-    fun shouldCollapsed() = current == Status.COLLAPSED || current == Status.COLLAPSING
-    fun isAnimatingExpand() = current == Status.EXPANDING
+    fun isExpandStage() = current == Status.EXPANDING || current == Status.EXPANDED
+    fun isCollapseStage() = current == Status.COLLAPSING || current == Status.COLLAPSED
 
     fun onAnimationComplete() {
         current = when (current) {
@@ -124,38 +105,39 @@ class SearchStatus(val label: String) {
         }
     }
 
-    @Composable
-    fun TopAppBarAnim(
-        modifier: Modifier = Modifier,
-        visible: Boolean = shouldCollapsed(),
-        content: @Composable () -> Unit
-    ) {
-        val topAppBarAlpha = animateFloatAsState(
-            if (visible) 1f else 0f,
-            animationSpec = tween(if (visible) 550 else 0, easing = FastOutSlowInEasing),
-        )
-        Box(modifier = modifier) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(colorScheme.surface)
-            )
-            Box(
-                modifier = Modifier
-                    .alpha(topAppBarAlpha.value)
-            ) { content() }
-        }
-    }
-
     enum class Status { EXPANDED, EXPANDING, COLLAPSED, COLLAPSING }
     enum class ResultStatus { DEFAULT, EMPTY, LOAD, SHOW }
+}
+
+@Composable
+fun SearchStatus.TopAppBarAnim(
+    modifier: Modifier = Modifier,
+    visible: Boolean = isCollapseStage(),
+    content: @Composable () -> Unit
+) {
+    val topAppBarAlpha = animateFloatAsState(
+        if (visible) 1f else 0f,
+        animationSpec = tween(if (visible) 550 else 0, easing = FastOutSlowInEasing),
+    )
+    Box(modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(colorScheme.surface)
+        )
+        Box(
+            modifier = Modifier
+                .alpha(topAppBarAlpha.value)
+        ) { content() }
+    }
 }
 
 // Search Box Composable
 @Composable
 fun SearchStatus.SearchBox(
-    collapseBar: @Composable (SearchStatus, Dp, PaddingValues) -> Unit = { searchStatus, topPadding, innerPadding ->
-        SearchBarFake(searchStatus.label, topPadding, innerPadding)
+    backdrop: LayerBackdrop?,
+    collapseBar: @Composable (SearchStatus, Boolean, Dp) -> Unit = { searchStatus, blurActive, topPadding ->
+        SearchBarFake(searchStatus.label, blurActive, topPadding)
     },
     searchBarTopPadding: Dp = 12.dp,
     contentPadding: PaddingValues = PaddingValues(0.dp),
@@ -164,12 +146,12 @@ fun SearchStatus.SearchBox(
     val searchStatus = this
     val density = LocalDensity.current
 
-    animateFloatAsState(if (searchStatus.shouldCollapsed()) 1f else 0f)
-
     val offsetY = remember { mutableIntStateOf(0) }
     val boxHeight = remember { mutableStateOf(0.dp) }
 
-    Box(
+    val blurActive = backdrop != null
+
+    BlurredBar(
         modifier = Modifier
             .fillMaxWidth()
             .zIndex(10f)
@@ -186,13 +168,15 @@ fun SearchStatus.SearchBox(
             }
             .pointerInput(Unit) {
                 detectTapGestures { searchStatus.current = SearchStatus.Status.EXPANDING }
-            }
+            },
+        backdrop = backdrop,
+        blurEnabled = blurActive
     ) {
-        collapseBar(searchStatus, searchBarTopPadding, contentPadding)
+        collapseBar(searchStatus, blurActive, searchBarTopPadding)
     }
     Box {
         AnimatedVisibility(
-            visible = searchStatus.shouldCollapsed(),
+            visible = searchStatus.isCollapseStage(),
             enter = fadeIn(tween(300, easing = LinearOutSlowInEasing)) + slideInVertically(
                 tween(
                     300,
@@ -226,7 +210,7 @@ fun SearchStatus.SearchPager(
     val searchStatus = this
     val systemBarsPadding = WindowInsets.systemBars.asPaddingValues().calculateTopPadding()
     val topPadding by animateDpAsState(
-        targetValue = if (searchStatus.shouldExpand()) {
+        targetValue = if (searchStatus.isExpandStage()) {
             systemBarsPadding + 5.dp
         } else {
             max(searchStatus.offsetY, 0.dp)
@@ -235,10 +219,6 @@ fun SearchStatus.SearchPager(
     ) {
         searchStatus.onAnimationComplete()
     }
-    val surfaceAlpha by animateFloatAsState(
-        if (searchStatus.shouldExpand()) 1f else 0f,
-        animationSpec = tween(200, easing = FastOutSlowInEasing)
-    )
 
     var isRefreshing by rememberSaveable { mutableStateOf(false) }
     val pullToRefreshState = rememberPullToRefreshState()
@@ -253,7 +233,6 @@ fun SearchStatus.SearchPager(
     val lazyColumn: @Composable () -> Unit = {
         if (enableRefresh) {
             PullToRefresh(
-                modifier = Modifier.padding(top = 6.dp),
                 isRefreshing = isRefreshing,
                 onRefresh = {
                     isRefreshing = true
@@ -270,7 +249,8 @@ fun SearchStatus.SearchPager(
                     Modifier
                         .fillMaxSize()
                         .scrollEndHaptic()
-                        .overScrollVertical(),
+                        .overScrollVertical()
+                        .background(colorScheme.surface),
                     contentPadding = PaddingValues(bottom = 12.dp)
                 ) {
                     result()
@@ -281,7 +261,8 @@ fun SearchStatus.SearchPager(
                 Modifier
                     .fillMaxSize()
                     .scrollEndHaptic()
-                    .overScrollVertical(),
+                    .overScrollVertical()
+                    .background(colorScheme.surface),
                 contentPadding = PaddingValues(bottom = 12.dp)
             ) {
                 result()
@@ -292,9 +273,6 @@ fun SearchStatus.SearchPager(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .zIndex(5f)
-            .background(colorScheme.surface.copy(alpha = surfaceAlpha))
-            .semantics { onClick { false } }
             .clipToBounds()
             .then(
                 if (!searchStatus.isCollapsed()) Modifier.pointerInput(Unit) { } else Modifier
@@ -303,57 +281,50 @@ fun SearchStatus.SearchPager(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .zIndex(10f)
                 .height(topPadding)
-                .zIndex(1f)
-                .then(
-                    if (searchStatus.isExpand() || searchStatus.isAnimatingExpand())
-                        Modifier.background(colorScheme.surface)
-                    else Modifier
-                )
-        )
+                .background(if (searchStatus.isExpandStage()) colorScheme.surface else Color.Transparent),
+        ) {}
         Row(
             Modifier
                 .fillMaxWidth()
-                .zIndex(1f)
-                .then(
-                    if (!searchStatus.isCollapsed()) Modifier.background(colorScheme.surface)
-                    else Modifier
-                ),
+                .zIndex(10f)
+                .background(if (!searchStatus.isCollapsed()) colorScheme.surface else Color.Transparent),
             horizontalArrangement = Arrangement.Start,
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (!searchStatus.isCollapsed()) {
                 Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .background(colorScheme.surface)
+                    modifier = Modifier.weight(1f)
                 ) {
                     expandBar(searchStatus, searchBarTopPadding)
                 }
-            }
-            AnimatedVisibility(
-                visible = searchStatus.isExpand() || searchStatus.isAnimatingExpand(),
-                enter = expandHorizontally() + slideInHorizontally(initialOffsetX = { it }),
-                exit = shrinkHorizontally() + slideOutHorizontally(targetOffsetX = { it })
-            ) {
-                Text(
-                    text = stringResource(android.R.string.cancel),
-                    fontWeight = FontWeight.Bold,
-                    color = colorScheme.primary,
-                    modifier = Modifier
-                        .padding(start = 4.dp, end = 16.dp, top = searchBarTopPadding, bottom = 12.dp)
-                        .clickable(
-                            interactionSource = null,
-                            enabled = searchStatus.isExpand(),
-                            indication = null
-                        ) { searchStatus.current = SearchStatus.Status.COLLAPSING },
-                    textAlign = TextAlign.Start
-                )
-                BackHandler(enabled = true) {
-                    searchStatus.current = SearchStatus.Status.COLLAPSING
+
+                AnimatedVisibility(
+                    visible = searchStatus.isExpandStage(),
+                    enter = expandHorizontally() + slideInHorizontally(initialOffsetX = { it }),
+                    exit = shrinkHorizontally() + slideOutHorizontally(targetOffsetX = { it })
+                ) {
+                    Text(
+                        text = stringResource(android.R.string.cancel),
+                        fontWeight = FontWeight.Bold,
+                        color = colorScheme.primary,
+                        modifier = Modifier
+                            .padding(start = 4.dp, end = 16.dp, top = searchBarTopPadding, bottom = 12.dp)
+                            .clickable(
+                                interactionSource = null,
+                                enabled = searchStatus.isExpand(),
+                                indication = null
+                            ) { searchStatus.current = SearchStatus.Status.COLLAPSING },
+                        textAlign = TextAlign.Start
+                    )
+                    BackHandler(enabled = true) {
+                        searchStatus.current = SearchStatus.Status.COLLAPSING
+                    }
                 }
             }
         }
+
         AnimatedVisibility(
             visible = searchStatus.isExpand(),
             modifier = Modifier.fillMaxSize(),
@@ -419,16 +390,17 @@ private fun SearchBar(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp)
-            .padding(top = searchBarTopPadding, bottom = 12.dp)
-            .focusRequester(focusRequester),
+            .padding(top = searchBarTopPadding, bottom = 8.dp)
+            .focusRequester(focusRequester)
+            .background(Color.Transparent),
         onSearch = { it },
-        expanded = searchStatus.shouldExpand(),
+        expanded = searchStatus.isExpandStage(),
         onExpandedChange = {
             searchStatus.current = if (it) SearchStatus.Status.EXPANDED else SearchStatus.Status.COLLAPSED
         }
     )
     LaunchedEffect(Unit) {
-        if (!expanded && searchStatus.shouldExpand()) {
+        if (!expanded && searchStatus.isExpandStage()) {
             focusRequester.requestFocus()
             expanded = true
         }
@@ -438,10 +410,9 @@ private fun SearchBar(
 @Composable
 private fun SearchBarFake(
     label: String,
-    searchBarTopPadding: Dp = 12.dp,
-    innerPadding: PaddingValues = PaddingValues(0.dp)
+    blurActive: Boolean,
+    searchBarTopPadding: Dp = 12.dp
 ) {
-    val layoutDirection = LocalLayoutDirection.current
     InputField(
         query = "",
         onQueryChange = { },
@@ -458,12 +429,8 @@ private fun SearchBarFake(
         },
         modifier = Modifier
             .padding(horizontal = 12.dp)
-            // Possible incorrect padding
-            // .padding(
-            //     start = innerPadding.calculateStartPadding(layoutDirection),
-            //     end = innerPadding.calculateEndPadding(layoutDirection)
-            // )
-            .padding(top = searchBarTopPadding, bottom = 6.dp),
+            .padding(top = searchBarTopPadding, bottom = 8.dp)
+            .background(if (blurActive) Color.Transparent else colorScheme.surface),
         onSearch = { },
         enabled = false,
         expanded = false,

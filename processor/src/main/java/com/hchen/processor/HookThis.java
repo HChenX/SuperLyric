@@ -16,7 +16,7 @@
 
  * Copyright (C) 2025-2026 HChenX
  */
-package com.hchen.auto;
+package com.hchen.processor;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
@@ -30,7 +30,7 @@ import java.lang.annotation.Target;
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.TYPE)
-public @interface AutoHook {
+public @interface HookThis {
     String targetPackage();
 
     boolean onPackageLoaded() default true;

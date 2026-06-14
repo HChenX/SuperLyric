@@ -22,7 +22,7 @@ import android.content.Context;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
@@ -51,7 +51,7 @@ import java.util.function.Predicate;
 /**
  * 网易云音乐
  */
-@AutoHook(targetPackage = "com.netease.cloudmusic")
+@HookThis(targetPackage = "com.netease.cloudmusic")
 public final class Netease extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {

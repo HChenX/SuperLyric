@@ -20,14 +20,14 @@ package com.hchen.superlyric.hook.music;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
  * 音流音乐
  */
-@AutoHook(targetPackage = "cn.aqzscn.stream_music")
+@HookThis(targetPackage = "cn.aqzscn.stream_music")
 public final class Aqzscn extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {

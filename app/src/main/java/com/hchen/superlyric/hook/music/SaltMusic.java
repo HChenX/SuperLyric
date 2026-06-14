@@ -22,7 +22,7 @@ import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
@@ -51,7 +51,7 @@ import java.util.function.Predicate;
 /**
  * 椒盐音乐
  */
-@AutoHook(targetPackage = "com.salt.music")
+@HookThis(targetPackage = "com.salt.music")
 public final class SaltMusic extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {

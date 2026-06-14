@@ -22,7 +22,7 @@ import android.content.Context;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.superlyric.helper.MeizuHelper;
@@ -40,7 +40,7 @@ import java.lang.reflect.Method;
 /**
  * 荣耀音乐
  */
-@AutoHook(targetPackage = "com.hihonor.cloudmusic")
+@HookThis(targetPackage = "com.hihonor.cloudmusic")
 public final class Hihonor extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {

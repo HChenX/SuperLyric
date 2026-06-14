@@ -22,7 +22,9 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -37,10 +39,12 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,16 +52,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.BitmapPainter
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.edit
 import androidx.core.graphics.drawable.toBitmap
 import androidx.core.net.toUri
@@ -67,8 +75,11 @@ import com.hchen.superlyric.BuildConfig
 import com.hchen.superlyric.R
 import com.hchen.superlyric.data.PrefsKey
 import com.hchen.superlyric.ui.Application
-import com.hchen.superlyric.ui.data.LocalMiuixScrollBehavior
 import com.hchen.superlyric.ui.data.LocalViewModel
+import com.hchen.superlyric.ui.effect.BgEffectBackground
+import com.hchen.superlyric.ui.effect.BlurredBar
+import com.hchen.superlyric.ui.effect.blend.ColorBlendToken
+import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
 import com.hchen.superlyric.ui.viewmodel.MainUiAction
 import com.hchen.superlyricapi.ISuperLyricReceiver
 import com.hchen.superlyricapi.SuperLyricData
@@ -81,15 +92,20 @@ import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
+import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TopAppBar
+import top.yukonga.miuix.kmp.blur.BlendColorEntry
+import top.yukonga.miuix.kmp.blur.BlurBlendMode
+import top.yukonga.miuix.kmp.blur.BlurDefaults
+import top.yukonga.miuix.kmp.blur.LayerBackdrop
+import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Ok
-import top.yukonga.miuix.kmp.layout.DialogDefaults
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -100,11 +116,12 @@ import top.yukonga.miuix.kmp.window.WindowBottomSheet
 @Composable
 @SuppressLint("LocalContextGetResourceValueCall")
 fun AboutLayout(
+    paddingValues: PaddingValues,
     isWideScreen: Boolean = false
 ) {
     val viewModel = LocalViewModel.current
     val context = LocalContext.current
-    val scrollBehavior = LocalMiuixScrollBehavior.current
+
     val icon = remember {
         context.packageManager.getApplicationIcon(context.packageName)
     }
@@ -160,123 +177,205 @@ fun AboutLayout(
         }
     }
 
+    val scrollBehavior = MiuixScrollBehavior()
+    val lazyListState = rememberLazyListState()
+    val scrollProgress by remember {
+        derivedStateOf {
+            when {
+                lazyListState.firstVisibleItemIndex > 0 -> 1f
+
+                else -> {
+                    val spacer = lazyListState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "logoSpacer" }
+                    if (spacer != null && spacer.size > 0) {
+                        (lazyListState.firstVisibleItemScrollOffset.toFloat() / (spacer.size)).coerceIn(0f, 1f)
+                    } else {
+                        0f
+                    }
+                }
+            }
+        }
+    }
+
+    val isInDark = isSystemInDarkTheme()
+    val cardBlend = if (isInDark) ColorBlendToken.Overlay_Thin_Light else ColorBlendToken.Pured_Regular_Light
+    val logoBlend = remember(isInDark) {
+        if (isInDark) {
+            listOf(
+                BlendColorEntry(Color(0xe6a1a1a1), BlurBlendMode.ColorDodge),
+                BlendColorEntry(Color(0x4de6e6e6), BlurBlendMode.LinearLight),
+                BlendColorEntry(Color(0xff1af500), BlurBlendMode.Lab),
+            )
+        } else {
+            listOf(
+                BlendColorEntry(Color(0xcc4a4a4a), BlurBlendMode.ColorBurn),
+                BlendColorEntry(Color(0xff4f4f4f), BlurBlendMode.LinearLight),
+                BlendColorEntry(Color(0xff1af200), BlurBlendMode.Lab),
+            )
+        }
+    }
+
+    val backdrop = rememberBlurBackdrop()
+    val blurActive = backdrop != null && scrollProgress == 1f
+    val barColor = if (blurActive) {
+        Color.Transparent
+    } else {
+        if (scrollProgress == 1f) MiuixTheme.colorScheme.surface else Color.Transparent
+    }
+
+    val density = LocalDensity.current
+    var logoHeightDp by remember { mutableStateOf(300.dp) }
+
+    val versionCodeProgress = ((scrollProgress - 0.05f) / 0.15f).coerceIn(0f, 1f)
+    val projectNameProgress = ((scrollProgress - 0.20f) / 0.15f).coerceIn(0f, 1f)
+    val iconProgress = ((scrollProgress - 0.35f) / 0.15f).coerceIn(0f, 1f)
+
     Scaffold(
         topBar = {
-            if (isWideScreen) {
+            BlurredBar(backdrop = backdrop, blurEnabled = blurActive) {
                 SmallTopAppBar(
-                    title = stringResource(R.string.app_name),
+                    title = stringResource(R.string.about),
                     scrollBehavior = scrollBehavior,
-                    defaultWindowInsetsPadding = false
-                )
-            } else {
-                TopAppBar(
-                    title = stringResource(R.string.app_name),
-                    scrollBehavior = scrollBehavior,
+                    color = barColor,
+                    titleColor = MiuixTheme.colorScheme.onSurface.copy(
+                        alpha = ((scrollProgress - 0.35f) / 0.65f).coerceIn(0f, 1f),
+                    ),
                     defaultWindowInsetsPadding = false
                 )
             }
         }
-    ) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .scrollEndHaptic()
-                .overScrollVertical()
-                .nestedScroll(scrollBehavior.nestedScrollConnection)
-                .padding(top = it.calculateTopPadding()),
-            contentPadding = PaddingValues(bottom = 12.dp),
-            overscrollEffect = null
+    ) { pv ->
+        BgEffectBackground(
+            dynamicBackground = true,
+            isOs3Effect = true,
+            isFullSize = true,
+            modifier = Modifier.fillMaxSize(),
+            bgModifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier,
+            alpha = { 1f - scrollProgress }
         ) {
-            item(key = "logo") {
-                Card(
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = pv.calculateTopPadding() + 80.dp)
+                    .onSizeChanged { size ->
+                        with(density) { logoHeightDp = size.height.toDp() }
+                    },
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .size(88.dp)
+                        .graphicsLayer {
+                            clip = true
+                            shape = RoundedCornerShape(16.dp)
+                            alpha = 1 - iconProgress
+                            scaleX = 1 - (iconProgress * 0.05f)
+                            scaleY = 1 - (iconProgress * 0.05f)
+                        }
+                        .background(Color.White),
+                ) {
+                    Image(
+                        modifier = Modifier.size(88.dp),
+                        painter = BitmapPainter(icon.toBitmap().asImageBitmap()),
+                        contentDescription = null,
+                    )
+                }
+                Text(
+                    modifier = Modifier
+                        .padding(top = 12.dp, bottom = 5.dp)
+                        .graphicsLayer {
+                            alpha = 1 - projectNameProgress
+                            scaleX = 1 - (projectNameProgress * 0.05f)
+                            scaleY = 1 - (projectNameProgress * 0.05f)
+                        }
+                        .then(
+                            if (backdrop != null) {
+                                Modifier
+                                    .textureBlur(
+                                        backdrop = backdrop,
+                                        shape = RoundedCornerShape(16.dp),
+                                        blurRadius = 150f,
+                                        noiseCoefficient = BlurDefaults.NoiseCoefficient,
+                                        colors = BlurDefaults.blurColors(
+                                            blendColors = logoBlend,
+                                        ),
+                                        contentBlendMode = BlendMode.DstIn,
+                                    )
+                            } else {
+                                Modifier
+                            },
+                        ),
+                    text = "AppRetention",
+                    color = MiuixTheme.colorScheme.onBackground,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 35.sp,
+                )
+                Text(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp)
-                        .padding(top = 12.dp, bottom = 12.dp)
-                ) {
-                    Column(
-                        modifier = Modifier.height(192.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Icon(
-                            painter = BitmapPainter(icon.toBitmap().asImageBitmap()),
-                            contentDescription = "App Logo",
-                            tint = Color.Unspecified,
-                            modifier = Modifier
-                                .size(96.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .padding(bottom = 6.dp)
-                        )
-
-                        Text(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 3.dp),
-                            text = stringResource(R.string.app_name),
-                            fontSize = MiuixTheme.textStyles.title4.fontSize,
-                            fontWeight = FontWeight.Medium,
-                            textAlign = TextAlign.Center,
-                            color = DialogDefaults.titleColor(),
-                        )
-
-                        Text(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(bottom = 6.dp),
-                            text = "${BuildConfig.VERSION_NAME}_${BuildConfig.VERSION_CODE} | ${BuildConfig.BUILD_TYPE.replaceFirstChar(Char::titlecase)}",
-                            fontSize = MiuixTheme.textStyles.body1.fontSize,
-                            textAlign = TextAlign.Center,
-                            color = DialogDefaults.summaryColor(),
-                        )
-                    }
-                }
+                        .graphicsLayer {
+                            alpha = 1 - versionCodeProgress
+                            scaleX = 1 - (versionCodeProgress * 0.05f)
+                            scaleY = 1 - (versionCodeProgress * 0.05f)
+                        },
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    text = "${BuildConfig.VERSION_NAME}_${BuildConfig.VERSION_CODE} | ${BuildConfig.BUILD_TYPE.replaceFirstChar { it.uppercase() }}",
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center,
+                )
             }
 
-            item("item") {
-                SmallTitle(text = stringResource(R.string.developer))
-
-                Card(
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp)
-                        .padding(bottom = 12.dp)
-                ) {
-                    ArrowPreference(
-                        title = "焕晨HChen",
-                        summary = "Github | Developer",
-                        startAction = {
-                            Box(Modifier.padding(end = 8.dp)) {
-                                Icon(
-                                    painter = painterResource(R.drawable.hchen),
-                                    contentDescription = "HChen",
-                                    tint = Color.Unspecified,
-                                    modifier = Modifier
-                                        .size(48.dp)
-                                        .clip(RoundedCornerShape(10.dp))
-                                )
-                            }
-                        },
-                        onClick = {
-                            openUrl(context, "https://github.com/HChenX")
-                        }
+            LazyColumn(
+                state = lazyListState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .scrollEndHaptic()
+                    .overScrollVertical(),
+                contentPadding = PaddingValues(bottom = paddingValues.calculateBottomPadding()),
+                overscrollEffect = null
+            ) {
+                item(key = "logoSpacer") {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(
+                                logoHeightDp + 200.dp,
+                            ),
+                        contentAlignment = Alignment.TopCenter,
+                        content = { },
                     )
                 }
 
-                SmallTitle(text = stringResource(R.string.contributors))
-                Card(
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp)
-                        .padding(bottom = 12.dp)
-                ) {
-                    contributor.forEachIndexed { index, name ->
+                item("barPadding") {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(pv.calculateTopPadding()),
+                        contentAlignment = Alignment.TopCenter,
+                        content = { },
+                    )
+                }
+
+                item("about") {
+                    SmallTitle(text = stringResource(R.string.developer))
+                    Card(
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 12.dp)
+                            .cardBlur(backdrop = backdrop, cardBlend = cardBlend),
+                        colors = CardDefaults.defaultColors(
+                            if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.surfaceContainer,
+                            Color.Transparent,
+                        )
+                    ) {
                         ArrowPreference(
-                            title = name,
-                            summary = "Github | Contributor",
+                            title = "焕晨HChen",
+                            summary = "Github | Developer",
                             startAction = {
                                 Box(Modifier.padding(end = 8.dp)) {
                                     Icon(
-                                        painter = painterResource(contributorIcon[index]),
-                                        contentDescription = name,
+                                        painter = painterResource(R.drawable.hchen),
+                                        contentDescription = "HChen",
                                         tint = Color.Unspecified,
                                         modifier = Modifier
                                             .size(48.dp)
@@ -285,79 +384,128 @@ fun AboutLayout(
                                 }
                             },
                             onClick = {
-                                openUrl(context, contributorUri[index])
+                                openUrl(context, "https://github.com/HChenX")
                             }
                         )
                     }
-                }
 
-                SmallTitle(text = stringResource(R.string.debug))
-                Card(
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp)
-                        .padding(bottom = 12.dp)
-                ) {
-                    ArrowPreference(
-                        title = "API 测试",
-                        summary = "测试 SuperLyricApi 状态",
-                        onClick = {
-                            show = true
+                    SmallTitle(text = stringResource(R.string.contributors))
+                    Card(
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 12.dp)
+                            .cardBlur(backdrop = backdrop, cardBlend = cardBlend),
+                        colors = CardDefaults.defaultColors(
+                            if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.surfaceContainer,
+                            Color.Transparent,
+                        )
+                    ) {
+                        contributor.forEachIndexed { index, name ->
+                            ArrowPreference(
+                                title = name,
+                                summary = "Github | Contributor",
+                                startAction = {
+                                    Box(Modifier.padding(end = 8.dp)) {
+                                        Icon(
+                                            painter = painterResource(contributorIcon[index]),
+                                            contentDescription = name,
+                                            tint = Color.Unspecified,
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(RoundedCornerShape(10.dp))
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    openUrl(context, contributorUri[index])
+                                }
+                            )
                         }
-                    )
-                    ArrowPreference(
-                        title = stringResource(R.string.clear_dexkit_cache),
-                        summary = stringResource(R.string.clear_dexkit_cache_summary),
-                        onClick = {
-                            var version = Application.getRemotePreferences().getInt("super_lyric_dexkit_cache_version", 0)
-                            Application.getRemotePreferences().edit { putInt("super_lyric_dexkit_cache_version", ++version) }
+                    }
 
-                            Toast.makeText(context, context.getString(R.string.cleared), Toast.LENGTH_SHORT).show()
-                        }
-                    )
-                    WindowDropdownPreference(
-                        items = logLevels,
-                        selectedIndex = logLevel,
-                        title = stringResource(R.string.log_level),
-                        summary = stringResource(R.string.log_level_details),
-                        onSelectedIndexChange = {
-                            viewModel.handleAction(MainUiAction.UpdateLogLevel(it))
-                            PrefsTool.prefs(context).edit { putInt(PrefsKey.LOG_LEVEL, it) }
-                        }
-                    )
-                }
+                    SmallTitle(text = stringResource(R.string.debug))
+                    Card(
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 12.dp)
+                            .cardBlur(backdrop = backdrop, cardBlend = cardBlend),
+                        colors = CardDefaults.defaultColors(
+                            if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.surfaceContainer,
+                            Color.Transparent,
+                        )
+                    ) {
+                        ArrowPreference(
+                            title = "API 测试",
+                            summary = "测试 SuperLyricApi 状态",
+                            onClick = {
+                                show = true
+                            }
+                        )
+                        ArrowPreference(
+                            title = stringResource(R.string.clear_dexkit_cache),
+                            summary = stringResource(R.string.clear_dexkit_cache_summary),
+                            onClick = {
+                                var version = Application.getRemotePreferences().getInt("super_lyric_dexkit_cache_version", 0)
+                                Application.getRemotePreferences().edit { putInt("super_lyric_dexkit_cache_version", ++version) }
 
-                SmallTitle(text = stringResource(R.string.discussion))
-                Card(
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp)
-                        .padding(bottom = 12.dp)
-                ) {
-                    ArrowPreference(
-                        title = stringResource(R.string.telegram_group),
-                        onClick = {
-                            openUrl(context, "https://t.me/HChenX_Chat")
-                        }
-                    )
-                    ArrowPreference(
-                        title = stringResource(R.string.telegram_channel),
-                        onClick = {
-                            openUrl(context, "https://t.me/HChen_Module")
-                        }
-                    )
-                }
+                                Toast.makeText(context, context.getString(R.string.cleared), Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                        WindowDropdownPreference(
+                            items = logLevels,
+                            selectedIndex = logLevel,
+                            title = stringResource(R.string.log_level),
+                            summary = stringResource(R.string.log_level_details),
+                            onSelectedIndexChange = {
+                                viewModel.handleAction(MainUiAction.UpdateLogLevel(it))
+                                PrefsTool.prefs(context).edit { putInt(PrefsKey.LOG_LEVEL, it) }
+                            }
+                        )
+                    }
 
-                SmallTitle(text = stringResource(R.string.others))
-                Card(
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp)
-                        .padding(bottom = 12.dp)
-                ) {
-                    ArrowPreference(
-                        title = stringResource(R.string.project_url),
-                        onClick = {
-                            openUrl(context, "https://github.com/HChenX/SuperLyric")
-                        }
-                    )
+                    SmallTitle(text = stringResource(R.string.discussion))
+                    Card(
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 12.dp)
+                            .cardBlur(backdrop = backdrop, cardBlend = cardBlend),
+                        colors = CardDefaults.defaultColors(
+                            if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.surfaceContainer,
+                            Color.Transparent,
+                        )
+                    ) {
+                        ArrowPreference(
+                            title = stringResource(R.string.telegram_group),
+                            onClick = {
+                                openUrl(context, "https://t.me/HChenX_Chat")
+                            }
+                        )
+                        ArrowPreference(
+                            title = stringResource(R.string.telegram_channel),
+                            onClick = {
+                                openUrl(context, "https://t.me/HChen_Module")
+                            }
+                        )
+                    }
+
+                    SmallTitle(text = stringResource(R.string.others))
+                    Card(
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 12.dp)
+                            .cardBlur(backdrop = backdrop, cardBlend = cardBlend),
+                        colors = CardDefaults.defaultColors(
+                            if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.surfaceContainer,
+                            Color.Transparent,
+                        )
+                    ) {
+                        ArrowPreference(
+                            title = stringResource(R.string.project_url),
+                            onClick = {
+                                openUrl(context, "https://github.com/HChenX/SuperLyric")
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -510,6 +658,31 @@ fun AboutLayout(
         }
     }
 }
+
+@Composable
+private fun Modifier.cardBlur(
+    backdrop: LayerBackdrop?,
+    cardBlend: List<BlendColorEntry>
+): Modifier = this
+    .then(
+        if (backdrop != null) {
+            Modifier
+                .textureBlur(
+                    backdrop = backdrop,
+                    shape = RoundedCornerShape(16.dp),
+                    blurRadius = 60f,
+                    noiseCoefficient = BlurDefaults.NoiseCoefficient,
+                    colors = BlurDefaults.blurColors(
+                        blendColors = cardBlend,
+                        brightness = 0f,
+                        contrast = 1f,
+                        saturation = 1f,
+                    ),
+                )
+        } else {
+            Modifier
+        },
+    )
 
 private object AnalogReceiver {
     val registeredFlow = MutableStateFlow(false)

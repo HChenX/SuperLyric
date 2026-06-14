@@ -22,7 +22,7 @@ import android.content.Context;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.MeizuHelper;
@@ -31,7 +31,7 @@ import com.hchen.superlyric.hook.AbsPublisher;
 /**
  * 青盐音乐
  */
-@AutoHook(targetPackage = "com.xuncorp.qinalt.music")
+@HookThis(targetPackage = "com.xuncorp.qinalt.music")
 public final class Qinalt extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {

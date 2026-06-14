@@ -22,7 +22,7 @@ import android.content.Context;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.auto.AutoHook;
+import com.hchen.processor.HookThis;
 import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.ScreenHelper;
@@ -31,7 +31,7 @@ import com.hchen.superlyric.hook.AbsPublisher;
 /**
  * RPlayer
  */
-@AutoHook(targetPackage = "com.r.rplayer")
+@HookThis(targetPackage = "com.r.rplayer")
 public final class RPlayer extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
