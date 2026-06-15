@@ -212,7 +212,7 @@ fun HomeLayout(
         }
     }
 
-    val settingsEntries = remember {
+    val settingsEntries = remember(logLevel) {
         listOf(
             DropdownEntry(
                 items = listOf(
@@ -220,16 +220,24 @@ fun HomeLayout(
                         text = "API 测试",
                         selected = false,
                         onClick = {
-                            isApiTestDialogShowing = true
+                            if (SuperLyricHelper.isAvailable()) {
+                                isApiTestDialogShowing = true
+                            } else {
+                                Toast.makeText(context, "SuperLyric 服务未启动", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     ),
                     DropdownItem(
                         text = context.getString(R.string.clear_dexkit_cache),
                         selected = false,
                         onClick = {
-                            var version = Application.getRemotePreferences().getInt("super_lyric_dexkit_cache_version", 0)
-                            Application.getRemotePreferences().edit { putInt("super_lyric_dexkit_cache_version", ++version) }
-                            Toast.makeText(context, context.getString(R.string.cleared), Toast.LENGTH_SHORT).show()
+                            if (Application.getRemotePreferences() != null) {
+                                var version = Application.getRemotePreferences().getInt("super_lyric_dexkit_cache_version", 0)
+                                Application.getRemotePreferences().edit { putInt("super_lyric_dexkit_cache_version", ++version) }
+                                Toast.makeText(context, context.getString(R.string.cleared), Toast.LENGTH_SHORT).show()
+                            } else {
+                                Toast.makeText(context, "清除失败", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     ),
                     DropdownItem(
@@ -240,7 +248,6 @@ fun HomeLayout(
                                 selected = logLevel == index,
                                 onClick = {
                                     viewModel.handleAction(MainUiAction.UpdateLogLevel(index))
-                                    PrefsTool.prefs(context).edit { putInt(PrefsKey.LOG_LEVEL, index) }
                                 }
                             )
                         }
