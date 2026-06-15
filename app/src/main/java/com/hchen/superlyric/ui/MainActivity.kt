@@ -67,7 +67,7 @@ import com.hchen.superlyric.ui.data.UIConstants
 import com.hchen.superlyric.ui.effect.BlurredBar
 import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
 import com.hchen.superlyric.ui.screen.AboutLayout
-import com.hchen.superlyric.ui.screen.SupportAppLayout
+import com.hchen.superlyric.ui.screen.HomeLayout
 import com.hchen.superlyric.ui.viewmodel.MainViewModel
 import com.hchen.superlyric.ui.viewmodel.MainViewModelFactory
 import com.hchen.superlyric.utils.PackageUtils
@@ -321,7 +321,7 @@ class MainActivity : ComponentActivity() {
         ) { page ->
             when (page) {
                 UIConstants.HOME_PAGE_INDEX -> {
-                    SupportAppLayout(paddingValues, isWideScreen)
+                    HomeLayout(paddingValues, isWideScreen)
                 }
 
                 UIConstants.ABOUT_PAGE_INDEX -> {

@@ -20,17 +20,23 @@ package com.hchen.superlyric.ui.screen
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.captionBar
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -45,6 +51,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,10 +69,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.edit
 import com.hchen.hooktool.data.AppData
+import com.hchen.hooktool.utils.InvokeTool
+import com.hchen.hooktool.utils.PrefsTool
 import com.hchen.superlyric.R
 import com.hchen.superlyric.data.ApiAppData
+import com.hchen.superlyric.data.PrefsKey
 import com.hchen.superlyric.data.SupportApps
+import com.hchen.superlyric.ui.Application
 import com.hchen.superlyric.ui.component.SearchBox
 import com.hchen.superlyric.ui.component.SearchPager
 import com.hchen.superlyric.ui.component.SearchStatus
@@ -80,9 +92,20 @@ import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
 import com.hchen.superlyric.ui.viewmodel.MainUiAction
 import com.hchen.superlyric.ui.viewmodel.MainViewModel
 import com.hchen.superlyric.utils.PackageUtils
+import com.hchen.superlyricapi.ISuperLyricReceiver
+import com.hchen.superlyricapi.SuperLyricData
+import com.hchen.superlyricapi.SuperLyricHelper
+import com.hchen.superlyricapi.SuperLyricLine
+import com.hchen.superlyricapi.SuperLyricWord
+import kotlinx.coroutines.flow.MutableStateFlow
+import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
+import top.yukonga.miuix.kmp.basic.DropdownEntry
+import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.PullToRefresh
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -93,17 +116,23 @@ import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
 import top.yukonga.miuix.kmp.blur.layerBackdrop
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Close
+import top.yukonga.miuix.kmp.icon.extended.Ok
+import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.layout.DialogDefaults
+import top.yukonga.miuix.kmp.menu.OverlayIconCascadingDropdownMenu
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import top.yukonga.miuix.kmp.window.WindowBottomSheet
 import top.yukonga.miuix.kmp.window.WindowDialog
 
 @Composable
 @SuppressLint("LocalContextGetResourceValueCall")
-fun SupportAppLayout(
+fun HomeLayout(
     paddingValues: PaddingValues,
     isWideScreen: Boolean = false
 ) {
@@ -156,6 +185,83 @@ fun SupportAppLayout(
     val pullToRefreshState = rememberPullToRefreshState()
     val show = remember { mutableStateOf(false) }
 
+    val logLevel by viewModel.logLevel.collectAsState()
+    val logLevels = remember {
+        listOf(
+            context.getString(R.string.log_I),
+            context.getString(R.string.log_W),
+            context.getString(R.string.log_E),
+            context.getString(R.string.log_D)
+        )
+    }
+
+    val state by AnalogReceiver.receiverFlow.collectAsState()
+    val registered by AnalogReceiver.registeredFlow.collectAsState()
+    val paused by AnalogReceiver.pausedFlow.collectAsState()
+    var isApiTestDialogShowing by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isApiTestDialogShowing) {
+        if (!isApiTestDialogShowing) {
+            if (SuperLyricHelper.isAvailable()) {
+                if (SuperLyricHelper.isReceiverRegistered(AnalogReceiver.mReceiver)) {
+                    SuperLyricHelper.unregisterReceiver(AnalogReceiver.mReceiver)
+                    AnalogReceiver.registeredFlow.value = false
+                    AnalogReceiver.receiverFlow.value = ReceiverState()
+                }
+            }
+        }
+    }
+
+    val settingsEntries = remember {
+        listOf(
+            DropdownEntry(
+                items = listOf(
+                    DropdownItem(
+                        text = "API 测试",
+                        selected = false,
+                        onClick = {
+                            isApiTestDialogShowing = true
+                        }
+                    ),
+                    DropdownItem(
+                        text = context.getString(R.string.clear_dexkit_cache),
+                        selected = false,
+                        onClick = {
+                            var version = Application.getRemotePreferences().getInt("super_lyric_dexkit_cache_version", 0)
+                            Application.getRemotePreferences().edit { putInt("super_lyric_dexkit_cache_version", ++version) }
+                            Toast.makeText(context, context.getString(R.string.cleared), Toast.LENGTH_SHORT).show()
+                        }
+                    ),
+                    DropdownItem(
+                        text = context.getString(R.string.log_level),
+                        children = logLevels.mapIndexed { index, text ->
+                            DropdownItem(
+                                text = text,
+                                selected = logLevel == index,
+                                onClick = {
+                                    viewModel.handleAction(MainUiAction.UpdateLogLevel(index))
+                                    PrefsTool.prefs(context).edit { putInt(PrefsKey.LOG_LEVEL, index) }
+                                }
+                            )
+                        }
+                    ),
+                )
+            )
+        )
+    }
+
+    val actions: @Composable RowScope.() -> Unit = {
+        OverlayIconCascadingDropdownMenu(
+            entries = settingsEntries,
+            collapseOnSelection = true,
+        ) {
+            Icon(
+                imageVector = MiuixIcons.Settings,
+                contentDescription = "Tune",
+            )
+        }
+    }
+
     Scaffold(
         topBar = {
             searchStatus.TopAppBarAnim {
@@ -166,6 +272,7 @@ fun SupportAppLayout(
                             scrollBehavior = scrollBehavior,
                             defaultWindowInsetsPadding = false,
                             color = if (blurActive) Color.Transparent else colorScheme.surface,
+                            actions = actions
                         )
                     } else {
                         TopAppBar(
@@ -173,6 +280,7 @@ fun SupportAppLayout(
                             scrollBehavior = scrollBehavior,
                             defaultWindowInsetsPadding = false,
                             color = if (blurActive) Color.Transparent else colorScheme.surface,
+                            actions = actions
                         )
                     }
                 }
@@ -297,6 +405,153 @@ fun SupportAppLayout(
             show = show,
             appData = currentApp
         )
+
+        WindowBottomSheet(
+            show = isApiTestDialogShowing,
+            title = "API 测试",
+            allowDismiss = false,
+            startAction = {
+                IconButton(
+                    onClick = { isApiTestDialogShowing = false },
+                ) {
+                    Icon(
+                        imageVector = MiuixIcons.Close,
+                        contentDescription = "Cancel",
+                        tint = MiuixTheme.colorScheme.onBackground,
+                    )
+                }
+            },
+            endAction = {
+                IconButton(
+                    onClick = { isApiTestDialogShowing = false },
+                ) {
+                    Icon(
+                        imageVector = MiuixIcons.Ok,
+                        contentDescription = "Confirm",
+                        tint = MiuixTheme.colorScheme.onBackground,
+                    )
+                }
+            },
+            onDismissRequest = {
+                isApiTestDialogShowing = false
+            }
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .scrollEndHaptic()
+                    .overScrollVertical(),
+                contentPadding = PaddingValues(bottom = 12.dp)
+            ) {
+                item {
+                    SmallTitle(text = "基本状态", insideMargin = PaddingValues(16.dp, 8.dp))
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                        colors = CardDefaults.defaultColors(
+                            color = MiuixTheme.colorScheme.secondaryContainer,
+                        )
+                    ) {
+                        BasicComponent(title = "API 状态：${if (SuperLyricHelper.isAvailable()) "可用" else "不可用"}")
+                        BasicComponent(title = "API 版本：${SuperLyricHelper.getApiVersion()}")
+
+                        BasicComponent(
+                            title = "注册状态：${if (SuperLyricHelper.isPublisherRegistered()) "已注册" else "未注册"}",
+                            summary = "SuperLyricService：${InvokeTool.getStaticField<Any>(SuperLyricHelper::class.java, "mManager")}"
+                        )
+                    }
+
+                    SmallTitle(text = "模拟发布", insideMargin = PaddingValues(16.dp, 8.dp))
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                        colors = CardDefaults.defaultColors(
+                            color = MiuixTheme.colorScheme.secondaryContainer,
+                        )
+                    ) {
+                        ArrowPreference(
+                            title = "测试发布歌词",
+                            onClick = {
+                                SuperLyricHelper.sendLyric(
+                                    SuperLyricData()
+                                        .setLyric(
+                                            SuperLyricLine(
+                                                "测试歌词",
+                                                arrayOf(
+                                                    SuperLyricWord("测", 0, 500),
+                                                    SuperLyricWord("试", 500, 1000),
+                                                    SuperLyricWord("歌", 1000, 1500),
+                                                    SuperLyricWord("词", 1500, 2000)
+                                                ),
+                                                0,
+                                                2000
+                                            )
+                                        )
+                                        .setTranslation(
+                                            SuperLyricLine(
+                                                "测试翻译"
+                                            )
+                                        )
+                                )
+
+                                Toast.makeText(context, "已发布", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                        ArrowPreference(
+                            title = "测试发布停止事件",
+                            onClick = {
+                                SuperLyricHelper.sendStop(SuperLyricData())
+                                Toast.makeText(context, "已发布", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                    }
+
+                    SmallTitle(text = "模拟接收", insideMargin = PaddingValues(16.dp, 8.dp))
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.defaultColors(
+                            color = MiuixTheme.colorScheme.secondaryContainer,
+                        )
+                    ) {
+                        ArrowPreference(
+                            title = if (!registered) "注册接收器" else "注销接收器",
+                            summary = "当前状态：${if (registered) "已注册" else "未注册"}",
+                            onClick = {
+                                if (!SuperLyricHelper.isReceiverRegistered(AnalogReceiver.mReceiver)) {
+                                    SuperLyricHelper.registerReceiver(AnalogReceiver.mReceiver)
+                                    AnalogReceiver.registeredFlow.value = true
+                                    Toast.makeText(context, "已注册", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    SuperLyricHelper.unregisterReceiver(AnalogReceiver.mReceiver)
+                                    AnalogReceiver.registeredFlow.value = false
+                                    AnalogReceiver.receiverFlow.value = ReceiverState()
+                                    Toast.makeText(context, "已销毁", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
+                        ArrowPreference(
+                            title = if (!paused) "暂停接收" else "恢复接收",
+                            onClick = {
+                                AnalogReceiver.pausedFlow.value = !paused
+                            }
+                        )
+                        BasicComponent(
+                            title = "接收器实时数据",
+                            summary = "Publisher：${state.publisher}\nData：${state.data}"
+                        )
+                    }
+
+                    Spacer(
+                        Modifier.padding(
+                            bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
+                                    WindowInsets.captionBar.asPaddingValues().calculateBottomPadding(),
+                        ),
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -542,3 +797,31 @@ private fun AppDetailsDialog(
         }
     }
 }
+
+private object AnalogReceiver {
+    val registeredFlow = MutableStateFlow(false)
+    val pausedFlow = MutableStateFlow(false)
+    val receiverFlow = MutableStateFlow(ReceiverState())
+    val mReceiver = object : ISuperLyricReceiver.Stub() {
+        override fun onLyric(publisher: String?, data: SuperLyricData?) {
+            if (pausedFlow.value) return
+            receiverFlow.value = ReceiverState(
+                publisher = publisher,
+                data = data
+            )
+        }
+
+        override fun onStop(publisher: String?, data: SuperLyricData?) {
+            if (pausedFlow.value) return
+            receiverFlow.value = ReceiverState(
+                publisher = publisher,
+                data = data
+            )
+        }
+    }
+}
+
+private data class ReceiverState(
+    val publisher: String? = null,
+    val data: SuperLyricData? = null
+)
