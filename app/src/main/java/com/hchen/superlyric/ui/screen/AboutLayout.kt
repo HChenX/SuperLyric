@@ -21,6 +21,7 @@ package com.hchen.superlyric.ui.screen
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -33,6 +34,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -71,7 +73,6 @@ import com.hchen.superlyric.ui.effect.blend.ColorBlendToken
 import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.CardColors
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
@@ -184,6 +185,11 @@ fun AboutLayout(
     )
 
     val density = LocalDensity.current
+    val viewportHeightDp by remember {
+        derivedStateOf {
+            with(density) { lazyListState.layoutInfo.viewportSize.height.toDp() }
+        }
+    }
     var logoHeightDp by remember { mutableStateOf(300.dp) }
 
     val versionCodeProgress = ((scrollProgress - 0.05f) / 0.15f).coerceIn(0f, 1f)
@@ -265,7 +271,7 @@ fun AboutLayout(
                                     Modifier
                                 },
                             ),
-                        text = "AppRetention",
+                        text = stringResource(R.string.app_name),
                         color = MiuixTheme.colorScheme.onBackground,
                         fontWeight = FontWeight.Bold,
                         fontSize = 35.sp,
@@ -291,7 +297,6 @@ fun AboutLayout(
                         .fillMaxSize()
                         .scrollEndHaptic()
                         .overScrollVertical(),
-                    contentPadding = PaddingValues(bottom = paddingValues.calculateBottomPadding()),
                     overscrollEffect = null
                 ) {
                     item(key = "logoSpacer") {
@@ -306,19 +311,11 @@ fun AboutLayout(
                         )
                     }
 
-                    item("barPadding") {
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .height(pv.calculateTopPadding()),
-                            contentAlignment = Alignment.TopCenter,
-                            content = { },
-                        )
-                    }
-
                     item("about") {
                         Column(
-                            modifier = Modifier.fillParentMaxHeight()
+                            modifier = Modifier
+                                .heightIn(min = viewportHeightDp)
+                                .padding(top = pv.calculateTopPadding(), bottom = paddingValues.calculateBottomPadding())
                         ) {
                             SmallTitle(text = stringResource(R.string.developer))
                             Card(
@@ -332,13 +329,13 @@ fun AboutLayout(
                                 )
                             ) {
                                 ArrowPreference(
-                                    title = "焕晨HChen",
+                                    title = "焕晨",
                                     summary = "Github | Developer",
                                     startAction = {
                                         Box(Modifier.padding(end = 8.dp)) {
                                             Icon(
                                                 painter = painterResource(R.drawable.hchen),
-                                                contentDescription = "HChen",
+                                                contentDescription = "HuanChen",
                                                 tint = Color.Unspecified,
                                                 modifier = Modifier
                                                     .size(48.dp)
@@ -348,6 +345,25 @@ fun AboutLayout(
                                     },
                                     onClick = {
                                         openUrl(context, "https://github.com/HChenX")
+                                    }
+                                )
+                                ArrowPreference(
+                                    title = "晨暮",
+                                    summary = "Love | Forever",
+                                    startAction = {
+                                        Box(Modifier.padding(end = 8.dp)) {
+                                            Icon(
+                                                painter = painterResource(R.drawable.chenmu),
+                                                contentDescription = "ChenMu",
+                                                tint = Color.Unspecified,
+                                                modifier = Modifier
+                                                    .size(48.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                            )
+                                        }
+                                    },
+                                    onClick = {
+                                        Toast.makeText(context, "❤\uFE0F", Toast.LENGTH_SHORT).show()
                                     }
                                 )
                                 ArrowPreference(
@@ -414,9 +430,8 @@ fun AboutLayout(
                 }
             ) {
                 Card(
-                    colors = CardColors(
-                        color = MiuixTheme.colorScheme.surface,
-                        contentColor = MiuixTheme.colorScheme.surfaceContainer,
+                    colors =  CardDefaults.defaultColors(
+                        color = MiuixTheme.colorScheme.secondaryContainer,
                     )
                 ) {
                     contributor.forEachIndexed { index, name ->

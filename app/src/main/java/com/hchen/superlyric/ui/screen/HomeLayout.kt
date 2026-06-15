@@ -217,13 +217,13 @@ fun HomeLayout(
             DropdownEntry(
                 items = listOf(
                     DropdownItem(
-                        text = "API 测试",
+                        text = context.getString(R.string.api_test),
                         selected = false,
                         onClick = {
                             if (SuperLyricHelper.isAvailable()) {
                                 isApiTestDialogShowing = true
                             } else {
-                                Toast.makeText(context, "SuperLyric 服务未启动", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.service_not_started), Toast.LENGTH_SHORT).show()
                             }
                         }
                     ),
@@ -236,7 +236,7 @@ fun HomeLayout(
                                 Application.getRemotePreferences().edit { putInt("super_lyric_dexkit_cache_version", ++version) }
                                 Toast.makeText(context, context.getString(R.string.cleared), Toast.LENGTH_SHORT).show()
                             } else {
-                                Toast.makeText(context, "清除失败", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.clear_failed), Toast.LENGTH_SHORT).show()
                             }
                         }
                     ),
@@ -248,6 +248,7 @@ fun HomeLayout(
                                 selected = logLevel == index,
                                 onClick = {
                                     viewModel.handleAction(MainUiAction.UpdateLogLevel(index))
+                                    PrefsTool.prefs(context).edit { putInt(PrefsKey.LOG_LEVEL, index) }
                                 }
                             )
                         }
@@ -415,7 +416,7 @@ fun HomeLayout(
 
         WindowBottomSheet(
             show = isApiTestDialogShowing,
-            title = "API 测试",
+            title = stringResource(R.string.api_test),
             allowDismiss = false,
             startAction = {
                 IconButton(
@@ -451,7 +452,7 @@ fun HomeLayout(
                 contentPadding = PaddingValues(bottom = 12.dp)
             ) {
                 item {
-                    SmallTitle(text = "基本状态", insideMargin = PaddingValues(16.dp, 8.dp))
+                    SmallTitle(text = stringResource(R.string.basic_status), insideMargin = PaddingValues(16.dp, 8.dp))
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -460,16 +461,32 @@ fun HomeLayout(
                             color = MiuixTheme.colorScheme.secondaryContainer,
                         )
                     ) {
-                        BasicComponent(title = "API 状态：${if (SuperLyricHelper.isAvailable()) "可用" else "不可用"}")
-                        BasicComponent(title = "API 版本：${SuperLyricHelper.getApiVersion()}")
+                        BasicComponent(
+                            title = stringResource(
+                                R.string.api_status_format,
+                                if (SuperLyricHelper.isAvailable()) stringResource(R.string.api_status_available) else stringResource(R.string.api_status_unavailable)
+                            )
+                        )
+                        BasicComponent(
+                            title = stringResource(
+                                R.string.api_version_format,
+                                SuperLyricHelper.getApiVersion()
+                            )
+                        )
 
                         BasicComponent(
-                            title = "注册状态：${if (SuperLyricHelper.isPublisherRegistered()) "已注册" else "未注册"}",
-                            summary = "SuperLyricService：${InvokeTool.getStaticField<Any>(SuperLyricHelper::class.java, "mManager")}"
+                            title = stringResource(
+                                R.string.registration_status_format,
+                                if (SuperLyricHelper.isPublisherRegistered()) stringResource(R.string.registered) else stringResource(R.string.unregistered)
+                            ),
+                            summary = stringResource(
+                                R.string.service_status_format,
+                                InvokeTool.getStaticField<Any>(SuperLyricHelper::class.java, "mManager").toString()
+                            )
                         )
                     }
 
-                    SmallTitle(text = "模拟发布", insideMargin = PaddingValues(16.dp, 8.dp))
+                    SmallTitle(text = stringResource(R.string.simulate_publish), insideMargin = PaddingValues(16.dp, 8.dp))
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -479,7 +496,7 @@ fun HomeLayout(
                         )
                     ) {
                         ArrowPreference(
-                            title = "测试发布歌词",
+                            title = stringResource(R.string.test_publish_lyric),
                             onClick = {
                                 SuperLyricHelper.sendLyric(
                                     SuperLyricData()
@@ -503,19 +520,19 @@ fun HomeLayout(
                                         )
                                 )
 
-                                Toast.makeText(context, "已发布", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.published), Toast.LENGTH_SHORT).show()
                             }
                         )
                         ArrowPreference(
-                            title = "测试发布停止事件",
+                            title = stringResource(R.string.test_publish_stop),
                             onClick = {
                                 SuperLyricHelper.sendStop(SuperLyricData())
-                                Toast.makeText(context, "已发布", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.published), Toast.LENGTH_SHORT).show()
                             }
                         )
                     }
 
-                    SmallTitle(text = "模拟接收", insideMargin = PaddingValues(16.dp, 8.dp))
+                    SmallTitle(text = stringResource(R.string.simulate_receive), insideMargin = PaddingValues(16.dp, 8.dp))
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.defaultColors(
@@ -523,30 +540,37 @@ fun HomeLayout(
                         )
                     ) {
                         ArrowPreference(
-                            title = if (!registered) "注册接收器" else "注销接收器",
-                            summary = "当前状态：${if (registered) "已注册" else "未注册"}",
+                            title = if (!registered) stringResource(R.string.register_receiver) else stringResource(R.string.unregister_receiver),
+                            summary = stringResource(
+                                R.string.current_status_format,
+                                if (registered) stringResource(R.string.registered) else stringResource(R.string.unregistered)
+                            ),
                             onClick = {
                                 if (!SuperLyricHelper.isReceiverRegistered(AnalogReceiver.mReceiver)) {
                                     SuperLyricHelper.registerReceiver(AnalogReceiver.mReceiver)
                                     AnalogReceiver.registeredFlow.value = true
-                                    Toast.makeText(context, "已注册", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.registered), Toast.LENGTH_SHORT).show()
                                 } else {
                                     SuperLyricHelper.unregisterReceiver(AnalogReceiver.mReceiver)
                                     AnalogReceiver.registeredFlow.value = false
                                     AnalogReceiver.receiverFlow.value = ReceiverState()
-                                    Toast.makeText(context, "已销毁", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, context.getString(R.string.destroyed), Toast.LENGTH_SHORT).show()
                                 }
                             }
                         )
                         ArrowPreference(
-                            title = if (!paused) "暂停接收" else "恢复接收",
+                            title = if (!paused) stringResource(R.string.pause_receive) else stringResource(R.string.resume_receive),
                             onClick = {
                                 AnalogReceiver.pausedFlow.value = !paused
                             }
                         )
                         BasicComponent(
-                            title = "接收器实时数据",
-                            summary = "Publisher：${state.publisher}\nData：${state.data}"
+                            title = stringResource(R.string.receiver_data),
+                            summary = stringResource(
+                                R.string.receiver_data_format,
+                                state.publisher ?: "null",
+                                state.data?.toString() ?: "null"
+                            )
                         )
                     }
 

@@ -290,9 +290,7 @@ class MainActivity : ComponentActivity() {
                 )
                 Box(modifier = Modifier.weight(weight = 1f - weight)) {
                     Scaffold(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(end = 6.dp),
+                        modifier = Modifier.fillMaxSize(),
                         popupHost = {}
                     ) { paddingValues ->
                         UiContent(

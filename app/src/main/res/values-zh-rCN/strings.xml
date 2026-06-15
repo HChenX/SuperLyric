@@ -1,53 +1,99 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- App -->
     <string name="app_name">SuperLyric</string>
     <string name="app_details">歌词获取器</string>
 
+    <!-- Navigation -->
     <string name="home">主页</string>
     <string name="about">关于</string>
 
+    <!-- Warning -->
     <string name="warn">警告</string>
-    <string name="service_unavailable">SuperLyric 服务不可用，将无法正常传递歌词数据，请重启手机后重试！\n代码：$s</string>
+    <string name="service_unavailable">SuperLyric 服务不可用，将无法正常传递歌词数据，请重启手机后重试！\n代码：%s</string>
 
+    <!-- Log Level -->
     <string name="log_level">日志等级</string>
     <string name="log_level_details">重启系统后修改方能完全生效</string>
-
     <string name="log_I">Info</string>
     <string name="log_W">Warn</string>
     <string name="log_E">Error</string>
     <string name="log_D">Debug</string>
 
+    <!-- Search -->
     <string name="select_search">搜索应用</string>
     <string name="select_list_empty">应用列表为空</string>
     <string name="select_none">暂无搜索结果</string>
 
-    <string name="pull_down_to_refresh">松开刷新</string>
+    <!-- Pull to Refresh -->
+    <string name="pull_down_to_refresh">下拉刷新</string>
     <string name="release_to_refresh">松开刷新</string>
     <string name="refreshing">正在刷新</string>
     <string name="refresh_successfully">刷新成功</string>
 
+    <!-- App Lists -->
     <string name="apps_api_list">API 支持列表</string>
     <string name="apps_hook_list">Hook 支持列表</string>
 
-    <string name="current_version">当前版本名：%1$s，版本号：%2$s</string>
-
-    <string name="developer">开发者</string>
-    <string name="contributors">贡献者</string>
-    <string name="debug">调试功能</string>
-    <string name="discussion">讨论</string>
-    <string name="others">其他</string>
-    <string name="clear_dexkit_cache">清除 Dexkit 缓存</string>
-    <string name="clear_dexkit_cache_summary">或许可以修复某些应用不生效的问题</string>
-    <string name="cleared">已清除</string>
-    <string name="telegram_group">Telegram 群组</string>
-    <string name="telegram_channel">Telegram 频道</string>
-    <string name="project_url">项目地址</string>
-
+    <!-- App Details -->
+    <string name="current_version">版本名：%1$s，版本号：%2$s</string>
     <string name="instructions_for_use">使用方法：%s</string>
-
     <string name="unknown">未知</string>
     <string name="support_api">API 原生支持</string>
 
+    <!-- About > Author -->
+    <string name="developer">开发者</string>
+    <string name="contributors">贡献者</string>
+
+    <!-- About > Discussion -->
+    <string name="discussion">讨论</string>
+    <string name="telegram_group">Telegram 群组</string>
+    <string name="telegram_channel">Telegram 频道</string>
+
+    <!-- About > Others -->
+    <string name="others">其他</string>
+    <string name="project_url">项目地址</string>
+
+    <!-- Debug -->
+    <string name="debug">调试功能</string>
+    <string name="clear_dexkit_cache">清除 Dexkit 缓存</string>
+    <string name="clear_dexkit_cache_summary">或许可以修复某些应用不生效的问题</string>
+    <string name="cleared">已清除</string>
+    <string name="clear_failed">清除失败</string>
+    <string name="api_test">API 测试</string>
+    <string name="service_not_started">SuperLyric 服务未启动</string>
+
+    <!-- Debug > Basic Status -->
+    <string name="basic_status">基本状态</string>
+    <string name="api_status">API 状态</string>
+    <string name="api_status_format">API 状态：%s</string>
+    <string name="api_status_available">可用</string>
+    <string name="api_status_unavailable">不可用</string>
+    <string name="api_version_format">API 版本：%s</string>
+    <string name="registration_status">注册状态</string>
+    <string name="registered">已注册</string>
+    <string name="unregistered">未注册</string>
+    <string name="registration_status_format">注册状态：%s</string>
+    <string name="service_status_format">SuperLyricService：%s</string>
+
+    <!-- Debug > Simulate Publish -->
+    <string name="simulate_publish">模拟发布</string>
+    <string name="test_publish_lyric">测试发布歌词</string>
+    <string name="test_publish_stop">测试发布停止事件</string>
+    <string name="published">已发布</string>
+
+    <!-- Debug > Simulate Receive -->
+    <string name="simulate_receive">模拟接收</string>
+    <string name="register_receiver">注册接收器</string>
+    <string name="unregister_receiver">注销接收器</string>
+    <string name="current_status_format">当前状态：%s</string>
+    <string name="destroyed">已销毁</string>
+    <string name="pause_receive">暂停接收</string>
+    <string name="resume_receive">恢复接收</string>
+    <string name="receiver_data">接收器实时数据</string>
+    <string name="receiver_data_format">Publisher：%1$s\nData：%2$s</string>
+
+    <!-- Music App Instructions (API) -->
     <string name="jiaoyan_music">无需额外设置</string>
     <string name="apple_music">无需额外设置</string>
     <string name="symfonium_music">无需额外设置</string>
@@ -56,6 +102,7 @@
 
     <string name="haibei_music">未知</string>
 
+    <!-- Music App Instructions (Meizu-style) -->
     <string name="wangyiyun_music">开启设置中的“魅族状态栏歌词”功能即可</string>
     <string name="wangyiyun_rongyao_music">开启设置中的“魅族状态栏歌词”功能即可</string>
     <string name="migu_music">开启设置中的“魅族状态栏歌词”功能即可</string>
@@ -67,12 +114,13 @@
     <string name="qingyan_music">开启设置中的“魅族状态栏歌词”功能即可</string>
     <string name="gramophone_music">开启设置中的“魅族状态栏歌词”功能即可</string>
 
+    <!-- Music App Instructions (Desktop Lyrics) -->
     <string name="musicfree_music">开启“桌面歌词”功能</string>
     <string name="luoxue_music">开启“桌面歌词”功能</string>
 
+    <!-- Music App Instructions (Status Bar / Bluetooth Lyrics) -->
     <string name="bodian_music">开启“状态栏歌词”功能</string>
     <string name="qq_music">开启“状态栏歌词”功能</string>
-
     <string name="qq_music_xiaomi">开启“车载蓝牙歌词”或“通知栏歌词”功能</string>
     <string name="qq_music_meizu">开启“蓝牙歌词”功能</string>
     <string name="oppo_music">开启“蓝牙歌词”功能</string>
