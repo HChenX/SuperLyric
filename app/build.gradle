@@ -42,7 +42,7 @@ android {
         minSdk 30
         targetSdk 37
         // noinspection HighAppVersionCode
-        versionCode 2026061503
+        versionCode 2026061900
         versionName "3.2"
 
         ndk {

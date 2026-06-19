@@ -55,7 +55,7 @@ import java.util.function.Predicate;
 public final class SaltMusic extends AbsPublisher {
     @Override
     protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
-        Class<?> lyricDataClass = DexkitCache.findMember("salt$1", new IDexkit<ClassData>() {
+        Class<?> lyricsClass = DexkitCache.findMember("salt$1", new IDexkit<ClassData>() {
             @NonNull @Override
             public ClassData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                 return bridge.findClass(FindClass.create()
@@ -65,23 +65,23 @@ public final class SaltMusic extends AbsPublisher {
                 ).single();
             }
         });
-        Field lyricListField = null; // 用于存储逐字等信息
-        ArrayList<Field> fields = new ArrayList<>(); // 用于存储 歌词 或者 翻译
-        for (Field declaredField : lyricDataClass.getDeclaredFields()) {
-            if (declaredField.getType().equals(List.class)) {
-                lyricListField = declaredField;
+        Field wordsField = null; // 用于存储逐字等信息
+        ArrayList<Field> lyricFields = new ArrayList<>(); // 用于存储 歌词 或者 翻译
+        for (Field field : lyricsClass.getDeclaredFields()) {
+            if (field.getType().equals(List.class)) {
+                wordsField = field;
             }
-            if (declaredField.getType().equals(String.class)) {
-                fields.add(declaredField);
+            if (field.getType().equals(String.class)) {
+                lyricFields.add(field);
             }
         }
 
-        Objects.requireNonNull(lyricListField, "Lyric list field must not be null.");
-        if (fields.size() != 2) {
-            throw new RuntimeException("Lyric data string field can only be two.");
+        Objects.requireNonNull(wordsField, "Lyric words field must not be null.");
+        if (lyricFields.size() != 2) {
+            throw new RuntimeException("Lyric field can only be two.");
         }
 
-        Class<?> lyricsCellClass = DexkitCache.findMember("salt$2", new IDexkit<ClassData>() {
+        Class<?> wordsClass = DexkitCache.findMember("salt$2", new IDexkit<ClassData>() {
             @NonNull @Override
             public ClassData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                 return bridge.findClass(FindClass.create()
@@ -91,25 +91,25 @@ public final class SaltMusic extends AbsPublisher {
                 ).single();
             }
         });
-        Field lyricField = null; // 储存歌词文本
-        ArrayList<Field> timesFileds = new ArrayList<>(); // 储存 开始时间 和 结束时间
-        for (Field declaredField : lyricsCellClass.getDeclaredFields()) {
-            if (declaredField.getType().equals(long.class)) {
-                timesFileds.add(declaredField);
+        Field wordField = null; // 储存歌词文本
+        ArrayList<Field> timeFiled = new ArrayList<>(); // 储存 开始时间 和 结束时间
+        for (Field field : wordsClass.getDeclaredFields()) {
+            if (field.getType().equals(long.class)) {
+                timeFiled.add(field);
             }
-            if (declaredField.getType().equals(String.class)) {
-                lyricField = declaredField;
+            if (field.getType().equals(String.class)) {
+                wordField = field;
             }
         }
 
-        Objects.requireNonNull(lyricField, "Lyric field must not be null.");
-        if (timesFileds.size() != 2) {
+        Objects.requireNonNull(wordField, "Lyric word field must not be null.");
+        if (timeFiled.size() != 2) {
             throw new RuntimeException("Time field can only be two.");
         }
 
-        Field finalLyricField = lyricField;
-        Field finalLyricListField = lyricListField;
-        Method method = DexkitCache.findMember("salt$3", new IDexkit<MethodData>() {
+        Field finalWordField = wordField;
+        Field finalWordsField = wordsField;
+        Method runMethod = DexkitCache.findMember("salt$3", new IDexkit<MethodData>() {
             @NonNull @Override
             public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
                 return bridge.findMethod(FindMethod.create()
@@ -122,7 +122,7 @@ public final class SaltMusic extends AbsPublisher {
                 ).single();
             }
         });
-        Field typeField = Arrays.stream(method.getDeclaringClass().getDeclaredFields())
+        Field typeField = Arrays.stream(runMethod.getDeclaringClass().getDeclaredFields())
             .filter(new Predicate<Field>() {
                 @Override
                 public boolean test(Field field) {
@@ -130,7 +130,7 @@ public final class SaltMusic extends AbsPublisher {
                 }
             }).findFirst().orElseThrow();
 
-        Field field = Arrays.stream(method.getDeclaringClass().getDeclaredFields())
+        Field objectField = Arrays.stream(runMethod.getDeclaringClass().getDeclaredFields())
             .filter(new Predicate<Field>() {
                 @Override
                 public boolean test(Field field) {
@@ -139,7 +139,7 @@ public final class SaltMusic extends AbsPublisher {
             }).findFirst().orElseThrow();
 
         Objects.requireNonNull(typeField);
-        Objects.requireNonNull(field);
+        Objects.requireNonNull(objectField);
 
         Field[] songFields = Arrays.stream(findClass("com.salt.music.service.MusicController").getDeclaredFields()).filter(
             new Predicate<Field>() {
@@ -151,16 +151,16 @@ public final class SaltMusic extends AbsPublisher {
         ).toArray(Field[]::new);
         final Field[] songFiled = {null};
 
-        hook(method, new AbsHook() {
+        hook(runMethod, new AbsHook() {
                 @Override
                 public void before() {
-                    if (timesFileds.isEmpty() || fields.isEmpty()) {
+                    if (timeFiled.isEmpty() || lyricFields.isEmpty()) {
                         return;
                     }
 
                     int type = (int) getField(typeField, getThisObject());
-                    if (type == 20) {
-                        Object lyricData = getField(field, getThisObject());
+                    if (type == 21) {
+                        Object lyricData = getField(objectField, getThisObject());
                         if (lyricData == null) {
                             return;
                         }
@@ -175,7 +175,7 @@ public final class SaltMusic extends AbsPublisher {
                             }
                         }
 
-                        List<?> lyrics = (List<?>) getField(finalLyricListField, lyricData);
+                        List<?> lyrics = (List<?>) getField(finalWordsField, lyricData);
                         if (lyrics != null) {
                             List<LyricData> data = new ArrayList<>();
                             for (Object l : lyrics) {
@@ -184,12 +184,12 @@ public final class SaltMusic extends AbsPublisher {
                                 long endTime;
                                 String lyric;
 
-                                for (int i = 0; i < timesFileds.size(); i++) {
-                                    times[i] = (long) getField(timesFileds.get(i), l);
+                                for (int i = 0; i < timeFiled.size(); i++) {
+                                    times[i] = (long) getField(timeFiled.get(i), l);
                                 }
                                 startTime = Math.min(times[0], times[1]);
                                 endTime = Math.max(times[0], times[1]);
-                                lyric = (String) getField(finalLyricField, l);
+                                lyric = (String) getField(finalWordField, l);
 
                                 data.add(new LyricData(startTime, endTime, lyric));
                             }
@@ -208,8 +208,8 @@ public final class SaltMusic extends AbsPublisher {
                             }
 
                             String[] strings = new String[2];
-                            for (int i = 0; i < fields.size(); i++) {
-                                strings[i] = (String) getField(fields.get(i), lyricData);
+                            for (int i = 0; i < lyricFields.size(); i++) {
+                                strings[i] = (String) getField(lyricFields.get(i), lyricData);
                             }
                             String translation;
                             if (strings[0] == null || strings[1] == null) {
