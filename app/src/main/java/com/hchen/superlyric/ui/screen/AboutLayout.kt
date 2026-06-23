@@ -83,6 +83,7 @@ import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurBlendMode
+import top.yukonga.miuix.kmp.blur.BlurColors
 import top.yukonga.miuix.kmp.blur.BlurDefaults
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -100,9 +101,9 @@ fun AboutLayout(
     isWideScreen: Boolean = false
 ) {
     val context = LocalContext.current
-    val icon = remember {
-        context.packageManager.getApplicationIcon(context.packageName)
-    }
+//    val icon = remember {
+//        context.packageManager.getApplicationIcon(context.packageName)
+//    }
 
     val contributor = remember {
         listOf(
@@ -238,11 +239,26 @@ fun AboutLayout(
                                 scaleX = 1 - (iconProgress * 0.05f)
                                 scaleY = 1 - (iconProgress * 0.05f)
                             }
-                            .background(Color.White),
                     ) {
                         Image(
-                            modifier = Modifier.size(88.dp),
-                            painter = BitmapPainter(icon.toBitmap().asImageBitmap()),
+                            modifier = Modifier
+                                .size(88.dp)
+                                .then (
+                                    if (backdrop != null ){
+                                        Modifier.textureBlur(
+                                        backdrop = backdrop,
+                                        shape = RoundedCornerShape(24.dp),
+                                        blurRadius = 150f,
+                                        colors = BlurDefaults.blurColors(
+                                            blendColors = logoBlend,
+                                        ),
+                                        contentBlendMode = BlendMode.DstIn,
+                                        enabled = true,)
+                                    } else{
+                                        Modifier
+                                    }
+                                ),
+                            painter = painterResource(R.drawable.logo),
                             contentDescription = null,
                         )
                     }
@@ -315,7 +331,10 @@ fun AboutLayout(
                         Column(
                             modifier = Modifier
                                 .heightIn(min = viewportHeightDp)
-                                .padding(top = pv.calculateTopPadding(), bottom = paddingValues.calculateBottomPadding())
+                                .padding(
+                                    top = pv.calculateTopPadding(),
+                                    bottom = paddingValues.calculateBottomPadding()
+                                )
                         ) {
                             SmallTitle(text = stringResource(R.string.developer))
                             Card(
