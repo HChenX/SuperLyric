@@ -37,6 +37,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -44,66 +45,96 @@ public class PackageUtils {
     private static final String TAG = "PackageUtils";
     private static final List<AppData> mMediaAppHookList = new ArrayList<>();
     private static final List<ApiAppData> mMediaAppApiList = new ArrayList<>();
-    private static final List<Runnable> mAppLoadedListeners = new ArrayList<>();
-    private static final ExecutorService mExecutorService = Executors.newSingleThreadExecutor();
+    private static final List<Runnable> mAppLoadedListeners = new CopyOnWriteArrayList<>();
     private static final Collator COLLATOR = Collator.getInstance(Locale.CHINA);
     private static volatile boolean isRunning = false;
     private static volatile boolean isLoaded = false;
 
+    /**
+     * 首次加载已安装应用列表，仅会执行一次。
+     */
     public static void initialPackage(@NonNull Context context) {
-        if (!isRunning) {
-            isRunning = true;
-            mExecutorService.execute(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        PackageManager pm = context.getPackageManager();
-                        List<PackageInfo> infos = pm.getInstalledPackages(PackageManager.GET_META_DATA);
-                        for (PackageInfo info : infos) {
-                            if (mSupportMediaApp.contains(info.packageName)) {
-                                AppData appData = PackageTool.createAppData(pm, info);
-                                mMediaAppHookList.add(appData);
-                            }
+        if (isLoaded || isRunning) return;
+        load(context);
+    }
 
-                            if (info.applicationInfo != null && info.applicationInfo.metaData != null) {
-                                boolean isApi = info.applicationInfo.metaData.getBoolean("superlyricapi");
-                                if (isApi) {
-                                    boolean isXposed =
-                                        info.applicationInfo.metaData.getBoolean("xposedmodule") || hasXposedModule(info.applicationInfo.sourceDir);
-                                    if (!isXposed) {
-                                        String apiVersionName = String.valueOf(info.applicationInfo.metaData.getFloat("superlyricapi_version_name"));
-                                        String apiVersionCode = String.valueOf(info.applicationInfo.metaData.getInt("superlyricapi_version_code"));
+    /**
+     * 重新扫描已安装应用列表。
+     * <p>
+     * 用于用户授予应用列表权限后刷新数据，扫描完成后会通知已注册的监听器。
+     */
+    public static void reload(@NonNull Context context) {
+        if (isRunning) return;
+        load(context);
+    }
 
-                                        ApiAppData apiAppData = new ApiAppData();
-                                        apiAppData.icon = BitmapTool.drawableToBitmap(info.applicationInfo.loadIcon(pm));
-                                        apiAppData.label = (String) info.applicationInfo.loadLabel(pm);
-                                        apiAppData.packageName = info.applicationInfo.packageName;
-                                        apiAppData.versionName = info.versionName;
-                                        apiAppData.versionCode = Long.toString(info.getLongVersionCode());
-                                        apiAppData.apiVersionName = apiVersionName;
-                                        apiAppData.apiVersionCode = apiVersionCode;
+    private static void load(@NonNull Context context) {
+        isRunning = true;
+        Context appContext = context.getApplicationContext();
+        ExecutorService executorService = Executors.newSingleThreadExecutor();
+        executorService.execute(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    scanInstalledPackages(appContext);
 
-                                        mMediaAppApiList.add(apiAppData);
-                                    }
-                                }
-                            }
-                        }
+                    for (Runnable listener : mAppLoadedListeners) {
+                        listener.run();
+                    }
 
-                        sortAppDataList(mMediaAppHookList);
-                        sortAppDataList(mMediaAppApiList);
+                    AndroidLog.logD(TAG, "Success loaded app list.");
+                } finally {
+                    isLoaded = true;
+                    isRunning = false;
+                    executorService.shutdown();
+                }
+            }
+        });
+    }
 
-                        for (Runnable listener : mAppLoadedListeners) {
-                            listener.run();
-                        }
+    private static void scanInstalledPackages(@NonNull Context context) {
+        PackageManager pm = context.getPackageManager();
+        List<AppData> hookList = new ArrayList<>();
+        List<ApiAppData> apiList = new ArrayList<>();
 
-                        AndroidLog.logD(TAG, "Success loaded app list.");
-                    } finally {
-                        isLoaded = true;
-                        mExecutorService.shutdown();
+        List<PackageInfo> infos = pm.getInstalledPackages(PackageManager.GET_META_DATA);
+        for (PackageInfo info : infos) {
+            if (mSupportMediaApp.contains(info.packageName)) {
+                AppData appData = PackageTool.createAppData(pm, info);
+                hookList.add(appData);
+            }
+
+            if (info.applicationInfo != null && info.applicationInfo.metaData != null) {
+                boolean isApi = info.applicationInfo.metaData.getBoolean("superlyricapi");
+                if (isApi) {
+                    boolean isXposed =
+                        info.applicationInfo.metaData.getBoolean("xposedmodule") || hasXposedModule(info.applicationInfo.sourceDir);
+                    if (!isXposed) {
+                        String apiVersionName = String.valueOf(info.applicationInfo.metaData.getFloat("superlyricapi_version_name"));
+                        String apiVersionCode = String.valueOf(info.applicationInfo.metaData.getInt("superlyricapi_version_code"));
+
+                        ApiAppData apiAppData = new ApiAppData();
+                        apiAppData.icon = BitmapTool.drawableToBitmap(info.applicationInfo.loadIcon(pm));
+                        apiAppData.label = (String) info.applicationInfo.loadLabel(pm);
+                        apiAppData.packageName = info.applicationInfo.packageName;
+                        apiAppData.versionName = info.versionName;
+                        apiAppData.versionCode = Long.toString(info.getLongVersionCode());
+                        apiAppData.apiVersionName = apiVersionName;
+                        apiAppData.apiVersionCode = apiVersionCode;
+
+                        apiList.add(apiAppData);
                     }
                 }
-            });
+            }
         }
+
+        sortAppDataList(hookList);
+        sortAppDataList(apiList);
+
+        mMediaAppHookList.clear();
+        mMediaAppHookList.addAll(hookList);
+        mMediaAppApiList.clear();
+        mMediaAppApiList.addAll(apiList);
     }
 
     public static List<AppData> getMediaAppHookList() {
@@ -115,11 +146,13 @@ public class PackageUtils {
     }
 
     public static void addAppLoadedListener(@NonNull Runnable listener) {
+        // 始终保留监听器，以便重新加载（如授权后）时能再次通知
+        if (!mAppLoadedListeners.contains(listener)) {
+            mAppLoadedListeners.add(listener);
+        }
         if (isLoaded) {
             listener.run();
-            return;
         }
-        mAppLoadedListeners.add(listener);
     }
 
     public static <T> void sortAppDataList(List<T> list) {

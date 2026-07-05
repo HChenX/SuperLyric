@@ -18,10 +18,15 @@
  */
 package com.hchen.superlyric.ui
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -36,8 +41,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -54,6 +61,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -68,6 +76,7 @@ import com.hchen.superlyric.ui.layout.SupportAppLayout
 import com.hchen.superlyric.ui.viewmodel.MainViewModel
 import com.hchen.superlyric.ui.viewmodel.MainViewModelFactory
 import com.hchen.superlyric.utils.PackageUtils
+import com.hchen.superlyric.utils.PermissionUtils
 import com.hchen.superlyricapi.SuperLyricHelper
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -95,14 +104,28 @@ class MainActivity : ComponentActivity() {
         MainViewModelFactory()
     }
 
+    // 记录应用列表权限状态，用于检测从系统设置页返回后是否已授权
+    private var appListPermissionGranted = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         window.isNavigationBarContrastEnforced = false
+        appListPermissionGranted = PermissionUtils.hasAppListPermission(this)
         PackageUtils.initialPackage(this)
 
         setContent {
             App()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // 用户在系统设置中授予应用列表权限并返回后，自动重新扫描一次
+        val granted = PermissionUtils.hasAppListPermission(this)
+        if (granted && !appListPermissionGranted) {
+            appListPermissionGranted = true
+            PackageUtils.reload(this)
         }
     }
 
@@ -124,6 +147,26 @@ class MainActivity : ComponentActivity() {
         var showUnavailable by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) {
             showUnavailable = !SuperLyricHelper.isAvailable()
+        }
+
+        val context = LocalContext.current
+        // 应用列表权限：缺失时无法扫描已安装的音乐软件
+        var showAppListPermission by remember { mutableStateOf(false) }
+        var permissionDenied by remember { mutableStateOf(false) }
+        val appListPermissionLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { granted ->
+            if (granted) {
+                appListPermissionGranted = true
+                showAppListPermission = false
+                PackageUtils.reload(context) // 授权成功后重新扫描并刷新列表
+            } else {
+                // 用户拒绝且不再提示时，引导前往系统设置手动授予
+                permissionDenied = !shouldShowRequestPermissionRationale(PermissionUtils.GET_INSTALLED_APPS)
+            }
+        }
+        LaunchedEffect(Unit) {
+            showAppListPermission = !PermissionUtils.hasAppListPermission(context)
         }
 
         CompositionLocalProvider(
@@ -154,6 +197,47 @@ class MainActivity : ComponentActivity() {
                             text = stringResource(android.R.string.ok),
                             onClick = {
                                 showUnavailable = false
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.textButtonColorsPrimary()
+                        )
+                    }
+                }
+
+                WindowDialog(
+                    show = showAppListPermission,
+                    title = stringResource(R.string.app_list_permission_title),
+                    summary = stringResource(
+                        if (permissionDenied) R.string.app_list_permission_denied_summary
+                        else R.string.app_list_permission_summary
+                    )
+                ) {
+                    Row(horizontalArrangement = Arrangement.Absolute.SpaceBetween) {
+                        TextButton(
+                            text = stringResource(R.string.cancel),
+                            onClick = {
+                                showAppListPermission = false
+                            },
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(Modifier.width(20.dp))
+                        TextButton(
+                            text = stringResource(
+                                if (permissionDenied) R.string.go_to_settings else R.string.grant
+                            ),
+                            onClick = {
+                                if (permissionDenied) {
+                                    // 跳转到本应用的系统设置页，供用户手动授权
+                                    startActivity(
+                                        Intent(
+                                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                            Uri.fromParts("package", packageName, null)
+                                        )
+                                    )
+                                    showAppListPermission = false
+                                } else {
+                                    appListPermissionLauncher.launch(PermissionUtils.GET_INSTALLED_APPS)
+                                }
                             },
                             modifier = Modifier.weight(1f),
                             colors = ButtonDefaults.textButtonColorsPrimary()

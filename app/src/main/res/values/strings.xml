@@ -8,6 +8,13 @@
     <string name="warn">Warning</string>
     <string name="service_unavailable">SuperLyric service is unavailable and will not be able to transmit lyrics data properly. Please restart your phone and try again! \Code: $s</string>
 
+    <string name="app_list_permission_title">App List Permission Required</string>
+    <string name="app_list_permission_summary">SuperLyric needs the app list permission to detect installed music apps. Without it, the supported app list may be empty or incomplete.</string>
+    <string name="app_list_permission_denied_summary">The app list permission has been denied. Please grant "Get app list" for SuperLyric in system settings, otherwise installed music apps cannot be detected.</string>
+    <string name="grant">Grant</string>
+    <string name="go_to_settings">Go to Settings</string>
+    <string name="cancel">Cancel</string>
+
     <string name="select_search">Search app</string>
     <string name="select_list_empty">The app list is empty</string>
     <string name="select_none">No search results available at the moment</string>
