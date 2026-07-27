@@ -32,6 +32,8 @@ import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricLine;
 import com.hchen.superlyricapi.SuperLyricWord;
 
+import io.github.libxposed.api.XposedModuleInterface;
+
 /**
  * 酷狗音乐概念版
  */
@@ -39,7 +41,7 @@ import com.hchen.superlyricapi.SuperLyricWord;
 public final class KuGouLite extends AbsPublisher {
 
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         fuckTencentTinker();
     }
 

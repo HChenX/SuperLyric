@@ -43,6 +43,8 @@ import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.Objects;
 
+import io.github.libxposed.api.XposedModuleInterface;
+
 /**
  * Apple Music
  */
@@ -112,7 +114,7 @@ public final class Apple extends AbsPublisher {
     }
 
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         // 初始化 Handler
         HandlerThread lyricThread = new HandlerThread("AppleMusicLyricThread");
         lyricThread.start();

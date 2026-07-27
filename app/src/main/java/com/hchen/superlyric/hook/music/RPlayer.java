@@ -28,13 +28,15 @@ import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.ScreenHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
+import io.github.libxposed.api.XposedModuleInterface;
+
 /**
  * RPlayer
  */
 @HookThis(targetPackage = "com.r.rplayer")
 public final class RPlayer extends AbsPublisher {
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         findMethod("com.stub.StubApp",
             "attachBaseContext",
             Context.class,

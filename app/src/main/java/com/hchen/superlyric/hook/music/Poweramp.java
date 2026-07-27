@@ -31,13 +31,15 @@ import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import io.github.libxposed.api.XposedModuleInterface;
+
 /**
  * Poweramp
  */
 @HookThis(targetPackage = "com.maxmpz.audioplayer")
 public final class Poweramp extends AbsPublisher {
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         hook(Arrays.stream(findClass("com.maxmpz.widget.player.list.LyricsFastTextView").getDeclaredMethods())
                 .filter(new Predicate<Method>() {
                     @Override

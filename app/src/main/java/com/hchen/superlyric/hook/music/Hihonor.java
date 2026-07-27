@@ -37,13 +37,15 @@ import org.luckypray.dexkit.result.MethodData;
 
 import java.lang.reflect.Method;
 
+import io.github.libxposed.api.XposedModuleInterface;
+
 /**
  * 荣耀音乐
  */
 @HookThis(targetPackage = "com.hihonor.cloudmusic")
 public final class Hihonor extends AbsPublisher {
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         fuckTencentTinker();
         NeteaseHelper.hookNeteaseWrapperBypass();
     }

@@ -25,13 +25,15 @@ import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.helper.QQMusicInternalHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
+import io.github.libxposed.api.XposedModuleInterface;
+
 /**
  * 魅族音乐
  */
 @HookThis(targetPackage = "com.meizu.media.music")
 public final class Meizu extends AbsPublisher {
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         if (QQMusicInternalHelper.isSupported())
             QQMusicInternalHelper.hookLyric();
         else {

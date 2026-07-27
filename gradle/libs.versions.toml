@@ -1,20 +1,20 @@
 [versions]
 # android
-agp = "9.2.1"
-kotlin = "2.4.0"
+agp = "9.3.1"
+kotlin = "2.4.10"
 appcompat = "1.7.1"
 annotation = "1.10.0"
-uiGraphics = "1.11.2"
-composeBom = "2026.05.01"
-foundationAndroid = "1.11.2"
+uiGraphics = "1.11.4"
+composeBom = "2026.06.01"
+foundationAndroid = "1.11.4"
 activityCompose = "1.13.0"
-lifecycleViewmodelKtx = "2.10.0"
+lifecycleViewmodelKtx = "2.11.0"
 # miuix
-miuixAndroid = "0.9.2"
+miuixAndroid = "0.9.3"
 # xposed
 api = "102.0.0"
 service = "102.0.0"
-hooktool = "3.0.6"
+hooktool = "3.1.0"
 # dexkit
 dexkit = "2.2.0"
 dexkitcache = "1.1"

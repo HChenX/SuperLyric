@@ -48,13 +48,15 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Predicate;
 
+import io.github.libxposed.api.XposedModuleInterface;
+
 /**
  * 网易云音乐
  */
 @HookThis(targetPackage = "com.netease.cloudmusic")
 public final class Netease extends AbsPublisher {
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         fuckTencentTinker();
         NeteaseHelper.hookNeteaseWrapperBypass();
     }

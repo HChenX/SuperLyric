@@ -43,6 +43,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Predicate;
 
+import io.github.libxposed.api.XposedModuleInterface;
+
 /**
  * 汽水音乐
  *
@@ -52,7 +54,7 @@ import java.util.function.Predicate;
 public final class Qishui extends AbsPublisher {
 
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         fakeBluetoothA2dpEnabled();
 
         // 此方法判断外接设备是否为蓝牙

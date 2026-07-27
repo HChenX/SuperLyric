@@ -48,13 +48,15 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Predicate;
 
+import io.github.libxposed.api.XposedModuleInterface;
+
 /**
  * 椒盐音乐
  */
 @HookThis(targetPackage = "com.salt.music")
 public final class SaltMusic extends AbsPublisher {
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         Class<?> lyricsClass = DexkitCache.findMember("salt$1", new IDexkit<ClassData>() {
             @NonNull @Override
             public ClassData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {

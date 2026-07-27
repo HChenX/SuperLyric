@@ -48,13 +48,15 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.function.Predicate;
 
+import io.github.libxposed.api.XposedModuleInterface;
+
 /**
  * 酷狗音乐
  */
 @HookThis(targetPackage = "com.kugou.android")
 public final class KuGou extends AbsPublisher {
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         fuckTencentTinker();
     }
 

@@ -40,13 +40,15 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.function.Predicate;
 
+import io.github.libxposed.api.XposedModuleInterface;
+
 /**
  * 酷我音乐
  */
 @HookThis(targetPackage = "cn.kuwo.player")
 public final class KuWo extends AbsPublisher {
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
     }
 
     @Override

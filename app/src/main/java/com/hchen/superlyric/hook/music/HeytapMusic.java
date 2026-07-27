@@ -26,13 +26,15 @@ import com.hchen.processor.HookThis;
 import com.hchen.superlyric.helper.OPPOBaseHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
+import io.github.libxposed.api.XposedModuleInterface;
+
 /**
  * Heytap 音乐（OPPO 国际版）
  */
 @HookThis(targetPackage = "com.heytap.music")
 public final class HeytapMusic extends AbsPublisher {
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
     }
 
     @Override

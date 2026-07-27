@@ -23,6 +23,8 @@ import androidx.annotation.NonNull;
 import com.hchen.processor.HookThis;
 import com.hchen.superlyric.hook.AbsPublisher;
 
+import io.github.libxposed.api.XposedModuleInterface;
+
 /**
  * 海贝音乐
  *
@@ -31,7 +33,7 @@ import com.hchen.superlyric.hook.AbsPublisher;
 @HookThis(targetPackage = "com.hiby.music")
 public final class HiBy extends AbsPublisher {
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         hookMediaMetadataLyric();
     }
 }

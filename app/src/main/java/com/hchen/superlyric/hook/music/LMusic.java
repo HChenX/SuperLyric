@@ -24,13 +24,15 @@ import com.hchen.processor.HookThis;
 import com.hchen.superlyric.helper.MeizuHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
+import io.github.libxposed.api.XposedModuleInterface;
+
 /**
  * LMusic
  */
 @HookThis(targetPackage = "com.lalilu.lmusic")
 public final class LMusic extends AbsPublisher {
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         MeizuHelper.depthDeviceMock();
         MeizuHelper.hookNotificationLyric();
     }

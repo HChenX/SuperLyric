@@ -25,6 +25,8 @@ import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.helper.TimeoutHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
+import io.github.libxposed.api.XposedModuleInterface;
+
 
 /**
  * MusicFree
@@ -32,7 +34,7 @@ import com.hchen.superlyric.hook.AbsPublisher;
 @HookThis(targetPackage = "fun.upup.musicfree")
 public final class MusicFree extends AbsPublisher {
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         hookMethod("fun.upup.musicfree.lyricUtil.LyricUtilModule",
             "showStatusBarLyric",
             String.class, "com.facebook.react.bridge.ReadableMap", "com.facebook.react.bridge.Promise",

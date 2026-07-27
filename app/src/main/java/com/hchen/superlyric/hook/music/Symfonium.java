@@ -35,6 +35,8 @@ import org.luckypray.dexkit.result.MethodData;
 import java.lang.reflect.Method;
 import java.util.Objects;
 
+import io.github.libxposed.api.XposedModuleInterface;
+
 /**
  * Symfonium
  *
@@ -45,7 +47,7 @@ public final class Symfonium extends AbsPublisher {
     private String lastLyric;
 
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         Method method = DexkitCache.findMember("Symfonium$1", new IDexkit<MethodData>() {
             @NonNull
             @Override

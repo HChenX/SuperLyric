@@ -26,13 +26,15 @@ import com.hchen.superlyric.hook.AbsPublisher;
 
 import java.util.Arrays;
 
+import io.github.libxposed.api.XposedModuleInterface;
+
 /**
  * 华为音乐
  */
 @HookThis(targetPackage = "com.huawei.music")
 public final class Huawei extends AbsPublisher {
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         hookAllMethod("com.android.mediacenter.localmusic.VehicleLyricControl",
             "isEnableRefreshShowLyric",
             new AbsHook() {

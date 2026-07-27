@@ -26,13 +26,15 @@ import com.hchen.processor.HookThis;
 import com.hchen.superlyric.helper.OPPOBaseHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
+import io.github.libxposed.api.XposedModuleInterface;
+
 /**
  * OPPO 音乐
  */
 @HookThis(targetPackage = "com.oppo.music")
 public final class OPPOMusic extends AbsPublisher {
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
     }
 
     @Override

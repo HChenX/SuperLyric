@@ -25,9 +25,9 @@ import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.processor.HookThis;
 import com.hchen.hooktool.AbsModule;
 import com.hchen.hooktool.hook.AbsHook;
+import com.hchen.processor.HookThis;
 import com.hchen.superlyric.service.PlayStateListener;
 import com.hchen.superlyric.service.SuperLyricService;
 
@@ -35,6 +35,8 @@ import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+
+import io.github.libxposed.api.XposedModuleInterface;
 
 /**
  * 代理 Super Lyric 服务
@@ -46,7 +48,11 @@ public final class SuperLyricProxy extends AbsModule {
     private static SuperLyricService mSuperLyricService;
 
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
+    }
+
+    @Override
+    protected void onSystemServerStarting(@NonNull XposedModuleInterface.SystemServerStartingParam param) {
         hookAllMethod("com.android.server.am.ActivityManagerService",
             "systemReady",
             new AbsHook() {

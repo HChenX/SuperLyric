@@ -24,13 +24,15 @@ import com.hchen.processor.HookThis;
 import com.hchen.superlyric.helper.QQMusicInternalHelper;
 import com.hchen.superlyric.hook.AbsPublisher;
 
+import io.github.libxposed.api.XposedModuleInterface;
+
 /**
  * 小米音乐
  */
 @HookThis(targetPackage = "com.miui.player")
 public final class MiPlayer extends AbsPublisher {
     @Override
-    protected void onLoaded(@NonNull StageEnum stage, @NonNull Object param) {
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         QQMusicInternalHelper.hookLyric();
     }
 }
