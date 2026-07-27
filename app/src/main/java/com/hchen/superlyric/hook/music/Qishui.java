@@ -284,7 +284,9 @@ public final class Qishui extends AbsPublisher {
 
         Accessor accessor = new Accessor();
         List<Field> times = new ArrayList<>(2);
-        for (Field field : sample.getClass().getDeclaredFields()) {
+        Field[] fields = sample.getClass().getDeclaredFields();
+        Arrays.sort(fields, (a, b) -> a.getName().compareTo(b.getName()));
+        for (Field field : fields) {
             if (Modifier.isStatic(field.getModifiers())) continue;
             field.setAccessible(true);
 
