@@ -19,6 +19,7 @@
 package com.hchen.superlyric.hook.music;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.hchen.processor.HookThis;
 import com.hchen.dexkitcache.DexkitCache;
@@ -37,10 +38,13 @@ import org.luckypray.dexkit.result.MethodDataList;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 
 import io.github.libxposed.api.XposedModuleInterface;
@@ -52,6 +56,9 @@ import io.github.libxposed.api.XposedModuleInterface;
  */
 @HookThis(targetPackage = "com.luna.music")
 public final class Qishui extends AbsPublisher {
+    // Sentence / Word 的成员在 20.0 起被混淆（getContent -> a()、content -> a 等），
+    // 故按字段类型 + 声明顺序运行时发现，避免每次版本更新都要跟着改名
+    private final Map<Class<?>, Accessor> mAccessors = new ConcurrentHashMap<>();
 
     @Override
     protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
@@ -147,13 +154,17 @@ public final class Qishui extends AbsPublisher {
                     if (lastIndex == -1 || index != lastIndex) {
                         lastIndex = index;
                         Object pair = getField(e, getThisObject());
+                        if (pair == null) return;
                         List<?> second = (List<?>) callMethod(pair, "getSecond");
+                        // 索引由宿主用 getOrNull 取值，可能越界
+                        if (second == null || index < 0 || index >= second.size()) return;
                         Object sentence = second.get(index);
 
                         LyricData lyricData = create(sentence);
+                        if (lyricData == null) return;
                         LyricData translationLyricData = null;
 
-                        Map<?, ?> translationMap = (Map<?, ?>) callMethod(sentence, "getTranslationMap");
+                        Map<?, ?> translationMap = readTranslationMap(sentence);
                         if (translationMap != null) {
                             Object CHINESE = getStaticField("com.luna.common.arch.db.entity.lyrics.NetLyricsLanguage", "CHINESE");
                             if (translationMap.containsKey(CHINESE)) {
@@ -194,7 +205,7 @@ public final class Qishui extends AbsPublisher {
 
                         superLyricData.setLyric(
                             new SuperLyricLine(
-                                (String) lyricData.lyric,
+                                lyricData.lyric,
                                 lyricData.words,
                                 lyricData.startTime,
                                 lyricData.endTime
@@ -203,7 +214,7 @@ public final class Qishui extends AbsPublisher {
 
                         if (translationLyricData != null) {
                             superLyricData.setTranslation(new SuperLyricLine(
-                                (String) translationLyricData.lyric,
+                                translationLyricData.lyric,
                                 translationLyricData.words,
                                 translationLyricData.startTime,
                                 translationLyricData.endTime
@@ -218,34 +229,129 @@ public final class Qishui extends AbsPublisher {
         });
     }
 
-    private LyricData create(Object sentence) {
-        CharSequence lyric = (CharSequence) callMethod(sentence, "getContent");
-        long startTime = (long) callMethod(sentence, "getStartTimeMs");
-        long endTime = (long) callMethod(sentence, "getEndTimeMs");
+    /**
+     * 读取 Sentence 的翻译表：key 为 NetLyricsLanguage，value 为对应语言的 Sentence
+     */
+    @Nullable
+    private Map<?, ?> readTranslationMap(@NonNull Object sentence) {
+        Accessor accessor = accessorOf(sentence);
+        if (accessor.translation == null) return null;
+        return (Map<?, ?>) getField(accessor.translation, sentence);
+    }
+
+    @Nullable
+    private LyricData create(@Nullable Object sentence) {
+        if (sentence == null) return null;
+
+        Accessor accessor = accessorOf(sentence);
+        if (!accessor.isTimedText()) return null;
+
+        String lyric = toText(getField(accessor.content, sentence));
+        long startTime = (long) getField(accessor.startTime, sentence);
+        long endTime = (long) getField(accessor.endTime, sentence);
 
         SuperLyricWord[] words = null;
-        List<?> wordList = (List<?>) callMethod(sentence, "getWordList");
-        if (wordList != null) {
-            words = new SuperLyricWord[wordList.size()];
-            for (int i = 0; i < wordList.size(); i++) {
-                CharSequence content = (CharSequence) getField(wordList.get(i), "content");
-                long startTimeMs = (long) getField(wordList.get(i), "startTimeMs");
-                long endTimeMs = (long) getField(wordList.get(i), "endTimeMs");
+        List<?> wordList = accessor.wordList == null ? null : (List<?>) getField(accessor.wordList, sentence);
+        if (wordList != null && !wordList.isEmpty()) {
+            Accessor wordAccessor = accessorOf(wordList.get(0));
+            if (wordAccessor.isTimedText()) {
+                words = new SuperLyricWord[wordList.size()];
+                for (int i = 0; i < wordList.size(); i++) {
+                    Object word = wordList.get(i);
+                    String content = toText(getField(wordAccessor.content, word));
+                    long startTimeMs = (long) getField(wordAccessor.startTime, word);
+                    long endTimeMs = (long) getField(wordAccessor.endTime, word);
 
-                words[i] = new SuperLyricWord((String) content, (int) startTimeMs, (int) endTimeMs);
+                    words[i] = new SuperLyricWord(content, startTimeMs, endTimeMs);
+                }
             }
         }
 
         return new LyricData(lyric, startTime, endTime, words);
     }
 
+    /**
+     * 按字段类型 + 声明顺序发现 Sentence / Word 的混淆成员，按类缓存。
+     * <p>
+     * 两者形状一致：一个 CharSequence 文本 + 两个 long 时间戳，Sentence 另有
+     * List(逐字) 与 Map(翻译)。混淆后字段名为 a/b/c...，dex 按名排序后的声明顺序
+     * 即 startTimeMs -> endTimeMs；若日后不再混淆则会反过来，故用首个实例的取值纠正。
+     */
+    @NonNull
+    private Accessor accessorOf(@NonNull Object sample) {
+        Accessor cached = mAccessors.get(sample.getClass());
+        if (cached != null) return cached;
+
+        Accessor accessor = new Accessor();
+        List<Field> times = new ArrayList<>(2);
+        Field[] fields = sample.getClass().getDeclaredFields();
+        Arrays.sort(fields, (a, b) -> a.getName().compareTo(b.getName()));
+        for (Field field : fields) {
+            if (Modifier.isStatic(field.getModifiers())) continue;
+            field.setAccessible(true);
+
+            Class<?> type = field.getType();
+            if (accessor.content == null && CharSequence.class.isAssignableFrom(type))
+                accessor.content = field;
+            else if (type == long.class)
+                times.add(field);
+            else if (accessor.wordList == null && List.class.isAssignableFrom(type))
+                accessor.wordList = field;
+            else if (accessor.translation == null && Map.class.isAssignableFrom(type))
+                accessor.translation = field;
+        }
+
+        if (times.size() >= 2) {
+            Field start = times.get(0);
+            Field end = times.get(1);
+            if (readTimeRaw(start, sample) > readTimeRaw(end, sample)) {
+                Field temp = start;
+                start = end;
+                end = temp;
+            }
+            accessor.startTime = start;
+            accessor.endTime = end;
+        }
+
+        mAccessors.put(sample.getClass(), accessor);
+        return accessor;
+    }
+
+    /**
+     * 读取 long 字段值，失败返回 0
+     */
+    private long readTimeRaw(@NonNull Field field, @NonNull Object obj) {
+        try {
+            return field.getLong(obj);
+        } catch (Throwable ignore) {
+            return 0L;
+        }
+    }
+
+    @Nullable
+    private String toText(@Nullable Object content) {
+        return content == null ? null : content.toString();
+    }
+
+    private static class Accessor {
+        Field content;     // CharSequence
+        Field startTime;   // long
+        Field endTime;     // long
+        Field wordList;    // List<Word>，仅 Sentence 有
+        Field translation; // Map<NetLyricsLanguage, Sentence>，仅 Sentence 有
+
+        boolean isTimedText() {
+            return content != null && startTime != null && endTime != null;
+        }
+    }
+
     private static class LyricData {
-        CharSequence lyric;
+        String lyric;
         long startTime;
         long endTime;
         SuperLyricWord[] words;
 
-        public LyricData(CharSequence lyric, long startTime, long endTime, SuperLyricWord[] words) {
+        public LyricData(String lyric, long startTime, long endTime, SuperLyricWord[] words) {
             this.lyric = lyric;
             this.startTime = startTime;
             this.endTime = endTime;
