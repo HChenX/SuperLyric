@@ -37,13 +37,16 @@ import java.util.regex.Pattern;
 /**
  * 通用歌词磁盘缓存助手。
  * <p>
- * Spotify 与网易云特性共享的基建：按提供者命名空间独立存储接口原始 JSON
+ * Spotify 与网易云特性共享的基建：按提供者命名空间独立存储接口原始响应
+ * （JSON 文本或 protobuf 二进制字节）。
  * <p>
- * 路径：{@code cacheDir/SuperLyric/lyric/{provider}/{key}.json}
+ * 与 LyricProvider 一致，直接写入宿主（音乐 App）自己的 cache 目录：
+ * {@code cacheDir/SuperLyric/lyric/{provider}/{key}.json}
  * <p>
- * Spotify 传入 {@code key = {locale}/{id}}（locale 段用于区分不同语言的歌词）；
- * 网易云传入 {@code key = {id}}。key 会被清洗，仅允许 {@code [A-Za-z0-9._-]}
- * 与 {@code '/'} 分隔（可多层，如 {@code locale/id}），杜绝路径穿越。
+ * Spotify 传入 {@code key = {locale}/{id}}（locale 段用于区分不同语言的歌词，
+ * 保留与 LyricProvider 一致的 locale 目录嵌套）；网易云传入 {@code key = {id}}。
+ * key 会被清洗，仅允许 {@code [A-Za-z0-9._-]} 与 {@code '/'} 分隔
+ * （可多层，如 {@code locale/id}），杜绝路径穿越。
  *
  * @author 彼岸喵Higanoneko & 焕晨HChen
  */
@@ -57,14 +60,28 @@ public final class LyricCacheHelper {
     }
 
     /**
-     * 将接口原始 JSON 写入磁盘缓存。
+     * 将接口返回的 JSON 文本（UTF-8）写入磁盘缓存。
      *
      * @param provider 提供者命名空间（如 Spotify / Netease），须为纯名称
      * @param key      缓存键（可为 {locale}/{id} 或纯 id）
      * @param json     接口返回的原始 JSON 字符串
      */
-    public static void put(@NonNull Context context, @NonNull String provider, @NonNull String key, @NonNull String json) {
-        File file = getFile(context, provider, key);
+    public static void put(@Nullable Context context, @NonNull String provider, @NonNull String key, @NonNull String json) {
+        put(context, provider, key, json.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * 将接口返回的原始响应字节（JSON 或 protobuf）写入磁盘缓存。
+     *
+     * @param provider 提供者命名空间（如 Spotify / Netease），须为纯名称
+     * @param key      缓存键（可为 {locale}/{id} 或纯 id）
+     * @param data     接口返回的原始响应字节
+     */
+    public static void put(@Nullable Context context, @NonNull String provider, @NonNull String key, @NonNull byte[] data) {
+        Context ctx = resolveContext(context);
+        if (ctx == null) return;
+
+        File file = getFile(ctx, provider, key);
         if (file == null) return;
         try {
             File parent = file.getParentFile();
@@ -75,10 +92,12 @@ public final class LyricCacheHelper {
             File temp = parent != null
                 ? new File(parent, file.getName() + ".tmp")
                 : new File(file.getName() + ".tmp");
-            Files.write(temp.toPath(), json.getBytes(StandardCharsets.UTF_8));
+            Files.write(temp.toPath(), data);
             Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             XposedLog.logW(TAG, "Failed to write lyric cache: " + file.getAbsolutePath(), e);
+        } catch (Throwable t) {
+            XposedLog.logW(TAG, "Failed to write lyric cache: " + file.getAbsolutePath(), t);
         }
     }
 
@@ -86,11 +105,23 @@ public final class LyricCacheHelper {
      * 读取磁盘缓存，未命中返回 {@code null}。
      */
     @Nullable
-    public static String get(@NonNull Context context, @NonNull String provider, @NonNull String key) {
-        File file = getFile(context, provider, key);
+    public static String get(@Nullable Context context, @NonNull String provider, @NonNull String key) {
+        byte[] data = getBytes(context, provider, key);
+        return data == null ? null : new String(data, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * 读取磁盘缓存原始字节（protobuf 响应），未命中返回 {@code null}。
+     */
+    @Nullable
+    public static byte[] getBytes(@Nullable Context context, @NonNull String provider, @NonNull String key) {
+        Context ctx = resolveContext(context);
+        if (ctx == null) return null;
+
+        File file = getFile(ctx, provider, key);
         if (file == null || !file.isFile()) return null;
         try {
-            return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8);
+            return Files.readAllBytes(file.toPath());
         } catch (IOException e) {
             XposedLog.logW(TAG, "Failed to read lyric cache: " + file.getAbsolutePath(), e);
             return null;
@@ -100,8 +131,11 @@ public final class LyricCacheHelper {
     /**
      * 删除磁盘缓存；不存在或删除失败时静默忽略。
      */
-    public static void delete(@NonNull Context context, @NonNull String provider, @NonNull String key) {
-        File file = getFile(context, provider, key);
+    public static void delete(@Nullable Context context, @NonNull String provider, @NonNull String key) {
+        Context ctx = resolveContext(context);
+        if (ctx == null) return;
+
+        File file = getFile(ctx, provider, key);
         if (file == null || !file.isFile()) return;
         try {
             Files.delete(file.toPath());
@@ -116,12 +150,30 @@ public final class LyricCacheHelper {
     @Nullable
     private static File getFile(@NonNull Context context, @NonNull String provider, @NonNull String key) {
         String providerDir = sanitizeSegment(provider);
-        if (providerDir == null) return null;
-
         String keyPath = sanitizeKey(key);
-        if (keyPath == null) return null;
+        if (providerDir == null || keyPath == null) return null;
 
-        return new File(new File(context.getCacheDir(), CACHE_ROOT), providerDir + File.separator + keyPath + ".json");
+        return new File(
+            new File(context.getCacheDir(), CACHE_ROOT),
+            providerDir + File.separator + keyPath + ".json"
+        );
+    }
+
+    /**
+     * 解析宿主 Context：优先使用传入的宿主 Application Context，
+     * 缺失时（onApplicationCreated 未触发的兜底场景）反射获取当前 Application。
+     */
+    @Nullable
+    private static Context resolveContext(@Nullable Context context) {
+        if (context != null) return context.getApplicationContext();
+        try {
+            Object app = Class.forName("android.app.ActivityThread")
+                .getMethod("currentApplication")
+                .invoke(null);
+            return app instanceof Context ? (Context) app : null;
+        } catch (Throwable t) {
+            return null;
+        }
     }
 
     /**

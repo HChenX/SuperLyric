@@ -292,10 +292,11 @@ public final class Spotify extends AbsPublisher {
     // ------------------------------ 拉取与缓存 ------------------------------
 
     private void fetchLyricsForTrack(@NonNull String id) {
-        // 独立命名空间：cacheDir/SuperLyric/lyric/Spotify/{locale}/{id}.json
+        // 独立命名空间（宿主私有缓存，与 LyricProvider 同方案）：
+        // cacheDir/SuperLyric/lyric/Spotify/{locale}/{id}.json，locale 目录与 LyricProvider 一致
         String cacheKey = LyricCacheHelper.currentLocaleTag() + "/" + id;
 
-        String cached = mAppContext != null ? LyricCacheHelper.get(mAppContext, "Spotify", cacheKey) : null;
+        byte[] cached = LyricCacheHelper.getBytes(mAppContext, "Spotify", cacheKey);
         if (cached != null) {
             logD(TAG, "Lyric cache hit for " + id + ", no network request");
             applyLyrics(id, cached);
@@ -309,13 +310,11 @@ public final class Spotify extends AbsPublisher {
 
         mDownloadExecutor.execute(() -> {
             try {
-                String json = SpotifyHelper.fetchLyric(id);
-                logD(TAG, "Lyric fetched for " + id + ", json length=" + json.length());
-                applyLyrics(id, json);
-                if (mAppContext != null) {
-                    LyricCacheHelper.put(mAppContext, "Spotify", cacheKey, json);
-                    logD(TAG, "Lyric cache written: Spotify/" + cacheKey + ".json");
-                }
+                byte[] raw = SpotifyHelper.fetchLyric(id);
+                logD(TAG, "Lyric fetched for " + id + ", bytes length=" + raw.length);
+                LyricCacheHelper.put(mAppContext, "Spotify", cacheKey, raw);
+                logD(TAG, "Lyric cache written: Spotify/" + cacheKey + ".json");
+                applyLyrics(id, raw);
             } catch (SpotifyHelper.NoFoundLyricException e) {
                 logD(TAG, "No lyric found (404) for " + id + ", keep blank");
             } catch (Exception e) {
@@ -326,7 +325,11 @@ public final class Spotify extends AbsPublisher {
         });
     }
 
-    private void applyLyrics(@NonNull String id, @NonNull String json) {
+    /**
+     * 解析原始响应（JSON / protobuf 自动分流）并原子写入歌词快照；
+     * 仅当前音轨与请求音轨一致时才生效，过期结果直接丢弃。
+     */
+    private void applyLyrics(@NonNull String id, @NonNull byte[] raw) {
         // 竞态防护：异步拉取完成时校验当前音轨（与当前歌曲快照比对）
         TrackSnapshot current = mTrackRef.get();
         if (current == null || !id.equals(current.song.trackId)) {
@@ -335,7 +338,7 @@ public final class Spotify extends AbsPublisher {
             return;
         }
 
-        List<SpotifyLine> lines = SpotifyHelper.parseLyrics(json);
+        List<SpotifyLine> lines = SpotifyHelper.parseLyrics(raw);
         if (lines == null || lines.isEmpty()) {
             logD(TAG, "No lyric lines for " + id + ", keep blank");
             return;
@@ -346,7 +349,8 @@ public final class Spotify extends AbsPublisher {
             logD(TAG, "Track changed while applying lyric for " + id + ", discard");
             return;
         }
-        logD(TAG, "Lyrics ready for " + id + ", lines=" + lines.size() + ", first=" + lines.get(0).text);
+        logD(TAG, "Lyrics ready for " + id + ", lines=" + lines.size() + ", first=" + lines.get(0).text
+            + ", firstWords=" + (lines.get(0).words == null ? 0 : lines.get(0).words.length));
 
         if (mPlayback.state == PlaybackState.STATE_PLAYING) {
             startLoop();
@@ -427,7 +431,7 @@ public final class Spotify extends AbsPublisher {
         SuperLyricData data = new SuperLyricData()
             .setTitle(song.title)
             .setArtist(song.artist)
-            .setLyric(new SuperLyricLine(line.text, line.startTimeMs, line.endTimeMs));
+            .setLyric(new SuperLyricLine(line.text, line.words, line.startTimeMs, line.endTimeMs));
         if (line.transliteratedWords != null && !line.transliteratedWords.trim().isEmpty()) {
             data.setTranslation(new SuperLyricLine(line.transliteratedWords));
         }

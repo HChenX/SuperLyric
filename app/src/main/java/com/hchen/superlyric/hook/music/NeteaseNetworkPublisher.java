@@ -585,11 +585,12 @@ public abstract class NeteaseNetworkPublisher extends AbsPublisher {
     // ------------------------------ 拉取与缓存 ------------------------------
 
     private void fetchLyricsForTrack(long id) {
-        // 独立命名空间：cacheDir/SuperLyric/lyric/{provider}/{id}.json
+        // 独立命名空间（宿主私有缓存，与 LyricProvider 同方案）：
+        // cacheDir/SuperLyric/lyric/{provider}/{id}.json
         String cacheProvider = lyricCacheProvider();
         String cacheKey = String.valueOf(id);
 
-        String cached = mAppContext != null ? LyricCacheHelper.get(mAppContext, cacheProvider, cacheKey) : null;
+        String cached = LyricCacheHelper.get(mAppContext, cacheProvider, cacheKey);
         if (cached != null) {
             logD(TAG, "Lyric cache hit for " + id + ", no network request");
             applyLyrics(id, cached);
@@ -606,10 +607,8 @@ public abstract class NeteaseNetworkPublisher extends AbsPublisher {
                 String json = NeteaseLyricHelper.fetchLyricJson(id);
                 logD(TAG, "Lyric fetched for " + id + ", json length=" + json.length());
                 applyLyrics(id, json);
-                if (mAppContext != null) {
-                    LyricCacheHelper.put(mAppContext, cacheProvider, cacheKey, json);
-                    logD(TAG, "Lyric cache written: " + cacheProvider + "/" + cacheKey + ".json");
-                }
+                LyricCacheHelper.put(mAppContext, cacheProvider, cacheKey, json);
+                logD(TAG, "Lyric cache written: " + cacheProvider + "/" + cacheKey + ".json");
             } catch (Exception e) {
                 logE(TAG, "Failed to fetch lyric for " + id, e);
                 // 过期音轨（切歌 / 广告）：状态机按 trackId 校验会忽略，无需再走失败 / 重试
