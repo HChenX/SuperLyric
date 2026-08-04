@@ -33,6 +33,11 @@
 -keep class com.hchen.superlyricapi.** {*;}
 -keep class com.hchen.dexkitcache.DexkitCache$MemberData {*;}
 -keep class com.hchen.superlyric.helper.MeiZuNotification {*;}
+-keep class com.hchen.superlyric.helper.NeteaseLyricHelper$LyricResponse { *; }
+-keep class com.hchen.superlyric.helper.NeteaseLyricHelper$LyricContent { *; }
+-keep class com.hchen.superlyric.helper.SpotifyHelper$LyricResponse { *; }
+-keep class com.hchen.superlyric.helper.SpotifyHelper$LyricsData { *; }
+-keep class com.hchen.superlyric.helper.SpotifyHelper$LyricLine { *; }
 
 -dontwarn android.os.ServiceManager
 -dontwarn de.robv.android.xposed.XposedHelpers

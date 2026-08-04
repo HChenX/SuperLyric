@@ -55,6 +55,7 @@
 - RPlayer (com.r.rplayer) -> Bluetooth Lyrics
 - Salt Music (com.salt.music) -> Hook Acquisition
 - Suvine Music (com.xuncorp.suvine.music) -> Meizu Status Bar Lyrics
+- Spotify (com.spotify.music) -> Hook Acquisition
 - Symfonium (app.symfonik.music.player) -> Hook Acquisition
 - Flamingo (unknown) -> Native API Support
 - [Cone Player](https://coneplayer.trantor.ink) (ink.trantor.coneplayer) -> Native API Support
@@ -64,7 +65,6 @@
 ## 🛠 Unsupported Applications
 
 - YouTube Music
-- Spotify
 - If you have good adaptation methods, PRs are welcome!
 
 ---

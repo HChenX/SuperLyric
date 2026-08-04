@@ -28,6 +28,7 @@ import android.text.TextUtils;
 
 import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.hook.AbsHook;
+import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyric.hook.AbsPublisher;
 
 /**
@@ -39,6 +40,20 @@ import com.hchen.superlyric.hook.AbsPublisher;
  */
 public final class MeizuHelper {
     private static final String TAG = "MeizuHelper";
+
+    /**
+     * 通知栏歌词发布开关：默认开启（保持其他提供者现状行为不变）；
+     * Netease 双轨互斥时由状态机按歌曲粒度关闭/开启，避免与网络路径双发。
+     */
+    private static volatile boolean mNotificationLyricEnabled = true;
+
+    /** 通知栏歌词 hook 安装守卫：同一进程内只安装一次，重复安装会双发。 */
+    private static volatile boolean mNotificationHookInstalled = false;
+    private static final Object NOTIFICATION_HOOK_LOCK = new Object();
+
+    public static void setNotificationLyricEnabled(boolean enabled) {
+        mNotificationLyricEnabled = enabled;
+    }
 
     /**
      * 浅层模拟魅族设备
@@ -92,26 +107,44 @@ public final class MeizuHelper {
     }
 
     public static void hookNotificationLyric() {
-        if (hasClass("androidx.media3.common.util.Util")) {
-            hookMethod("androidx.media3.common.util.Util",
-                "setForegroundServiceNotification",
-                Service.class, int.class, Notification.class, int.class, String.class,
-                createNotificationHook()
-            );
-        }
-        if (hasClass("androidx.core.app.NotificationManagerCompat")) {
-            hookMethod("androidx.core.app.NotificationManagerCompat",
-                "notify",
-                String.class, int.class, Notification.class,
-                createNotificationHook()
-            );
-        }
-        if (hasClass("android.app.NotificationManager")) {
-            hookMethod("android.app.NotificationManager",
-                "notify",
-                String.class, int.class, Notification.class,
-                createNotificationHook()
-            );
+        if (mNotificationHookInstalled) return;
+        synchronized (NOTIFICATION_HOOK_LOCK) {
+            if (mNotificationHookInstalled) return;
+
+            if (hasClass("androidx.media3.common.util.Util")) {
+                try {
+                    hookMethod("androidx.media3.common.util.Util",
+                        "setForegroundServiceNotification",
+                        Service.class, int.class, Notification.class, int.class, String.class,
+                        createNotificationHook()
+                    );
+                } catch (Throwable t) {
+                    XposedLog.logW(TAG, "Hook Util.setForegroundServiceNotification failed", t);
+                }
+            }
+            if (hasClass("androidx.core.app.NotificationManagerCompat")) {
+                try {
+                    hookMethod("androidx.core.app.NotificationManagerCompat",
+                        "notify",
+                        String.class, int.class, Notification.class,
+                        createNotificationHook()
+                    );
+                } catch (Throwable t) {
+                    XposedLog.logW(TAG, "Hook NotificationManagerCompat.notify failed", t);
+                }
+            }
+            if (hasClass("android.app.NotificationManager")) {
+                try {
+                    hookMethod("android.app.NotificationManager",
+                        "notify",
+                        String.class, int.class, Notification.class,
+                        createNotificationHook()
+                    );
+                } catch (Throwable t) {
+                    XposedLog.logW(TAG, "Hook NotificationManager.notify failed", t);
+                }
+            }
+            mNotificationHookInstalled = true;
         }
     }
 
@@ -119,6 +152,8 @@ public final class MeizuHelper {
         return new AbsHook() {
             @Override
             public void before() {
+                if (!mNotificationLyricEnabled) return;
+
                 Notification notification = (Notification) getArg(2);
                 if (notification == null) return;
 

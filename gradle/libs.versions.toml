@@ -20,8 +20,9 @@ dexkit = "2.2.0"
 dexkitcache = "1.1"
 gson = "2.14.0"
 mmkv = "2.4.0"
+okhttp = "5.3.2"
 # superlyricapi
-superlyricapi = "3.4"
+superlyricapi = "3.3"
 # auto service
 autoService = "1.1.1"
 javapoet = "1.13.0"
@@ -51,6 +52,8 @@ dexkit = { module = "org.luckypray:dexkit", version.ref = "dexkit" }
 dexkitcache = { module = "com.github.HChenX:DexkitCache", version.ref = "dexkitcache" }
 gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 mmkv = { module = "com.tencent:mmkv", version.ref = "mmkv" }
+okhttp = { module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp" }
+okhttp-brotli = { module = "com.squareup.okhttp3:okhttp-brotli", version.ref = "okhttp" }
 
 superlyricapi = { module = "com.github.HChenX:SuperLyricApi", version.ref = "superlyricapi" }
 
