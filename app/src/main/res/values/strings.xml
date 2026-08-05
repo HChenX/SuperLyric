@@ -97,6 +97,7 @@
     <string name="jiaoyan_music">No additional setup required</string>
     <string name="apple_music">No additional setup required</string>
     <string name="symfonium_music">No additional setup required</string>
+    <string name="spotify_music">No additional setup required</string>
     <string name="kugou_music">No additional setup required</string>
     <string name="kugou_lite_music">No additional setup required\n3.0.1 &amp; 5.1.5 version supports per-word lyrics.</string>
 

@@ -53,6 +53,7 @@
 - RPlayer (com.r.rplayer) -> 蓝牙歌词
 - 椒盐音乐 (com.salt.music) -> Hook 获取
 - 糖醋音乐 (com.xuncorp.suvine.music) -> 魅族状态栏歌词
+- Spotify (com.spotify.music) -> Hook 获取
 - Symfonium (app.symfonik.music.player) -> Hook 获取
 - Flamingo (unknown) -> Api 原生支持
 - [光锥音乐](https://coneplayer.trantor.ink) (ink.trantor.coneplayer) -> Api 原生支持
@@ -62,7 +63,6 @@
 ## 🛠 不支持的软件
 
 - YouTube Music
-- Spotify
 - 如果你有好的适配方法欢迎提交 PR
 
 ---

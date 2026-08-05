@@ -42,8 +42,8 @@ android {
         minSdk 30
         targetSdk 37
         // noinspection HighAppVersionCode
-        versionCode 2026072700
-        versionName "3.2"
+        versionCode 2026080401
+        versionName "3.3"
 
         ndk {
             // noinspection ChromeOsAbiSupport
@@ -138,6 +138,8 @@ dependencies {
     implementation libs.dexkitcache
     implementation libs.mmkv
     implementation libs.gson
+    implementation libs.okhttp
+    implementation libs.okhttp.brotli
     implementation(libs.superlyricapi) {
         changing = true
     }
