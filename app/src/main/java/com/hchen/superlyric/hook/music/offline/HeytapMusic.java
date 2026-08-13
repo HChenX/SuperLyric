@@ -16,13 +16,26 @@
 
  * Copyright (C) 2025-2026 HChenX
  */
-package com.hchen.superlyric.data;
+package com.hchen.superlyric.hook.music.offline;
+
+import android.content.Context;
+
+import androidx.annotation.NonNull;
+
+import com.hchen.processor.HookThis;
+import com.hchen.superlyric.hook.AbsPublisher;
+import com.hchen.superlyric.patches.oppo.OPPOLogicHijacking;
 
 /**
- * 本地配置项键名常量。
+ * Heytap 音乐（OPPO 国际版）
  *
  * @author 焕晨HChen
  */
-public final class PrefsKey {
-    public static final String LOG_LEVEL = "log_level";
+@HookThis(targetPackage = "com.heytap.music")
+public final class HeytapMusic extends AbsPublisher {
+    @Override
+    protected void onApplicationCreated(@NonNull Context context) {
+        super.onApplicationCreated(context);
+        OPPOLogicHijacking.initOPPO("heytap$1");
+    }
 }

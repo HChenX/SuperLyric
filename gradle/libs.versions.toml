@@ -14,15 +14,16 @@ miuixAndroid = "0.9.3"
 # xposed
 api = "102.0.0"
 service = "102.0.0"
-hooktool = "3.1.0"
+hooktool = "3.2.1"
 # dexkit
 dexkit = "2.2.0"
 dexkitcache = "1.1"
 gson = "2.14.0"
-mmkv = "2.4.0"
-okhttp = "5.3.2"
+mmkv = "2.4.1"
+# okhttp
+okhttp = "5.4.0"
 # superlyricapi
-superlyricapi = "3.3"
+superlyricapi = "3.4"
 # auto service
 autoService = "1.1.1"
 javapoet = "1.13.0"

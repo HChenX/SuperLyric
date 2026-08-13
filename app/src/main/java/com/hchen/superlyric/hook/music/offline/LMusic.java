@@ -16,13 +16,27 @@
 
  * Copyright (C) 2025-2026 HChenX
  */
-package com.hchen.superlyric.data;
+package com.hchen.superlyric.hook.music.offline;
+
+import androidx.annotation.NonNull;
+
+import com.hchen.processor.HookThis;
+import com.hchen.superlyric.hook.AbsPublisher;
+import com.hchen.superlyric.utils.MeizuFaker;
+
+import io.github.libxposed.api.XposedModuleInterface;
 
 /**
- * 本地配置项键名常量。
+ * LMusic
  *
  * @author 焕晨HChen
  */
-public final class PrefsKey {
-    public static final String LOG_LEVEL = "log_level";
+@HookThis(targetPackage = "com.lalilu.lmusic")
+public final class LMusic extends AbsPublisher {
+    @Override
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
+        super.onPackageReady(param);
+        MeizuFaker.depthDeviceMock();
+        MeizuFaker.hookNotificationLyric();
+    }
 }

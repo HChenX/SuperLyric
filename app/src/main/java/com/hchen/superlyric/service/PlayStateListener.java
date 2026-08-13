@@ -19,13 +19,11 @@
 package com.hchen.superlyric.service;
 
 import android.annotation.SuppressLint;
-import android.content.ComponentName;
 import android.content.Context;
 import android.media.MediaMetadata;
 import android.media.session.MediaController;
 import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
-import android.service.notification.NotificationListenerService;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -49,7 +47,7 @@ public final class PlayStateListener {
     @NonNull
     private final MediaSessionManager mMediaSessionManager;
     @NonNull
-    private final ConcurrentHashMap<MediaController, MediaControllerCallback> mCallbackHashMap = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<MediaController, MediaControllerCallback> mCallbacks = new ConcurrentHashMap<>();
     @NonNull
     private final MediaSessionManager.OnActiveSessionsChangedListener mListener = new MediaSessionManager.OnActiveSessionsChangedListener() {
         @Override
@@ -58,13 +56,8 @@ public final class PlayStateListener {
                 return;
             }
 
-            mCallbackHashMap.forEach(new BiConsumer<MediaController, MediaControllerCallback>() {
-                @Override
-                public void accept(MediaController controller, MediaControllerCallback callback) {
-                    controller.unregisterCallback(callback);
-                }
-            });
-            mCallbackHashMap.clear();
+            mCallbacks.forEach(MediaController::unregisterCallback);
+            mCallbacks.clear();
             for (MediaController controller : controllers) {
                 registerMediaControllerCallback(controller);
             }
@@ -78,12 +71,12 @@ public final class PlayStateListener {
     }
 
     public void register() {
-        ComponentName componentName = new ComponentName(mContext, NotificationListenerService.class);
-        for (MediaController controller : mMediaSessionManager.getActiveSessions(componentName)) {
+        // system_server 上下文中无具体 NotificationListenerService 组件，传 null 获取全部 active sessions
+        for (MediaController controller : mMediaSessionManager.getActiveSessions(null)) {
             registerMediaControllerCallback(controller);
         }
 
-        mMediaSessionManager.addOnActiveSessionsChangedListener(mListener, componentName);
+        mMediaSessionManager.addOnActiveSessionsChangedListener(mListener, null);
     }
 
     private void registerMediaControllerCallback(@NonNull MediaController controller) {
@@ -91,15 +84,15 @@ public final class PlayStateListener {
             return;
         }
 
-        MediaControllerCallback callback = mCallbackHashMap.get(controller);
+        MediaControllerCallback callback = mCallbacks.get(controller);
         if (callback != null) {
             controller.unregisterCallback(callback);
-            mCallbackHashMap.remove(controller);
+            mCallbacks.remove(controller);
         }
 
         callback = new MediaControllerCallback(controller);
         controller.registerCallback(callback);
-        mCallbackHashMap.put(controller, callback);
+        mCallbacks.put(controller, callback);
     }
 
     private class MediaControllerCallback extends MediaController.Callback {
@@ -115,7 +108,7 @@ public final class PlayStateListener {
         public void onPlaybackStateChanged(@Nullable PlaybackState state) {
             super.onPlaybackStateChanged(state);
             if (state == null) return;
-            if (unregisterCallbackIfNeed()) {
+            if (unregisterIfNeeded()) {
                 return;
             }
 
@@ -139,10 +132,10 @@ public final class PlayStateListener {
             // Do Nothing
         }
 
-        private boolean unregisterCallbackIfNeed() {
+        private boolean unregisterIfNeeded() {
             if (SuperLyricService.isNonSystemPlayStateListener(mController.getPackageName())) {
                 mController.unregisterCallback(this);
-                mCallbackHashMap.remove(mController);
+                mCallbacks.remove(mController);
                 return true;
             }
             return false;

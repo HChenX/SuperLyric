@@ -90,8 +90,7 @@ import com.hchen.superlyric.ui.data.LocalViewModel
 import com.hchen.superlyric.ui.effect.BlurredBar
 import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
 import com.hchen.superlyric.ui.viewmodel.MainUiAction
-import com.hchen.superlyric.ui.viewmodel.MainViewModel
-import com.hchen.superlyric.utils.PackageUtils
+import com.hchen.superlyric.utils.PackageLoader
 import com.hchen.superlyricapi.ISuperLyricReceiver
 import com.hchen.superlyricapi.SuperLyricData
 import com.hchen.superlyricapi.SuperLyricHelper
@@ -123,8 +122,8 @@ import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.layout.DialogDefaults
 import top.yukonga.miuix.kmp.menu.OverlayIconCascadingDropdownMenu
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
+import top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import top.yukonga.miuix.kmp.window.WindowBottomSheet
@@ -156,13 +155,13 @@ fun HomeLayout(
         val query = searchStatus.searchText.trim()
         if (query.isEmpty()) emptyList()
         else hookApps.filter { it.label.contains(query, ignoreCase = true) }
-            .also { PackageUtils.sortAppDataList(it) }
+            .also { PackageLoader.sortAppData(it) }
     }
     val filteredApiApps = remember(searchStatus.searchText, apiApps) {
         val query = searchStatus.searchText.trim()
         if (query.isEmpty()) emptyList()
         else apiApps.filter { it.label.contains(query, ignoreCase = true) }
-            .also { PackageUtils.sortAppDataList(it) }
+            .also { PackageLoader.sortAppData(it) }
     }
 
     LaunchedEffect(searchStatus.searchText, filteredHookApps, filteredApiApps) {
@@ -425,7 +424,7 @@ fun HomeLayout(
                     Icon(
                         imageVector = MiuixIcons.Close,
                         contentDescription = "Cancel",
-                        tint = MiuixTheme.colorScheme.onBackground,
+                        tint = colorScheme.onBackground,
                     )
                 }
             },
@@ -436,7 +435,7 @@ fun HomeLayout(
                     Icon(
                         imageVector = MiuixIcons.Ok,
                         contentDescription = "Confirm",
-                        tint = MiuixTheme.colorScheme.onBackground,
+                        tint = colorScheme.onBackground,
                     )
                 }
             },
@@ -458,7 +457,7 @@ fun HomeLayout(
                             .fillMaxWidth()
                             .padding(bottom = 12.dp),
                         colors = CardDefaults.defaultColors(
-                            color = MiuixTheme.colorScheme.secondaryContainer,
+                            color = colorScheme.secondaryContainer,
                         )
                     ) {
                         BasicComponent(
@@ -481,7 +480,7 @@ fun HomeLayout(
                             ),
                             summary = stringResource(
                                 R.string.service_status_format,
-                                InvokeTool.getStaticField<Any>(SuperLyricHelper::class.java, "mManager").toString()
+                                InvokeTool.getStaticField(SuperLyricHelper::class.java, "mManager").toString()
                             )
                         )
                     }
@@ -492,7 +491,7 @@ fun HomeLayout(
                             .fillMaxWidth()
                             .padding(bottom = 12.dp),
                         colors = CardDefaults.defaultColors(
-                            color = MiuixTheme.colorScheme.secondaryContainer,
+                            color = colorScheme.secondaryContainer,
                         )
                     ) {
                         ArrowPreference(
@@ -536,7 +535,7 @@ fun HomeLayout(
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.defaultColors(
-                            color = MiuixTheme.colorScheme.secondaryContainer,
+                            color = colorScheme.secondaryContainer,
                         )
                     ) {
                         ArrowPreference(
@@ -600,8 +599,8 @@ private fun EmptyApps(
         Text(
             text = text,
             textAlign = TextAlign.Center,
-            fontSize = MiuixTheme.textStyles.body2.fontSize,
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary
+            fontSize = textStyles.body2.fontSize,
+            color = colorScheme.onSurfaceVariantSummary
         )
     }
 }
@@ -611,12 +610,12 @@ private fun AppItemFactory(
     show: MutableState<Boolean>,
     appData: AppData
 ) {
-    val viewModel = LocalViewModel.current as MainViewModel
+    val viewModel = LocalViewModel.current
 
     AppItemComponent(
         title = appData.label,
         summary = appData.packageName,
-        icon = appData.icon,
+        icon = appData.icon!!,
         versionName = when (appData) {
             is ApiAppData -> appData.apiVersionName
             else -> appData.versionName
@@ -659,14 +658,14 @@ private fun AppItemComponent(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(MiuixTheme.colorScheme.tertiaryContainer)
+                            .background(colorScheme.tertiaryContainer)
                     ) {
                         Text(
                             text = versionName,
                             maxLines = 1,
                             fontSize = 12.sp,
                             overflow = TextOverflow.Visible,
-                            color = MiuixTheme.colorScheme.onTertiaryContainer,
+                            color = colorScheme.onTertiaryContainer,
                             modifier = Modifier.padding(3.dp)
                         )
                     }
@@ -674,14 +673,14 @@ private fun AppItemComponent(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(MiuixTheme.colorScheme.tertiaryContainer)
+                            .background(colorScheme.tertiaryContainer)
                     ) {
                         Text(
                             text = versionCode,
                             maxLines = 1,
                             fontSize = 12.sp,
                             overflow = TextOverflow.Ellipsis,
-                            color = MiuixTheme.colorScheme.onTertiaryContainer,
+                            color = colorScheme.onTertiaryContainer,
                             modifier = Modifier.padding(3.dp)
                         )
                     }
@@ -725,7 +724,7 @@ private fun AppDetailsDialog(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Icon(
-                painter = BitmapPainter(appData.icon.asImageBitmap()),
+                painter = BitmapPainter(appData.icon!!.asImageBitmap()),
                 contentDescription = "App Icon",
                 tint = Color.Unspecified,
                 modifier = Modifier
@@ -739,7 +738,7 @@ private fun AppDetailsDialog(
                     .fillMaxWidth()
                     .padding(bottom = 3.dp),
                 text = appData.label,
-                fontSize = MiuixTheme.textStyles.title4.fontSize,
+                fontSize = textStyles.title4.fontSize,
                 fontWeight = FontWeight.Medium,
                 textAlign = TextAlign.Center,
                 color = DialogDefaults.titleColor(),
@@ -750,7 +749,7 @@ private fun AppDetailsDialog(
                     .fillMaxWidth()
                     .padding(bottom = 6.dp),
                 text = appData.packageName,
-                fontSize = MiuixTheme.textStyles.body1.fontSize,
+                fontSize = textStyles.body1.fontSize,
                 textAlign = TextAlign.Center,
                 color = DialogDefaults.summaryColor(),
             )
@@ -764,7 +763,7 @@ private fun AppDetailsDialog(
                     appData.versionName,
                     appData.versionCode
                 ),
-                fontSize = MiuixTheme.textStyles.body1.fontSize,
+                fontSize = textStyles.body1.fontSize,
                 textAlign = TextAlign.Center,
                 color = DialogDefaults.summaryColor(),
             )
@@ -774,7 +773,7 @@ private fun AppDetailsDialog(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(10.dp))
-                .background(MiuixTheme.colorScheme.tertiaryContainer)
+                .background(colorScheme.tertiaryContainer)
         ) {
             Text(
                 modifier = Modifier
@@ -784,11 +783,11 @@ private fun AppDetailsDialog(
                     R.string.instructions_for_use,
                     when (appData) {
                         is ApiAppData -> stringResource(R.string.support_api)
-                        else -> stringResource(SupportApps.mPackageToDetails[appData.packageName] ?: R.string.unknown)
+                        else -> stringResource(SupportApps.mPackageLabelRes[appData.packageName] ?: R.string.unknown)
                     }
                 ),
-                fontSize = MiuixTheme.textStyles.body1.fontSize,
-                color = MiuixTheme.colorScheme.onTertiaryContainer,
+                fontSize = textStyles.body1.fontSize,
+                color = colorScheme.onTertiaryContainer,
             )
         }
 

@@ -31,17 +31,22 @@ import com.hchen.superlyric.data.LocalConfig;
 import com.hchen.superlyric.data.PrefsKey;
 import com.hchen.superlyricapi.SuperLyricHelper;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 import io.github.libxposed.service.XposedService;
 import io.github.libxposed.service.XposedServiceHelper;
 
+/**
+ * 模块宿主 Application：初始化配置与 Xposed 服务绑定。
+ *
+ * @author 焕晨HChen
+ */
 public class Application extends android.app.Application implements XposedServiceHelper.OnServiceListener {
     private static boolean isXposedActive = false;
     private static SharedPreferences mRemotePreferences;
-    private static final List<Consumer<SharedPreferences>> listeners = new ArrayList<>();
+    private static final List<Consumer<SharedPreferences>> listeners = new CopyOnWriteArrayList<>();
 
     @Override
     public void onCreate() {

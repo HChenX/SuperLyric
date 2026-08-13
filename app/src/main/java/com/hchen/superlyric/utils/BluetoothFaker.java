@@ -16,13 +16,28 @@
 
  * Copyright (C) 2025-2026 HChenX
  */
-package com.hchen.superlyric.data;
+package com.hchen.superlyric.utils;
+
+import static com.hchen.hooktool.core.CoreTool.hookMethod;
+import static com.hchen.hooktool.core.CoreTool.returnResult;
 
 /**
- * 本地配置项键名常量。
+ * 蓝牙状态模拟：向宿主伪造蓝牙已开启，以触发蓝牙场景的歌词发布。
  *
  * @author 焕晨HChen
  */
-public final class PrefsKey {
-    public static final String LOG_LEVEL = "log_level";
+public final class BluetoothFaker {
+    /**
+     * 模拟蓝牙为开启状态。
+     */
+    public static void fakeBluetoothA2dpEnabled() {
+        hookMethod("android.media.AudioManager",
+            "isBluetoothA2dpOn",
+            returnResult(true)
+        );
+        hookMethod("android.bluetooth.BluetoothAdapter",
+            "isEnabled",
+            returnResult(true)
+        );
+    }
 }

@@ -45,7 +45,7 @@ import io.github.libxposed.api.XposedModuleInterface;
  */
 @HookThis(targetPackage = "system", onSystemStarting = true)
 public final class SuperLyricProxy extends AbsModule {
-    private static SuperLyricService mSuperLyricService;
+    private static SuperLyricService sSuperLyricService;
 
     @Override
     protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
@@ -59,11 +59,11 @@ public final class SuperLyricProxy extends AbsModule {
                 @Override
                 public void after() {
                     try {
-                        if (mSuperLyricService == null) {
+                        if (sSuperLyricService == null) {
                             Context mContext = (Context) getField(getThisObject(), "mContext");
                             if (mContext != null) {
-                                mSuperLyricService = new SuperLyricService(getThisObject());
-                                new PlayStateListener(mContext, mSuperLyricService).register();
+                                sSuperLyricService = new SuperLyricService(getThisObject());
+                                new PlayStateListener(mContext, sSuperLyricService).register();
 
                                 logI(TAG, "Super lyric service is all ready. enjoy it.");
                             }
@@ -92,7 +92,7 @@ public final class SuperLyricProxy extends AbsModule {
             new AbsHook() {
                 @Override
                 public void after() {
-                    if (mSuperLyricService == null) {
+                    if (sSuperLyricService == null) {
                         return;
                     }
 
@@ -104,7 +104,7 @@ public final class SuperLyricProxy extends AbsModule {
                     @SuppressWarnings("unchecked")
                     Map<String, IBinder> mAppBindArgs = (Map<String, IBinder>) getResult();
                     if (!mAppBindArgs.containsKey("super_lyric")) {
-                        mAppBindArgs.put("super_lyric", mSuperLyricService);
+                        mAppBindArgs.put("super_lyric", sSuperLyricService);
                         logI(TAG, "Release super lyric service: " + mAppBindArgs.get("super_lyric"));
                     }
                 }
@@ -118,7 +118,7 @@ public final class SuperLyricProxy extends AbsModule {
             new AbsHook() {
                 @Override
                 public void after() {
-                    if (mSuperLyricService == null) {
+                    if (sSuperLyricService == null) {
                         return;
                     }
 
@@ -139,7 +139,7 @@ public final class SuperLyricProxy extends AbsModule {
                             boolean isKilled = (boolean) Optional.ofNullable(getField(app, "mKilled")).orElse(true);
                             if (isKilled) {
                                 if (SuperLyricService.isPublisher(info.packageName)) {
-                                    mSuperLyricService.onPackageDied(info.packageName);
+                                    sSuperLyricService.onPackageDied(info.packageName);
                                     logI(TAG, "App: " + info.packageName + " is died.");
                                 }
                             }

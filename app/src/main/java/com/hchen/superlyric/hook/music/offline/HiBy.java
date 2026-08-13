@@ -16,13 +16,25 @@
 
  * Copyright (C) 2025-2026 HChenX
  */
-package com.hchen.superlyric.data;
+package com.hchen.superlyric.hook.music.offline;
+
+import androidx.annotation.NonNull;
+
+import com.hchen.processor.HookThis;
+import com.hchen.superlyric.hook.AbsPublisher;
+
+import io.github.libxposed.api.XposedModuleInterface;
 
 /**
- * 本地配置项键名常量。
+ * 海贝音乐
  *
  * @author 焕晨HChen
  */
-public final class PrefsKey {
-    public static final String LOG_LEVEL = "log_level";
+@HookThis(targetPackage = "com.hiby.music")
+public final class HiBy extends AbsPublisher {
+    @Override
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
+        super.onPackageReady(param);
+        hookMediaMetadataLyric();
+    }
 }

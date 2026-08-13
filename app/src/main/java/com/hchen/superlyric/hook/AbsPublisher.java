@@ -30,11 +30,12 @@ import androidx.annotation.NonNull;
 import com.hchen.hooktool.AbsModule;
 import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.hook.AbsHook;
+import com.hchen.superlyric.utils.HotfixDisabler;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricHelper;
 import com.hchen.superlyricapi.SuperLyricLine;
 
-import java.lang.reflect.Method;
+import io.github.libxposed.api.XposedModuleInterface;
 
 /**
  * 歌词发布类
@@ -42,83 +43,50 @@ import java.lang.reflect.Method;
  * @author 焕晨HChen
  */
 public abstract class AbsPublisher extends AbsModule {
-    protected static AudioManager mAudioManager;
-    protected static String mPackageName;
-    protected static long mVersionCode = -1L;
-    protected static String mVersionName = "unknown";
+    private static AudioManager sAudioManager;
+    private static String sPackageName;
+    private static long sVersionCode = -1L;
+    private static String sVersionName = "unknown";
 
-    public static AudioManager getAudioManager() {
-        return mAudioManager;
-    }
-
-    public static String getPackageName() {
-        return mPackageName;
-    }
-
-    public static long getVersionCode() {
-        return mVersionCode;
-    }
-
-    public static String getVersionName() {
-        return mVersionName;
+    @CallSuper
+    @Override
+    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
+        HotfixDisabler.disableAllHotfixes();
     }
 
     @CallSuper
     @Override
     protected void onApplicationCreated(@NonNull Context context) {
         ModuleData.setClassLoader(context.getClassLoader());
-
         SuperLyricHelper.registerPublisher();
-
-        mPackageName = context.getPackageName();
-        mAudioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-
+        sPackageName = context.getPackageName();
+        sAudioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         try {
-            PackageInfo packageInfo = context.getPackageManager().getPackageInfo(mPackageName, 0);
-            mVersionName = packageInfo.versionName;
-            mVersionCode = packageInfo.getLongVersionCode();
-            logI(TAG, "Package name: " + mPackageName + ", version name: " + mVersionName + ", version code: " + mVersionCode);
+            PackageInfo packageInfo = context.getPackageManager().getPackageInfo(sPackageName, 0);
+            sVersionName = packageInfo.versionName;
+            sVersionCode = packageInfo.getLongVersionCode();
+            logI(TAG, "Package name: " + sPackageName + ", version name: " + sVersionName + ", version code: " + sVersionCode);
         } catch (PackageManager.NameNotFoundException e) {
-            logW(TAG, e);
+            logE(TAG, "Failed to retrieve package: '" + sPackageName + "' information!", e);
         }
 
-        logI(TAG, "Success to register super lyric publisher service, caller: " + mPackageName);
+        logI(TAG, "Success to register super lyric publisher service, caller: " + sPackageName);
     }
 
-    /**
-     * 干掉热更新服务
-     */
-    public static void fuckTencentTinker() {
-        try {
-            for (Method method : findClass("com.tencent.tinker.loader.shareutil.ShareTinkerInternals").getDeclaredMethods()) {
-                if (method.getName().contains("TinkerEnable")) {
-                    hook(method,
-                        new AbsHook() {
-                            @Override
-                            public void before() {
-                                setResult(false);
-                            }
-                        }
-                    );
-                }
-            }
-        } catch (Throwable ignore) {
-        }
+    public static AudioManager getAudioManager() {
+        return sAudioManager;
     }
 
-    /**
-     * 模拟蓝牙为开启状态
-     */
-    public static void fakeBluetoothA2dpEnabled() {
-        hookMethod("android.media.AudioManager",
-            "isBluetoothA2dpOn",
-            returnResult(true)
-        );
+    public static String getPackageName() {
+        return sPackageName;
+    }
 
-        hookMethod("android.bluetooth.BluetoothAdapter",
-            "isEnabled",
-            returnResult(true)
-        );
+    public static long getVersionCode() {
+        return sVersionCode;
+    }
+
+    public static String getVersionName() {
+        return sVersionName;
     }
 
     /**

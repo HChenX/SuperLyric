@@ -24,8 +24,13 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
 
+/**
+ * 支持的音乐应用清单：包名集合与对应的应用名文案资源。
+ *
+ * @author 焕晨HChen
+ */
 public final class SupportApps {
-    public static final Set<String> mSupportMediaApp = new HashSet<>() {
+    public static final Set<String> mMediaAppPackages = new HashSet<>() {
         {
             add("remix.myplayer"); // APlayer
             add("com.apple.android.music"); // 苹果音乐
@@ -61,7 +66,7 @@ public final class SupportApps {
         }
     };
 
-    public static HashMap<String, Integer> mPackageToDetails = new HashMap<>() {
+    public static HashMap<String, Integer> mPackageLabelRes = new HashMap<>() {
         {
             put("remix.myplayer", R.string.aplayer_music); // APlayer
             put("com.apple.android.music", R.string.apple_music); // 苹果音乐

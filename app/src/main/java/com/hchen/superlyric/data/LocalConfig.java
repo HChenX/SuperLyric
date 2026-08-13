@@ -25,7 +25,12 @@ import com.hchen.hooktool.log.AndroidLog;
 import com.hchen.hooktool.log.XposedLog;
 import com.hchen.hooktool.utils.PrefsTool;
 
-public class LocalConfig {
+/**
+ * 本地配置读取：日志级别等设置项的取用。
+ *
+ * @author 焕晨HChen
+ */
+public final class LocalConfig {
     private static final String TAG = "ModuleConfig";
 
     public static int getLogLevelForXposed() {

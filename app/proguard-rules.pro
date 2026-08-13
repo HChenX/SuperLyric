@@ -20,7 +20,7 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
--keep class com.hchen.superlyric.InitHook {
+-keep class com.hchen.superlyric.HookEntrance {
     <init>();
 }
 -keep class * extends com.hchen.hooktool.ModuleEntrance
@@ -32,12 +32,7 @@
 }
 -keep class com.hchen.superlyricapi.** {*;}
 -keep class com.hchen.dexkitcache.DexkitCache$MemberData {*;}
--keep class com.hchen.superlyric.helper.MeiZuNotification {*;}
--keep class com.hchen.superlyric.helper.NeteaseLyricHelper$LyricResponse { *; }
--keep class com.hchen.superlyric.helper.NeteaseLyricHelper$LyricContent { *; }
--keep class com.hchen.superlyric.helper.SpotifyHelper$LyricResponse { *; }
--keep class com.hchen.superlyric.helper.SpotifyHelper$LyricsData { *; }
--keep class com.hchen.superlyric.helper.SpotifyHelper$LyricLine { *; }
+-keep class com.hchen.superlyric.utils.MeizuFaker$MeiZuNotification {*;}
 
 -dontwarn android.os.ServiceManager
 -dontwarn de.robv.android.xposed.XposedHelpers

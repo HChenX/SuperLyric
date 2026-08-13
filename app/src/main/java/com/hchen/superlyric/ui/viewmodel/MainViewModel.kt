@@ -26,7 +26,8 @@ import androidx.lifecycle.viewModelScope
 import com.hchen.hooktool.data.AppData
 import com.hchen.superlyric.data.ApiAppData
 import com.hchen.superlyric.data.PrefsKey
-import com.hchen.superlyric.utils.PackageUtils
+import com.hchen.superlyric.utils.PackageLoader
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -60,18 +61,23 @@ class MainViewModel(
     init {
         prefsReadyCallback { sharedPreferences ->
             prefs = sharedPreferences
-            loadData()
+            loadPrefs()
         }
-        appLoadedCallback(Runnable { loadData() })
+        appLoadedCallback(Runnable { loadApps() })
     }
 
-    private fun loadData() {
-        viewModelScope.launch {
+    private fun loadApps() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _hookApps.value = PackageLoader.getMediaApps().toList()
+            _apiApps.value = PackageLoader.getMediaApiApps().toList()
+        }
+    }
+
+    private fun loadPrefs() {
+        viewModelScope.launch(Dispatchers.IO) {
             if (::prefs.isInitialized) {
                 _logLevel.value = prefs.getInt(PrefsKey.LOG_LEVEL, 0)
             }
-            _hookApps.value = PackageUtils.getMediaAppHookList().toList()
-            _apiApps.value = PackageUtils.getMediaAppApiList().toList()
         }
     }
 
@@ -97,11 +103,11 @@ class MainViewModel(
     }
 
     private fun refreshData() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             _isRefreshing.value = true
             delay(500)
 
-            loadData()
+            loadApps()
 
             _isRefreshing.value = false
         }

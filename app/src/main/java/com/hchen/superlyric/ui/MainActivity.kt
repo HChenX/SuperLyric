@@ -70,7 +70,7 @@ import com.hchen.superlyric.ui.screen.AboutLayout
 import com.hchen.superlyric.ui.screen.HomeLayout
 import com.hchen.superlyric.ui.viewmodel.MainViewModel
 import com.hchen.superlyric.ui.viewmodel.MainViewModelFactory
-import com.hchen.superlyric.utils.PackageUtils
+import com.hchen.superlyric.utils.PackageLoader
 import com.hchen.superlyricapi.SuperLyricHelper
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -78,6 +78,7 @@ import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.NavigationBar
+import top.yukonga.miuix.kmp.basic.NavigationBarDisplayMode
 import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -99,7 +100,7 @@ class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels {
         MainViewModelFactory(
             prefsReadyCallback = { listener -> Application.addPrefsReadyListener(listener) },
-            appLoadedCallback = { listener -> PackageUtils.addAppLoadedListener(listener) }
+            appLoadedCallback = { listener -> PackageLoader.addPackageLoadedListener(listener) }
         )
     }
 
@@ -107,7 +108,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         window.isNavigationBarContrastEnforced = false
-        PackageUtils.initialPackage(this)
+        PackageLoader.loadPackages(this)
 
         setContent {
             App()
@@ -188,6 +189,7 @@ class MainActivity : ComponentActivity() {
                 ) {
                     BlurredBar(backdrop = backdrop, blurEnabled = blurActive) {
                         NavigationBar(
+                            mode = NavigationBarDisplayMode.IconWithSelectedLabel,
                             color = if (blurActive) Color.Transparent else colorScheme.surface
                         ) {
                             NavigationBarItem(
@@ -238,7 +240,7 @@ class MainActivity : ComponentActivity() {
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MiuixTheme.colorScheme.surface)
+                    .background(colorScheme.surface)
             ) {
                 Box(modifier = Modifier.weight(weight = weight)) {
                     Scaffold(

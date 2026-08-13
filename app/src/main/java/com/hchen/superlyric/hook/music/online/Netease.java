@@ -16,13 +16,20 @@
 
  * Copyright (C) 2025-2026 HChenX
  */
-package com.hchen.superlyric.data;
+package com.hchen.superlyric.hook.music.online;
+
+import com.hchen.processor.HookThis;
+import com.hchen.superlyric.hook.music.online.netease.NeteasePublisher;
 
 /**
- * 本地配置项键名常量。
+ * 网易云音乐。
  *
  * @author 焕晨HChen
  */
-public final class PrefsKey {
-    public static final String LOG_LEVEL = "log_level";
+@HookThis(targetPackage = "com.netease.cloudmusic")
+public final class Netease extends NeteasePublisher {
+    @Override
+    protected String lyricCacheProvider() {
+        return "Netease";
+    }
 }

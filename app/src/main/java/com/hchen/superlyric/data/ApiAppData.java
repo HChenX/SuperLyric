@@ -24,6 +24,11 @@ import com.hchen.hooktool.data.AppData;
 
 import java.util.Objects;
 
+/**
+ * 带 API 版本信息的目标应用数据。
+ *
+ * @author 焕晨HChen
+ */
 public class ApiAppData extends AppData {
     public String apiVersionName;
     public String apiVersionCode;
