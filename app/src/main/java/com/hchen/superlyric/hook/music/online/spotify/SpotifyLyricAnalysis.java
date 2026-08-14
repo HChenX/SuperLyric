@@ -25,17 +25,24 @@ import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyricapi.SuperLyricWord;
+import com.hchen.superlyric.utils.LyricCacheStore;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
+import okhttp3.Call;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -62,18 +69,32 @@ public final class SpotifyLyricAnalysis {
         "x-client-id"
     );
 
-    /**
-     * 会话头存储：key 统一小写，由 hook 填充，全局复用。
-     */
-    private static final Map<String, String> mHeaders = new ConcurrentHashMap<>();
+    public static final class HeaderSnapshot {
+        @NonNull
+        final Map<String, String> headers;
+        public final long generation;
+        public final boolean valid;
+
+        private HeaderSnapshot(@NonNull Map<String, String> headers, long generation, boolean valid) {
+            this.headers = headers;
+            this.generation = generation;
+            this.valid = valid;
+        }
+    }
+
+    private static final AtomicReference<HeaderSnapshot> mHeaders =
+        new AtomicReference<>(new HeaderSnapshot(Collections.emptyMap(), 0L, false));
 
     private static volatile boolean mHeaderCompleteLogged = false;
 
     private static final Gson gson = new Gson();
 
+    private static final Map<String, Call> activeCalls = new ConcurrentHashMap<>();
+
     private static final OkHttpClient client = new OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
+        .callTimeout(30, TimeUnit.SECONDS)
         .build();
 
     private SpotifyLyricAnalysis() {
@@ -89,28 +110,47 @@ public final class SpotifyLyricAnalysis {
     }
 
     /**
-     * 保存捕获到的会话头（key 已小写）。
+     * 从同一次 okhttp Headers 构造参数发布完整会话头快照。
+     *
+     * @param namesAndValues okhttp 名称和值交替排列的数组
+     * @return 本次数据是否包含全部关键头
      */
-    public static void setHeader(@NonNull String keyLowercase, @NonNull String value) {
-        mHeaders.put(keyLowercase, value);
-        XposedLog.logD(TAG, "Captured session header: " + keyLowercase + "=" + mask(value));
-        if (!mHeaderCompleteLogged && hasAllRequiredHeaders()) {
-            mHeaderCompleteLogged = true;
-            XposedLog.logI(TAG, "All 4 required session headers captured: " + KEYS_REQUIRED);
+    @Nullable
+    public static HeaderSnapshot updateHeaders(@NonNull String[] namesAndValues) {
+        Map<String, String> captured = new LinkedHashMap<>();
+        for (int i = 0; i + 1 < namesAndValues.length; i += 2) {
+            String name = namesAndValues[i];
+            String value = namesAndValues[i + 1];
+            if (name == null || value == null) continue;
+            String lower = name.toLowerCase(Locale.ENGLISH);
+            if (isKeyRequired(lower)) captured.put(lower, value);
+        }
+        if (!captured.keySet().containsAll(KEYS_REQUIRED)) return null;
+
+        Map<String, String> immutable = Collections.unmodifiableMap(captured);
+        while (true) {
+            HeaderSnapshot current = mHeaders.get();
+            if (current.valid && current.headers.equals(immutable)) return current;
+            HeaderSnapshot next = new HeaderSnapshot(immutable, current.generation + 1L, true);
+            if (mHeaders.compareAndSet(current, next)) {
+                if (!mHeaderCompleteLogged) {
+                    mHeaderCompleteLogged = true;
+                    XposedLog.logI(TAG, "All required session headers captured");
+                }
+                return next;
+            }
         }
     }
 
-    /**
-     * 会话头是否已齐全（4 个关键头全部捕获）。
-     */
-    public static boolean hasAllRequiredHeaders() {
-        return mHeaders.keySet().containsAll(KEYS_REQUIRED);
+    @Nullable
+    public static HeaderSnapshot currentHeaders() {
+        HeaderSnapshot snapshot = mHeaders.get();
+        return snapshot.valid ? snapshot : null;
     }
 
-    private static String mask(@NonNull String value) {
-        int len = value.length();
-        if (len <= 8) return "****";
-        return value.substring(0, 4) + "****" + value.substring(len - 4);
+    public static void invalidate(@NonNull HeaderSnapshot requestSnapshot) {
+        mHeaders.compareAndSet(requestSnapshot,
+            new HeaderSnapshot(Collections.emptyMap(), requestSnapshot.generation, false));
     }
 
     // ------------------------------ 网络拉取 ------------------------------
@@ -124,7 +164,7 @@ public final class SpotifyLyricAnalysis {
      * @throws IOException           网络错误 / 非成功状态码
      */
     @NonNull
-    public static byte[] fetchLyric(@NonNull String id) throws IOException {
+    public static byte[] fetchLyric(@NonNull String id, @NonNull HeaderSnapshot headers) throws IOException {
         String url = BASE_URL + id
             + "?vocalRemoval=true&clientLanguage=" + Locale.getDefault().toLanguageTag()
             + "&preview=false";
@@ -137,20 +177,77 @@ public final class SpotifyLyricAnalysis {
             .addHeader("accept", "application/protobuf")
             .addHeader("content-type", "application/protobuf")
             .addHeader("app-platform", "Android");
-        mHeaders.forEach(builder::addHeader);
+        headers.headers.forEach(builder::addHeader);
 
         Request request = builder.build();
-        try (Response response = client.newCall(request).execute()) {
+        Call call = client.newCall(request);
+        Call previous = activeCalls.put(id, call);
+        if (previous != null) previous.cancel();
+        try (Response response = call.execute()) {
             int code = response.code();
+            if (code == 401 || code == 403) {
+                invalidate(headers);
+                throw new AuthenticationException(code, headers.generation);
+            }
             if (code == 404) {
                 throw new NoFoundLyricException(id, "No lyric found for " + id);
             }
             if (!response.isSuccessful()) {
-                throw new IOException("HTTP error code: " + code + ", msg: " + response.message());
+                throw new HttpStatusException(code, code == 429 || code >= 500);
             }
 
-            return response.body().bytes();
+            if (response.body() == null) {
+                throw new IOException("Empty lyric response for " + id);
+            }
+            long contentLength = response.body().contentLength();
+            if (contentLength > LyricCacheStore.MAX_PAYLOAD_BYTES) {
+                throw new OversizeException(LyricCacheStore.MAX_PAYLOAD_BYTES);
+            }
+            return readLimited(response.body().byteStream(), LyricCacheStore.MAX_PAYLOAD_BYTES);
+        } finally {
+            activeCalls.remove(id, call);
         }
+    }
+
+    public static void cancelExcept(@Nullable String currentId) {
+        activeCalls.forEach((id, call) -> {
+            if (currentId == null || !currentId.equals(id)) call.cancel();
+        });
+    }
+
+    @NonNull
+    private static byte[] readLimited(@NonNull InputStream input, int maxBytes) throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream(Math.min(maxBytes, 8192));
+        byte[] buffer = new byte[8192];
+        int total = 0;
+        int read;
+        while ((read = input.read(buffer)) != -1) {
+            if (read > maxBytes - total) throw new OversizeException(maxBytes);
+            output.write(buffer, 0, read);
+            total += read;
+        }
+        return output.toByteArray();
+    }
+
+    public enum ParseType { READY, EMPTY, MALFORMED }
+
+    public static final class ParseResult {
+        @NonNull
+        public final ParseType type;
+        @Nullable
+        public final List<SpotifyLine> lines;
+
+        private ParseResult(@NonNull ParseType type, @Nullable List<SpotifyLine> lines) {
+            this.type = type;
+            this.lines = lines;
+        }
+    }
+
+    @NonNull
+    public static ParseResult parseResult(@NonNull byte[] data) {
+        List<SpotifyLine> lines = parseLyrics(data);
+        if (lines == null) return new ParseResult(ParseType.MALFORMED, null);
+        return new ParseResult(lines.isEmpty() ? ParseType.EMPTY : ParseType.READY, lines);
     }
 
     // ------------------------------ 解析与规整 ------------------------------
@@ -173,7 +270,7 @@ public final class SpotifyLyricAnalysis {
                 return null;
             }
             return normalizeLines(mapJsonLines(response.lyrics.lines));
-        } catch (JsonSyntaxException e) {
+        } catch (JsonSyntaxException | IndexOutOfBoundsException | IllegalArgumentException e) {
             XposedLog.logE(TAG, "Failed to parse lyric json", e);
             return null;
         }
@@ -184,8 +281,15 @@ public final class SpotifyLyricAnalysis {
      */
     @Nullable
     public static List<SpotifyLine> parseLyrics(@NonNull byte[] data) {
-        if (data.length > 0 && data[0] == '{') {
-            return parseLyrics(new String(data, StandardCharsets.UTF_8));
+        int offset = data.length >= 3 && data[0] == (byte) 0xEF
+            && data[1] == (byte) 0xBB && data[2] == (byte) 0xBF ? 3 : 0;
+        int first = offset;
+        while (first < data.length && (data[first] == ' ' || data[first] == '\t'
+            || data[first] == '\r' || data[first] == '\n')) {
+            first++;
+        }
+        if (first < data.length && data[first] == '{') {
+            return parseLyrics(new String(data, offset, data.length - offset, StandardCharsets.UTF_8));
         }
         return parseProtobufLyrics(data);
     }
@@ -230,6 +334,24 @@ public final class SpotifyLyricAnalysis {
 
     // ------------------------------ protobuf 解析（手写 wire format） ------------------------------
 
+    private static final int MAX_PROTO_LINES = 10000;
+    private static final int MAX_PROTO_SYLLABLES_PER_LINE = 10000;
+    private static final int MAX_PROTO_STRING_BYTES = 64 * 1024;
+    private static final int MAX_PROTO_TAGS = 200000;
+
+    private static final class ParseBudget {
+        int tags = MAX_PROTO_TAGS;
+        int lines = MAX_PROTO_LINES;
+
+        void consumeTag() throws IOException {
+            if (--tags < 0) throw new IOException("Protobuf tag budget exceeded");
+        }
+
+        void consumeLine() throws IOException {
+            if (--lines < 0) throw new IOException("Protobuf line budget exceeded");
+        }
+    }
+
     /**
      * 解析 color-lyrics 接口的 protobuf 响应（schema 由 Surge 抓包逆向）：
      * <pre>
@@ -247,7 +369,7 @@ public final class SpotifyLyricAnalysis {
     @Nullable
     private static List<SpotifyLine> parseProtobufLyrics(@NonNull byte[] data) {
         try {
-            ProtoReader reader = new ProtoReader(data);
+            ProtoReader reader = new ProtoReader(data, new ParseBudget());
             LyricsData lyrics = null;
             while (reader.hasMore()) {
                 int tag = reader.readTag();
@@ -261,8 +383,8 @@ public final class SpotifyLyricAnalysis {
                 }
             }
             return lyrics == null ? null : normalizeLines(lyrics.lines);
-        } catch (Throwable t) {
-            XposedLog.logE(TAG, "Failed to parse lyric protobuf", t);
+        } catch (IOException | RuntimeException e) {
+            XposedLog.logE(TAG, "Failed to parse lyric protobuf", e);
             return null;
         }
     }
@@ -275,12 +397,15 @@ public final class SpotifyLyricAnalysis {
             int field = tag >>> 3;
             int wireType = tag & 7;
             if (field == 2 && wireType == 2) {
+                reader.budget.consumeLine();
                 int lineEnd = reader.ensureEnd(reader.readLength());
+                if (lineEnd > end) throw new IOException("Line exceeds parent message");
                 lines.add(parseLyricLine(reader, lineEnd));
             } else {
                 reader.skipField(wireType);
             }
         }
+        if (reader.pos != end) throw new IOException("Lyrics message boundary mismatch");
         return new LyricsData(lines);
     }
 
@@ -301,10 +426,15 @@ public final class SpotifyLyricAnalysis {
             } else if (wireType == 2) {
                 int len = reader.readLength();
                 int fieldEnd = reader.ensureEnd(len);
+                if (fieldEnd > end) throw new IOException("Field exceeds parent message");
                 if (field == 2) {
+                    if (len > MAX_PROTO_STRING_BYTES) throw new IOException("Lyric string too large");
                     words = new String(reader.readBytes(len), StandardCharsets.UTF_8);
                 } else if (field == 3) {
                     if (syllables == null) syllables = new ArrayList<>();
+                    if (syllables.size() >= MAX_PROTO_SYLLABLES_PER_LINE) {
+                        throw new IOException("Syllable budget exceeded");
+                    }
                     Syllable syllable = parseSyllable(reader, fieldEnd);
                     syllables.add(syllable);
                 } else {
@@ -314,7 +444,7 @@ public final class SpotifyLyricAnalysis {
                 reader.skipField(wireType);
             }
         }
-        // schema 中行级 end_time_ms 不存在（缺省为 0），由规整阶段按下一行兜底
+        if (reader.pos != end) throw new IOException("Line message boundary mismatch");
         return new LyricLine(startTimeMs, words, 0L, null, syllables);
     }
 
@@ -332,6 +462,7 @@ public final class SpotifyLyricAnalysis {
                 if (field == 1) {
                     startTimeMs = value;
                 } else if (field == 2) {
+                    if (value > Integer.MAX_VALUE) throw new IOException("Invalid syllable count");
                     count = (int) value;
                 } else if (field == 3) {
                     endTimeMs = value;
@@ -340,6 +471,7 @@ public final class SpotifyLyricAnalysis {
                 reader.skipField(wireType);
             }
         }
+        if (reader.pos != end) throw new IOException("Syllable message boundary mismatch");
         return new Syllable(startTimeMs, count, endTimeMs);
     }
 
@@ -349,10 +481,12 @@ public final class SpotifyLyricAnalysis {
      */
     private static final class ProtoReader {
         private final byte[] data;
+        private final ParseBudget budget;
         private int pos;
 
-        ProtoReader(@NonNull byte[] data) {
+        ProtoReader(@NonNull byte[] data, @NonNull ParseBudget budget) {
             this.data = data;
+            this.budget = budget;
         }
 
         boolean hasMore() {
@@ -373,6 +507,7 @@ public final class SpotifyLyricAnalysis {
         }
 
         int readTag() throws IOException {
+            budget.consumeTag();
             long tag = readVarint();
             if (tag <= 0 || tag > 0xFFFFFFFFL) throw new IOException("Invalid tag: " + tag);
             return (int) tag;
@@ -385,9 +520,8 @@ public final class SpotifyLyricAnalysis {
         }
 
         int ensureEnd(int length) throws IOException {
-            int end = pos + length;
-            if (length < 0 || end > data.length) throw new IOException("Truncated field");
-            return end;
+            if (length < 0 || length > data.length - pos) throw new IOException("Truncated field");
+            return pos + length;
         }
 
         @NonNull
@@ -425,19 +559,30 @@ public final class SpotifyLyricAnalysis {
 
     @NonNull
     private static List<SpotifyLine> normalizeLines(@NonNull List<LyricLine> lines) {
-        List<SpotifyLine> result = new ArrayList<>(lines.size());
-        for (int i = 0; i < lines.size(); i++) {
-            LyricLine line = lines.get(i);
-            if (line == null || line.words == null || line.words.trim().isEmpty()) {
-                continue;
+        List<LyricLine> validLines = new ArrayList<>(lines.size());
+        for (LyricLine line : lines) {
+            if (line != null && line.startTimeMs >= 0L
+                && line.words != null && !line.words.trim().isEmpty()) {
+                validLines.add(line);
             }
+        }
+        validLines.sort((left, right) -> Long.compare(left.startTimeMs, right.startTimeMs));
+
+        List<SpotifyLine> result = new ArrayList<>(validLines.size());
+        for (int i = 0; i < validLines.size(); i++) {
+            LyricLine line = validLines.get(i);
+            long endTimeMs = effectiveEndTime(validLines, i, line);
+            if (i + 1 < validLines.size()) {
+                endTimeMs = Math.min(endTimeMs, validLines.get(i + 1).startTimeMs);
+            }
+            if (endTimeMs <= line.startTimeMs) continue;
 
             result.add(new SpotifyLine(
                 line.words,
                 line.startTimeMs,
-                effectiveEndTime(lines, i, line),
+                endTimeMs,
                 line.transliteratedWords,
-                toSuperLyricWords(line.words, line.syllables)
+                toSuperLyricWords(line.words, line.syllables, line.startTimeMs, endTimeMs)
             ));
         }
         return result;
@@ -448,11 +593,13 @@ public final class SpotifyLyricAnalysis {
      * 最后一行兜底 {@code +5000ms}。
      */
     private static long effectiveEndTime(@NonNull List<LyricLine> lines, int index, @NonNull LyricLine line) {
-        if (line.endTimeMs != 0L) return line.endTimeMs;
-        if (index + 1 < lines.size() && lines.get(index + 1) != null) {
+        if (line.endTimeMs > line.startTimeMs) return line.endTimeMs;
+        if (index + 1 < lines.size()) {
             return lines.get(index + 1).startTimeMs;
         }
-        return line.startTimeMs + 5000L;
+        return line.startTimeMs <= Long.MAX_VALUE - 5000L
+            ? line.startTimeMs + 5000L
+            : Long.MAX_VALUE;
     }
 
     /**
@@ -460,23 +607,32 @@ public final class SpotifyLyricAnalysis {
      * 计数与文本长度不匹配时放弃逐字（返回 null，退回纯行级）。
      */
     @Nullable
-    private static SuperLyricWord[] toSuperLyricWords(@NonNull String text, @Nullable List<Syllable> syllables) {
+    private static SuperLyricWord[] toSuperLyricWords(@NonNull String text, @Nullable List<Syllable> syllables,
+                                                       long lineStart, long lineEnd) {
         if (syllables == null || syllables.isEmpty()) return null;
 
         SuperLyricWord[] result = new SuperLyricWord[syllables.size()];
         int cursor = 0;
+        long previousEnd = lineStart;
         for (int i = 0; i < syllables.size(); i++) {
             Syllable syllable = syllables.get(i);
             int count = syllable.count;
-            if (count <= 0 || cursor + count > text.length()) {
+            int nextCursor;
+            if (count <= 0 || count > text.length() - cursor) {
+                return null;
+            }
+            nextCursor = cursor + count;
+            if (syllable.startTimeMs < previousEnd || syllable.endTimeMs <= syllable.startTimeMs
+                || syllable.startTimeMs < lineStart || syllable.endTimeMs > lineEnd) {
                 return null;
             }
             result[i] = new SuperLyricWord(
-                text.substring(cursor, cursor + count),
+                text.substring(cursor, nextCursor),
                 syllable.startTimeMs,
                 syllable.endTimeMs
             );
-            cursor += count;
+            cursor = nextCursor;
+            previousEnd = syllable.endTimeMs;
         }
         return cursor == text.length() ? result : null;
     }
@@ -520,6 +676,34 @@ public final class SpotifyLyricAnalysis {
     /**
      * 无歌词异常：接口 404 时抛出，视为无歌词（不发任何 lyric）。
      */
+    public static final class OversizeException extends IOException {
+        OversizeException(int maxBytes) {
+            super("Spotify lyric response exceeds " + maxBytes + " bytes");
+        }
+    }
+
+    public static final class HttpStatusException extends IOException {
+        public final int code;
+        public final boolean retryable;
+
+        HttpStatusException(int code, boolean retryable) {
+            super("Spotify HTTP " + code);
+            this.code = code;
+            this.retryable = retryable;
+        }
+    }
+
+    public static final class AuthenticationException extends IOException {
+        public final int code;
+        public final long generation;
+
+        AuthenticationException(int code, long generation) {
+            super("Spotify authentication failed: HTTP " + code);
+            this.code = code;
+            this.generation = generation;
+        }
+    }
+
     public static final class NoFoundLyricException extends RuntimeException {
         @NonNull
         public final String id;

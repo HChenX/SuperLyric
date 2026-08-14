@@ -42,6 +42,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * Hook 入口
@@ -77,6 +79,10 @@ public final class HookEntrance extends ModuleEntrance {
     }
 
     private final HashMap<String, AbsModule> modules = new HashMap<>();
+    private final HashMap<String, ClassLoader> moduleClassLoaders = new HashMap<>();
+    private final ExecutorService cacheMigrationExecutor = Executors.newSingleThreadExecutor();
+    @Nullable
+    private Context lastApplicationContext;
 
     @Override
     public void handlePackageReady(@NonNull PackageReadyParam param) {
@@ -97,9 +103,15 @@ public final class HookEntrance extends ModuleEntrance {
                 );
 
 
-                if (modules.containsKey(param.getPackageName())) {
+                ClassLoader previousLoader = moduleClassLoaders.get(param.getPackageName());
+                if (modules.containsKey(param.getPackageName()) && previousLoader == param.getClassLoader()) {
                     AbsModule module = Objects.requireNonNull(modules.get(param.getPackageName()));
                     module.handlePackageReady(param);
+                    return;
+                }
+                if (previousLoader != null && previousLoader != param.getClassLoader()) {
+                    AndroidLog.logE(TAG, "Ignore package reload with a different ClassLoader: "
+                        + param.getPackageName());
                     return;
                 }
 
@@ -112,6 +124,7 @@ public final class HookEntrance extends ModuleEntrance {
 
                         module.handlePackageReady(param);
                         modules.put(param.getPackageName(), module);
+                        moduleClassLoaders.put(param.getPackageName(), param.getClassLoader());
                     } catch (IllegalAccessException | InstantiationException |
                              InvocationTargetException | NoSuchMethodException |
                              ClassNotFoundException e) {
@@ -129,12 +142,15 @@ public final class HookEntrance extends ModuleEntrance {
         AndroidLog.logD(TAG, "handleApplicationCreated: " + context);
         super.handleApplicationCreated(context);
 
-        clearLyricCacheOnFormatUpgrade(context);
+        Context appContext = context.getApplicationContext();
+        if (lastApplicationContext == appContext) return;
+        cacheMigrationExecutor.execute(() -> clearLyricCacheOnFormatUpgrade(appContext));
         for (AbsModule module : modules.values()) {
             if (module != null) {
                 module.handleApplicationCreated(context);
             }
         }
+        lastApplicationContext = appContext;
     }
 
     /**
@@ -146,9 +162,17 @@ public final class HookEntrance extends ModuleEntrance {
             int lastCleared = PrefsTool.prefs(context).getInt("super_lyric_cache_format", 0);
             int current = LyricCacheStore.cacheVersion();
             if (lastCleared == current) return;
-            PrefsTool.prefs(context).edit().putInt("super_lyric_cache_format", current).apply();
-            for (String provider : new String[]{"Netease", "Hihonor", "Spotify"}) {
-                LyricCacheStore.clearProviderCache(context, provider);
+            if (!LyricCacheStore.clearOnlineProviderCaches(context)) {
+                AndroidLog.logE(TAG, "Lyric cache format migration incomplete; retry on next startup");
+                return;
+            }
+            boolean committed = PrefsTool.prefs(context)
+                .edit()
+                .putInt("super_lyric_cache_format", current)
+                .commit();
+            if (!committed) {
+                AndroidLog.logE(TAG, "Failed to persist lyric cache format migration; retry on next startup");
+                return;
             }
             AndroidLog.logD(TAG, "Lyric cache cleared on format upgrade: " + lastCleared + " -> " + current);
         } catch (Throwable t) {

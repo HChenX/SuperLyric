@@ -28,8 +28,11 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonSyntaxException;
 import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyricapi.SuperLyricWord;
+import com.hchen.superlyric.utils.LyricCacheStore;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
@@ -41,6 +44,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -49,6 +53,7 @@ import java.util.stream.Collectors;
 import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
 
+import okhttp3.Call;
 import okhttp3.FormBody;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -84,9 +89,12 @@ public final class NeteaseLyricAnalysis {
 
     private static final Gson gson = new Gson();
 
+    private static final Map<Long, Call> activeCalls = new ConcurrentHashMap<>();
+
     private static final OkHttpClient client = new OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
+        .callTimeout(30, TimeUnit.SECONDS)
         .addInterceptor(BrotliInterceptor.INSTANCE)
         .build();
 
@@ -151,6 +159,23 @@ public final class NeteaseLyricAnalysis {
 
     // ------------------------------ 网络拉取 ------------------------------
 
+    public static final class OversizeException extends IOException {
+        OversizeException(int maxBytes) {
+            super("Netease lyric response exceeds " + maxBytes + " bytes");
+        }
+    }
+
+    public static final class HttpStatusException extends IOException {
+        public final int code;
+        public final boolean retryable;
+
+        HttpStatusException(int code) {
+            super("Netease HTTP " + code);
+            this.code = code;
+            this.retryable = code == 429 || code >= 500;
+        }
+    }
+
     /**
      * 拉取指定歌曲的歌词接口原始 JSON。
      *
@@ -172,21 +197,55 @@ public final class NeteaseLyricAnalysis {
             .post(body)
             .build();
 
-        try (Response response = client.newCall(request).execute()) {
-            String bodyStr = response.body().string();
+        Call call = client.newCall(request);
+        Call previous = activeCalls.put(id, call);
+        if (previous != null) previous.cancel();
+        try (Response response = call.execute()) {
             if (!response.isSuccessful()) {
-                throw new IOException("HTTP error code: " + response.code() + ", msg: " + response.message());
+                throw new HttpStatusException(response.code());
             }
+            if (response.body() == null) {
+                throw new IOException("Empty HTTP response body for " + id);
+            }
+            long contentLength = response.body().contentLength();
+            if (contentLength > LyricCacheStore.MAX_PAYLOAD_BYTES) {
+                throw new OversizeException(LyricCacheStore.MAX_PAYLOAD_BYTES);
+            }
+            byte[] responseBytes = readLimited(response.body().byteStream(), LyricCacheStore.MAX_PAYLOAD_BYTES);
+            String bodyStr = new String(responseBytes, StandardCharsets.UTF_8);
 
             try {
                 gson.fromJson(bodyStr, JsonObject.class);
             } catch (JsonSyntaxException e) {
-                throw new IOException("Invalid JSON response for " + id + ": " + bodyStr, e);
+                throw new IOException("Invalid JSON response for " + id + ", bytes="
+                    + bodyStr.getBytes(StandardCharsets.UTF_8).length, e);
             }
             XposedLog.logD(TAG, "eapi lyric response: httpCode=" + response.code()
                 + ", jsonLength=" + bodyStr.length() + ", brotli decode ok");
             return bodyStr;
+        } finally {
+            activeCalls.remove(id, call);
         }
+    }
+
+    public static void cancelExcept(long currentId) {
+        activeCalls.forEach((id, call) -> {
+            if (id != currentId) call.cancel();
+        });
+    }
+
+    @NonNull
+    private static byte[] readLimited(@NonNull InputStream input, int maxBytes) throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream(Math.min(maxBytes, 8192));
+        byte[] buffer = new byte[8192];
+        int total = 0;
+        int read;
+        while ((read = input.read(buffer)) != -1) {
+            if (read > maxBytes - total) throw new OversizeException(maxBytes);
+            output.write(buffer, 0, read);
+            total += read;
+        }
+        return output.toByteArray();
     }
 
     @NonNull
@@ -205,6 +264,14 @@ public final class NeteaseLyricAnalysis {
 
     // ------------------------------ 解析与数据模型 ------------------------------
 
+    public enum ResultType {
+        READY,
+        EMPTY,
+        PURE_MUSIC,
+        MALFORMED,
+        API_ERROR
+    }
+
     /**
      * 解析接口原始 JSON 为行级数据模型：
      * <ul>
@@ -222,21 +289,25 @@ public final class NeteaseLyricAnalysis {
         try {
             LyricResponse response = gson.fromJson(json, LyricResponse.class);
             if (response == null) {
-                return new LyricData(0, false, null);
+                return new LyricData(ResultType.MALFORMED, 0, false, null);
             }
             if (response.code != 200) {
-                XposedLog.logD(TAG, "eapi lyric code=" + response.code + ", treat as no lyric");
-                return new LyricData(response.code, response.pureMusic, null);
+                XposedLog.logD(TAG, "eapi lyric code=" + response.code + ", treat as API error");
+                return new LyricData(ResultType.API_ERROR, response.code, response.pureMusic, null);
+            }
+            if (response.pureMusic) {
+                return new LyricData(ResultType.PURE_MUSIC, response.code, true, null);
             }
             List<LyricLineData> lines = buildLines(response);
             return new LyricData(
+                lines == null || lines.isEmpty() ? ResultType.EMPTY : ResultType.READY,
                 response.code,
-                response.pureMusic,
+                false,
                 lines != null ? Collections.unmodifiableList(lines) : null
             );
         } catch (JsonSyntaxException e) {
             XposedLog.logE(TAG, "Failed to parse netease lyric json", e);
-            return new LyricData(0, false, null);
+            return new LyricData(ResultType.MALFORMED, 0, false, null);
         }
     }
 
@@ -314,21 +385,32 @@ public final class NeteaseLyricAnalysis {
             Matcher headerMatcher = YRC_LINE_HEADER_REGEX.matcher(line);
             if (!headerMatcher.find()) continue;
 
-            long lineStart = parseLong(headerMatcher.group(1));
-            long lineDuration = parseLong(headerMatcher.group(2));
-            long lineEnd = lineStart + lineDuration;
+            long lineStart = parseNonNegativeLong(headerMatcher.group(1));
+            long lineDuration = parseNonNegativeLong(headerMatcher.group(2));
+            long lineEnd = checkedEnd(lineStart, lineDuration);
+            if (lineStart < 0L || lineDuration < 0L || lineEnd <= lineStart) continue;
 
             List<ParsedWord> words = new ArrayList<>();
             String contentPart = line.substring(headerMatcher.end());
             Matcher wordMatcher = YRC_SYLLABLE_REGEX.matcher(contentPart);
             while (wordMatcher.find()) {
-                long start = parseLong(wordMatcher.group(1));
-                long duration = parseLong(wordMatcher.group(2));
+                long start = parseNonNegativeLong(wordMatcher.group(1));
+                long duration = parseNonNegativeLong(wordMatcher.group(2));
+                long end = checkedEnd(start, duration);
                 String text = wordMatcher.group(3);
-                if (text == null || text.isEmpty()) continue;
-                words.add(new ParsedWord(start, start + duration, text));
+                if (start < 0L || duration < 0L || end <= start || text == null || text.isEmpty()) continue;
+                words.add(new ParsedWord(start, end, text));
             }
             words.sort(Comparator.comparingLong(word -> word.begin));
+            boolean validWords = true;
+            long previousEnd = lineStart;
+            for (ParsedWord word : words) {
+                if (word.begin < previousEnd || word.end > lineEnd || word.end <= word.begin) {
+                    validWords = false;
+                    break;
+                }
+                previousEnd = word.end;
+            }
 
             StringBuilder textBuilder = new StringBuilder();
             for (ParsedWord word : words) {
@@ -337,7 +419,8 @@ public final class NeteaseLyricAnalysis {
             String text = textBuilder.toString();
             if (text.isBlank()) continue;
 
-            entries.add(new ParsedLine(lineStart, lineEnd, text, words));
+            entries.add(new ParsedLine(lineStart, lineEnd, text,
+                validWords ? words : Collections.emptyList()));
         }
 
         entries.sort(Comparator.comparingLong(entry -> entry.begin));
@@ -364,7 +447,8 @@ public final class NeteaseLyricAnalysis {
                 int lastTagEnd = 0;
                 while (tagMatcher.find()) {
                     if (tagMatcher.start() != lastTagEnd) break;
-                    times.add(toMs(tagMatcher.group(1), tagMatcher.group(2), tagMatcher.group(3)));
+                    long time = toMs(tagMatcher.group(1), tagMatcher.group(2), tagMatcher.group(3));
+                    if (time >= 0L) times.add(time);
                     lastTagEnd = tagMatcher.end();
                 }
                 String content = trimmed.substring(lastTagEnd).trim();
@@ -395,18 +479,26 @@ public final class NeteaseLyricAnalysis {
         List<ParsedLine> finalized = new ArrayList<>(entries.size());
         for (int i = 0; i < entries.size(); i++) {
             ParsedLine current = entries.get(i);
-            long end = i + 1 < entries.size() ? entries.get(i + 1).begin : current.begin + 5000L;
+            long fallbackEnd = safeAdd(current.begin, 5000L);
+            long end = i + 1 < entries.size() ? entries.get(i + 1).begin : fallbackEnd;
+            if (end <= current.begin) continue;
             finalized.add(new ParsedLine(current.begin, end, current.text, current.words));
         }
 
-        long offset = parseLong(meta.get("offset"));
+        String offsetValue = meta.get("offset");
+        long offset = offsetValue == null ? 0L : parseLongOrDefault(offsetValue, Long.MIN_VALUE);
+        if (offset == Long.MIN_VALUE) return Collections.emptyList();
         if (offset == 0L) return finalized;
 
         List<ParsedLine> adjusted = new ArrayList<>(finalized.size());
         for (ParsedLine line : finalized) {
-            long newBegin = Math.max(0L, line.begin + offset);
-            long newEnd = newBegin + (line.end - line.begin);
-            adjusted.add(new ParsedLine(newBegin, newEnd, line.text, line.words));
+            long shiftedBegin = safeAdd(line.begin, offset);
+            long shiftedEnd = safeAdd(line.end, offset);
+            long newBegin = Math.max(0L, shiftedBegin);
+            long newEnd = Math.max(0L, shiftedEnd);
+            if (newEnd > newBegin) {
+                adjusted.add(new ParsedLine(newBegin, newEnd, line.text, line.words));
+            }
         }
         return adjusted;
     }
@@ -470,33 +562,68 @@ public final class NeteaseLyricAnalysis {
         return result;
     }
 
-    private static long parseLong(@Nullable String value) {
-        if (value == null) return 0L;
+    private static long parseNonNegativeLong(@Nullable String value) {
+        long parsed = parseLongOrDefault(value, -1L);
+        return parsed >= 0L ? parsed : -1L;
+    }
+
+    private static long parseLongOrDefault(@Nullable String value, long fallback) {
+        if (value == null) return fallback;
         try {
             return Long.parseLong(value);
         } catch (NumberFormatException e) {
-            return 0L;
+            return fallback;
+        }
+    }
+
+    private static long checkedEnd(long start, long duration) {
+        if (start < 0L || duration <= 0L || duration > Long.MAX_VALUE - start) return -1L;
+        return start + duration;
+    }
+
+    private static long safeAdd(long left, long right) {
+        try {
+            return Math.addExact(left, right);
+        } catch (ArithmeticException e) {
+            return right >= 0L ? Long.MAX_VALUE : Long.MIN_VALUE;
+        }
+    }
+
+    private static long safeMultiply(long left, long right) {
+        try {
+            return Math.multiplyExact(left, right);
+        } catch (ArithmeticException e) {
+            return -1L;
         }
     }
 
     private static long toMs(@Nullable String minute, @Nullable String second, @Nullable String fraction) {
+        long minuteValue = parseNonNegativeLong(minute);
+        long secondValue = parseNonNegativeLong(second);
+        if (minuteValue < 0L || secondValue < 0L || secondValue >= 60L) return -1L;
+
         long ms = 0L;
         if (fraction != null) {
+            long fractionValue = parseNonNegativeLong(fraction);
+            if (fractionValue < 0L) return -1L;
             switch (fraction.length()) {
                 case 1:
-                    ms = parseLong(fraction) * 100L;
+                    ms = fractionValue * 100L;
                     break;
                 case 2:
-                    ms = parseLong(fraction) * 10L;
+                    ms = fractionValue * 10L;
                     break;
                 case 3:
-                    ms = parseLong(fraction);
+                    ms = fractionValue;
                     break;
                 default:
-                    break;
+                    return -1L;
             }
         }
-        return parseLong(minute) * 60000L + parseLong(second) * 1000L + ms;
+        long minuteMs = safeMultiply(minuteValue, 60000L);
+        long secondMs = safeMultiply(secondValue, 1000L);
+        if (minuteMs < 0L || secondMs < 0L) return -1L;
+        return safeAdd(safeAdd(minuteMs, secondMs), ms);
     }
 
     // ------------------------------ 数据模型 ------------------------------
@@ -551,19 +678,23 @@ public final class NeteaseLyricAnalysis {
      * 解析结果：接口 code、纯音乐标志与行列表。
      */
     public static final class LyricData {
+        @NonNull
+        public final ResultType type;
         public final int code;
         public final boolean pureMusic;
         @Nullable
         public final List<LyricLineData> lines;
 
-        public LyricData(int code, boolean pureMusic, @Nullable List<LyricLineData> lines) {
+        public LyricData(@NonNull ResultType type, int code, boolean pureMusic,
+                         @Nullable List<LyricLineData> lines) {
+            this.type = type;
             this.code = code;
             this.pureMusic = pureMusic;
             this.lines = lines;
         }
 
         public boolean hasLyrics() {
-            return lines != null && !lines.isEmpty();
+            return type == ResultType.READY && lines != null && !lines.isEmpty();
         }
     }
 

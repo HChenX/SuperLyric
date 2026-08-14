@@ -50,9 +50,11 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -103,9 +105,12 @@ public abstract class NeteasePublisher extends AbsPublisher {
     // song + lyric + lastShownIndex 原子可见；歌词写入 / 清空 / 行推进均以
     // compareAndSet 原子替换，避免「读-改-写」覆盖并发更新的新快照
     private final AtomicReference<TrackSnapshot> mTrackRef = new AtomicReference<>();
+    private final AtomicLong mTrackGeneration = new AtomicLong();
 
     // 42ms 行推进：mIsRunning 防重入；mLoopToken 使 stopLoop → startLoop 时序下旧轮询链立即失效
+    private HandlerThread mLyricThread;
     private Handler mLyricHandler;
+    private boolean mHooksInitialized;
     private volatile boolean mIsRunning = false;
     private volatile long mLoopToken = 0L;
 
@@ -130,8 +135,12 @@ public abstract class NeteasePublisher extends AbsPublisher {
     private final AtomicLong mRetryToken = new AtomicLong();
 
     // 异步拉取（缓存线程池：快速切歌时新请求不被慢的旧请求阻塞）
-    private final ExecutorService mDownloadExecutor = Executors.newCachedThreadPool();
-    private final Set<Long> mDownloadingIds = ConcurrentHashMap.newKeySet();
+    private final ThreadPoolExecutor mDownloadExecutor = new ThreadPoolExecutor(
+        2, 2, 0L, TimeUnit.MILLISECONDS,
+        new ArrayBlockingQueue<>(4),
+        new ThreadPoolExecutor.AbortPolicy()
+    );
+    private final Set<String> mDownloadingIds = ConcurrentHashMap.newKeySet();
 
     /**
      * 歌曲上下文快照：数字音轨标识 + 标题/歌手/专辑/时长。
@@ -179,13 +188,16 @@ public abstract class NeteasePublisher extends AbsPublisher {
      * 歌曲上下文快照：当前歌曲 + 歌词（可为空）+ 已展示行索引，整体原子替换。
      */
     private static final class TrackSnapshot {
+        final long generation;
         @NonNull
         final SongInfo song;
         @Nullable
         final LyricSnapshot lyric;
         final int lastShownIndex;
 
-        TrackSnapshot(@NonNull SongInfo song, @Nullable LyricSnapshot lyric, int lastShownIndex) {
+        TrackSnapshot(long generation, @NonNull SongInfo song, @Nullable LyricSnapshot lyric,
+                      int lastShownIndex) {
+            this.generation = generation;
             this.song = song;
             this.lyric = lyric;
             this.lastShownIndex = lastShownIndex;
@@ -193,17 +205,17 @@ public abstract class NeteasePublisher extends AbsPublisher {
 
         @NonNull
         TrackSnapshot withLyric(@NonNull LyricSnapshot newLyric) {
-            return new TrackSnapshot(song, newLyric, -1);
+            return new TrackSnapshot(generation, song, newLyric, -1);
         }
 
         @NonNull
         TrackSnapshot clearLyric() {
-            return new TrackSnapshot(song, null, -1);
+            return new TrackSnapshot(generation, song, null, -1);
         }
 
         @NonNull
         TrackSnapshot withShownIndex(int index) {
-            return new TrackSnapshot(song, lyric, index);
+            return new TrackSnapshot(generation, song, lyric, index);
         }
     }
 
@@ -222,15 +234,20 @@ public abstract class NeteasePublisher extends AbsPublisher {
     }
 
     @Override
-    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
+    protected synchronized void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         super.onPackageReady(param);
-        HandlerThread lyricThread = new HandlerThread("NeteasePublisherThread");
-        lyricThread.start();
-        mLyricHandler = new Handler(lyricThread.getLooper());
+        if (mHooksInitialized) {
+            logD(TAG, "Netease network hooks already initialized for " + param.getPackageName());
+            return;
+        }
+        mLyricThread = new HandlerThread("NeteasePublisherThread");
+        mLyricThread.start();
+        mLyricHandler = new Handler(mLyricThread.getLooper());
 
         NeteaseLogicHijacking.bypassPackProtection();
         hookMediaSession();
         hookPlaybackState();
+        mHooksInitialized = true;
         logI(TAG, "Netease network path hooks loaded (package: " + param.getPackageName() + ")");
     }
 
@@ -373,6 +390,12 @@ public abstract class NeteasePublisher extends AbsPublisher {
         switch (mPlayback.state) {
             case PlaybackState.STATE_PLAYING:
                 dispatchSourceEvent(LyricSourceMachine.Event.playing());
+                TrackSnapshot current = mTrackRef.get();
+                long currentId = current == null ? -1L : current.song.id;
+                if (current != null && LyricSourceMachine.shouldRetry(mSourceState)
+                    && !mDownloadingIds.contains(taskKey(currentId, current.generation))) {
+                    scheduleLyricRetry(currentId, current.generation);
+                }
                 startLoop();
                 break;
             case PlaybackState.STATE_STOPPED:
@@ -395,6 +418,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
     private void onMetadataChanged(@NonNull MediaMetadata metadata) {
         long id = extractSongId(metadata);
         if (id <= 0L) {
+            NeteaseLyricAnalysis.cancelExcept(-1L);
             logD(TAG, "setMetadata: no valid numeric id, treat as ad/unknown, sendStop");
             // 广告 / 非歌曲：清空上下文与歌词快照，防止旧歌曲晚到响应或残留行误发
             cancelLyricRetry(currentSongId());
@@ -411,6 +435,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
             return;
         }
 
+        NeteaseLyricAnalysis.cancelExcept(id);
         // 切歌：立即清空旧歌词与显示；下次切歌重新尝试网络路径
         cancelLyricRetry(currentSongId());
         sendStop();
@@ -420,25 +445,27 @@ public abstract class NeteasePublisher extends AbsPublisher {
         String artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST);
         String album = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM);
         long duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION);
-        mTrackRef.set(new TrackSnapshot(
-            new SongInfo(
-                id,
-                title != null ? title : "",
-                artist != null ? artist : "",
-                album != null ? album : "",
-                duration
-            ),
-            null,
-            -1
-        ));
-        logD(TAG, "Track changed: id=" + id + ", title=" + title + ", artist=" + artist
-            + ", album=" + album + ", retry network path");
-
-        dispatchSourceEvent(LyricSourceMachine.Event.trackChanged(id));
+        long generation = mTrackGeneration.incrementAndGet();
+        synchronized (mSourceStateLock) {
+            mTrackRef.set(new TrackSnapshot(
+                generation,
+                new SongInfo(
+                    id,
+                    title != null ? title : "",
+                    artist != null ? artist : "",
+                    album != null ? album : "",
+                    duration
+                ),
+                null,
+                -1
+            ));
+            dispatchSourceEvent(LyricSourceMachine.Event.trackChanged(id));
+        }
+        logD(TAG, "Track changed: id=" + id + ", retry network path");
 
         // 首次切歌惰性重试：即便定时重试全部失败，第一首歌前仍有机会完成设置联动
         linkLyricSetting();
-        fetchLyricsForTrack(id);
+        fetchLyricsForTrack(id, generation);
     }
 
     /**
@@ -511,19 +538,32 @@ public abstract class NeteasePublisher extends AbsPublisher {
      * 位置插值：上次采样位置 + 速度 × 流逝时间（灭屏不停表）。
      */
     private static long estimatePosition(@NonNull PlaybackSnapshot playback, long now) {
+        long base = Math.max(0L, playback.position);
+        if (!Float.isFinite(playback.speed) || playback.speed < 0f || now <= playback.anchorTime) return base;
         long elapsed = now - playback.anchorTime;
-        return playback.position + (long) (elapsed * playback.speed);
+        double delta = elapsed * (double) playback.speed;
+        if (!Double.isFinite(delta) || delta >= Long.MAX_VALUE) return Long.MAX_VALUE;
+        try {
+            return Math.max(0L, Math.addExact(base, (long) delta));
+        } catch (ArithmeticException e) {
+            return Long.MAX_VALUE;
+        }
     }
 
     /**
      * 顺序查找 start ≤ 位置 < end 的行。
      */
     private static int findLineIndex(@NonNull List<NeteaseLyricAnalysis.LyricLineData> lines, long position) {
-        for (int i = 0; i < lines.size(); i++) {
+        int low = 0;
+        int high = lines.size();
+        while (low < high) {
+            int mid = (low + high) >>> 1;
+            if (lines.get(mid).start <= position) low = mid + 1;
+            else high = mid;
+        }
+        for (int i = low - 1; i >= 0; i--) {
             NeteaseLyricAnalysis.LyricLineData line = lines.get(i);
-            if (position >= line.start && position < line.end) {
-                return i;
-            }
+            if (position >= line.start && position < line.end) return i;
         }
         return -1;
     }
@@ -544,8 +584,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
         }
 
         sendLyric(data);
-        logD(TAG, "sendLyric: [" + song.title + " - " + song.artist + " - " + song.album + "] "
-            + line.text + (TextUtils.isEmpty(translationSlot) ? "" : " / " + translationSlot));
+        logD(TAG, "sendLyric: track=" + song.id + ", start=" + line.start);
     }
 
     /**
@@ -561,48 +600,98 @@ public abstract class NeteasePublisher extends AbsPublisher {
 
     // ------------------------------ 拉取与缓存 ------------------------------
 
-    private void fetchLyricsForTrack(long id) {
-        // 独立命名空间（宿主私有缓存，与 LyricProvider 同方案）：
-        // cacheDir/SuperLyric/lyric/{provider}/{id}.json
+    private static String taskKey(long id, long generation) {
+        return id + "#" + generation;
+    }
+
+    private boolean isCurrentTrack(long id, long generation) {
+        TrackSnapshot current = mTrackRef.get();
+        return current != null && current.generation == generation && current.song.id == id;
+    }
+
+    private void fetchLyricsForTrack(long id, long generation) {
+        String taskKey = taskKey(id, generation);
+        if (!mDownloadingIds.add(taskKey)) {
+            logD(TAG, "Lyric already loading for " + id);
+            return;
+        }
+        try {
+            mDownloadExecutor.execute(() -> loadLyricsForTrack(id, generation, taskKey));
+        } catch (RejectedExecutionException e) {
+            mDownloadingIds.remove(taskKey);
+            handleRetryableFailure(id, generation, "Lyric worker queue full", e);
+        }
+    }
+
+    private void loadLyricsForTrack(long id, long generation, @NonNull String taskKey) {
         String cacheProvider = lyricCacheProvider();
         String cacheKey = String.valueOf(id);
+        try {
+            if (!isCurrentTrack(id, generation)) return;
 
-        String cached = LyricCacheStore.get(mAppContext, cacheProvider, cacheKey);
-        if (cached != null) {
-            logD(TAG, "Lyric cache hit for " + id + ", no network request");
-            applyLyrics(id, cached);
-            return;
-        }
-
-        if (!mDownloadingIds.add(id)) {
-            logD(TAG, "Lyric already downloading for " + id);
-            return;
-        }
-
-        mDownloadExecutor.execute(() -> {
-            try {
-                String json = NeteaseLyricAnalysis.fetchLyricJson(id);
-                logD(TAG, "Lyric fetched for " + id + ", json length=" + json.length());
-                // 仅歌词就绪（含翻译/音译）才写缓存；无歌词 / 纯音乐 / 解析失败不缓存，
-                // 避免"无歌词"响应被永久缓存，导致版权方补词后仍显示空白
-                if (applyLyrics(id, json)) {
-                    LyricCacheStore.put(mAppContext, cacheProvider, cacheKey, json);
-                    logD(TAG, "Lyric cache written: " + cacheProvider + "/" + cacheKey + ".json");
-                }
-            } catch (Exception e) {
-                logE(TAG, "Failed to fetch lyric for " + id, e);
-                // 过期音轨（切歌 / 广告）：状态机按 trackId 校验会忽略，无需再走失败 / 重试
-                SongInfo song = currentSong();
-                if (song == null || song.id != id) {
-                    logD(TAG, "Ignore retry for stale track " + id);
+            String cached = LyricCacheStore.get(mAppContext, cacheProvider, cacheKey);
+            if (cached != null) {
+                NeteaseLyricAnalysis.LyricData cachedData = NeteaseLyricAnalysis.parseLyrics(cached);
+                if (cachedData.hasLyrics()) {
+                    logD(TAG, "Lyric cache hit for " + id + ", no network request");
+                    applyLyrics(id, generation, cachedData);
                     return;
                 }
-                dispatchSourceEvent(LyricSourceMachine.Event.fetchFailed(id));
-                scheduleLyricRetry(id);
-            } finally {
-                mDownloadingIds.remove(id);
+                LyricCacheStore.delete(mAppContext, cacheProvider, cacheKey);
             }
-        });
+
+            String json = NeteaseLyricAnalysis.fetchLyricJson(id);
+            if (!isCurrentTrack(id, generation)) return;
+            NeteaseLyricAnalysis.LyricData data = NeteaseLyricAnalysis.parseLyrics(json);
+            switch (data.type) {
+                case READY:
+                    if (applyLyrics(id, generation, data)) {
+                        LyricCacheStore.put(mAppContext, cacheProvider, cacheKey, json);
+                    }
+                    break;
+                case EMPTY:
+                case PURE_MUSIC:
+                    applyLyrics(id, generation, data);
+                    break;
+                case MALFORMED:
+                    handleRetryableFailure(id, generation, "Malformed lyric response", null);
+                    break;
+                case API_ERROR:
+                    handleRetryableFailure(id, generation, "Lyric API error code=" + data.code, null);
+                    break;
+            }
+        } catch (NeteaseLyricAnalysis.OversizeException e) {
+            finishEmpty(id, generation, "Lyric response exceeds budget for " + id);
+        } catch (NeteaseLyricAnalysis.HttpStatusException e) {
+            if (e.retryable) handleRetryableFailure(id, generation, "Retryable HTTP " + e.code, e);
+            else finishEmpty(id, generation, "Non-retryable HTTP " + e.code + " for " + id);
+        } catch (Exception e) {
+            handleRetryableFailure(id, generation, "Failed to fetch lyric", e);
+        } finally {
+            mDownloadingIds.remove(taskKey);
+        }
+    }
+
+    private void handleRetryableFailure(long id, long generation, @NonNull String message,
+                                        @Nullable Throwable error) {
+        synchronized (mSourceStateLock) {
+            if (!isCurrentTrack(id, generation)) return;
+            if (error == null) logW(TAG, message + " for " + id);
+            else logE(TAG, message + " for " + id, error);
+            dispatchSourceEvent(LyricSourceMachine.Event.fetchFailed(id));
+        }
+        scheduleLyricRetry(id, generation);
+    }
+
+    private void finishEmpty(long id, long generation, @NonNull String message) {
+        synchronized (mSourceStateLock) {
+            TrackSnapshot current = mTrackRef.get();
+            if (current == null || current.generation != generation || current.song.id != id) return;
+            if (!mTrackRef.compareAndSet(current, current.clearLyric())) return;
+            clearRetryFor(id);
+            dispatchSourceEvent(LyricSourceMachine.Event.fetchEmpty(id));
+        }
+        logD(TAG, message);
     }
 
     /**
@@ -610,7 +699,8 @@ public abstract class NeteasePublisher extends AbsPublisher {
      * 所有调度经 {@code mLyricHandler}，{@code mRetryToken} 使切歌 / 停止 / 暂停后的
      * 旧任务立即失效，不残留。
      */
-    private void scheduleLyricRetry(long id) {
+    private void scheduleLyricRetry(long id, long generation) {
+        if (!isCurrentTrack(id, generation)) return;
         LyricSourceMachine.State state = mSourceState;
         if (state.trackId != id) return;
         // 暂停 / 停止等非播放状态下不安排新重试（与取消语义一致，不残留任务）
@@ -633,7 +723,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
         logI(TAG, "Lyric retry scheduled for " + id + " retry#" + state.failedAttempts
             + ", delay=" + delay + "ms");
         mLyricHandler.postDelayed(() -> {
-            if (token != mRetryToken.get()) return;
+            if (token != mRetryToken.get() || !isCurrentTrack(id, generation)) return;
             if (mSourceState.trackId != id) {
                 clearRetryFor(id);
                 return;
@@ -643,7 +733,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
                 return;
             }
             logD(TAG, "Lyric retry executing for " + id + " retry#" + mSourceState.failedAttempts);
-            fetchLyricsForTrack(id);
+            fetchLyricsForTrack(id, generation);
         }, delay);
     }
 
@@ -730,53 +820,48 @@ public abstract class NeteasePublisher extends AbsPublisher {
      * 应用歌词：解析并原子写入快照、走状态机事件；返回歌词是否已就绪并可用
      * （纯音乐 / 无歌词 / 过期响应返回 {@code false}，调用方据此决定是否写缓存）。
      */
-    private boolean applyLyrics(long id, @NonNull String json) {
-        // 竞态防护：异步拉取完成时校验当前音轨（与当前歌曲快照比对）
+    private boolean applyLyrics(long id, long generation,
+                                @NonNull NeteaseLyricAnalysis.LyricData data) {
+        synchronized (mSourceStateLock) {
+            return applyLyricsLocked(id, generation, data);
+        }
+    }
+
+    private boolean applyLyricsLocked(long id, long generation,
+                                      @NonNull NeteaseLyricAnalysis.LyricData data) {
         TrackSnapshot current = mTrackRef.get();
-        if (current == null || current.song.id != id) {
-            logD(TAG, "Stale lyric response for " + id
-                + ", current=" + (current == null ? -1 : current.song.id) + ", discard");
+        if (current == null || current.generation != generation || current.song.id != id) {
+            logD(TAG, "Stale lyric response for " + id + ", discard");
             return false;
         }
 
-        NeteaseLyricAnalysis.LyricData data = NeteaseLyricAnalysis.parseLyrics(json);
-        if (data.pureMusic) {
+        if (data.type == NeteaseLyricAnalysis.ResultType.PURE_MUSIC || !data.hasLyrics()) {
+            if (!mTrackRef.compareAndSet(current, current.clearLyric())) return false;
             clearRetryFor(id);
             dispatchSourceEvent(LyricSourceMachine.Event.fetchEmpty(id));
-            mTrackRef.compareAndSet(current, current.clearLyric());
-            logD(TAG, "Pure music flag for " + id + ", keep blank");
-            return false;
-        }
-        if (!data.hasLyrics()) {
-            clearRetryFor(id);
-            dispatchSourceEvent(LyricSourceMachine.Event.fetchEmpty(id));
-            mTrackRef.compareAndSet(current, current.clearLyric());
-            logD(TAG, "No lyric lines for " + id + " (code=" + data.code + "), keep blank");
+            logD(TAG, data.type == NeteaseLyricAnalysis.ResultType.PURE_MUSIC
+                ? "Pure music flag for " + id + ", keep blank"
+                : "No lyric lines for " + id + " (code=" + data.code + "), keep blank");
             return false;
         }
 
-        // 曲内重试成功：清除待执行重试并走 RETRY_SUCCEEDED 接管（重试期间的唯一接管通道）
         boolean retrySuccess = mRetryTrackId == id;
         int failedBefore = mSourceState.failedAttempts;
-        if (retrySuccess) {
-            clearRetryFor(id);
-        }
-        // 状态机：网络歌词就绪 → 固化网络契约（迟到的旧请求已由顶部 trackId 校验拦截）
-        dispatchSourceEvent(retrySuccess
-            ? LyricSourceMachine.Event.retrySucceeded(id)
-            : LyricSourceMachine.Event.fetchSucceeded(id));
-        // CAS 写入：快照已换代（切歌 / 重新拉取）时不覆盖，由新状态机事件负责后续
         if (!mTrackRef.compareAndSet(current, current.withLyric(new LyricSnapshot(id, data)))) {
             logD(TAG, "Track changed while applying lyric for " + id + ", discard");
             return false;
         }
+        if (retrySuccess) clearRetryFor(id);
+        dispatchSourceEvent(retrySuccess
+            ? LyricSourceMachine.Event.retrySucceeded(id)
+            : LyricSourceMachine.Event.fetchSucceeded(id));
 
         long wordLines = data.lines.stream().filter(line -> line.words != null).count();
         long translateLines = data.lines.stream().filter(line -> line.translation != null).count();
         long romaLines = data.lines.stream().filter(line -> line.roma != null).count();
         logD(TAG, "Lyrics ready for " + id + ", lines=" + data.lines.size()
             + ", wordLines=" + wordLines + ", translateLines=" + translateLines
-            + ", romaLines=" + romaLines + ", first=" + data.lines.get(0).text);
+            + ", romaLines=" + romaLines);
 
         if (retrySuccess) {
             logI(TAG, "Lyric retry succeeded for " + id + " after " + failedBefore
