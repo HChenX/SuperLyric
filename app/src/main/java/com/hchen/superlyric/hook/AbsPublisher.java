@@ -126,7 +126,8 @@ public abstract class AbsPublisher extends AbsModule {
         );
     }
 
-    private static String mLastLyric;
+    private static final Object sPublishLock = new Object();
+    private static String sLastLyric;
 
     public static void sendLyric(String lyric) {
         sendLyric(lyric, 0);
@@ -137,18 +138,19 @@ public abstract class AbsPublisher extends AbsModule {
 
         lyric = lyric.trim();
         if (lyric.isEmpty()) return;
-        if (TextUtils.equals(lyric, mLastLyric)) return;
-        mLastLyric = lyric;
-
-        sendLyric(
-            new SuperLyricData()
-                .setLyric(
-                    new SuperLyricLine(
-                        lyric,
-                        delay
+        synchronized (sPublishLock) {
+            if (TextUtils.equals(lyric, sLastLyric)) return;
+            sendLyric(
+                new SuperLyricData()
+                    .setLyric(
+                        new SuperLyricLine(
+                            lyric,
+                            delay
+                        )
                     )
-                )
-        );
+            );
+            sLastLyric = lyric;
+        }
     }
 
     public static void sendLyric(@NonNull SuperLyricData data) {
@@ -160,6 +162,9 @@ public abstract class AbsPublisher extends AbsModule {
     }
 
     public static void sendStop(@NonNull SuperLyricData data) {
-        SuperLyricHelper.sendStop(data);
+        synchronized (sPublishLock) {
+            SuperLyricHelper.sendStop(data);
+            sLastLyric = null;
+        }
     }
 }

@@ -54,6 +54,7 @@ import io.github.libxposed.api.XposedModuleInterface;
  * 汽水音乐
  *
  * @author 焕晨HChen
+ * @author baka
  */
 @HookThis(targetPackage = "com.luna.music")
 public final class Qishui extends AbsPublisher {
@@ -148,84 +149,88 @@ public final class Qishui extends AbsPublisher {
 
         hook(m3, new AbsHook() {
             private int lastIndex = -1;
+            private Object lastPair;
+            private Object lastTrackPlayable;
 
             @Override
             public void after() {
                 Integer index = (Integer) getField(g, getThisObject());
-                if (index != null) {
-                    if (lastIndex == -1 || index != lastIndex) {
-                        lastIndex = index;
-                        Object pair = getField(e, getThisObject());
-                        if (pair == null) return;
-                        List<?> second = (List<?>) callMethod(pair, "getSecond");
-                        // 索引由宿主用 getOrNull 取值，可能越界
-                        if (second == null || index < 0 || index >= second.size()) return;
-                        Object sentence = second.get(index);
+                if (index == null) return;
 
-                        LyricData lyricData = create(sentence);
-                        if (lyricData == null) return;
-                        LyricData translationLyricData = null;
+                Object pair = getField(e, getThisObject());
+                if (pair == null) return;
+                List<?> second = (List<?>) callMethod(pair, "getSecond");
+                // 索引由宿主用 getOrNull 取值，可能越界
+                if (second == null || index < 0 || index >= second.size()) return;
 
-                        Map<?, ?> translationMap = readTranslationMap(sentence);
-                        if (translationMap != null) {
-                            Object CHINESE = getStaticField("com.luna.common.arch.db.entity.lyrics.NetLyricsLanguage", "CHINESE");
-                            if (translationMap.containsKey(CHINESE)) {
-                                Object translationSentence = translationMap.get(CHINESE);
-                                if (translationSentence != null) {
-                                    translationLyricData = create(translationSentence);
-                                }
-                            }
+                Object trackPlayable = getArg(0);
+                if (lastPair == pair && lastTrackPlayable == trackPlayable && lastIndex == index) return;
+
+                Object sentence = second.get(index);
+                LyricData lyricData = create(sentence);
+                if (lyricData == null) return;
+                LyricData translationLyricData = null;
+
+                Map<?, ?> translationMap = readTranslationMap(sentence);
+                if (translationMap != null) {
+                    Object CHINESE = getStaticField("com.luna.common.arch.db.entity.lyrics.NetLyricsLanguage", "CHINESE");
+                    if (translationMap.containsKey(CHINESE)) {
+                        Object translationSentence = translationMap.get(CHINESE);
+                        if (translationSentence != null) {
+                            translationLyricData = create(translationSentence);
                         }
-
-                        String name = null;
-                        String album = null;
-                        String artist = null;
-                        try {
-                            Object trackPlayable = getArg(0);
-                            Object track = getField(trackPlayable, "track");
-                            name = (String) callMethod(track, "getName");
-                            album = (String) callMethod(callMethod(track, "getAlbum"), "getName");
-                            List<?> artists = (List<?>) callMethod(track, "getArtists");
-
-                            StringBuilder sb = new StringBuilder();
-                            if (artists != null) {
-                                for (int i = 0; i < artists.size(); i++) {
-                                    sb.append(callMethod(artists.get(i), "getName"));
-                                    if (artists.size() - 1 != i) {
-                                        sb.append("-");
-                                    }
-                                }
-                            }
-                            artist = sb.toString();
-                        } catch (Throwable ignore) {
-                        }
-
-                        SuperLyricData superLyricData = new SuperLyricData();
-                        superLyricData.setTitle(name);
-                        superLyricData.setArtist(artist);
-                        superLyricData.setAlbum(album);
-
-                        superLyricData.setLyric(
-                            new SuperLyricLine(
-                                lyricData.lyric,
-                                lyricData.words,
-                                lyricData.startTime,
-                                lyricData.endTime
-                            )
-                        );
-
-                        if (translationLyricData != null) {
-                            superLyricData.setTranslation(new SuperLyricLine(
-                                translationLyricData.lyric,
-                                translationLyricData.words,
-                                translationLyricData.startTime,
-                                translationLyricData.endTime
-                            ));
-                        }
-
-                        sendLyric(superLyricData);
                     }
                 }
+
+                String name = null;
+                String album = null;
+                String artist = null;
+                try {
+                    Object track = getField(trackPlayable, "track");
+                    name = (String) callMethod(track, "getName");
+                    album = (String) callMethod(callMethod(track, "getAlbum"), "getName");
+                    List<?> artists = (List<?>) callMethod(track, "getArtists");
+
+                    StringBuilder sb = new StringBuilder();
+                    if (artists != null) {
+                        for (int i = 0; i < artists.size(); i++) {
+                            sb.append(callMethod(artists.get(i), "getName"));
+                            if (artists.size() - 1 != i) {
+                                sb.append("-");
+                            }
+                        }
+                    }
+                    artist = sb.toString();
+                } catch (Throwable ignore) {
+                }
+
+                SuperLyricData superLyricData = new SuperLyricData();
+                superLyricData.setTitle(name);
+                superLyricData.setArtist(artist);
+                superLyricData.setAlbum(album);
+
+                superLyricData.setLyric(
+                    new SuperLyricLine(
+                        lyricData.lyric,
+                        lyricData.words,
+                        lyricData.startTime,
+                        lyricData.endTime
+                    )
+                );
+
+                if (translationLyricData != null) {
+                    superLyricData.setTranslation(new SuperLyricLine(
+                        translationLyricData.lyric,
+                        translationLyricData.words,
+                        translationLyricData.startTime,
+                        translationLyricData.endTime
+                    ));
+                }
+
+                sendLyric(superLyricData);
+                lastPair = pair;
+                lastTrackPlayable = trackPlayable;
+                lastIndex = index;
             }
         });
     }

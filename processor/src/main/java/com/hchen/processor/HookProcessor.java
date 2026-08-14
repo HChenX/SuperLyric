@@ -58,7 +58,6 @@ public class HookProcessor extends AbstractProcessor {
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment env) {
-        System.out.println("ENV: " + env);
         if (env.processingOver()) return true;
 
         for (Element element : env.getElementsAnnotatedWith(HookThis.class)) {

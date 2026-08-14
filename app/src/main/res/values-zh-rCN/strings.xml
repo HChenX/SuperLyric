@@ -11,6 +11,7 @@
     <!-- Warning -->
     <string name="warn">警告</string>
     <string name="service_unavailable">SuperLyric 服务不可用，将无法正常传递歌词数据，请重启手机后重试！\n代码：%s</string>
+    <string name="no_activity">没有可用于打开此链接的应用</string>
 
     <!-- Log Level -->
     <string name="log_level">日志等级</string>

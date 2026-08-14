@@ -37,79 +37,139 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * 包加载器
+ * 包加载器。扫描请求在单线程中执行；扫描期间到达的并发请求会合并为一次后续重扫。
  *
  * @author 焕晨HChen
  */
 public final class PackageLoader {
     private static final String TAG = "PackageLoader";
-    private static final List<AppData> sMediaApps = new CopyOnWriteArrayList<>();
-    private static final List<ApiAppData> sMediaApiApps = new CopyOnWriteArrayList<>();
-    private static final List<Runnable> sPackageLoadedListeners = new ArrayList<>();
+    private static final Object LOAD_LOCK = new Object();
+    private static volatile List<AppData> sMediaApps = List.of();
+    private static volatile List<ApiAppData> sMediaApiApps = List.of();
+    private static final List<Runnable> sPackageLoadedListeners = new CopyOnWriteArrayList<>();
     private static final ExecutorService EXECUTOR_SERVICE = Executors.newSingleThreadExecutor();
     private static final Collator COLLATOR = Collator.getInstance(Locale.CHINA);
-    private static volatile boolean isRunning = false;
-    private static volatile boolean isLoaded = false;
+    private static CompletableFuture<Void> sCurrentLoad;
+    private static CompletableFuture<Void> sPendingLoad;
+    private static boolean rescanRequested;
+    private static long completedLoadCount;
 
-    public static void loadPackages(@NonNull Context context) {
-        if (!isRunning) {
-            isRunning = true;
-            EXECUTOR_SERVICE.execute(new Runnable() {
-                @Override
-                public void run() {
-                    try {
-                        PackageManager pm = context.getPackageManager();
-                        List<PackageInfo> infos = pm.getInstalledPackages(PackageManager.GET_META_DATA);
-                        for (PackageInfo info : infos) {
-                            if (mMediaAppPackages.contains(info.packageName)) {
-                                AppData appData = PackageTool.createAppData(pm, info, true);
-                                sMediaApps.add(appData);
-                            }
+    /**
+     * 请求扫描已安装应用。
+     *
+     * <p>若扫描正在进行，本次请求会与其他并发请求合并为紧随其后的一次重扫，返回值在该重扫完成后结束。</p>
+     *
+     * @param context 用于访问包管理器的上下文；内部仅保存其 applicationContext
+     * @return 表示本次请求所对应扫描已完成的 Future
+     */
+    @NonNull
+    public static CompletableFuture<Void> loadPackages(@NonNull Context context) {
+        Context appContext = context.getApplicationContext();
+        synchronized (LOAD_LOCK) {
+            if (sCurrentLoad == null) {
+                sCurrentLoad = new CompletableFuture<>();
+                scheduleLoad(appContext);
+                return sCurrentLoad;
+            }
 
-                            if (info.applicationInfo != null && info.applicationInfo.metaData != null) {
-                                boolean isApi = info.applicationInfo.metaData.getBoolean("superlyricapi");
-                                if (isApi) {
-                                    boolean isXposed =
-                                        info.applicationInfo.metaData.getBoolean("xposedmodule") || hasXposedModule(info.applicationInfo.sourceDir);
-                                    if (!isXposed) {
-                                        String apiVersionName = String.valueOf(info.applicationInfo.metaData.getFloat("superlyricapi_version_name"));
-                                        String apiVersionCode = String.valueOf(info.applicationInfo.metaData.getInt("superlyricapi_version_code"));
+            rescanRequested = true;
+            if (sPendingLoad == null) {
+                sPendingLoad = new CompletableFuture<>();
+            }
+            return sPendingLoad;
+        }
+    }
 
-                                        ApiAppData apiAppData = new ApiAppData();
-                                        apiAppData.icon = BitmapTool.drawableToBitmap(info.applicationInfo.loadIcon(pm));
-                                        apiAppData.label = (String) info.applicationInfo.loadLabel(pm);
-                                        apiAppData.packageName = info.applicationInfo.packageName;
-                                        apiAppData.versionName = info.versionName;
-                                        apiAppData.versionCode = Long.toString(info.getLongVersionCode());
-                                        apiAppData.apiVersionName = apiVersionName;
-                                        apiAppData.apiVersionCode = apiVersionCode;
+    private static void scheduleLoad(@NonNull Context context) {
+        EXECUTOR_SERVICE.execute(() -> {
+            Throwable failure = null;
+            try {
+                scanPackages(context);
+            } catch (Throwable throwable) {
+                failure = throwable;
+                AndroidLog.logE(TAG, "Failed to load package list", throwable);
+            }
 
-                                        sMediaApiApps.add(apiAppData);
-                                    }
-                                }
-                            }
-                        }
+            CompletableFuture<Void> completedFuture;
+            List<Runnable> listenersSnapshot;
+            boolean runAgain;
+            synchronized (LOAD_LOCK) {
+                completedFuture = sCurrentLoad;
+                completedLoadCount++;
+                listenersSnapshot = List.copyOf(sPackageLoadedListeners);
+                runAgain = rescanRequested;
+                if (runAgain) {
+                    rescanRequested = false;
+                    sCurrentLoad = sPendingLoad;
+                    sPendingLoad = null;
+                } else {
+                    sCurrentLoad = null;
+                }
+            }
 
-                        sortAppData(sMediaApps);
-                        sortAppData(sMediaApiApps);
+            if (failure == null) {
+                completedFuture.complete(null);
+            } else {
+                completedFuture.completeExceptionally(failure);
+            }
+            notifyPackageLoadedListeners(listenersSnapshot);
 
-                        for (Runnable listener : sPackageLoadedListeners) {
-                            listener.run();
-                        }
-                        sPackageLoadedListeners.clear();
+            if (runAgain) {
+                scheduleLoad(context);
+            }
+        });
+    }
 
-                        AndroidLog.logD(TAG, "!!Success loaded package list!!");
-                    } finally {
-                        isLoaded = true;
-                        EXECUTOR_SERVICE.shutdown();
+    private static void scanPackages(@NonNull Context context) {
+        PackageManager pm = context.getPackageManager();
+        List<AppData> mediaApps = new ArrayList<>();
+        List<ApiAppData> mediaApiApps = new ArrayList<>();
+        List<PackageInfo> infos = pm.getInstalledPackages(PackageManager.GET_META_DATA);
+        for (PackageInfo info : infos) {
+            if (mMediaAppPackages.contains(info.packageName)) {
+                mediaApps.add(PackageTool.createAppData(pm, info, true));
+            }
+
+            if (info.applicationInfo != null && info.applicationInfo.metaData != null) {
+                boolean isApi = info.applicationInfo.metaData.getBoolean("superlyricapi");
+                if (isApi) {
+                    boolean isXposed = info.applicationInfo.metaData.getBoolean("xposedmodule") ||
+                        hasXposedModule(info.applicationInfo.sourceDir);
+                    if (!isXposed) {
+                        ApiAppData apiAppData = new ApiAppData();
+                        apiAppData.icon = BitmapTool.drawableToBitmap(info.applicationInfo.loadIcon(pm));
+                        apiAppData.label = (String) info.applicationInfo.loadLabel(pm);
+                        apiAppData.packageName = info.applicationInfo.packageName;
+                        apiAppData.versionName = info.versionName;
+                        apiAppData.versionCode = Long.toString(info.getLongVersionCode());
+                        apiAppData.apiVersionName = String.valueOf(info.applicationInfo.metaData.getFloat("superlyricapi_version_name"));
+                        apiAppData.apiVersionCode = String.valueOf(info.applicationInfo.metaData.getInt("superlyricapi_version_code"));
+                        mediaApiApps.add(apiAppData);
                     }
                 }
-            });
+            }
+        }
+
+        sortAppData(mediaApps);
+        sortAppData(mediaApiApps);
+        sMediaApps = List.copyOf(mediaApps);
+        sMediaApiApps = List.copyOf(mediaApiApps);
+        AndroidLog.logD(TAG, "!!Success loaded package list!!");
+    }
+
+    private static void notifyPackageLoadedListeners(@NonNull List<Runnable> listeners) {
+        for (Runnable listener : listeners) {
+            try {
+                listener.run();
+            } catch (Throwable throwable) {
+                AndroidLog.logE(TAG, "Package loaded listener failed", throwable);
+            }
         }
     }
 
@@ -122,11 +182,22 @@ public final class PackageLoader {
     }
 
     public static void addPackageLoadedListener(@NonNull Runnable listener) {
-        if (isLoaded) {
-            listener.run();
-            return;
+        boolean notifyImmediately;
+        synchronized (LOAD_LOCK) {
+            sPackageLoadedListeners.add(listener);
+            notifyImmediately = completedLoadCount > 0;
         }
-        sPackageLoadedListeners.add(listener);
+        if (notifyImmediately) {
+            try {
+                listener.run();
+            } catch (Throwable throwable) {
+                AndroidLog.logE(TAG, "Package loaded listener failed", throwable);
+            }
+        }
+    }
+
+    public static void removePackageLoadedListener(@NonNull Runnable listener) {
+        sPackageLoadedListeners.remove(listener);
     }
 
     public static <T> void sortAppData(@NonNull List<T> list) {

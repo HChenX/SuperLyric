@@ -82,10 +82,10 @@ public final class SpotifyLyricAnalysis {
         }
     }
 
-    private static final AtomicReference<HeaderSnapshot> mHeaders =
+    private static final AtomicReference<HeaderSnapshot> sHeaders =
         new AtomicReference<>(new HeaderSnapshot(Collections.emptyMap(), 0L, false));
 
-    private static volatile boolean mHeaderCompleteLogged = false;
+    private static volatile boolean sHeaderCompleteLogged = false;
 
     private static final Gson gson = new Gson();
 
@@ -129,12 +129,12 @@ public final class SpotifyLyricAnalysis {
 
         Map<String, String> immutable = Collections.unmodifiableMap(captured);
         while (true) {
-            HeaderSnapshot current = mHeaders.get();
+            HeaderSnapshot current = sHeaders.get();
             if (current.valid && current.headers.equals(immutable)) return current;
             HeaderSnapshot next = new HeaderSnapshot(immutable, current.generation + 1L, true);
-            if (mHeaders.compareAndSet(current, next)) {
-                if (!mHeaderCompleteLogged) {
-                    mHeaderCompleteLogged = true;
+            if (sHeaders.compareAndSet(current, next)) {
+                if (!sHeaderCompleteLogged) {
+                    sHeaderCompleteLogged = true;
                     XposedLog.logI(TAG, "All required session headers captured");
                 }
                 return next;
@@ -144,12 +144,12 @@ public final class SpotifyLyricAnalysis {
 
     @Nullable
     public static HeaderSnapshot currentHeaders() {
-        HeaderSnapshot snapshot = mHeaders.get();
+        HeaderSnapshot snapshot = sHeaders.get();
         return snapshot.valid ? snapshot : null;
     }
 
     public static void invalidate(@NonNull HeaderSnapshot requestSnapshot) {
-        mHeaders.compareAndSet(requestSnapshot,
+        sHeaders.compareAndSet(requestSnapshot,
             new HeaderSnapshot(Collections.emptyMap(), requestSnapshot.generation, false));
     }
 
@@ -160,7 +160,7 @@ public final class SpotifyLyricAnalysis {
      *
      * @param id 音轨标识（已剥 spotify:track: 前缀）
      * @return 歌词接口原始响应字节
-     * @throws NoFoundLyricException 接口 404（无歌词）
+     * @throws LyricNotFoundException 接口 404（无歌词）
      * @throws IOException           网络错误 / 非成功状态码
      */
     @NonNull
@@ -190,7 +190,7 @@ public final class SpotifyLyricAnalysis {
                 throw new AuthenticationException(code, headers.generation);
             }
             if (code == 404) {
-                throw new NoFoundLyricException(id, "No lyric found for " + id);
+                throw new LyricNotFoundException(id, "No lyric found for " + id);
             }
             if (!response.isSuccessful()) {
                 throw new HttpStatusException(code, code == 429 || code >= 500);
@@ -704,11 +704,11 @@ public final class SpotifyLyricAnalysis {
         }
     }
 
-    public static final class NoFoundLyricException extends RuntimeException {
+    public static final class LyricNotFoundException extends RuntimeException {
         @NonNull
         public final String id;
 
-        public NoFoundLyricException(@NonNull String id, @NonNull String message) {
+        public LyricNotFoundException(@NonNull String id, @NonNull String message) {
             super(message);
             this.id = id;
         }

@@ -104,10 +104,12 @@ public final class QQMusic extends AbsPublisher {
     private final List<LineData> mLines = new CopyOnWriteArrayList<>();
     private final List<String> mTransLines = new CopyOnWriteArrayList<>();
     private final List<SuperLyricWord[]> mWordsList = new CopyOnWriteArrayList<>();
+    private Object mCurrentSentences;
     private String mTitle;
     private String mArtist;
     private String mAlbum;
     private int mLastLine = -1;
+    private boolean mLoggedMissingMainLyric;
 
     @Override
     protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
@@ -161,13 +163,8 @@ public final class QQMusic extends AbsPublisher {
             new AbsHook() {
                 @Override
                 public void after() {
-                    mLines.clear();
-                    mTransLines.clear();
-                    mWordsList.clear();
-                    mTitle = null;
-                    mArtist = null;
-                    mAlbum = null;
-                    mLastLine = -1;
+                    clearLyricCache();
+                    sendStop();
                 }
             }
         );
@@ -234,16 +231,19 @@ public final class QQMusic extends AbsPublisher {
                     Object mLyric = getField(getThisObject(), "mLyric");
                     if (mLyric == null) return;
 
-                    // 每次 setLyric 都是全新的歌词数据，清空所有缓存
-                    mTitle = null;
-                    mArtist = null;
-                    mAlbum = null;
-                    mWordsList.clear();
-                    mTransLines.clear();
-                    mLastLine = -1;
+                    clearLyricCache();
 
                     extractMeta(mLyric);
                     extractLines(mLyric);
+                    if (mLines.isEmpty()) {
+                        if (!mLoggedMissingMainLyric) {
+                            logW(TAG, "Failed to parse main lyric; skip status bar lyric until next setLyric");
+                            mLoggedMissingMainLyric = true;
+                        }
+                        clearLyricCache();
+                        return;
+                    }
+                    mLoggedMissingMainLyric = false;
                     extractTranslation(getArg(0));
                 }
             }
@@ -256,6 +256,8 @@ public final class QQMusic extends AbsPublisher {
             new AbsHook() {
                 @Override
                 public void after() {
+                    Object sentences = getArg(1);
+                    if (sentences != mCurrentSentences) return;
                     sendLyric((Integer) getResult());
                 }
             }
@@ -379,6 +381,7 @@ public final class QQMusic extends AbsPublisher {
             Object rawLines = getField(mSentencesField, engineLyric);
             if (!(rawLines instanceof List<?> lines)) return;
             if (lines.isEmpty()) return;
+            mCurrentSentences = rawLines;
 
             mLines.clear();
             mWordsList.clear();
@@ -409,6 +412,10 @@ public final class QQMusic extends AbsPublisher {
 
                 // 逐字数据
                 Object rawWords = mWords != null ? getField(mWords, line) : null;
+                if (rawWords == null) {
+                    discoverWordsField(line);
+                    rawWords = mWords != null ? getField(mWords, line) : null;
+                }
                 if (rawWords instanceof List<?> wordList && !wordList.isEmpty()) {
                     if (mWordText == null) discoverWordFields(wordList.get(0));
                     if (mWordText != null) {
@@ -466,11 +473,34 @@ public final class QQMusic extends AbsPublisher {
         }
     }
 
+    private void discoverWordsField(Object sentence) {
+        if (mWords != null || sentence == null) return;
+        for (Field field : sentence.getClass().getDeclaredFields()) {
+            if (field.getType() != ArrayList.class) continue;
+            Object raw = getField(field, sentence);
+            if (raw instanceof List<?> list && !list.isEmpty() && hasWordFields(list.get(0))) {
+                mWords = field;
+                return;
+            }
+        }
+    }
+
+    private void clearLyricCache() {
+        mLines.clear();
+        mTransLines.clear();
+        mWordsList.clear();
+        mCurrentSentences = null;
+        mTitle = null;
+        mArtist = null;
+        mAlbum = null;
+        mLastLine = -1;
+    }
+
     /**
      * 由 findCurrentLine 结果触发，发送逐字和翻译数据。
      */
     private void sendLyric(Integer line) {
-        if (line == null) return;
+        if (line == null || line < 0) return;
         if (mLines.isEmpty()) return;
         if (line >= mLines.size()) {
             sendStop();

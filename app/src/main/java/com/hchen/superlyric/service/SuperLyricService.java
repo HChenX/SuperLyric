@@ -34,7 +34,6 @@ import com.hchen.superlyricapi.SuperLyricData;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
@@ -66,19 +65,26 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
             }
         }
     );
-    public static final CopyOnWriteArraySet<String> sPublishers = new CopyOnWriteArraySet<>();
-    public static final CopyOnWriteArraySet<String> sNonSystemPlayStateListeners = new CopyOnWriteArraySet<>();
+    private static final ConcurrentHashMap<String, Set<Integer>> sPublisherPids = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Long> sPublisherGenerations = new ConcurrentHashMap<>();
+    private static final Set<String> sSystemPlayStateListenerDisabledPackages = ConcurrentHashMap.newKeySet();
 
     public SuperLyricService(@NonNull Object ams) {
         this.mAms = ams;
     }
 
     public static boolean isPublisher(@NonNull String packageName) {
-        return sPublishers.contains(packageName);
+        Set<Integer> pids = sPublisherPids.get(packageName);
+        return pids != null && !pids.isEmpty();
     }
 
-    public static boolean isNonSystemPlayStateListener(@NonNull String packageName) {
-        return sNonSystemPlayStateListeners.contains(packageName);
+    private static boolean isPublisherProcess(@NonNull String packageName, int pid) {
+        Set<Integer> pids = sPublisherPids.get(packageName);
+        return pids != null && pids.contains(pid);
+    }
+
+    public static boolean isSystemPlayStateListenerDisabled(@NonNull String packageName) {
+        return sSystemPlayStateListenerDisabledPackages.contains(packageName);
     }
 
     @Override
@@ -92,7 +98,10 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         }
         String packageName = getPackageNameWithPid(pid);
         if (!packageName.isEmpty()) {
-            sPublishers.add(packageName);
+            Set<Integer> pids = sPublisherPids.computeIfAbsent(packageName, ignored -> ConcurrentHashMap.newKeySet());
+            if (pids.add(pid)) {
+                sPublisherGenerations.merge(packageName, 1L, Long::sum);
+            }
             XposedLog.logI(TAG, "Register publisher: " + packageName + ", pid: " + pid);
         } else {
             XposedLog.logW(TAG, "Registration as publisher failed! Unable to obtain the package name corresponding to pid: '" + pid + "'!");
@@ -104,7 +113,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         int pid = Binder.getCallingPid();
         String packageName = getPackageNameWithPid(pid);
         if (!packageName.isEmpty()) {
-            sPublishers.remove(packageName);
+            removePublisherProcess(packageName, pid);
             XposedLog.logI(TAG, "Unregister publisher: " + packageName + ", pid: " + pid);
         } else {
             XposedLog.logW(TAG, "Failed to unregister as publisher! Unable to obtain the package name corresponding to pid: '" + pid + "'!");
@@ -115,7 +124,8 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     public boolean isPublisherRegistered() throws RemoteException {
         int pid = Binder.getCallingPid();
         String packageName = getPackageNameWithPid(pid);
-        return sPublishers.contains(packageName);
+        Set<Integer> pids = sPublisherPids.get(packageName);
+        return pids != null && pids.contains(pid);
     }
 
     @Override
@@ -126,7 +136,10 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
         int pid = Binder.getCallingPid();
         String packageName = getPackageNameWithPid(pid);
-        notifyReceiver(packageName, data, "lyric", new IReceiverCallback() {
+        if (!isPublisherProcess(packageName, pid)) {
+            return;
+        }
+        notifyReceiver(packageName, data, new IReceiverCallback() {
             @Override
             public void call(ISuperLyricReceiver receiver, String publisher, SuperLyricData data) throws RemoteException {
                 receiver.onLyric(publisher, data);
@@ -142,7 +155,10 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
         int pid = Binder.getCallingPid();
         String packageName = getPackageNameWithPid(pid);
-        notifyReceiver(packageName, data, "stop", new IReceiverCallback() {
+        if (!isPublisherProcess(packageName, pid)) {
+            return;
+        }
+        notifyReceiver(packageName, data, new IReceiverCallback() {
             @Override
             public void call(ISuperLyricReceiver receiver, String publisher, SuperLyricData data) throws RemoteException {
                 receiver.onStop(publisher, data);
@@ -154,11 +170,11 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     public void setSystemPlayStateListenerEnabled(boolean enabled) throws RemoteException {
         int pid = Binder.getCallingPid();
         String packageName = getPackageNameWithPid(pid);
-        if (sPublishers.contains(packageName)) {
+        if (isPublisherProcess(packageName, pid)) {
             if (enabled) {
-                sNonSystemPlayStateListeners.add(packageName);
+                sSystemPlayStateListenerDisabledPackages.remove(packageName);
             } else {
-                sNonSystemPlayStateListeners.remove(packageName);
+                sSystemPlayStateListenerDisabledPackages.add(packageName);
             }
 
             XposedLog.logI(TAG, "System play state listener: isEnabled?" + enabled + ", caller: " + packageName);
@@ -190,11 +206,25 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         return receiver != null && mReceiverBinders.contains(receiver.asBinder());
     }
 
-    public void onPackageDied(@NonNull String packageName) {
-        // 广播与清理放入同一单线程任务，避免 remove 先于 executor 检查导致 stop 通知被跳过
+    public void onProcessDied(@NonNull String packageName, int pid) {
+        Set<Integer> pids = sPublisherPids.get(packageName);
+        if (pids == null || !pids.remove(pid)) {
+            return;
+        }
+        if (!pids.isEmpty()) {
+            return;
+        }
+        sPublisherPids.remove(packageName, pids);
+        long generation = sPublisherGenerations.getOrDefault(packageName, 0L);
+
         mBroadcastExecutor.execute(new Runnable() {
             @Override
             public void run() {
+                if (isPublisher(packageName)
+                    || sPublisherGenerations.getOrDefault(packageName, 0L) != generation) {
+                    return;
+                }
+
                 int itemCount = mCallbacks.beginBroadcast();
                 try {
                     for (int i = 0; i < itemCount; i++) {
@@ -209,14 +239,13 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
                     mCallbacks.finishBroadcast();
                 }
 
-                sPublishers.remove(packageName);
-                sNonSystemPlayStateListeners.remove(packageName);
+                sSystemPlayStateListenerDisabledPackages.remove(packageName);
             }
         });
     }
 
     public void sendSystemEvent(String packageName, SuperLyricData data) {
-        notifyReceiver(packageName, data, "system stop", new IReceiverCallback() {
+        notifyReceiver(packageName, data, new IReceiverCallback() {
             @Override
             public void call(ISuperLyricReceiver receiver, String publisher, SuperLyricData data) throws RemoteException {
                 receiver.onStop(publisher, data);
@@ -224,18 +253,23 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         });
     }
 
-    private void notifyReceiver(String publisher, SuperLyricData data, String type, IReceiverCallback callBack) {
-        if (sPublishers.contains(publisher)) {
+    private void notifyReceiver(String publisher, SuperLyricData data, IReceiverCallback callback) {
+        if (isPublisher(publisher)) {
+            long generation = sPublisherGenerations.getOrDefault(publisher, 0L);
             mBroadcastExecutor.execute(new Runnable() {
                 @Override
                 public void run() {
+                    if (!isPublisher(publisher)
+                        || sPublisherGenerations.getOrDefault(publisher, 0L) != generation) {
+                        return;
+                    }
+
                     int itemCount = mCallbacks.beginBroadcast();
                     try {
                         for (int i = 0; i < itemCount; i++) {
                             try {
                                 ISuperLyricReceiver receiver = mCallbacks.getBroadcastItem(i);
-                                callBack.call(receiver, publisher, data);
-                                XposedLog.logD(TAG, "Send " + type + ". data: " + data + ", publisher: " + publisher + ", receiver: " + receiver);
+                                callback.call(receiver, publisher, data);
                             } catch (RemoteException e) {
                                 XposedLog.logW(TAG, e);
                             }
@@ -245,6 +279,18 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
                     }
                 }
             });
+        }
+    }
+
+    private static void removePublisherProcess(@NonNull String packageName, int pid) {
+        Set<Integer> pids = sPublisherPids.get(packageName);
+        if (pids == null) {
+            return;
+        }
+        pids.remove(pid);
+        if (pids.isEmpty()) {
+            sPublisherPids.remove(packageName, pids);
+            sSystemPlayStateListenerDisabledPackages.remove(packageName);
         }
     }
 

@@ -21,7 +21,6 @@ package com.hchen.superlyric.hook.system;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.os.IBinder;
-import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 
@@ -134,15 +133,11 @@ public final class SuperLyricProxy extends AbsModule {
                             return;
                         }
 
-                        String processName = (String) getField(app, "processName");
-                        if (TextUtils.equals(info.packageName, processName)) { // 主进程
-                            boolean isKilled = (boolean) Optional.ofNullable(getField(app, "mKilled")).orElse(true);
-                            if (isKilled) {
-                                if (SuperLyricService.isPublisher(info.packageName)) {
-                                    sSuperLyricService.onPackageDied(info.packageName);
-                                    logI(TAG, "App: " + info.packageName + " is died.");
-                                }
-                            }
+                        int pid = (int) getArg(1);
+                        boolean isKilled = (boolean) Optional.ofNullable(getField(app, "mKilled")).orElse(true);
+                        if (isKilled) {
+                            sSuperLyricService.onProcessDied(info.packageName, pid);
+                            logI(TAG, "Publisher process died: " + info.packageName + ", pid: " + pid);
                         }
                     }
                 }

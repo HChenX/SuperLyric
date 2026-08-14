@@ -99,8 +99,11 @@ import top.yukonga.miuix.kmp.window.WindowDialog
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels {
         MainViewModelFactory(
-            prefsReadyCallback = { listener -> Application.addPrefsReadyListener(listener) },
-            appLoadedCallback = { listener -> PackageLoader.addPackageLoadedListener(listener) }
+            addPrefsReadyListener = Application::addPrefsReadyListener,
+            removePrefsReadyListener = Application::removePrefsReadyListener,
+            addAppLoadedListener = PackageLoader::addPackageLoadedListener,
+            removeAppLoadedListener = PackageLoader::removePackageLoadedListener,
+            reloadApps = { PackageLoader.loadPackages(applicationContext) }
         )
     }
 
@@ -174,7 +177,7 @@ class MainActivity : ComponentActivity() {
     private fun CompactScreenLayout() {
         val isSearching by viewModel.isSearching.collectAsState()
         val pagerState = LocalPagerState.current
-        val handePagerChange = LocalHandlePagerChange.current
+        val handlePagerChange = LocalHandlePagerChange.current
 
         val backdrop = rememberBlurBackdrop()
         val blurActive = backdrop != null
@@ -197,7 +200,7 @@ class MainActivity : ComponentActivity() {
                                 icon = MiuixIcons.HorizontalSplit,
                                 selected = pagerState.currentPage == UIConstants.HOME_PAGE_INDEX,
                                 onClick = {
-                                    handePagerChange(false, UIConstants.HOME_PAGE_INDEX)
+                                    handlePagerChange(false, UIConstants.HOME_PAGE_INDEX)
                                 }
                             )
 
@@ -206,7 +209,7 @@ class MainActivity : ComponentActivity() {
                                 icon = MiuixIcons.Info,
                                 selected = pagerState.currentPage == UIConstants.ABOUT_PAGE_INDEX,
                                 onClick = {
-                                    handePagerChange(false, UIConstants.ABOUT_PAGE_INDEX)
+                                    handlePagerChange(false, UIConstants.ABOUT_PAGE_INDEX)
                                 }
                             )
                         }
@@ -234,7 +237,7 @@ class MainActivity : ComponentActivity() {
 
         val scrollBehavior = MiuixScrollBehavior()
         val pagerState = LocalPagerState.current
-        val handePagerChange = LocalHandlePagerChange.current
+        val handlePagerChange = LocalHandlePagerChange.current
 
         Scaffold(modifier = Modifier.fillMaxSize()) {
             Row(
@@ -269,13 +272,13 @@ class MainActivity : ComponentActivity() {
                                 ) {
                                     BasicComponent(
                                         title = stringResource(R.string.home),
-                                        onClick = { handePagerChange(true, UIConstants.HOME_PAGE_INDEX) },
+                                        onClick = { handlePagerChange(true, UIConstants.HOME_PAGE_INDEX) },
                                         holdDownState = pagerState.currentPage == UIConstants.HOME_PAGE_INDEX
                                     )
 
                                     BasicComponent(
                                         title = stringResource(R.string.about),
-                                        onClick = { handePagerChange(true, UIConstants.ABOUT_PAGE_INDEX) },
+                                        onClick = { handlePagerChange(true, UIConstants.ABOUT_PAGE_INDEX) },
                                         holdDownState = pagerState.currentPage == UIConstants.ABOUT_PAGE_INDEX
                                     )
                                 }
