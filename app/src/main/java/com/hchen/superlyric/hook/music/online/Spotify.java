@@ -37,12 +37,15 @@ import com.hchen.superlyric.utils.LyricCacheStore;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricLine;
 
+import java.io.IOException;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import io.github.libxposed.api.XposedModuleInterface;
@@ -64,7 +67,9 @@ public final class Spotify extends AbsPublisher {
     private static final long LOOP_INTERVAL_MS = 42L;
 
     private Context mAppContext;
+    private HandlerThread mLyricThread;
     private Handler mLyricHandler;
+    private boolean mHooksInitialized;
 
     // 播放状态（setPlaybackState 写入，轮询线程读取）：
     // 单一不可变快照整体发布，避免 state/position/speed/锚点多次 volatile 写入的中间态
@@ -74,16 +79,38 @@ public final class Spotify extends AbsPublisher {
     // song + lyric + lastShownIndex 原子可见；行推进 / 歌词写入均以 compareAndSet
     // 原子替换，快速切歌时异步拉取与切歌不产生歌词与元数据错配、无上一首残留
     private final AtomicReference<TrackSnapshot> mTrackRef = new AtomicReference<>();
+    private final AtomicLong mTrackGeneration = new AtomicLong();
 
     // 轮询推进：mIsRunning 防重入；mLoopToken 使重启后的旧轮询链立即失效，
     // 避免 stopLoop→startLoop 时序下出现双链并行
     private volatile boolean mIsRunning = false;
     private volatile long mLoopToken = 0L;
+    private static final class HeaderWait {
+        @NonNull
+        final String trackId;
+        final long headerGeneration;
+        final long trackGeneration;
 
-    // 异步拉取（缓存线程池：快速切歌时新请求不被慢的旧请求阻塞，
-    // 过期结果由 applyLyrics 的 trackId 校验丢弃）
-    private final ExecutorService mDownloadExecutor = Executors.newCachedThreadPool();
+        HeaderWait(@NonNull String trackId, long headerGeneration, long trackGeneration) {
+            this.trackId = trackId;
+            this.headerGeneration = headerGeneration;
+            this.trackGeneration = trackGeneration;
+        }
+    }
+
+    private final AtomicReference<HeaderWait> mHeaderWait = new AtomicReference<>();
+
+    private final ThreadPoolExecutor mDownloadExecutor = new ThreadPoolExecutor(
+        2, 2, 0L, TimeUnit.MILLISECONDS,
+        new ArrayBlockingQueue<>(4),
+        new ThreadPoolExecutor.AbortPolicy()
+    );
     private final Set<String> mDownloadingIds = ConcurrentHashMap.newKeySet();
+    private static final int MAX_FETCH_RETRIES = 3;
+    private static final int MAX_AUTH_REFRESHES = 2;
+    private final ConcurrentHashMap<String, Integer> mRetryCounts = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Integer> mAuthRefreshCounts = new ConcurrentHashMap<>();
+
 
     /** 歌曲上下文快照：音轨标识 + 标题/歌手，与歌词配对发布的元数据来源。 */
     private static final class SongInfo {
@@ -134,13 +161,15 @@ public final class Spotify extends AbsPublisher {
 
     /** 歌曲上下文快照：当前歌曲 + 歌词（可为空）+ 已展示行索引，整体原子替换。 */
     private static final class TrackSnapshot {
+        final long generation;
         @NonNull
         final SongInfo song;
         @Nullable
         final LyricData lyric;
         final int lastShownIndex;
 
-        TrackSnapshot(@NonNull SongInfo song, @Nullable LyricData lyric, int lastShownIndex) {
+        TrackSnapshot(long generation, @NonNull SongInfo song, @Nullable LyricData lyric, int lastShownIndex) {
+            this.generation = generation;
             this.song = song;
             this.lyric = lyric;
             this.lastShownIndex = lastShownIndex;
@@ -148,26 +177,30 @@ public final class Spotify extends AbsPublisher {
 
         @NonNull
         TrackSnapshot withLyric(@NonNull LyricData newLyric) {
-            return new TrackSnapshot(song, newLyric, -1);
+            return new TrackSnapshot(generation, song, newLyric, -1);
         }
 
         @NonNull
         TrackSnapshot withShownIndex(int index) {
-            return new TrackSnapshot(song, lyric, index);
+            return new TrackSnapshot(generation, song, lyric, index);
         }
     }
 
     @Override
-    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
+    protected synchronized void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         super.onPackageReady(param);
-        // 轮询线程
-        HandlerThread lyricThread = new HandlerThread("SpotifyLyricThread");
-        lyricThread.start();
-        mLyricHandler = new Handler(lyricThread.getLooper());
+        if (mHooksInitialized) {
+            logD(TAG, "Spotify hooks already initialized for " + param.getPackageName());
+            return;
+        }
+        mLyricThread = new HandlerThread("SpotifyLyricThread");
+        mLyricThread.start();
+        mLyricHandler = new Handler(mLyricThread.getLooper());
 
         hookPlaybackState();
         hookMetadata();
         hookSessionHeaders();
+        mHooksInitialized = true;
 
         logI(TAG, "Spotify hooks loaded (package: " + param.getPackageName() + ")");
     }
@@ -244,6 +277,9 @@ public final class Spotify extends AbsPublisher {
         if (id == null) {
             // 广告 / 无法解析音轨标识 → sendStop 清空（Apple 范式）
             logD(TAG, "setMetadata: no valid track id, treat as ad/unknown, sendStop");
+            SpotifyLyricAnalysis.cancelExcept(null);
+            mHeaderWait.set(null);
+            mTrackRef.set(null);
             sendStop();
             stopLoop();
             return;
@@ -254,20 +290,23 @@ public final class Spotify extends AbsPublisher {
             return;
         }
 
+        SpotifyLyricAnalysis.cancelExcept(id);
         // 切歌：立即清空旧歌词与显示，避免残留上一首
         sendStop();
         stopLoop();
 
         String title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE);
         String artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST);
+        long generation = mTrackGeneration.incrementAndGet();
         mTrackRef.set(new TrackSnapshot(
+            generation,
             new SongInfo(id, title != null ? title : "", artist != null ? artist : ""),
             null,
             -1
         ));
-        logD(TAG, "Track changed: id=" + id + ", title=" + title + ", artist=" + artist);
+        logD(TAG, "Track changed: id=" + id);
 
-        fetchLyricsForTrack(id);
+        fetchLyricsForTrack(id, generation);
     }
 
     /**
@@ -286,71 +325,132 @@ public final class Spotify extends AbsPublisher {
 
     // ------------------------------ 拉取与缓存 ------------------------------
 
-    private void fetchLyricsForTrack(@NonNull String id) {
-        // 独立命名空间（宿主私有缓存，与 LyricProvider 同方案）：
-        // cacheDir/SuperLyric/lyric/Spotify/{locale}/{id}.json，locale 目录与 LyricProvider 一致
-        String cacheKey = LyricCacheStore.currentLocaleTag() + "/" + id;
-
-        byte[] cached = LyricCacheStore.getBytes(mAppContext, "Spotify", cacheKey);
-        if (cached != null) {
-            List<SpotifyLine> lines = parseOrNull(cached);
-            if (lines != null) {
-                logD(TAG, "Lyric cache hit for " + id + ", no network request");
-                applyLyrics(id, lines);
-                return;
-            }
-            // 坏缓存：删除并回退网络，避免被永久毒化
-            logW(TAG, "Cached lyric unparseable for " + id + ", evict and refetch");
-            LyricCacheStore.delete(mAppContext, "Spotify", cacheKey);
-        }
-
-        if (!mDownloadingIds.add(id)) {
-            logD(TAG, "Lyric already downloading for " + id);
-            return;
-        }
-
-        mDownloadExecutor.execute(() -> {
-            try {
-                byte[] raw = SpotifyLyricAnalysis.fetchLyric(id);
-                logD(TAG, "Lyric fetched for " + id + ", bytes length=" + raw.length);
-                List<SpotifyLine> lines = parseOrNull(raw);
-                if (lines == null) {
-                    // 非法响应不入缓存，保持空白，避免坏数据持久化
-                    logW(TAG, "Lyric response unparseable for " + id + ", keep blank");
-                    return;
-                }
-                LyricCacheStore.put(mAppContext, "Spotify", cacheKey, raw);
-                logD(TAG, "Lyric cache written: Spotify/" + cacheKey + ".json");
-                applyLyrics(id, lines);
-            } catch (SpotifyLyricAnalysis.NoFoundLyricException e) {
-                logD(TAG, "No lyric found (404) for " + id + ", keep blank");
-            } catch (Exception e) {
-                logE(TAG, "Failed to fetch lyric for " + id, e);
-            } finally {
-                mDownloadingIds.remove(id);
-            }
-        });
+    private static String taskKey(@NonNull String id, long generation) {
+        return id + "#" + generation;
     }
 
-    /**
-     * 解析原始响应（JSON / protobuf 自动分流），无歌词或解析失败返回 {@code null}。
-     */
-    @Nullable
-    private List<SpotifyLine> parseOrNull(byte[] raw) {
-        List<SpotifyLine> lines = SpotifyLyricAnalysis.parseLyrics(raw);
-        return (lines == null || lines.isEmpty()) ? null : lines;
+    private void fetchLyricsForTrack(@NonNull String id, long generation) {
+        String taskKey = taskKey(id, generation);
+        if (!mDownloadingIds.add(taskKey)) {
+            logD(TAG, "Lyric already loading for " + id);
+            return;
+        }
+        try {
+            mDownloadExecutor.execute(() -> loadLyricsForTrack(id, generation, taskKey));
+        } catch (RejectedExecutionException e) {
+            mDownloadingIds.remove(taskKey);
+            scheduleFetchRetry(id, generation);
+        }
+    }
+
+    private void loadLyricsForTrack(@NonNull String id, long generation, @NonNull String taskKey) {
+        String cacheKey = LyricCacheStore.currentLocaleTag() + "/" + id;
+        try {
+            if (!isCurrentTrack(id, generation)) return;
+            byte[] cached = LyricCacheStore.getBytes(mAppContext, "Spotify", cacheKey);
+            if (cached != null) {
+                SpotifyLyricAnalysis.ParseResult result = SpotifyLyricAnalysis.parseResult(cached);
+                if (result.type == SpotifyLyricAnalysis.ParseType.READY && result.lines != null) {
+                    applyLyrics(id, generation, result.lines);
+                    return;
+                }
+                LyricCacheStore.delete(mAppContext, "Spotify", cacheKey);
+            }
+
+            SpotifyLyricAnalysis.HeaderSnapshot headers = SpotifyLyricAnalysis.currentHeaders();
+            if (headers == null) {
+                waitForHeaders(id, 0L, generation);
+                return;
+            }
+            byte[] raw = SpotifyLyricAnalysis.fetchLyric(id, headers);
+            SpotifyLyricAnalysis.ParseResult result = SpotifyLyricAnalysis.parseResult(raw);
+            if (result.type == SpotifyLyricAnalysis.ParseType.MALFORMED) {
+                scheduleFetchRetry(id, generation);
+                return;
+            }
+            if (result.type != SpotifyLyricAnalysis.ParseType.READY || result.lines == null) {
+                logW(TAG, "Lyric response not usable for " + id + ", type=" + result.type);
+                return;
+            }
+            if (!isCurrentTrack(id, generation)) return;
+            LyricCacheStore.put(mAppContext, "Spotify", cacheKey, raw);
+            applyLyrics(id, generation, result.lines);
+        } catch (SpotifyLyricAnalysis.AuthenticationException e) {
+            String retryKey = taskKey(id, generation);
+            int refreshes = mAuthRefreshCounts.merge(retryKey, 1, Integer::sum);
+            if (refreshes <= MAX_AUTH_REFRESHES) {
+                waitForHeaders(id, e.generation, generation);
+            } else {
+                mAuthRefreshCounts.remove(retryKey);
+                logW(TAG, "Spotify authentication refresh exhausted for " + id);
+            }
+        } catch (SpotifyLyricAnalysis.NoFoundLyricException e) {
+            logD(TAG, "No lyric found (404) for " + id);
+        } catch (SpotifyLyricAnalysis.OversizeException e) {
+            logW(TAG, "Spotify lyric response exceeds budget for " + id);
+        } catch (SpotifyLyricAnalysis.HttpStatusException e) {
+            if (e.retryable) scheduleFetchRetry(id, generation);
+            else logW(TAG, "Non-retryable Spotify HTTP " + e.code + " for " + id);
+        } catch (IOException e) {
+            scheduleFetchRetry(id, generation);
+        } catch (Exception e) {
+            if (isCurrentTrack(id, generation)) logE(TAG, "Failed to fetch lyric for " + id, e);
+        } finally {
+            mDownloadingIds.remove(taskKey);
+            resumeHeaderWaitIfReady();
+        }
+    }
+
+    private void scheduleFetchRetry(@NonNull String id, long generation) {
+        if (!isCurrentTrack(id, generation)) return;
+        String retryKey = taskKey(id, generation);
+        int attempt = mRetryCounts.merge(retryKey, 1, Integer::sum);
+        if (attempt > MAX_FETCH_RETRIES) {
+            mRetryCounts.remove(retryKey);
+            logW(TAG, "Spotify lyric retry exhausted for " + id);
+            return;
+        }
+        long delay = Math.min(5000L << (attempt - 1), 30000L);
+        mLyricHandler.postDelayed(() -> {
+            if (isCurrentTrack(id, generation)) {
+                fetchLyricsForTrack(id, generation);
+            } else {
+                mRetryCounts.remove(retryKey);
+                mAuthRefreshCounts.remove(retryKey);
+            }
+        }, delay);
+    }
+
+    private boolean isCurrentTrack(@NonNull String id, long generation) {
+        TrackSnapshot current = mTrackRef.get();
+        return current != null && current.generation == generation && id.equals(current.song.trackId);
+    }
+
+    private void waitForHeaders(@NonNull String id, long headerGeneration, long trackGeneration) {
+        if (isCurrentTrack(id, trackGeneration)) {
+            mHeaderWait.set(new HeaderWait(id, headerGeneration, trackGeneration));
+            resumeHeaderWaitIfReady();
+        }
+    }
+
+    private void resumeHeaderWaitIfReady() {
+        HeaderWait wait = mHeaderWait.get();
+        SpotifyLyricAnalysis.HeaderSnapshot headers = SpotifyLyricAnalysis.currentHeaders();
+        if (wait == null || headers == null || headers.generation <= wait.headerGeneration) return;
+        String taskKey = taskKey(wait.trackId, wait.trackGeneration);
+        if (!isCurrentTrack(wait.trackId, wait.trackGeneration) || mDownloadingIds.contains(taskKey)) return;
+        if (mHeaderWait.compareAndSet(wait, null)) fetchLyricsForTrack(wait.trackId, wait.trackGeneration);
     }
 
     /**
      * 原子写入歌词快照并启动行推进；
      * 仅当前音轨与请求音轨一致时才生效，过期结果直接丢弃。
      */
-    private void applyLyrics(@NonNull String id, @NonNull List<SpotifyLine> lines) {
-        // 竞态防护：异步拉取完成时校验当前音轨（与当前歌曲快照比对）
+    private void applyLyrics(@NonNull String id, long generation,
+                             @NonNull List<SpotifyLine> lines) {
         TrackSnapshot current = mTrackRef.get();
-        if (current == null || !id.equals(current.song.trackId)) {
-            logD(TAG, "Stale lyric response for " + id
-                + ", current=" + (current == null ? "null" : current.song.trackId) + ", discard");
+        if (current == null || current.generation != generation || !id.equals(current.song.trackId)) {
+            logD(TAG, "Stale lyric response for " + id + ", discard");
             return;
         }
 
@@ -359,7 +459,10 @@ public final class Spotify extends AbsPublisher {
             logD(TAG, "Track changed while applying lyric for " + id + ", discard");
             return;
         }
-        logD(TAG, "Lyrics ready for " + id + ", lines=" + lines.size() + ", first=" + lines.get(0).text
+        String completedKey = taskKey(id, generation);
+        mRetryCounts.remove(completedKey);
+        mAuthRefreshCounts.remove(completedKey);
+        logD(TAG, "Lyrics ready for " + id + ", lines=" + lines.size()
             + ", firstWords=" + (lines.get(0).words == null ? 0 : lines.get(0).words.length));
 
         if (mPlayback.state == PlaybackState.STATE_PLAYING) {
@@ -420,18 +523,33 @@ public final class Spotify extends AbsPublisher {
      * 位置插值：上次采样位置 + 速度 × 流逝时间。
      */
     private static long estimatePosition(@NonNull PlaybackSnapshot playback, long now) {
+        long base = Math.max(0L, playback.position);
+        if (!Float.isFinite(playback.speed) || playback.speed < 0f || now <= playback.anchorTime) return base;
         long elapsed = now - playback.anchorTime;
-        return playback.position + (long) (elapsed * playback.speed);
+        double delta = elapsed * (double) playback.speed;
+        if (!Double.isFinite(delta) || delta >= Long.MAX_VALUE) return Long.MAX_VALUE;
+        try {
+            return Math.max(0L, Math.addExact(base, (long) delta));
+        } catch (ArithmeticException e) {
+            return Long.MAX_VALUE;
+        }
     }
 
     /**
      * 顺序查找 startTime ≤ 位置 < endTime 的行。
      */
     private static int findLineIndex(@NonNull List<SpotifyLine> lines, long position) {
-        for (int i = 0; i < lines.size(); i++) {
-            SpotifyLine line = lines.get(i);
-            if (position >= line.startTimeMs && position < line.endTimeMs) {
-                return i;
+        int low = 0;
+        int high = lines.size() - 1;
+        while (low <= high) {
+            int mid = (low + high) >>> 1;
+            SpotifyLine line = lines.get(mid);
+            if (position < line.startTimeMs) {
+                high = mid - 1;
+            } else if (position >= line.endTimeMs) {
+                low = mid + 1;
+            } else {
+                return mid;
             }
         }
         return -1;
@@ -446,7 +564,7 @@ public final class Spotify extends AbsPublisher {
             data.setTranslation(new SuperLyricLine(line.transliteratedWords));
         }
         sendLyric(data);
-        logD(TAG, "sendLyric: [" + song.title + " - " + song.artist + "] " + line.text);
+        logD(TAG, "sendLyric: track=" + song.trackId + ", start=" + line.startTimeMs);
     }
 
     // ------------------------------ 会话头捕获 ------------------------------
@@ -472,15 +590,7 @@ public final class Spotify extends AbsPublisher {
     }
 
     private void captureNamesAndValues(@NonNull String[] namesAndValues) {
-        for (int i = 0; i + 1 < namesAndValues.length; i += 2) {
-            captureHeader(namesAndValues[i], namesAndValues[i + 1]);
-        }
-    }
-
-    private void captureHeader(@NonNull String name, @NonNull String value) {
-        String lower = name.toLowerCase(Locale.ENGLISH);
-        if (SpotifyLyricAnalysis.isKeyRequired(lower)) {
-            SpotifyLyricAnalysis.setHeader(lower, value);
-        }
+        SpotifyLyricAnalysis.HeaderSnapshot headers = SpotifyLyricAnalysis.updateHeaders(namesAndValues);
+        if (headers != null) resumeHeaderWaitIfReady();
     }
 }

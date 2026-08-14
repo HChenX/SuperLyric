@@ -30,8 +30,12 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -49,7 +53,15 @@ public final class LyricCacheStore {
     private static final String TAG = "LyricCacheStore";
     private static final String CACHE_ROOT = "superlyric" + File.separator + "lyric";
     private static final int CACHE_VERSION = 1;
-    private static final String VERSION_MARKER = "{\"v\":1,\"d\":";
+    private static final long MAX_PROVIDER_BYTES = 32L * 1024L * 1024L;
+    private static final int MAX_PROVIDER_FILES = 256;
+    private static final long MAX_CACHE_AGE_MS = 30L * 24L * 60L * 60L * 1000L;
+    private static final long TEMP_MAX_AGE_MS = 24L * 60L * 60L * 1000L;
+    /** 单个歌词原始响应上限；正常歌词响应远低于此值。 */
+    public static final int MAX_PAYLOAD_BYTES = 2 * 1024 * 1024;
+    private static final byte[] VERSION_PREFIX = ("{\"v\":" + CACHE_VERSION + ",\"d\":")
+        .getBytes(StandardCharsets.UTF_8);
+    private static final String[] ONLINE_PROVIDERS = {"Netease", "Hihonor", "Spotify"};
     private static final Pattern SAFE_SEGMENT = Pattern.compile("[A-Za-z0-9._-]+");
     private static final Pattern SAFE_KEY = Pattern.compile("[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*");
     /**
@@ -88,6 +100,10 @@ public final class LyricCacheStore {
      * @param data     接口返回的原始响应字节
      */
     public static void put(@Nullable Context context, @NonNull String provider, @NonNull String key, @NonNull byte[] data) {
+        if (data.length == 0 || data.length > MAX_PAYLOAD_BYTES) {
+            XposedLog.logW(TAG, "Reject lyric cache payload: provider=" + provider + ", bytes=" + data.length);
+            return;
+        }
         Context ctx = resolveContext(context);
         if (ctx == null) return;
 
@@ -99,25 +115,30 @@ public final class LyricCacheStore {
                 try {
                     Files.delete(file.toPath());
                 } catch (IOException e) {
-                    XposedLog.logW(TAG, "Failed to migrate old cache: " + file.getAbsolutePath(), e);
+                    XposedLog.logW(TAG, "Failed to migrate old lyric cache", e);
                 }
             }
+            File temp = null;
             try {
                 File parent = file.getParentFile();
                 if (parent != null && !parent.exists() && !parent.mkdirs()) {
                     return;
                 }
-                // 先写临时文件再原子替换：避免进程被杀时留下半截 JSON，缓存只读到完整内容
-                File temp = parent != null
-                    ? new File(parent, file.getName() + ".tmp")
-                    : new File(file.getName() + ".tmp");
-                byte[] framed = wrap(data);
-                Files.write(temp.toPath(), framed);
-                Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
-            } catch (IOException e) {
-                XposedLog.logW(TAG, "Failed to write lyric cache: " + file.getAbsolutePath(), e);
-            } catch (Throwable t) {
-                XposedLog.logW(TAG, "Failed to write lyric cache: " + file.getAbsolutePath(), t);
+                temp = File.createTempFile(file.getName() + ".", ".tmp", parent);
+                Files.write(temp.toPath(), wrap(data));
+                try {
+                    Files.move(temp.toPath(), file.toPath(),
+                        StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                } catch (AtomicMoveNotSupportedException e) {
+                    Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                }
+                pruneProviderLocked(ctx, provider);
+            } catch (IOException | SecurityException e) {
+                XposedLog.logW(TAG, "Failed to write lyric cache", e);
+            } finally {
+                if (temp != null && temp.exists()) {
+                    deleteCachePath(temp);
+                }
             }
         }
     }
@@ -127,12 +148,11 @@ public final class LyricCacheStore {
      */
     @NonNull
     private static byte[] wrap(@NonNull byte[] data) {
-        byte[] prefix = VERSION_MARKER.getBytes(StandardCharsets.UTF_8);
         byte[] suffix = new byte[]{'}'};
-        byte[] framed = new byte[prefix.length + data.length + suffix.length];
-        System.arraycopy(prefix, 0, framed, 0, prefix.length);
-        System.arraycopy(data, 0, framed, prefix.length, data.length);
-        System.arraycopy(suffix, 0, framed, prefix.length + data.length, suffix.length);
+        byte[] framed = new byte[VERSION_PREFIX.length + data.length + suffix.length];
+        System.arraycopy(VERSION_PREFIX, 0, framed, 0, VERSION_PREFIX.length);
+        System.arraycopy(data, 0, framed, VERSION_PREFIX.length, data.length);
+        System.arraycopy(suffix, 0, framed, VERSION_PREFIX.length + data.length, suffix.length);
         return framed;
     }
 
@@ -142,10 +162,10 @@ public final class LyricCacheStore {
     @Nullable
     private static byte[] unpack(@NonNull byte[] data) {
         int len = data.length;
-        int head = VERSION_MARKER.length();
-        if (len <= head + 1) return null;
+        int head = VERSION_PREFIX.length;
+        if (len <= head + 1 || len > head + MAX_PAYLOAD_BYTES + 1) return null;
         for (int i = 0; i < head; i++) {
-            if (data[i] != VERSION_MARKER.getBytes(StandardCharsets.UTF_8)[i]) return null;
+            if (data[i] != VERSION_PREFIX[i]) return null;
         }
         if (data[len - 1] != '}') return null;
         return Arrays.copyOfRange(data, head, len - 1);
@@ -155,13 +175,18 @@ public final class LyricCacheStore {
      * 文件是否为当前版本格式（内容合法且带 v 字段）。
      */
     private static boolean hasVersion(@NonNull File file) {
-        byte[] data;
+        if (!isReadableCacheSize(file)) return false;
         try {
-            data = Files.readAllBytes(file.toPath());
-        } catch (IOException e) {
+            return unpack(Files.readAllBytes(file.toPath())) != null;
+        } catch (IOException | SecurityException e) {
             return false;
         }
-        return unpack(data) != null;
+    }
+
+    private static boolean isReadableCacheSize(@NonNull File file) {
+        long length = file.length();
+        return length > VERSION_PREFIX.length + 1L
+            && length <= VERSION_PREFIX.length + MAX_PAYLOAD_BYTES + 1L;
     }
 
     /**
@@ -183,18 +208,22 @@ public final class LyricCacheStore {
 
         File file = getFile(ctx, provider, key);
         if (file == null || !file.isFile()) return null;
-        try {
-            byte[] data = Files.readAllBytes(file.toPath());
-            byte[] payload = unpack(data);
-            // 旧格式（无 v 字段）或损坏内容：删除并视为未命中，由调用方回退网络
-            if (payload == null) {
-                Files.delete(file.toPath());
+        synchronized (WRITE_LOCK) {
+            try {
+                if (!isReadableCacheSize(file)) {
+                    Files.deleteIfExists(file.toPath());
+                    return null;
+                }
+                byte[] payload = unpack(Files.readAllBytes(file.toPath()));
+                if (payload == null) {
+                    Files.deleteIfExists(file.toPath());
+                    return null;
+                }
+                return payload;
+            } catch (IOException | SecurityException e) {
+                XposedLog.logW(TAG, "Failed to read lyric cache", e);
                 return null;
             }
-            return payload;
-        } catch (IOException e) {
-            XposedLog.logW(TAG, "Failed to read lyric cache: " + file.getAbsolutePath(), e);
-            return null;
         }
     }
 
@@ -206,34 +235,149 @@ public final class LyricCacheStore {
         if (ctx == null) return;
 
         File file = getFile(ctx, provider, key);
-        if (file == null || !file.isFile()) return;
-        try {
-            Files.delete(file.toPath());
-        } catch (IOException e) {
-            XposedLog.logW(TAG, "Failed to delete lyric cache: " + file.getAbsolutePath(), e);
+        if (file == null) return;
+        synchronized (WRITE_LOCK) {
+            try {
+                Files.deleteIfExists(file.toPath());
+            } catch (IOException | SecurityException e) {
+                XposedLog.logW(TAG, "Failed to delete lyric cache", e);
+            }
+        }
+    }
+
+    private static void pruneProviderLocked(@NonNull Context context, @NonNull String provider) {
+        String providerDir = sanitizeSegment(provider);
+        if (providerDir == null) return;
+        File root = new File(new File(context.getCacheDir(), CACHE_ROOT), providerDir);
+        if (!root.isDirectory() || hasSymbolicLinkBetween(root, context.getCacheDir())) return;
+
+        List<File> cacheFiles = new ArrayList<>();
+        collectCacheFiles(root, cacheFiles);
+        long now = System.currentTimeMillis();
+        for (File file : new ArrayList<>(cacheFiles)) {
+            long age = now - file.lastModified();
+            long maxAge = file.getName().endsWith(".tmp") ? TEMP_MAX_AGE_MS : MAX_CACHE_AGE_MS;
+            if (age > maxAge && deleteCachePath(file)) cacheFiles.remove(file);
+        }
+        cacheFiles.removeIf(file -> !file.isFile() || file.getName().endsWith(".tmp"));
+        cacheFiles.sort(Comparator.comparingLong(File::lastModified));
+        long total = 0L;
+        for (File file : cacheFiles) {
+            long length = Math.max(0L, file.length());
+            total = length > Long.MAX_VALUE - total ? Long.MAX_VALUE : total + length;
+        }
+        int remainingFiles = cacheFiles.size();
+        int index = 0;
+        while ((remainingFiles > MAX_PROVIDER_FILES || total > MAX_PROVIDER_BYTES)
+            && index < cacheFiles.size()) {
+            File file = cacheFiles.get(index++);
+            long length = Math.max(0L, file.length());
+            if (deleteCachePath(file)) {
+                remainingFiles--;
+                total = Math.max(0L, total - length);
+            }
+        }
+    }
+
+    private static void collectCacheFiles(@NonNull File directory, @NonNull List<File> result) {
+        File[] children = directory.listFiles();
+        if (children == null) return;
+        for (File child : children) {
+            if (Files.isSymbolicLink(child.toPath())) continue;
+            if (child.isDirectory()) collectCacheFiles(child, result);
+            else if (child.isFile() && (child.getName().endsWith(".json") || child.getName().endsWith(".tmp"))) {
+                result.add(child);
+            }
         }
     }
 
     /**
-     * 清空指定提供者的全部缓存文件（保留目录），用于版本升级后的整体失效。
+     * 清空全部在线歌词提供者的缓存命名空间。
+     *
+     * @param context 宿主 Context；为 {@code null} 时尝试解析当前 Application
+     * @return 所有提供者均清理成功时返回 {@code true}；Context 不可用、路径非法或任一项删除失败时返回 {@code false}
      */
-    public static void clearProviderCache(@Nullable Context context, @NonNull String provider) {
+    public static boolean clearOnlineProviderCaches(@Nullable Context context) {
         Context ctx = resolveContext(context);
-        if (ctx == null) return;
+        if (ctx == null) return false;
 
-        String providerDir = sanitizeSegment(provider);
-        if (providerDir == null) return;
-        File dir = new File(new File(ctx.getCacheDir(), CACHE_ROOT), providerDir);
-        File[] files = dir.listFiles();
-        if (files == null) return;
-        for (File file : files) {
-            if (file.isFile() && file.getName().endsWith(".json")) {
-                try {
-                    Files.delete(file.toPath());
-                } catch (IOException e) {
-                    XposedLog.logW(TAG, "Failed to clear lyric cache: " + file.getAbsolutePath(), e);
+        boolean success = true;
+        synchronized (WRITE_LOCK) {
+            for (String provider : ONLINE_PROVIDERS) {
+                if (!clearProviderCacheLocked(ctx, provider)) {
+                    success = false;
                 }
             }
+        }
+        return success;
+    }
+
+    /**
+     * 递归清空指定提供者的缓存命名空间，用于版本升级后的整体失效。
+     * 删除范围严格限制在合法 provider 目录内，不跟随符号链接。
+     *
+     * @param context  宿主 Context；为 {@code null} 时尝试解析当前 Application
+     * @param provider 提供者命名空间
+     * @return 命名空间不存在或全部内容删除成功时返回 {@code true}
+     */
+    public static boolean clearProviderCache(@Nullable Context context, @NonNull String provider) {
+        Context ctx = resolveContext(context);
+        if (ctx == null) return false;
+
+        synchronized (WRITE_LOCK) {
+            return clearProviderCacheLocked(ctx, provider);
+        }
+    }
+
+    private static boolean clearProviderCacheLocked(@NonNull Context context, @NonNull String provider) {
+        String providerDir = sanitizeSegment(provider);
+        if (providerDir == null) return false;
+
+        File cacheDir = context.getCacheDir();
+        File root = new File(cacheDir, CACHE_ROOT);
+        if (hasSymbolicLinkBetween(root, cacheDir)) return false;
+        File dir = new File(root, providerDir);
+        if (!dir.exists()) return true;
+        if (hasSymbolicLinkBetween(dir, cacheDir)) {
+            return Files.isSymbolicLink(dir.toPath()) && deleteCachePath(dir);
+        }
+        if (!dir.isDirectory()) {
+            return deleteCachePath(dir);
+        }
+        return deleteCacheTree(dir, true);
+    }
+
+    private static boolean deleteCacheTree(@NonNull File file, boolean keepRoot) {
+        if (Files.isSymbolicLink(file.toPath())) {
+            return deleteCachePath(file);
+        }
+
+        boolean success = true;
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children == null) {
+                XposedLog.logW(TAG, "Failed to list lyric cache directory");
+                return false;
+            }
+            for (File child : children) {
+                if (!deleteCacheTree(child, false)) {
+                    success = false;
+                }
+            }
+        }
+        if (!keepRoot && !deleteCachePath(file)) {
+            success = false;
+        }
+        return success;
+    }
+
+    private static boolean deleteCachePath(@NonNull File file) {
+        try {
+            Files.deleteIfExists(file.toPath());
+            return true;
+        } catch (IOException | SecurityException e) {
+            XposedLog.logW(TAG, "Failed to clear lyric cache", e);
+            return false;
         }
     }
 
@@ -246,10 +390,42 @@ public final class LyricCacheStore {
         String keyPath = sanitizeKey(key);
         if (providerDir == null || keyPath == null) return null;
 
-        return new File(
+        File file = new File(
             new File(context.getCacheDir(), CACHE_ROOT),
             providerDir + File.separator + keyPath + ".json"
         );
+        return isSafeCachePath(context, providerDir, file) ? file : null;
+    }
+
+    private static boolean hasSymbolicLinkBetween(@NonNull File path, @NonNull File boundary) {
+        File current = path;
+        while (current != null && !current.equals(boundary)) {
+            if (current.exists() && Files.isSymbolicLink(current.toPath())) return true;
+            current = current.getParentFile();
+        }
+        return current == null;
+    }
+
+    private static boolean isSafeCachePath(@NonNull Context context, @NonNull String provider,
+                                           @NonNull File target) {
+        try {
+            File rootPath = new File(context.getCacheDir(), CACHE_ROOT);
+            if (rootPath.exists() && Files.isSymbolicLink(rootPath.toPath())) return false;
+            File root = rootPath.getCanonicalFile();
+            File providerRoot = new File(root, provider).getCanonicalFile();
+            File canonicalTarget = target.getCanonicalFile();
+            String prefix = providerRoot.getPath() + File.separator;
+            if (!canonicalTarget.getPath().startsWith(prefix)) return false;
+
+            File current = target.getParentFile();
+            while (current != null && !current.equals(root)) {
+                if (current.exists() && Files.isSymbolicLink(current.toPath())) return false;
+                current = current.getParentFile();
+            }
+            return current != null;
+        } catch (IOException | SecurityException e) {
+            return false;
+        }
     }
 
     /**
@@ -275,6 +451,7 @@ public final class LyricCacheStore {
      */
     @Nullable
     private static String sanitizeSegment(@NonNull String segment) {
+        if (segment.equals(".") || segment.equals("..")) return null;
         return SAFE_SEGMENT.matcher(segment).matches() ? segment : null;
     }
 
