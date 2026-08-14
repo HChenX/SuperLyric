@@ -5,30 +5,30 @@ plugins {
 
 android {
     Properties properties = new Properties()
-    InputStream inputStream = project.rootProject.file('local.properties').newDataInputStream()
-    properties.load(inputStream)
+    File localPropertiesFile = project.rootProject.file('local.properties')
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.withInputStream { properties.load(it) }
+    }
+
+    def signingPropertyNames = ['keyStoreFile', 'keyStorePassword', 'keyAlias', 'keyAliasPassword']
+    def hasReleaseSigning = signingPropertyNames.every { properties.getProperty(it)?.trim() }
+    if (!hasReleaseSigning) {
+        logger.warn('Release signing credentials are incomplete or local.properties is missing; release APKs will be built unsigned. ' +
+            'Define keyStoreFile, keyStorePassword, keyAlias, and keyAliasPassword to sign release builds.')
+    }
 
     signingConfigs {
-        release {
-            storeFile file(properties.getProperty('keyStoreFile'))
-            storePassword properties.getProperty('keyStorePassword')
-            keyAlias properties.getProperty('keyAlias')
-            keyPassword properties.getProperty('keyAliasPassword')
-            enableV1Signing true
-            enableV2Signing true
-            enableV3Signing true
-            enableV4Signing true
-        }
-
-        debug {
-            storeFile file(properties.getProperty('keyStoreFile'))
-            storePassword properties.getProperty('keyStorePassword')
-            keyAlias properties.getProperty('keyAlias')
-            keyPassword properties.getProperty('keyAliasPassword')
-            enableV1Signing true
-            enableV2Signing true
-            enableV3Signing true
-            enableV4Signing true
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(properties.getProperty('keyStoreFile'))
+                storePassword properties.getProperty('keyStorePassword')
+                keyAlias properties.getProperty('keyAlias')
+                keyPassword properties.getProperty('keyAliasPassword')
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
+                enableV4Signing true
+            }
         }
     }
 
@@ -56,12 +56,11 @@ android {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release
+            signingConfig hasReleaseSigning ? signingConfigs.release : null
         }
 
         debug {
             minifyEnabled false
-            signingConfig signingConfigs.debug
         }
     }
 

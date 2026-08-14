@@ -11,6 +11,7 @@
     <!-- Warning -->
     <string name="warn">Warning</string>
     <string name="service_unavailable">SuperLyric service is unavailable and will not be able to transmit lyrics data properly. Please restart your phone and try again! \Code: %s</string>
+    <string name="no_activity">No app is available to open this link</string>
 
     <!-- Log Level -->
     <string name="log_level">Log level</string>

@@ -80,10 +80,6 @@ public final class PlayStateListener {
     }
 
     private void registerMediaControllerCallback(@NonNull MediaController controller) {
-        if (SuperLyricService.isNonSystemPlayStateListener(controller.getPackageName())) {
-            return;
-        }
-
         MediaControllerCallback callback = mCallbacks.get(controller);
         if (callback != null) {
             controller.unregisterCallback(callback);
@@ -108,14 +104,13 @@ public final class PlayStateListener {
         public void onPlaybackStateChanged(@Nullable PlaybackState state) {
             super.onPlaybackStateChanged(state);
             if (state == null) return;
-            if (unregisterIfNeeded()) {
+            if (SuperLyricService.isSystemPlayStateListenerDisabled(mController.getPackageName())) {
                 return;
             }
 
             if (isPublisher()) {
                 switch (state.getState()) {
-                    case PlaybackState.STATE_BUFFERING, PlaybackState.STATE_PAUSED,
-                         PlaybackState.STATE_STOPPED -> {
+                    case PlaybackState.STATE_PAUSED, PlaybackState.STATE_STOPPED -> {
                         mService.sendSystemEvent(
                             mController.getPackageName(),
                             new SuperLyricData()
@@ -130,15 +125,6 @@ public final class PlayStateListener {
         @Override
         public void onMetadataChanged(@Nullable MediaMetadata metadata) {
             // Do Nothing
-        }
-
-        private boolean unregisterIfNeeded() {
-            if (SuperLyricService.isNonSystemPlayStateListener(mController.getPackageName())) {
-                mController.unregisterCallback(this);
-                mCallbacks.remove(mController);
-                return true;
-            }
-            return false;
         }
 
         private boolean isPublisher() {

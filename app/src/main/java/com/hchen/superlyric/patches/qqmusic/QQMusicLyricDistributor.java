@@ -51,7 +51,8 @@ public final class QQMusicLyricDistributor {
         return hasClass("com.tencent.qqmusic.core.song.SongInfo");
     }
 
-    private static int mLastIndex = -1;
+    private static int sLastIndex = -1;
+    private static Object sLastLyric;
 
     public static void hookLyric() {
         if (!isSupported()) return;
@@ -85,14 +86,12 @@ public final class QQMusicLyricDistributor {
                     @Override
                     public void after() {
                         int index = (int) getResult();
+                        Object lyric = getArg(1);
 
                         if (index != -1) {
-                            if (mLastIndex == index) {
+                            if (sLastLyric == lyric && sLastIndex == index) {
                                 return;
                             }
-                            mLastIndex = index;
-
-                            Object lyric = getArg(1);
 
                             String mTitle = (String) getField(lyric, "mTitle");
                             String mArtist = (String) getField(lyric, "mArtist");
@@ -137,9 +136,12 @@ public final class QQMusicLyricDistributor {
                                             )
                                         )
                                 );
+                                sLastLyric = lyric;
+                                sLastIndex = index;
                             }
                         } else {
-                            mLastIndex = -1;
+                            sLastLyric = null;
+                            sLastIndex = -1;
                         }
                     }
                 }

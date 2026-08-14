@@ -164,27 +164,23 @@ public final class KuGou extends AbsPublisher {
 
                         if (lyricData != null) {
                             SuperLyricData data = new SuperLyricData();
+                            data.setLyric(new SuperLyricLine(lyric));
 
-                            SuperLyricWord[] lyricWords = null;
                             int currentLine = (int) getField(currentLineField, getThisObject());
-                            String[][] wordss = (String[][]) callMethod(lyricData, "getWords");
+                            String[][] wordsByLine = (String[][]) callMethod(lyricData, "getWords");
                             long[][] wordBegins = (long[][]) callMethod(lyricData, "getWordBeginTime");
                             long[][] wordDelays = (long[][]) callMethod(lyricData, "getWordDelayTime");
-                            if (wordss != null && currentLine >= 0 && currentLine < wordss.length) {
-                                String[] words = wordss[currentLine];
-                                if (words == null) {
-                                    return;
-                                }
-
-                                long lyricDelay = 0L;
+                            if (isValidWordRow(currentLine, wordsByLine, wordBegins, wordDelays)) {
+                                String[] words = wordsByLine[currentLine];
                                 long[] begins = wordBegins[currentLine];
                                 long[] delays = wordDelays[currentLine];
-                                lyricWords = new SuperLyricWord[words.length];
+                                SuperLyricWord[] lyricWords = new SuperLyricWord[words.length];
+                                long lyricDelay = 0L;
                                 StringBuilder sb = new StringBuilder();
                                 for (int i = 0; i < words.length; i++) {
                                     long begin = begins[i];
                                     long delay = delays[i];
-                                    lyricDelay = lyricDelay + delay;
+                                    lyricDelay += delay;
 
                                     sb.append(words[i]);
                                     lyricWords[i] = new SuperLyricWord(words[i], (int) begin, (int) (begin + delay));
@@ -199,9 +195,9 @@ public final class KuGou extends AbsPublisher {
                                 );
                             }
 
-                            String[][] translateWordss = (String[][]) callMethod(lyricData, "getTranslateWords");
-                            if (translateWordss != null && currentLine < translateWordss.length) {
-                                String[] translateWords = translateWordss[currentLine];
+                            String[][] translatedWordsByLine = (String[][]) callMethod(lyricData, "getTranslateWords");
+                            if (translatedWordsByLine != null && currentLine >= 0 && currentLine < translatedWordsByLine.length) {
+                                String[] translateWords = translatedWordsByLine[currentLine];
                                 if (translateWords != null) {
                                     StringBuilder sb = new StringBuilder();
                                     for (String translateWord : translateWords) {
@@ -229,5 +225,19 @@ public final class KuGou extends AbsPublisher {
                 }
             }
         );
+    }
+
+    private static boolean isValidWordRow(int currentLine, String[][] words,
+                                          long[][] begins, long[][] delays) {
+        if (currentLine < 0 || words == null || begins == null || delays == null
+            || currentLine >= words.length || currentLine >= begins.length || currentLine >= delays.length) {
+            return false;
+        }
+
+        String[] wordRow = words[currentLine];
+        long[] beginRow = begins[currentLine];
+        long[] delayRow = delays[currentLine];
+        return wordRow != null && beginRow != null && delayRow != null
+            && beginRow.length >= wordRow.length && delayRow.length >= wordRow.length;
     }
 }

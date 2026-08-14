@@ -384,7 +384,7 @@ public final class Spotify extends AbsPublisher {
                 mAuthRefreshCounts.remove(retryKey);
                 logW(TAG, "Spotify authentication refresh exhausted for " + id);
             }
-        } catch (SpotifyLyricAnalysis.NoFoundLyricException e) {
+        } catch (SpotifyLyricAnalysis.LyricNotFoundException e) {
             logD(TAG, "No lyric found (404) for " + id);
         } catch (SpotifyLyricAnalysis.OversizeException e) {
             logW(TAG, "Spotify lyric response exceeds budget for " + id);

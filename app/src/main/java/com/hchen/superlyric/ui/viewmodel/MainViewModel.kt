@@ -26,6 +26,7 @@ import androidx.lifecycle.viewModelScope
 import com.hchen.hooktool.data.AppData
 import com.hchen.superlyric.data.ApiAppData
 import com.hchen.superlyric.data.PrefsKey
+import com.hchen.superlyric.ui.Application
 import com.hchen.superlyric.utils.PackageLoader
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -33,14 +34,29 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import java.util.concurrent.CompletableFuture
+import java.util.function.Consumer
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class MainViewModel(
-    private val prefsReadyCallback: ((SharedPreferences) -> Unit) -> Unit,
-    private val appLoadedCallback: (Runnable) -> Unit
+    private val addPrefsReadyListener: (Consumer<SharedPreferences>) -> Unit,
+    private val removePrefsReadyListener: (Consumer<SharedPreferences>) -> Unit,
+    private val addAppLoadedListener: (Runnable) -> Unit,
+    private val removeAppLoadedListener: (Runnable) -> Unit,
+    private val reloadApps: () -> CompletableFuture<Void>
 ) : ViewModel() {
-    private lateinit var prefs: SharedPreferences
+    @Volatile
+    private var prefs: SharedPreferences? = null
 
-    private val _logLevel = MutableStateFlow<Int>(0)
+    private val prefsReadyListener = Consumer<SharedPreferences> { sharedPreferences ->
+        prefs = sharedPreferences
+        loadPrefs(sharedPreferences)
+    }
+    private val appLoadedListener = Runnable { loadApps() }
+
+    private val _logLevel = MutableStateFlow(0)
     val logLevel = _logLevel.asStateFlow()
 
     private val _hookApps = MutableStateFlow<List<AppData>>(emptyList())
@@ -59,24 +75,19 @@ class MainViewModel(
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
 
     init {
-        prefsReadyCallback { sharedPreferences ->
-            prefs = sharedPreferences
-            loadPrefs()
-        }
-        appLoadedCallback(Runnable { loadApps() })
+        addPrefsReadyListener(prefsReadyListener)
+        addAppLoadedListener(appLoadedListener)
     }
 
     private fun loadApps() {
-        viewModelScope.launch(Dispatchers.IO) {
-            _hookApps.value = PackageLoader.getMediaApps().toList()
-            _apiApps.value = PackageLoader.getMediaApiApps().toList()
-        }
+        _hookApps.value = PackageLoader.getMediaApps().toList()
+        _apiApps.value = PackageLoader.getMediaApiApps().toList()
     }
 
-    private fun loadPrefs() {
+    private fun loadPrefs(sharedPreferences: SharedPreferences) {
         viewModelScope.launch(Dispatchers.IO) {
-            if (::prefs.isInitialized) {
-                _logLevel.value = prefs.getInt(PrefsKey.LOG_LEVEL, 0)
+            if (prefs === sharedPreferences && Application.getRemotePreferences() === sharedPreferences) {
+                _logLevel.value = sharedPreferences.getInt(PrefsKey.LOG_LEVEL, 0)
             }
         }
     }
@@ -84,32 +95,49 @@ class MainViewModel(
     fun handleAction(action: MainUiAction) {
         when (action) {
             is MainUiAction.UpdateLogLevel -> {
-                prefs.edit { putInt(PrefsKey.LOG_LEVEL, action.value) }
-                _logLevel.value = action.value
+                val currentPrefs = Application.getRemotePreferences()
+                if (currentPrefs != null && prefs === currentPrefs) {
+                    currentPrefs.edit { putInt(PrefsKey.LOG_LEVEL, action.value) }
+                    _logLevel.value = action.value
+                }
             }
 
-            is MainUiAction.Refresh -> {
-                refreshData()
-            }
-
-            is MainUiAction.Searching -> {
-                _isSearching.value = action.isSearching
-            }
-
-            is MainUiAction.CurrentApp -> {
-                _currentApp.value = action.appData
-            }
+            is MainUiAction.Refresh -> refreshData()
+            is MainUiAction.Searching -> _isSearching.value = action.isSearching
+            is MainUiAction.CurrentApp -> _currentApp.value = action.appData
         }
     }
 
     private fun refreshData() {
         viewModelScope.launch(Dispatchers.IO) {
             _isRefreshing.value = true
-            delay(500)
+            try {
+                delay(500)
+                reloadApps().awaitCompletion()
+                loadApps()
+            } finally {
+                _isRefreshing.value = false
+            }
+        }
+    }
 
-            loadApps()
+    override fun onCleared() {
+        removePrefsReadyListener(prefsReadyListener)
+        removeAppLoadedListener(appLoadedListener)
+        prefs = null
+        super.onCleared()
+    }
 
-            _isRefreshing.value = false
+    private suspend fun CompletableFuture<Void>.awaitCompletion() {
+        suspendCancellableCoroutine { continuation ->
+            whenComplete { _, throwable ->
+                if (throwable == null) {
+                    continuation.resume(Unit)
+                } else {
+                    continuation.resumeWithException(throwable)
+                }
+            }
+            continuation.invokeOnCancellation { cancel(true) }
         }
     }
 }
@@ -122,10 +150,20 @@ sealed class MainUiAction {
 }
 
 class MainViewModelFactory(
-    private val prefsReadyCallback: ((SharedPreferences) -> Unit) -> Unit,
-    private val appLoadedCallback: (Runnable) -> Unit
+    private val addPrefsReadyListener: (Consumer<SharedPreferences>) -> Unit,
+    private val removePrefsReadyListener: (Consumer<SharedPreferences>) -> Unit,
+    private val addAppLoadedListener: (Runnable) -> Unit,
+    private val removeAppLoadedListener: (Runnable) -> Unit,
+    private val reloadApps: () -> CompletableFuture<Void>
 ) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        return MainViewModel(prefsReadyCallback, appLoadedCallback) as T
+        return MainViewModel(
+            addPrefsReadyListener,
+            removePrefsReadyListener,
+            addAppLoadedListener,
+            removeAppLoadedListener,
+            reloadApps
+        ) as T
     }
 }

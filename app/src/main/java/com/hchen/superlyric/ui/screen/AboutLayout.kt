@@ -100,8 +100,13 @@ fun AboutLayout(
     isWideScreen: Boolean = false
 ) {
     val context = LocalContext.current
-    val icon = remember {
-        context.packageManager.getApplicationIcon(context.packageName)
+    val iconPainter = remember(context) {
+        BitmapPainter(
+            context.packageManager
+                .getApplicationIcon(context.packageName)
+                .toBitmap()
+                .asImageBitmap()
+        )
     }
 
     val contributor = remember {
@@ -242,7 +247,7 @@ fun AboutLayout(
                     ) {
                         Image(
                             modifier = Modifier.size(88.dp),
-                            painter = BitmapPainter(icon.toBitmap().asImageBitmap()),
+                            painter = iconPainter,
                             contentDescription = null,
                         )
                     }
@@ -512,7 +517,7 @@ private fun openUrl(context: Context, url: String) {
         }
 
         context.startActivity(intent)
-    } catch (e: Exception) {
-        e.printStackTrace()
+    } catch (_: Exception) {
+        Toast.makeText(context, R.string.no_activity, Toast.LENGTH_SHORT).show()
     }
 }

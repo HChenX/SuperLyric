@@ -44,8 +44,10 @@ import io.github.libxposed.service.XposedServiceHelper;
  * @author 焕晨HChen
  */
 public class Application extends android.app.Application implements XposedServiceHelper.OnServiceListener {
-    private static boolean isXposedActive = false;
-    private static SharedPreferences mRemotePreferences;
+    private static final Object PREFS_LOCK = new Object();
+    private static volatile boolean isXposedActive = false;
+    private static volatile XposedService mXposedService;
+    private static volatile SharedPreferences mRemotePreferences;
     private static final List<Consumer<SharedPreferences>> listeners = new CopyOnWriteArrayList<>();
 
     @Override
@@ -72,34 +74,51 @@ public class Application extends android.app.Application implements XposedServic
         return mRemotePreferences;
     }
 
-    public static void addPrefsReadyListener(Consumer<SharedPreferences> listener) {
-        if (mRemotePreferences != null) {
-            listener.accept(mRemotePreferences);
-        } else {
+    public static void addPrefsReadyListener(@NonNull Consumer<SharedPreferences> listener) {
+        SharedPreferences remotePreferences;
+        synchronized (PREFS_LOCK) {
             listeners.add(listener);
+            remotePreferences = mRemotePreferences;
         }
+        if (remotePreferences != null) {
+            listener.accept(remotePreferences);
+        }
+    }
+
+    public static void removePrefsReadyListener(@NonNull Consumer<SharedPreferences> listener) {
+        listeners.remove(listener);
     }
 
     @Override
     public void onServiceBind(@NonNull XposedService service) {
         isXposedActive = true;
-        mRemotePreferences = service.getRemotePreferences(ModuleConfig.getPrefsName());
+        SharedPreferences remotePreferences = service.getRemotePreferences(ModuleConfig.getPrefsName());
+        List<Consumer<SharedPreferences>> listenersSnapshot;
+        synchronized (PREFS_LOCK) {
+            mXposedService = service;
+            mRemotePreferences = remotePreferences;
+            listenersSnapshot = List.copyOf(listeners);
+        }
 
         PrefsTool.prefs(this)
             .edit()
-            .putInt(PrefsKey.LOG_LEVEL, mRemotePreferences.getInt(PrefsKey.LOG_LEVEL, 0))
+            .putInt(PrefsKey.LOG_LEVEL, remotePreferences.getInt(PrefsKey.LOG_LEVEL, 0))
             .apply();
 
-        for (Consumer<SharedPreferences> l : listeners) {
-            l.accept(mRemotePreferences);
+        for (Consumer<SharedPreferences> listener : listenersSnapshot) {
+            listener.accept(remotePreferences);
         }
-        listeners.clear();
     }
 
     @Override
     public void onServiceDied(@NonNull XposedService service) {
-        isXposedActive = false;
-        mRemotePreferences = null;
-        listeners.clear();
+        synchronized (PREFS_LOCK) {
+            if (mXposedService != service) {
+                return;
+            }
+            isXposedActive = false;
+            mXposedService = null;
+            mRemotePreferences = null;
+        }
     }
 }

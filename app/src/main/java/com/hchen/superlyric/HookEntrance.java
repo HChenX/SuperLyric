@@ -38,6 +38,7 @@ import com.hchen.superlyric.data.LocalConfig;
 import com.hchen.superlyric.utils.LyricCacheStore;
 
 import java.lang.reflect.InvocationTargetException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -78,7 +79,7 @@ public final class HookEntrance extends ModuleEntrance {
         };
     }
 
-    private final HashMap<String, AbsModule> modules = new HashMap<>();
+    private final HashMap<String, List<AbsModule>> modules = new HashMap<>();
     private final HashMap<String, ClassLoader> moduleClassLoaders = new HashMap<>();
     private final ExecutorService cacheMigrationExecutor = Executors.newSingleThreadExecutor();
     @Nullable
@@ -105,8 +106,9 @@ public final class HookEntrance extends ModuleEntrance {
 
                 ClassLoader previousLoader = moduleClassLoaders.get(param.getPackageName());
                 if (modules.containsKey(param.getPackageName()) && previousLoader == param.getClassLoader()) {
-                    AbsModule module = Objects.requireNonNull(modules.get(param.getPackageName()));
-                    module.handlePackageReady(param);
+                    for (AbsModule module : Objects.requireNonNull(modules.get(param.getPackageName()))) {
+                        module.handlePackageReady(param);
+                    }
                     return;
                 }
                 if (previousLoader != null && previousLoader != param.getClassLoader()) {
@@ -115,6 +117,7 @@ public final class HookEntrance extends ModuleEntrance {
                     return;
                 }
 
+                List<AbsModule> packageModules = new ArrayList<>();
                 for (String path : Objects.requireNonNull(HookMaps.ON_PACKAGE_LOADED.get(param.getPackageName()))) {
                     try {
                         AbsModule module = (AbsModule) HookEntrance.class.getClassLoader()
@@ -123,14 +126,15 @@ public final class HookEntrance extends ModuleEntrance {
                             .newInstance();
 
                         module.handlePackageReady(param);
-                        modules.put(param.getPackageName(), module);
-                        moduleClassLoaders.put(param.getPackageName(), param.getClassLoader());
+                        packageModules.add(module);
                     } catch (IllegalAccessException | InstantiationException |
                              InvocationTargetException | NoSuchMethodException |
                              ClassNotFoundException e) {
                         throw new RuntimeException(e);
                     }
                 }
+                modules.put(param.getPackageName(), packageModules);
+                moduleClassLoaders.put(param.getPackageName(), param.getClassLoader());
             } finally {
                 DexkitCache.close();
             }
@@ -145,8 +149,9 @@ public final class HookEntrance extends ModuleEntrance {
         Context appContext = context.getApplicationContext();
         if (lastApplicationContext == appContext) return;
         cacheMigrationExecutor.execute(() -> clearLyricCacheOnFormatUpgrade(appContext));
-        for (AbsModule module : modules.values()) {
-            if (module != null) {
+        List<AbsModule> packageModules = modules.get(context.getPackageName());
+        if (packageModules != null) {
+            for (AbsModule module : packageModules) {
                 module.handleApplicationCreated(context);
             }
         }

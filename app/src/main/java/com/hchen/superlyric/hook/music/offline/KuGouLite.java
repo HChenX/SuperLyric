@@ -83,11 +83,11 @@ public final class KuGouLite extends AbsPublisher {
                         }
                         if (lyricData != null) {
                             int currentLine = (int) getField(getThisObject(), "a");
-                            String[][] wordss = (String[][]) getField(lyricData, "f");
+                            String[][] wordsByLine = (String[][]) getField(lyricData, "f");
                             long[][] wordBegins = (long[][]) getField(lyricData, "i");
                             long[][] wordDelays = (long[][]) getField(lyricData, "j");
-                            String[][] translateWordss = (String[][]) getField(lyricData, "k");
-                            parseData(currentLine, wordss, translateWordss, wordBegins, wordDelays);
+                            String[][] translatedWordsByLine = (String[][]) getField(lyricData, "k");
+                            parseData(lyric, currentLine, wordsByLine, translatedWordsByLine, wordBegins, wordDelays);
                         }
                     } else {
                         sendStop();
@@ -111,11 +111,11 @@ public final class KuGouLite extends AbsPublisher {
                         Object lyricData = callMethod(callStaticMethod("com.kugou.framework.lyric.l", "a"), "k");
                         if (lyricData != null) {
                             int currentLine = (int) getField(getThisObject(), "a");
-                            String[][] wordss = (String[][]) getField(lyricData, "e");
-                            String[][] translateWordss = (String[][]) getField(lyricData, "h");
+                            String[][] wordsByLine = (String[][]) getField(lyricData, "e");
+                            String[][] translatedWordsByLine = (String[][]) getField(lyricData, "h");
                             long[][] wordBegins = (long[][]) getField(lyricData, "f");
                             long[][] wordDelays = (long[][]) getField(lyricData, "g");
-                            parseData(currentLine, wordss, translateWordss, wordBegins, wordDelays);
+                            parseData(lyric, currentLine, wordsByLine, translatedWordsByLine, wordBegins, wordDelays);
                         }
                     } else {
                         sendStop();
@@ -125,26 +125,22 @@ public final class KuGouLite extends AbsPublisher {
         );
     }
 
-    private void parseData(int currentLine, String[][] wordss, String[][] translateWordss, long[][] wordBegins, long[][] wordDelays) {
+    private void parseData(String fallbackLyric, int currentLine, String[][] wordsByLine,
+                           String[][] translatedWordsByLine, long[][] wordBegins, long[][] wordDelays) {
         SuperLyricData data = new SuperLyricData();
+        data.setLyric(new SuperLyricLine(fallbackLyric));
 
-        SuperLyricWord[] lyricWords = null;
-
-        if (wordss != null && currentLine >= 0 && currentLine < wordss.length) {
-            String[] words = wordss[currentLine];
-            if (words == null) {
-                return;
-            }
-
-            long lyricDelay = 0L;
+        if (isValidWordRow(currentLine, wordsByLine, wordBegins, wordDelays)) {
+            String[] words = wordsByLine[currentLine];
             long[] begins = wordBegins[currentLine];
             long[] delays = wordDelays[currentLine];
-            lyricWords = new SuperLyricWord[words.length];
+            SuperLyricWord[] lyricWords = new SuperLyricWord[words.length];
+            long lyricDelay = 0L;
             StringBuilder sb = new StringBuilder();
             for (int i = 0; i < words.length; i++) {
                 long begin = begins[i];
                 long delay = delays[i];
-                lyricDelay = lyricDelay + delay;
+                lyricDelay += delay;
 
                 sb.append(words[i]);
                 lyricWords[i] = new SuperLyricWord(words[i], (int) begin, (int) (begin + delay));
@@ -159,8 +155,8 @@ public final class KuGouLite extends AbsPublisher {
             );
         }
 
-        if (translateWordss != null && currentLine < translateWordss.length) {
-            String[] translateWords = translateWordss[currentLine];
+        if (translatedWordsByLine != null && currentLine >= 0 && currentLine < translatedWordsByLine.length) {
+            String[] translateWords = translatedWordsByLine[currentLine];
             if (translateWords != null) {
                 StringBuilder sb = new StringBuilder();
                 for (String translateWord : translateWords) {
@@ -175,5 +171,19 @@ public final class KuGouLite extends AbsPublisher {
         }
 
         sendLyric(data);
+    }
+
+    private static boolean isValidWordRow(int currentLine, String[][] words,
+                                          long[][] begins, long[][] delays) {
+        if (currentLine < 0 || words == null || begins == null || delays == null
+            || currentLine >= words.length || currentLine >= begins.length || currentLine >= delays.length) {
+            return false;
+        }
+
+        String[] wordRow = words[currentLine];
+        long[] beginRow = begins[currentLine];
+        long[] delayRow = delays[currentLine];
+        return wordRow != null && beginRow != null && delayRow != null
+            && beginRow.length >= wordRow.length && delayRow.length >= wordRow.length;
     }
 }

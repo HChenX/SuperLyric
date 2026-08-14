@@ -49,6 +49,7 @@ import io.github.libxposed.api.XposedModuleInterface;
  * Apple Music
  *
  * @author YuKongA
+ * @author AnserJim
  */
 @HookThis(targetPackage = "com.apple.android.music")
 public final class Apple extends AbsPublisher {
@@ -62,7 +63,7 @@ public final class Apple extends AbsPublisher {
     private LyricsLinePtrHelper lyricsLinePtrHelper;
     private final LinkedList<LyricsLine> lyricList = new LinkedList<>();
     private Object playbackItem;
-    private String currentTitle = "";
+    private String currentPlaybackItemId;
     private LyricsLine lastShownLyric;
     private boolean isRunning = false;
 
@@ -160,21 +161,17 @@ public final class Apple extends AbsPublisher {
                         Object mediaItem = callMethod(newItem, "getItem");
                         if (mediaItem == null) return;
 
-                        String newTitle = (String) callMethod(mediaItem, "getTitle");
-                        logD(TAG, "onCurrentItemChanged: " + newTitle);
+                        Object pi = getField(mediaItem, "playbackItem");
+                        Object newPlaybackItem = pi != null ? pi : mediaItem;
+                        String newPlaybackItemId = (String) callMethod(newPlaybackItem, "getId");
 
-                        if (newTitle != null && !currentTitle.equals(newTitle)) {
+                        if (newPlaybackItemId != null && !Objects.equals(currentPlaybackItemId, newPlaybackItemId)) {
                             sendStop();
                             lyricList.clear();
                             isRunning = false;
                             lastShownLyric = null;
-                            currentTitle = newTitle;
-                            Object pi = getField(mediaItem, "playbackItem");
-                            playbackItem = pi != null ? pi : mediaItem;
-                            logD(TAG, "Current song title: " + currentTitle +
-                                " hasLyrics=" + callMethod(playbackItem, "hasLyrics") +
-                                " id=" + callMethod(playbackItem, "getId") +
-                                " class=" + playbackItem.getClass().getSimpleName());
+                            currentPlaybackItemId = newPlaybackItemId;
+                            playbackItem = newPlaybackItem;
 
                             mainHandler.postDelayed(() -> requestLyrics(), 400);
                         }
@@ -199,18 +196,17 @@ public final class Apple extends AbsPublisher {
                         Object mediaItem = callMethod(currentItem, "getItem");
                         if (mediaItem == null) return;
 
-                        String newTitle = (String) callMethod(mediaItem, "getTitle");
-                        logD(TAG, "onMetadataUpdated: " + newTitle);
+                        Object pi = getField(mediaItem, "playbackItem");
+                        Object newPlaybackItem = pi != null ? pi : mediaItem;
+                        String newPlaybackItemId = (String) callMethod(newPlaybackItem, "getId");
 
-                        if (newTitle != null && !currentTitle.equals(newTitle)) {
+                        if (newPlaybackItemId != null && !Objects.equals(currentPlaybackItemId, newPlaybackItemId)) {
                             sendStop();
                             lyricList.clear();
                             isRunning = false;
                             lastShownLyric = null;
-                            currentTitle = newTitle;
-                            Object pi = getField(mediaItem, "playbackItem");
-                            playbackItem = pi != null ? pi : mediaItem;
-                            logD(TAG, "Current song title (metadata): " + currentTitle);
+                            currentPlaybackItemId = newPlaybackItemId;
+                            playbackItem = newPlaybackItem;
 
                             mainHandler.postDelayed(() -> requestLyrics(), 400);
                         }
@@ -300,7 +296,6 @@ public final class Apple extends AbsPublisher {
                             }
                             if (flag[0] == 1 && flag[1] == 1) {
                                 playbackItem = getThisObject();
-                                logD(TAG, "Current music ID: " + trackId);
                             }
                         }
                     }
@@ -369,7 +364,6 @@ public final class Apple extends AbsPublisher {
 
                 if (lyric != null && start != null && end != null) {
                     LyricsLine line = new LyricsLine(start, end, lyric, superLyricWords, translation);
-                    logD(TAG, "Lyric Line: " + line);
                     newLyricList.add(line);
                 }
                 i++;

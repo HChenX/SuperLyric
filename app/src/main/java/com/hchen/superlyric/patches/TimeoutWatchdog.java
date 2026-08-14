@@ -30,50 +30,50 @@ import com.hchen.superlyric.hook.AbsPublisher;
  * @author 焕晨HChen
  */
 public final class TimeoutWatchdog {
-    private static final HandlerThread mThread = new HandlerThread("TimeoutWatchdog") {
+    private static final HandlerThread sThread = new HandlerThread("TimeoutWatchdog") {
         {
             start();
         }
     };
-    private static final Handler mHandler = new Handler(mThread.getLooper());
-    private static boolean mIsRunning = false;
-    private static final Runnable mRunnable = new Runnable() {
+    private static final Handler sHandler = new Handler(sThread.getLooper());
+    private static boolean sIsRunning = false;
+    private static final Runnable sTimeoutCheck = new Runnable() {
         @Override
         public void run() {
-            if (!mIsRunning) {
+            if (!sIsRunning) {
                 return;
             }
 
             AudioManager audioManager = AbsPublisher.getAudioManager();
             if (audioManager == null) {
                 // AudioManager 尚未就绪，稍后重试
-                mHandler.postDelayed(this, 1000);
+                sHandler.postDelayed(this, 1000);
                 return;
             }
             if (!audioManager.isMusicActive()) {
                 AbsPublisher.sendStop();
                 stop();
             } else {
-                mHandler.postDelayed(this, 1000);
+                sHandler.postDelayed(this, 1000);
             }
         }
     };
 
     public static synchronized void start() {
-        if (mIsRunning) {
+        if (sIsRunning) {
             return;
         }
 
-        mIsRunning = true;
-        mHandler.post(mRunnable);
+        sIsRunning = true;
+        sHandler.post(sTimeoutCheck);
     }
 
     public static synchronized void stop() {
-        if (!mIsRunning) {
+        if (!sIsRunning) {
             return;
         }
 
-        mIsRunning = false;
-        mHandler.removeCallbacks(mRunnable);
+        sIsRunning = false;
+        sHandler.removeCallbacks(sTimeoutCheck);
     }
 }

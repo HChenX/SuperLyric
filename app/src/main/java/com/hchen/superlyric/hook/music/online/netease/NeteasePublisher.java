@@ -129,10 +129,14 @@ public abstract class NeteasePublisher extends AbsPublisher {
     private volatile LyricSourceMachine.State mSourceState =
         LyricSourceMachine.initial(MAX_LYRIC_RETRIES);
 
-    // 曲内有限重试：mRetryTrackId 标记「待执行 / 执行中」的重试音轨；mRetryToken 使
-    // 切歌 / 停止 / 暂停后的旧重试任务立即失效，不残留
+    // 曲内有限重试：mRetryTrackId 标记当前 generation 的重试音轨；mRetryToken 使
+    // 切歌 / 停止 / 暂停后的旧任务失效；锁内每个 trackId + generation 仅一个 pending Runnable
+    private final Object mRetryLock = new Object();
     private volatile long mRetryTrackId = -1L;
+    private long mRetryGeneration = -1L;
     private final AtomicLong mRetryToken = new AtomicLong();
+    @Nullable
+    private Runnable mPendingRetry;
 
     // 异步拉取（缓存线程池：快速切歌时新请求不被慢的旧请求阻塞）
     private final ThreadPoolExecutor mDownloadExecutor = new ThreadPoolExecutor(
@@ -688,7 +692,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
             TrackSnapshot current = mTrackRef.get();
             if (current == null || current.generation != generation || current.song.id != id) return;
             if (!mTrackRef.compareAndSet(current, current.clearLyric())) return;
-            clearRetryFor(id);
+            clearRetryFor(id, generation);
             dispatchSourceEvent(LyricSourceMachine.Event.fetchEmpty(id));
         }
         logD(TAG, message);
@@ -702,60 +706,111 @@ public abstract class NeteasePublisher extends AbsPublisher {
     private void scheduleLyricRetry(long id, long generation) {
         if (!isCurrentTrack(id, generation)) return;
         LyricSourceMachine.State state = mSourceState;
-        if (state.trackId != id) return;
+        if (state.trackId != id
+            || state.contract != LyricSourceMachine.Contract.WAITING
+            || state.failedAttempts <= 0
+            || state.failedAttempts >= state.maxRetries) {
+            clearRetryFor(id, generation);
+            if (state.trackId == id && state.failedAttempts >= state.maxRetries) {
+                logW(TAG, "Lyric retry limit reached; keep blank until next track");
+            }
+            return;
+        }
         // 暂停 / 停止等非播放状态下不安排新重试（与取消语义一致，不残留任务）
         if (mPlayback == null || mPlayback.state != PlaybackState.STATE_PLAYING) return;
-        if (!LyricSourceMachine.shouldRetry(state)) {
-            clearRetryFor(id);
-            logW(TAG, "Lyric retry gave up for " + id + " after " + state.failedAttempts
-                + " attempt(s), keep blank until next track");
-            return;
-        }
 
         long delay = LyricSourceMachine.retryDelayMs(state.failedAttempts);
-        final long token = mRetryToken.get();
-        mRetryTrackId = id;
-        // 校验窗口：若安排期间恰好发生取消（停止 / 暂停 / 切歌），立即撤销本次调度
-        if (token != mRetryToken.get()) {
-            clearRetryFor(id);
-            return;
+        synchronized (mRetryLock) {
+            LyricSourceMachine.State currentState = mSourceState;
+            PlaybackSnapshot playback = mPlayback;
+            if (!isCurrentTrack(id, generation)
+                || currentState.trackId != id
+                || currentState.contract != LyricSourceMachine.Contract.WAITING
+                || currentState.failedAttempts <= 0
+                || currentState.failedAttempts >= currentState.maxRetries
+                || playback == null
+                || playback.state != PlaybackState.STATE_PLAYING) {
+                return;
+            }
+
+            final long token = mRetryToken.get();
+            if (mPendingRetry != null
+                && mRetryTrackId == id
+                && mRetryGeneration == generation) {
+                return;
+            }
+            if (mPendingRetry != null) {
+                mLyricHandler.removeCallbacks(mPendingRetry);
+                mPendingRetry = null;
+            }
+
+            mRetryTrackId = id;
+            mRetryGeneration = generation;
+            Runnable retry = new Runnable() {
+                @Override
+                public void run() {
+                    synchronized (mRetryLock) {
+                        if (mPendingRetry != this) return;
+                        // 执行前清引用，允许本次请求失败后安排下一次重试
+                        mPendingRetry = null;
+                    }
+                    if (token != mRetryToken.get() || !isCurrentTrack(id, generation)) return;
+
+                    LyricSourceMachine.State executingState = mSourceState;
+                    PlaybackSnapshot executingPlayback = mPlayback;
+                    if (executingState.trackId != id
+                        || executingState.contract != LyricSourceMachine.Contract.WAITING
+                        || executingState.failedAttempts <= 0
+                        || executingState.failedAttempts >= executingState.maxRetries
+                        || executingPlayback == null
+                        || executingPlayback.state != PlaybackState.STATE_PLAYING) {
+                        clearRetryFor(id, generation);
+                        return;
+                    }
+                    fetchLyricsForTrack(id, generation);
+                }
+            };
+            mPendingRetry = retry;
+            mLyricHandler.postDelayed(retry, delay);
         }
-        logI(TAG, "Lyric retry scheduled for " + id + " retry#" + state.failedAttempts
-            + ", delay=" + delay + "ms");
-        mLyricHandler.postDelayed(() -> {
-            if (token != mRetryToken.get() || !isCurrentTrack(id, generation)) return;
-            if (mSourceState.trackId != id) {
-                clearRetryFor(id);
-                return;
-            }
-            if (!LyricSourceMachine.shouldRetry(mSourceState)) {
-                clearRetryFor(id);
-                return;
-            }
-            logD(TAG, "Lyric retry executing for " + id + " retry#" + mSourceState.failedAttempts);
-            fetchLyricsForTrack(id, generation);
-        }, delay);
     }
 
     /**
-     * 取消指定音轨的待执行重试（切歌 / 广告 / 停止 / 暂停）：token 失效旧任务，不残留。
+     * 取消待执行重试（切歌 / 广告 / 停止 / 暂停）：移除回调并使旧 token 失效。
      */
     private void cancelLyricRetry(long id) {
-        if (mRetryTrackId == id) {
+        synchronized (mRetryLock) {
+            if (mPendingRetry != null) {
+                mLyricHandler.removeCallbacks(mPendingRetry);
+                mPendingRetry = null;
+            }
             mRetryTrackId = -1L;
-            logI(TAG, "Lyric retry cancelled for " + id);
+            mRetryGeneration = -1L;
+            // 无条件递增：即使失败回调与取消并发，也失效所有旧调度和执行中任务
+            mRetryToken.incrementAndGet();
         }
-        // 无条件递增代次：即使标记尚未写入（失败回调与暂停并发），也失效所有旧调度
-        mRetryToken.incrementAndGet();
     }
 
     /**
-     * 清除指定音轨的重试标记并使旧调度任务失效（成功 / 空结果 / 放弃 / 取消共用）。
+     * 清除指定音轨代次的重试标记并使旧任务失效（成功 / 空结果 / 放弃共用）。
      */
-    private void clearRetryFor(long id) {
-        if (mRetryTrackId != id) return;
-        mRetryTrackId = -1L;
-        mRetryToken.incrementAndGet();
+    private void clearRetryFor(long id, long generation) {
+        synchronized (mRetryLock) {
+            if (mRetryTrackId != id || mRetryGeneration != generation) return;
+            if (mPendingRetry != null) {
+                mLyricHandler.removeCallbacks(mPendingRetry);
+                mPendingRetry = null;
+            }
+            mRetryTrackId = -1L;
+            mRetryGeneration = -1L;
+            mRetryToken.incrementAndGet();
+        }
+    }
+
+    private boolean isRetryFor(long id, long generation) {
+        synchronized (mRetryLock) {
+            return mRetryTrackId == id && mRetryGeneration == generation;
+        }
     }
 
     /**
@@ -837,7 +892,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
 
         if (data.type == NeteaseLyricAnalysis.ResultType.PURE_MUSIC || !data.hasLyrics()) {
             if (!mTrackRef.compareAndSet(current, current.clearLyric())) return false;
-            clearRetryFor(id);
+            clearRetryFor(id, generation);
             dispatchSourceEvent(LyricSourceMachine.Event.fetchEmpty(id));
             logD(TAG, data.type == NeteaseLyricAnalysis.ResultType.PURE_MUSIC
                 ? "Pure music flag for " + id + ", keep blank"
@@ -845,13 +900,13 @@ public abstract class NeteasePublisher extends AbsPublisher {
             return false;
         }
 
-        boolean retrySuccess = mRetryTrackId == id;
+        boolean retrySuccess = isRetryFor(id, generation);
         int failedBefore = mSourceState.failedAttempts;
         if (!mTrackRef.compareAndSet(current, current.withLyric(new LyricSnapshot(id, data)))) {
             logD(TAG, "Track changed while applying lyric for " + id + ", discard");
             return false;
         }
-        if (retrySuccess) clearRetryFor(id);
+        if (retrySuccess) clearRetryFor(id, generation);
         dispatchSourceEvent(retrySuccess
             ? LyricSourceMachine.Event.retrySucceeded(id)
             : LyricSourceMachine.Event.fetchSucceeded(id));

@@ -86,7 +86,11 @@ public final class Bodian extends AbsPublisher {
     private int mCachedDuration = -1;
     private int mCurrentPosition;
     private String mCachedRid;
-    private SuperLyricData mLastSentData;
+    private LineData mLastSentLine;
+    private String mLastSentFallbackText;
+    private String mLastSentTitle;
+    private String mLastSentArtist;
+    private String mLastSentAlbum;
 
     // 运行时发现的混淆字段（e.g/e$b）
     private Field mLineTimestampField;   // e$b: Integer 时间戳
@@ -132,27 +136,31 @@ public final class Bodian extends AbsPublisher {
                 public void before() {
                     String lyric = (String) getArg(0);
                     if (lyric == null || lyric.trim().isEmpty()) {
+                        clearLyricCache();
                         sendStop();
                         return;
                     }
 
-                    // 去重
-                    if (mLastSentData != null) {
-                        SuperLyricLine lastLyric = mLastSentData.getLyric();
-                        if (lastLyric != null && Objects.equals(lyric, lastLyric.getText())) {
-                            return;
-                        }
-                    }
-
                     // 按当前播放位置匹配歌词行
                     LineData matchedLine = findLineByPosition(mCurrentPosition);
+                    if (matchedLine != null && !Objects.equals(matchedLine.text, lyric)) {
+                        matchedLine = null;
+                    }
+
+                    if (matchedLine == mLastSentLine
+                        && Objects.equals(mLastSentFallbackText, lyric)
+                        && Objects.equals(mLastSentTitle, mCachedTitle)
+                        && Objects.equals(mLastSentArtist, mCachedArtist)
+                        && Objects.equals(mLastSentAlbum, mCachedAlbum)) {
+                        return;
+                    }
 
                     SuperLyricData data = new SuperLyricData();
                     data.setTitle(mCachedTitle);
                     data.setArtist(mCachedArtist);
                     data.setAlbum(mCachedAlbum);
 
-                    if (matchedLine != null && Objects.equals(matchedLine.text, lyric)) {
+                    if (matchedLine != null) {
                         data.setLyric(
                             new SuperLyricLine(lyric, matchedLine.words, matchedLine.startTime, matchedLine.endTime)
                         );
@@ -166,8 +174,12 @@ public final class Bodian extends AbsPublisher {
                         data.setLyric(new SuperLyricLine(lyric));
                     }
 
-                    mLastSentData = data;
                     sendLyric(data);
+                    mLastSentLine = matchedLine;
+                    mLastSentFallbackText = lyric;
+                    mLastSentTitle = mCachedTitle;
+                    mLastSentArtist = mCachedArtist;
+                    mLastSentAlbum = mCachedAlbum;
                 }
             }
         );
@@ -190,7 +202,7 @@ public final class Bodian extends AbsPublisher {
                         mCachedAlbum = null;
                         mCachedDuration = -1;
                         mCachedLines.clear();
-                        mLastSentData = null;
+                        clearLastSentData();
                         sendStop();
                     }
 
@@ -330,6 +342,7 @@ public final class Bodian extends AbsPublisher {
 
             if (isTranslation && pendingLine != null) {
                 pendingLine.translation = text;
+                pendingLine.translationWords = wordArray;
             } else {
                 pendingLine = new LineData();
                 pendingLine.text = text;
@@ -441,6 +454,25 @@ public final class Bodian extends AbsPublisher {
         } catch (Exception ignored) {
             return 0;
         }
+    }
+
+    private void clearLastSentData() {
+        mLastSentLine = null;
+        mLastSentFallbackText = null;
+        mLastSentTitle = null;
+        mLastSentArtist = null;
+        mLastSentAlbum = null;
+    }
+
+    private void clearLyricCache() {
+        mCachedLines.clear();
+        mCachedTitle = null;
+        mCachedArtist = null;
+        mCachedAlbum = null;
+        mCachedDuration = -1;
+        mCurrentPosition = 0;
+        mCachedRid = null;
+        clearLastSentData();
     }
 
     /**
