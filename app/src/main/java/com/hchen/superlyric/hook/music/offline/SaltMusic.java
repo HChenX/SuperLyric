@@ -28,6 +28,7 @@ import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.processor.HookThis;
 import com.hchen.superlyric.hook.AbsPublisher;
 import com.hchen.superlyricapi.SuperLyricData;
+import com.hchen.superlyricapi.SuperLyricHelper;
 import com.hchen.superlyricapi.SuperLyricLine;
 import com.hchen.superlyricapi.SuperLyricWord;
 
@@ -127,14 +128,6 @@ public final class SaltMusic extends AbsPublisher {
                 ).single();
             }
         });
-        Field typeField = Arrays.stream(runMethod.getDeclaringClass().getDeclaredFields())
-            .filter(new Predicate<Field>() {
-                @Override
-                public boolean test(Field field) {
-                    return Objects.equals(field.getType(), int.class);
-                }
-            }).findFirst().orElseThrow();
-
         Field objectField = Arrays.stream(runMethod.getDeclaringClass().getDeclaredFields())
             .filter(new Predicate<Field>() {
                 @Override
@@ -143,17 +136,23 @@ public final class SaltMusic extends AbsPublisher {
                 }
             }).findFirst().orElseThrow();
 
-        Objects.requireNonNull(typeField);
         Objects.requireNonNull(objectField);
 
-        Field[] songFields = Arrays.stream(findClass("com.salt.music.service.MusicController").getDeclaredFields()).filter(
-            new Predicate<Field>() {
-                @Override
-                public boolean test(Field field) {
-                    return Objects.equals(field.getType(), findClass("kotlinx.coroutines.flow.MutableStateFlow"));
+        Field[] tmpSongFields = new Field[0];
+        try {
+            tmpSongFields = Arrays.stream(findClass("com.salt.music.service.MusicController").getDeclaredFields()).filter(
+                new Predicate<Field>() {
+                    @Override
+                    public boolean test(Field field) {
+                        return Objects.equals(field.getType(), findClass("kotlinx.coroutines.flow.MutableStateFlow"));
+                    }
                 }
-            }
-        ).toArray(Field[]::new);
+            ).toArray(Field[]::new);
+        } catch (Throwable t) {
+            // 新版椒盐音乐可能移除/改写了 MusicController 的字段类型，
+            // 歌曲信息（标题/歌手/专辑）缺失不影响歌词本身的获取。
+        }
+        final Field[] songFields = tmpSongFields;
         final Field[] songFieldsArr = {null};
 
         hook(runMethod, new AbsHook() {
@@ -163,12 +162,10 @@ public final class SaltMusic extends AbsPublisher {
                         return;
                     }
 
-                    int type = (int) getField(typeField, getThisObject());
-                    if (type == 21) {
-                        Object lyricData = getField(objectField, getThisObject());
-                        if (lyricData == null) {
-                            return;
-                        }
+                    Object lyricData = getField(objectField, getThisObject());
+                    if (lyricData == null || !lyricsClass.isInstance(lyricData)) {
+                        return;
+                    }
 
                         if (songFieldsArr[0] == null) {
                             for (Field s : songFields) {
@@ -246,10 +243,17 @@ public final class SaltMusic extends AbsPublisher {
                                 .setLyric(new SuperLyricLine(sb.toString(), words, delay))
                                 .setTranslation(new SuperLyricLine(Optional.ofNullable(translation).orElse(""))));
                         }
-                    }
                 }
             }
         );
+
+        // 主动注册发布者：hooktool 3.2.1 的 onApplicationCreated 在部分应用上
+        // 不会触发（processName 匹配问题），这里在 Hook 就绪后提前注册，
+        // 确保歌词能正常发布。失败不影响后续（发送前还会兜底重试）。
+        try {
+            SuperLyricHelper.registerPublisher();
+        } catch (Throwable ignored) {
+        }
     }
 
     private record LyricData(long startTime, long endTime, String lyric) {

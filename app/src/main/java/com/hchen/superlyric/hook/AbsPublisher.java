@@ -154,6 +154,7 @@ public abstract class AbsPublisher extends AbsModule {
     }
 
     public static void sendLyric(@NonNull SuperLyricData data) {
+        ensurePublisherRegistered();
         SuperLyricHelper.sendLyric(data);
     }
 
@@ -163,8 +164,25 @@ public abstract class AbsPublisher extends AbsModule {
 
     public static void sendStop(@NonNull SuperLyricData data) {
         synchronized (sPublishLock) {
+            ensurePublisherRegistered();
             SuperLyricHelper.sendStop(data);
             sLastLyric = null;
+        }
+    }
+
+    /**
+     * 确保当前进程已注册为发布者（publisher）。
+     * <p>
+     * hooktool 3.2.1 的 Application 生命周期钩子带 processName 匹配检查，
+     * 在部分音乐应用（如椒盐音乐 12.2.x）上 onApplicationCreated 可能不会触发，
+     * 导致发布者从未注册、歌词发送被拒。这里在每次发送前兜底注册。
+     */
+    private static void ensurePublisherRegistered() {
+        try {
+            if (!SuperLyricHelper.isPublisherRegistered()) {
+                SuperLyricHelper.registerPublisher();
+            }
+        } catch (Throwable ignored) {
         }
     }
 }
