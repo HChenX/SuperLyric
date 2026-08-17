@@ -26,8 +26,8 @@ import android.os.RemoteException;
 
 import androidx.annotation.NonNull;
 
+import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.log.XposedLog;
-import com.hchen.hooktool.utils.InvokeTool;
 import com.hchen.superlyricapi.ISuperLyricManager;
 import com.hchen.superlyricapi.ISuperLyricReceiver;
 import com.hchen.superlyricapi.SuperLyricData;
@@ -295,14 +295,14 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     }
 
     private String getPackageNameWithPid(int pid) {
-        Object pidMap = InvokeTool.getField(mAms, "mPidsSelfLocked");
+        Object pidMap = CoreTool.getField(mAms, "mPidsSelfLocked");
         if (pidMap != null) {
             Object record = null;
             synchronized (pidMap) {
-                record = InvokeTool.callMethod(pidMap, "get", new Class[]{int.class}, pid);
+                record = CoreTool.callMethod(pidMap, "get", new Class[]{int.class}, pid);
             }
             if (record != null) {
-                ApplicationInfo info = (ApplicationInfo) InvokeTool.getField(record, "info");
+                ApplicationInfo info = (ApplicationInfo) CoreTool.getField(record, "info");
                 if (info != null) {
                     return info.packageName;
                 }

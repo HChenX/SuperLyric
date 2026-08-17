@@ -70,8 +70,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.edit
+import com.hchen.hooktool.core.CoreTool.Companion.getStaticField
 import com.hchen.hooktool.data.AppData
-import com.hchen.hooktool.utils.InvokeTool
 import com.hchen.hooktool.utils.PrefsTool
 import com.hchen.superlyric.R
 import com.hchen.superlyric.data.ApiAppData
@@ -480,7 +480,7 @@ fun HomeLayout(
                             ),
                             summary = stringResource(
                                 R.string.service_status_format,
-                                InvokeTool.getStaticField(SuperLyricHelper::class.java, "mManager").toString()
+                                SuperLyricHelper::class.java.getStaticField("mManager").toString()
                             )
                         )
                     }

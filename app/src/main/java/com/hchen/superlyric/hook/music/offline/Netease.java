@@ -138,7 +138,7 @@ public final class Netease extends AbsPublisher {
 
                         // 快速切歌 / 清空瞬间索引可能越界：跳过本轮，状态栏自行负责清空显示
                         if (mSentences == null || mCurLyricIndex < 0 || mCurLyricIndex >= mSentences.size()) {
-                            logD(TAG, "Offline lyric state not ready, skip: index=" + mCurLyricIndex);
+                            logD(tag, "Offline lyric state not ready, skip: index=" + mCurLyricIndex);
                             return;
                         }
 
@@ -146,7 +146,7 @@ public final class Netease extends AbsPublisher {
                         String lyric = (String) callMethod(mSentence, "getContent");
                         String translate = (String) callMethod(mSentence, "getTranslateContent");
                         if (lyric == null || lyric.isEmpty()) {
-                            logD(TAG, "Offline lyric empty, skip");
+                            logD(tag, "Offline lyric empty, skip");
                             return;
                         }
                         int endTime = (int) callMethod(mSentence, "getEndTime");
@@ -172,7 +172,7 @@ public final class Netease extends AbsPublisher {
 
             NeteaseLogicHijacking.hookLockScreenPermission();
         } catch (Throwable throwable) {
-            logW(TAG, "Status bar lyric hook setup failed, notification lyric fallback will be used", throwable);
+            logW(tag, "Status bar lyric hook setup failed, notification lyric fallback will be used", throwable);
             MeizuFaker.hookNotificationLyric();
         }
     }

@@ -64,11 +64,11 @@ public final class SuperLyricProxy extends AbsModule {
                                 sSuperLyricService = new SuperLyricService(getThisObject());
                                 new PlayStateListener(mContext, sSuperLyricService).register();
 
-                                logI(TAG, "Super lyric service is all ready. enjoy it.");
+                                logI(tag, "Super lyric service is all ready. enjoy it.");
                             }
                         }
                     } catch (Throwable e) {
-                        logE(TAG, "Failed to load super lyric service.", e);
+                        logE(tag, "Failed to load super lyric service.", e);
                     }
                 }
             }
@@ -104,7 +104,7 @@ public final class SuperLyricProxy extends AbsModule {
                     Map<String, IBinder> mAppBindArgs = (Map<String, IBinder>) getResult();
                     if (!mAppBindArgs.containsKey("super_lyric")) {
                         mAppBindArgs.put("super_lyric", sSuperLyricService);
-                        logI(TAG, "Release super lyric service: " + mAppBindArgs.get("super_lyric"));
+                        logI(tag, "Release super lyric service: " + mAppBindArgs.get("super_lyric"));
                     }
                 }
             }
@@ -137,7 +137,7 @@ public final class SuperLyricProxy extends AbsModule {
                         boolean isKilled = (boolean) Optional.ofNullable(getField(app, "mKilled")).orElse(true);
                         if (isKilled) {
                             sSuperLyricService.onProcessDied(info.packageName, pid);
-                            logI(TAG, "Publisher process died: " + info.packageName + ", pid: " + pid);
+                            logI(tag, "Publisher process died: " + info.packageName + ", pid: " + pid);
                         }
                     }
                 }

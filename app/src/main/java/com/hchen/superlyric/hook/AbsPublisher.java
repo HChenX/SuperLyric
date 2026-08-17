@@ -65,12 +65,12 @@ public abstract class AbsPublisher extends AbsModule {
             PackageInfo packageInfo = context.getPackageManager().getPackageInfo(sPackageName, 0);
             sVersionName = packageInfo.versionName;
             sVersionCode = packageInfo.getLongVersionCode();
-            logI(TAG, "Package name: " + sPackageName + ", version name: " + sVersionName + ", version code: " + sVersionCode);
+            logI(tag, "Package name: " + sPackageName + ", version name: " + sVersionName + ", version code: " + sVersionCode);
         } catch (PackageManager.NameNotFoundException e) {
-            logE(TAG, "Failed to retrieve package: '" + sPackageName + "' information!", e);
+            logE(tag, "Failed to retrieve package: '" + sPackageName + "' information!", e);
         }
 
-        logI(TAG, "Success to register super lyric publisher service, caller: " + sPackageName);
+        logI(tag, "Success to register super lyric publisher service, caller: " + sPackageName);
     }
 
     public static AudioManager getAudioManager() {

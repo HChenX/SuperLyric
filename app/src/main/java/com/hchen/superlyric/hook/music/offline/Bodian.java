@@ -226,7 +226,7 @@ public final class Bodian extends AbsPublisher {
                         )
                     ).single().getInstance(ModuleData.getClassLoader());
                     String p = c.getName();
-                    AndroidLog.logD(TAG, "class name: " + p);
+                    AndroidLog.logD(tag, "class name: " + p);
                     return bridge.findMethod(FindMethod.create()
                         .matcher(MethodMatcher.create()
                             .declaredClass(findClass(p.substring(0, p.indexOf("$"))))
@@ -247,7 +247,7 @@ public final class Bodian extends AbsPublisher {
                 }
             });
         } catch (Throwable e) {
-            logW(TAG, e);
+            logW(tag, e);
         }
 
         // Hook: 拦截 DeskLyricView.getCurrentPos() 获取当前播放位置

@@ -127,7 +127,7 @@ public final class Apple extends AbsPublisher {
                         Class<?> playerLyricsViewModelClass = findClass("com.apple.android.music.player.viewmodel.PlayerLyricsViewModel");
                         lyricViewModel = newInstance(playerLyricsViewModelClass, application);
                     } catch (Exception e) {
-                        logE(TAG, "Failed to initialize LyricViewModel!!", e);
+                        logE(tag, "Failed to initialize LyricViewModel!!", e);
                     }
                 }
             }
@@ -176,7 +176,7 @@ public final class Apple extends AbsPublisher {
                             mainHandler.postDelayed(() -> requestLyrics(), 400);
                         }
                     } catch (Exception e) {
-                        logE(TAG, "Error in onCurrentItemChanged!!", e);
+                        logE(tag, "Error in onCurrentItemChanged!!", e);
                     }
                 }
             }
@@ -211,7 +211,7 @@ public final class Apple extends AbsPublisher {
                             mainHandler.postDelayed(() -> requestLyrics(), 400);
                         }
                     } catch (Exception e) {
-                        logE(TAG, "Error in onMetadataUpdated!!", e);
+                        logE(tag, "Error in onMetadataUpdated!!", e);
                     }
                 }
             }
@@ -229,12 +229,12 @@ public final class Apple extends AbsPublisher {
                         playerController = getArg(0);
                         int newState = (int) getArg(2);
                         playbackStateValue = newState;
-                        logD(TAG, "onPlaybackStateChanged: state=" + newState + " controller=" + playerController);
+                        logD(tag, "onPlaybackStateChanged: state=" + newState + " controller=" + playerController);
                         if (newState == 1) {
                             startLyricLoop();
                         }
                     } catch (Exception e) {
-                        logE(TAG, "Error in onPlaybackStateChanged!!", e);
+                        logE(tag, "Error in onPlaybackStateChanged!!", e);
                     }
                 }
             }
@@ -269,7 +269,7 @@ public final class Apple extends AbsPublisher {
         );
 
         hookPlaybackItemSetId();
-        logI(TAG, "Apple hooks loaded MediaPlaybackManager: " + mediaPlaybackManagerClass.getName());
+        logI(tag, "Apple hooks loaded MediaPlaybackManager: " + mediaPlaybackManagerClass.getName());
     }
 
     private void hookPlaybackItemSetId() {
@@ -302,20 +302,20 @@ public final class Apple extends AbsPublisher {
                 }
             );
         } catch (Exception e) {
-            logE(TAG, "Failed to hook PlaybackItem.setId", e);
+            logE(tag, "Failed to hook PlaybackItem.setId", e);
         }
     }
 
     private void requestLyrics() {
         try {
             if (lyricViewModel != null && playbackItem != null) {
-                logD(TAG, "Requesting lyrics via ViewModel");
+                logD(tag, "Requesting lyrics via ViewModel");
                 callMethod(lyricViewModel, "loadLyrics", playbackItem);
             } else {
-                logD(TAG, "Unable to request lyrics - missing ViewModel or PlaybackItem");
+                logD(tag, "Unable to request lyrics - missing ViewModel or PlaybackItem");
             }
         } catch (Exception e) {
-            logE(TAG, "Error requesting lyrics", e);
+            logE(tag, "Error requesting lyrics", e);
         }
     }
 
@@ -376,9 +376,9 @@ public final class Apple extends AbsPublisher {
                 }
             }
 
-            logD(TAG, "Loaded " + lyricList.size() + " lyrics lines");
+            logD(tag, "Loaded " + lyricList.size() + " lyrics lines");
         } catch (Exception e) {
-            logE(TAG, "Error processing lyrics", e);
+            logE(tag, "Error processing lyrics", e);
         }
     }
 
@@ -390,13 +390,13 @@ public final class Apple extends AbsPublisher {
             @Override
             public void run() {
                 if (!isRunning || playerController == null) {
-                    logD(TAG, "lyric loop exit: isRunning=" + isRunning + " controller=" + playerController);
+                    logD(tag, "lyric loop exit: isRunning=" + isRunning + " controller=" + playerController);
                     isRunning = false;
                     return;
                 }
 
                 if (playbackStateValue != 1) {
-                    logD(TAG, "lyric loop exit: state=" + playbackStateValue);
+                    logD(tag, "lyric loop exit: state=" + playbackStateValue);
                     isRunning = false;
                     return;
                 }
@@ -432,7 +432,7 @@ public final class Apple extends AbsPublisher {
                         lastShownLyric = currentLine;
                     }
                 } catch (Throwable e) {
-                    logE(TAG, "Lyric loop error, stop loop to avoid crash", e);
+                    logE(tag, "Lyric loop error, stop loop to avoid crash", e);
                     isRunning = false;
                     return;
                 }

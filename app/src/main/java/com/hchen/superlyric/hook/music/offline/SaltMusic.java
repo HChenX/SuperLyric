@@ -42,11 +42,9 @@ import org.luckypray.dexkit.result.MethodData;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.Predicate;
 
 import io.github.libxposed.api.XposedModuleInterface;
 
@@ -57,6 +55,10 @@ import io.github.libxposed.api.XposedModuleInterface;
  */
 @HookThis(targetPackage = "com.salt.music")
 public final class SaltMusic extends AbsPublisher {
+    private Field typeField = null;
+    private Field objectField = null;
+    private Object song = null;
+
     @Override
     protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         super.onPackageReady(param);
@@ -127,34 +129,40 @@ public final class SaltMusic extends AbsPublisher {
                 ).single();
             }
         });
-        Field typeField = Arrays.stream(runMethod.getDeclaringClass().getDeclaredFields())
-            .filter(new Predicate<Field>() {
-                @Override
-                public boolean test(Field field) {
-                    return Objects.equals(field.getType(), int.class);
-                }
-            }).findFirst().orElseThrow();
 
-        Field objectField = Arrays.stream(runMethod.getDeclaringClass().getDeclaredFields())
-            .filter(new Predicate<Field>() {
-                @Override
-                public boolean test(Field field) {
-                    return Objects.equals(field.getType(), Object.class);
-                }
-            }).findFirst().orElseThrow();
+        for (Field field : runMethod.getDeclaringClass().getDeclaredFields()) {
+            if (typeField != null && objectField != null) {
+                break;
+            }
+            if (Objects.equals(field.getType(), int.class)) {
+                typeField = field;
+            }
+            if (Objects.equals(field.getType(), Object.class)) {
+                objectField = field;
+            }
+        }
 
         Objects.requireNonNull(typeField);
         Objects.requireNonNull(objectField);
 
-        Field[] songFields = Arrays.stream(findClass("com.salt.music.service.MusicController").getDeclaredFields()).filter(
-            new Predicate<Field>() {
-                @Override
-                public boolean test(Field field) {
-                    return Objects.equals(field.getType(), findClass("kotlinx.coroutines.flow.MutableStateFlow"));
+        Class<?> songClass = findClass("com.salt.music.data.entry.Song");
+        Class<?> musicControllerClass = findClass("com.salt.music.service.MusicController");
+        Method songMethod = null;
+        for (Method method : musicControllerClass.getDeclaredMethods()) {
+            if (method.getParameterCount() == 4) {
+                if (Objects.equals(method.getParameterTypes()[0], songClass)) {
+                    songMethod = method;
+                    break;
                 }
             }
-        ).toArray(Field[]::new);
-        final Field[] songFieldsArr = {null};
+        }
+        Objects.requireNonNull(songMethod);
+        hook(songMethod, new AbsHook() {
+            @Override
+            public void before() {
+                song = getArg(0);
+            }
+        });
 
         hook(runMethod, new AbsHook() {
                 @Override
@@ -163,89 +171,73 @@ public final class SaltMusic extends AbsPublisher {
                         return;
                     }
 
-                    int type = (int) getField(typeField, getThisObject());
-                    if (type == 21) {
-                        Object lyricData = getField(objectField, getThisObject());
-                        if (lyricData == null) {
-                            return;
+                    Object lyricData = getField(objectField, getThisObject());
+                    if (lyricData == null || !lyricsClass.isInstance(lyricData)) {
+                        return;
+                    }
+
+                    List<?> lyrics = (List<?>) getField(finalWordsField, lyricData);
+                    if (lyrics != null) {
+                        List<LyricData> data = new ArrayList<>();
+                        for (Object l : lyrics) {
+                            long[] times = new long[2];
+                            long startTime;
+                            long endTime;
+                            String lyric;
+
+                            for (int i = 0; i < timeFields.size(); i++) {
+                                times[i] = (long) getField(timeFields.get(i), l);
+                            }
+                            startTime = Math.min(times[0], times[1]);
+                            endTime = Math.max(times[0], times[1]);
+                            lyric = (String) getField(finalWordField, l);
+
+                            data.add(new LyricData(startTime, endTime, lyric));
                         }
 
-                        if (songFieldsArr[0] == null) {
-                            for (Field s : songFields) {
-                                Object value = callMethod(getStaticField(s), "getValue");
-                                if (value != null && Objects.equals(value.getClass(), findClass("com.salt.music.data.entry.Song"))) {
-                                    songFieldsArr[0] = s;
-                                    break;
-                                }
-                            }
+                        long delay = 0L;
+                        StringBuilder sb = new StringBuilder();
+                        SuperLyricWord[] words = new SuperLyricWord[data.size()];
+                        for (int i = 0; i < data.size(); i++) {
+                            delay = delay + (data.get(i).endTime - data.get(i).startTime);
+                            sb.append(data.get(i).lyric);
+                            words[i] = new SuperLyricWord(
+                                data.get(i).lyric,
+                                (int) data.get(i).startTime,
+                                (int) data.get(i).endTime
+                            );
                         }
 
-                        List<?> lyrics = (List<?>) getField(finalWordsField, lyricData);
-                        if (lyrics != null) {
-                            List<LyricData> data = new ArrayList<>();
-                            for (Object l : lyrics) {
-                                long[] times = new long[2];
-                                long startTime;
-                                long endTime;
-                                String lyric;
-
-                                for (int i = 0; i < timeFields.size(); i++) {
-                                    times[i] = (long) getField(timeFields.get(i), l);
-                                }
-                                startTime = Math.min(times[0], times[1]);
-                                endTime = Math.max(times[0], times[1]);
-                                lyric = (String) getField(finalWordField, l);
-
-                                data.add(new LyricData(startTime, endTime, lyric));
-                            }
-
-                            long delay = 0L;
-                            StringBuilder sb = new StringBuilder();
-                            SuperLyricWord[] words = new SuperLyricWord[data.size()];
-                            for (int i = 0; i < data.size(); i++) {
-                                delay = delay + (data.get(i).endTime - data.get(i).startTime);
-                                sb.append(data.get(i).lyric);
-                                words[i] = new SuperLyricWord(
-                                    data.get(i).lyric,
-                                    (int) data.get(i).startTime,
-                                    (int) data.get(i).endTime
-                                );
-                            }
-
-                            String[] strings = new String[2];
-                            for (int i = 0; i < lyricFields.size(); i++) {
-                                strings[i] = (String) getField(lyricFields.get(i), lyricData);
-                            }
-                            String translation;
-                            if (strings[0] == null || strings[1] == null) {
-                                translation = null;
-                            } else {
-                                translation = TextUtils.equals(strings[0], sb.toString()) ? strings[1] : strings[0];
-                            }
-
-                            if (words.length == 1) {
-                                words = null;
-                            }
-
-                            String name = null;
-                            String artist = null;
-                            String album = null;
-                            if (songFieldsArr[0] != null) {
-                                Object song = callMethod(getStaticField(songFieldsArr[0]), "getValue");
-                                if (song != null) {
-                                    name = (String) callMethod(song, "getTitle");
-                                    artist = (String) callMethod(song, "getArtist");
-                                    album = (String) callMethod(song, "getAlbum");
-                                }
-                            }
-
-                            sendLyric(new SuperLyricData()
-                                .setTitle(name)
-                                .setArtist(artist)
-                                .setAlbum(album)
-                                .setLyric(new SuperLyricLine(sb.toString(), words, delay))
-                                .setTranslation(new SuperLyricLine(Optional.ofNullable(translation).orElse(""))));
+                        String[] strings = new String[2];
+                        for (int i = 0; i < lyricFields.size(); i++) {
+                            strings[i] = (String) getField(lyricFields.get(i), lyricData);
                         }
+                        String translation;
+                        if (strings[0] == null || strings[1] == null) {
+                            translation = null;
+                        } else {
+                            translation = TextUtils.equals(strings[0], sb.toString()) ? strings[1] : strings[0];
+                        }
+
+                        if (words.length == 1) {
+                            words = null;
+                        }
+
+                        String name = null;
+                        String artist = null;
+                        String album = null;
+                        if (song != null) {
+                            name = (String) callMethod(song, "getTitle");
+                            artist = (String) callMethod(song, "getArtist");
+                            album = (String) callMethod(song, "getAlbum");
+                        }
+
+                        sendLyric(new SuperLyricData()
+                            .setTitle(name)
+                            .setArtist(artist)
+                            .setAlbum(album)
+                            .setLyric(new SuperLyricLine(sb.toString(), words, delay))
+                            .setTranslation(new SuperLyricLine(Optional.ofNullable(translation).orElse(""))));
                     }
                 }
             }

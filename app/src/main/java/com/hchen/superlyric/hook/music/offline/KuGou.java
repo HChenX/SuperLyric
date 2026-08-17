@@ -65,7 +65,7 @@ public final class KuGou extends AbsPublisher {
             try {
                 hookMeizuLyric();
             } catch (Throwable e) {
-                logW(TAG, e);
+                logW(tag, e);
                 KuGouLyricDistributor.hookLyricBroadcast("androidx.localbroadcastmanager.content.LocalBroadcastManager");
             }
             KuGouCrashFix.fixWifiServiceFetcherCrash();
@@ -215,7 +215,7 @@ public final class KuGou extends AbsPublisher {
                             // String[][] transliterationWordss = (String[][]) callMethod(lyricData, "getTransliterationWords");
                             // if (transliterationWordss != null) {
                             //     String[] transliterationWords = transliterationWordss[currentLine];
-                            //     AndroidLog.logI(TAG, "TransliterationWords: " + Arrays.toString(transliterationWords));
+                            //     AndroidLog.logI(tag, "TransliterationWords: " + Arrays.toString(transliterationWords));
                             // }
                             sendLyric(data);
                         }

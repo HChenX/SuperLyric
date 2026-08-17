@@ -35,6 +35,8 @@ import com.hchen.hooktool.hook.AbsHook;
  * @author 焕晨HChen
  */
 public final class HotfixDisabler {
+    private static final String TAG = "HotfixDisabler";
+
     /**
      * 禁用宿主应用热更新服务。
      *

@@ -241,7 +241,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
     protected synchronized void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         super.onPackageReady(param);
         if (mHooksInitialized) {
-            logD(TAG, "Netease network hooks already initialized for " + param.getPackageName());
+            logD(tag, "Netease network hooks already initialized for " + param.getPackageName());
             return;
         }
         mLyricThread = new HandlerThread("NeteasePublisherThread");
@@ -252,7 +252,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
         hookMediaSession();
         hookPlaybackState();
         mHooksInitialized = true;
-        logI(TAG, "Netease network path hooks loaded (package: " + param.getPackageName() + ")");
+        logI(tag, "Netease network path hooks loaded (package: " + param.getPackageName() + ")");
     }
 
     @Override
@@ -307,7 +307,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
                     mPreferenceListener = (sharedPreferences, key) -> {
                         if (TextUtils.equals("showLyricSetting", key)) {
                             mLyricSetting = sharedPreferences.getInt(key, LYRIC_SETTING_OFF);
-                            logD(TAG, "Lyric display setting changed: showLyricSetting=" + mLyricSetting);
+                            logD(tag, "Lyric display setting changed: showLyricSetting=" + mLyricSetting);
                         }
                     };
                 }
@@ -320,12 +320,12 @@ public abstract class NeteasePublisher extends AbsPublisher {
                 mLyricSettingLinked = true;
                 // 失效未执行的定时重试：成功链接后不再重复尝试
                 mLyricSettingRetryToken++;
-                logI(TAG, "Lyric display setting linked: showLyricSetting=" + mLyricSetting);
-                logD(TAG, "Lyric display setting diagnostic: lookup_failed=0, showLyricSetting=" + mLyricSetting);
+                logI(tag, "Lyric display setting linked: showLyricSetting=" + mLyricSetting);
+                logD(tag, "Lyric display setting diagnostic: lookup_failed=0, showLyricSetting=" + mLyricSetting);
             } catch (Throwable t) {
                 // 启动早期 Context 未就绪等瞬时失败：保持只发原词并安排重试，不永久降级
                 mLyricSetting = LYRIC_SETTING_OFF;
-                logW(TAG, "Lyric display setting lookup failed, keep original-only, will retry", t);
+                logW(tag, "Lyric display setting lookup failed, keep original-only, will retry", t);
             }
         }
     }
@@ -389,7 +389,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
             SystemClock.elapsedRealtime()
         );
 
-        logD(TAG, "PlaybackState: state=" + mPlayback.state + ", position=" + mPlayback.position + ", speed=" + mPlayback.speed);
+        logD(tag, "PlaybackState: state=" + mPlayback.state + ", position=" + mPlayback.position + ", speed=" + mPlayback.speed);
 
         switch (mPlayback.state) {
             case PlaybackState.STATE_PLAYING:
@@ -423,7 +423,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
         long id = extractSongId(metadata);
         if (id <= 0L) {
             NeteaseLyricAnalysis.cancelExcept(-1L);
-            logD(TAG, "setMetadata: no valid numeric id, treat as ad/unknown, sendStop");
+            logD(tag, "setMetadata: no valid numeric id, treat as ad/unknown, sendStop");
             // 广告 / 非歌曲：清空上下文与歌词快照，防止旧歌曲晚到响应或残留行误发
             cancelLyricRetry(currentSongId());
             dispatchSourceEvent(LyricSourceMachine.Event.adOrUnknown());
@@ -435,7 +435,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
 
         SongInfo song = currentSong();
         if (song != null && song.id == id) {
-            logD(TAG, "setMetadata: same track, ignore: " + id);
+            logD(tag, "setMetadata: same track, ignore: " + id);
             return;
         }
 
@@ -465,7 +465,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
             ));
             dispatchSourceEvent(LyricSourceMachine.Event.trackChanged(id));
         }
-        logD(TAG, "Track changed: id=" + id + ", retry network path");
+        logD(tag, "Track changed: id=" + id + ", retry network path");
 
         // 首次切歌惰性重试：即便定时重试全部失败，第一首歌前仍有机会完成设置联动
         linkLyricSetting();
@@ -530,7 +530,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
                 }
             }
         } catch (Throwable t) {
-            logE(TAG, "Lyric loop error", t);
+            logE(tag, "Lyric loop error", t);
         }
 
         if (mIsRunning && token == mLoopToken) {
@@ -588,7 +588,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
         }
 
         sendLyric(data);
-        logD(TAG, "sendLyric: track=" + song.id + ", start=" + line.start);
+        logD(tag, "sendLyric: track=" + song.id + ", start=" + line.start);
     }
 
     /**
@@ -616,7 +616,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
     private void fetchLyricsForTrack(long id, long generation) {
         String taskKey = taskKey(id, generation);
         if (!mDownloadingIds.add(taskKey)) {
-            logD(TAG, "Lyric already loading for " + id);
+            logD(tag, "Lyric already loading for " + id);
             return;
         }
         try {
@@ -637,7 +637,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
             if (cached != null) {
                 NeteaseLyricAnalysis.LyricData cachedData = NeteaseLyricAnalysis.parseLyrics(cached);
                 if (cachedData.hasLyrics()) {
-                    logD(TAG, "Lyric cache hit for " + id + ", no network request");
+                    logD(tag, "Lyric cache hit for " + id + ", no network request");
                     applyLyrics(id, generation, cachedData);
                     return;
                 }
@@ -680,8 +680,8 @@ public abstract class NeteasePublisher extends AbsPublisher {
                                         @Nullable Throwable error) {
         synchronized (mSourceStateLock) {
             if (!isCurrentTrack(id, generation)) return;
-            if (error == null) logW(TAG, message + " for " + id);
-            else logE(TAG, message + " for " + id, error);
+            if (error == null) logW(tag, message + " for " + id);
+            else logE(tag, message + " for " + id, error);
             dispatchSourceEvent(LyricSourceMachine.Event.fetchFailed(id));
         }
         scheduleLyricRetry(id, generation);
@@ -695,7 +695,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
             clearRetryFor(id, generation);
             dispatchSourceEvent(LyricSourceMachine.Event.fetchEmpty(id));
         }
-        logD(TAG, message);
+        logD(tag, message);
     }
 
     /**
@@ -712,7 +712,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
             || state.failedAttempts >= state.maxRetries) {
             clearRetryFor(id, generation);
             if (state.trackId == id && state.failedAttempts >= state.maxRetries) {
-                logW(TAG, "Lyric retry limit reached; keep blank until next track");
+                logW(tag, "Lyric retry limit reached; keep blank until next track");
             }
             return;
         }
@@ -886,7 +886,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
                                       @NonNull NeteaseLyricAnalysis.LyricData data) {
         TrackSnapshot current = mTrackRef.get();
         if (current == null || current.generation != generation || current.song.id != id) {
-            logD(TAG, "Stale lyric response for " + id + ", discard");
+            logD(tag, "Stale lyric response for " + id + ", discard");
             return false;
         }
 
@@ -894,7 +894,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
             if (!mTrackRef.compareAndSet(current, current.clearLyric())) return false;
             clearRetryFor(id, generation);
             dispatchSourceEvent(LyricSourceMachine.Event.fetchEmpty(id));
-            logD(TAG, data.type == NeteaseLyricAnalysis.ResultType.PURE_MUSIC
+            logD(tag, data.type == NeteaseLyricAnalysis.ResultType.PURE_MUSIC
                 ? "Pure music flag for " + id + ", keep blank"
                 : "No lyric lines for " + id + " (code=" + data.code + "), keep blank");
             return false;
@@ -903,7 +903,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
         boolean retrySuccess = isRetryFor(id, generation);
         int failedBefore = mSourceState.failedAttempts;
         if (!mTrackRef.compareAndSet(current, current.withLyric(new LyricSnapshot(id, data)))) {
-            logD(TAG, "Track changed while applying lyric for " + id + ", discard");
+            logD(tag, "Track changed while applying lyric for " + id + ", discard");
             return false;
         }
         if (retrySuccess) clearRetryFor(id, generation);
@@ -914,12 +914,12 @@ public abstract class NeteasePublisher extends AbsPublisher {
         long wordLines = data.lines.stream().filter(line -> line.words != null).count();
         long translateLines = data.lines.stream().filter(line -> line.translation != null).count();
         long romaLines = data.lines.stream().filter(line -> line.roma != null).count();
-        logD(TAG, "Lyrics ready for " + id + ", lines=" + data.lines.size()
+        logD(tag, "Lyrics ready for " + id + ", lines=" + data.lines.size()
             + ", wordLines=" + wordLines + ", translateLines=" + translateLines
             + ", romaLines=" + romaLines);
 
         if (retrySuccess) {
-            logI(TAG, "Lyric retry succeeded for " + id + " after " + failedBefore
+            logI(tag, "Lyric retry succeeded for " + id + " after " + failedBefore
                 + " failed attempt(s), switched back to network path");
         }
 

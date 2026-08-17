@@ -26,7 +26,7 @@ import com.hchen.superlyric.hook.music.online.netease.NeteasePublisher;
  *
  * @author 焕晨HChen
  */
-@HookThis(targetPackage = "com.netease.cloudmusic")
+// @HookThis(targetPackage = "com.netease.cloudmusic")
 public final class Netease extends NeteasePublisher {
     @Override
     protected String lyricCacheProvider() {

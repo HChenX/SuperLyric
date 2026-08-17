@@ -26,6 +26,7 @@ import android.app.Notification;
 import android.app.Service;
 import android.text.TextUtils;
 
+import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.superlyric.hook.AbsPublisher;
 
@@ -57,8 +58,13 @@ public final class MeizuFaker {
             new AbsHook() {
                 @Override
                 public void before() {
-                    if (TextUtils.equals("android.app.Notification", (String) getArg(0))) {
-                        setResult(MeiZuNotification.class);
+                    try {
+                        if (TextUtils.equals("android.app.Notification", (String) getArg(0))) {
+                            setResult(MeiZuNotification.class);
+                            return;
+                        }
+                        setResult(ModuleData.getClassLoader().loadClass((String) getArg(0)));
+                    } catch (Throwable ignore) {
                     }
                 }
             }
@@ -80,8 +86,13 @@ public final class MeizuFaker {
             new AbsHook() {
                 @Override
                 public void before() {
-                    if (TextUtils.equals("android.app.Notification", (String) getArg(0))) {
-                        setResult(MeiZuNotification.class);
+                    try {
+                        if (TextUtils.equals("android.app.Notification", (String) getArg(0))) {
+                            setResult(MeiZuNotification.class);
+                            return;
+                        }
+                        setResult(ModuleData.getClassLoader().loadClass((String) getArg(0)));
+                    } catch (Throwable ignore) {
                     }
                 }
             }

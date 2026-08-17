@@ -190,7 +190,7 @@ public final class Spotify extends AbsPublisher {
     protected synchronized void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
         super.onPackageReady(param);
         if (mHooksInitialized) {
-            logD(TAG, "Spotify hooks already initialized for " + param.getPackageName());
+            logD(tag, "Spotify hooks already initialized for " + param.getPackageName());
             return;
         }
         mLyricThread = new HandlerThread("SpotifyLyricThread");
@@ -202,7 +202,7 @@ public final class Spotify extends AbsPublisher {
         hookSessionHeaders();
         mHooksInitialized = true;
 
-        logI(TAG, "Spotify hooks loaded (package: " + param.getPackageName() + ")");
+        logI(tag, "Spotify hooks loaded (package: " + param.getPackageName() + ")");
     }
 
     @Override
@@ -253,7 +253,7 @@ public final class Spotify extends AbsPublisher {
             SystemClock.elapsedRealtime()
         );
 
-        logD(TAG, "PlaybackState: state=" + mPlayback.state
+        logD(tag, "PlaybackState: state=" + mPlayback.state
             + ", position=" + mPlayback.position + ", speed=" + mPlayback.speed);
 
         switch (mPlayback.state) {
@@ -276,7 +276,7 @@ public final class Spotify extends AbsPublisher {
         TrackSnapshot current = mTrackRef.get();
         if (id == null) {
             // 广告 / 无法解析音轨标识 → sendStop 清空（Apple 范式）
-            logD(TAG, "setMetadata: no valid track id, treat as ad/unknown, sendStop");
+            logD(tag, "setMetadata: no valid track id, treat as ad/unknown, sendStop");
             SpotifyLyricAnalysis.cancelExcept(null);
             mHeaderWait.set(null);
             mTrackRef.set(null);
@@ -286,7 +286,7 @@ public final class Spotify extends AbsPublisher {
         }
 
         if (current != null && id.equals(current.song.trackId)) {
-            logD(TAG, "setMetadata: same track, ignore: " + id);
+            logD(tag, "setMetadata: same track, ignore: " + id);
             return;
         }
 
@@ -304,7 +304,7 @@ public final class Spotify extends AbsPublisher {
             null,
             -1
         ));
-        logD(TAG, "Track changed: id=" + id);
+        logD(tag, "Track changed: id=" + id);
 
         fetchLyricsForTrack(id, generation);
     }
@@ -332,7 +332,7 @@ public final class Spotify extends AbsPublisher {
     private void fetchLyricsForTrack(@NonNull String id, long generation) {
         String taskKey = taskKey(id, generation);
         if (!mDownloadingIds.add(taskKey)) {
-            logD(TAG, "Lyric already loading for " + id);
+            logD(tag, "Lyric already loading for " + id);
             return;
         }
         try {
@@ -369,7 +369,7 @@ public final class Spotify extends AbsPublisher {
                 return;
             }
             if (result.type != SpotifyLyricAnalysis.ParseType.READY || result.lines == null) {
-                logW(TAG, "Lyric response not usable for " + id + ", type=" + result.type);
+                logW(tag, "Lyric response not usable for " + id + ", type=" + result.type);
                 return;
             }
             if (!isCurrentTrack(id, generation)) return;
@@ -382,19 +382,19 @@ public final class Spotify extends AbsPublisher {
                 waitForHeaders(id, e.generation, generation);
             } else {
                 mAuthRefreshCounts.remove(retryKey);
-                logW(TAG, "Spotify authentication refresh exhausted for " + id);
+                logW(tag, "Spotify authentication refresh exhausted for " + id);
             }
         } catch (SpotifyLyricAnalysis.LyricNotFoundException e) {
-            logD(TAG, "No lyric found (404) for " + id);
+            logD(tag, "No lyric found (404) for " + id);
         } catch (SpotifyLyricAnalysis.OversizeException e) {
-            logW(TAG, "Spotify lyric response exceeds budget for " + id);
+            logW(tag, "Spotify lyric response exceeds budget for " + id);
         } catch (SpotifyLyricAnalysis.HttpStatusException e) {
             if (e.retryable) scheduleFetchRetry(id, generation);
-            else logW(TAG, "Non-retryable Spotify HTTP " + e.code + " for " + id);
+            else logW(tag, "Non-retryable Spotify HTTP " + e.code + " for " + id);
         } catch (IOException e) {
             scheduleFetchRetry(id, generation);
         } catch (Exception e) {
-            if (isCurrentTrack(id, generation)) logE(TAG, "Failed to fetch lyric for " + id, e);
+            if (isCurrentTrack(id, generation)) logE(tag, "Failed to fetch lyric for " + id, e);
         } finally {
             mDownloadingIds.remove(taskKey);
             resumeHeaderWaitIfReady();
@@ -407,7 +407,7 @@ public final class Spotify extends AbsPublisher {
         int attempt = mRetryCounts.merge(retryKey, 1, Integer::sum);
         if (attempt > MAX_FETCH_RETRIES) {
             mRetryCounts.remove(retryKey);
-            logW(TAG, "Spotify lyric retry exhausted for " + id);
+            logW(tag, "Spotify lyric retry exhausted for " + id);
             return;
         }
         long delay = Math.min(5000L << (attempt - 1), 30000L);
@@ -450,19 +450,19 @@ public final class Spotify extends AbsPublisher {
                              @NonNull List<SpotifyLine> lines) {
         TrackSnapshot current = mTrackRef.get();
         if (current == null || current.generation != generation || !id.equals(current.song.trackId)) {
-            logD(TAG, "Stale lyric response for " + id + ", discard");
+            logD(tag, "Stale lyric response for " + id + ", discard");
             return;
         }
 
         // CAS 写入：快照已换代（切歌）时不覆盖，旧响应直接丢弃
         if (!mTrackRef.compareAndSet(current, current.withLyric(new LyricData(id, lines)))) {
-            logD(TAG, "Track changed while applying lyric for " + id + ", discard");
+            logD(tag, "Track changed while applying lyric for " + id + ", discard");
             return;
         }
         String completedKey = taskKey(id, generation);
         mRetryCounts.remove(completedKey);
         mAuthRefreshCounts.remove(completedKey);
-        logD(TAG, "Lyrics ready for " + id + ", lines=" + lines.size()
+        logD(tag, "Lyrics ready for " + id + ", lines=" + lines.size()
             + ", firstWords=" + (lines.get(0).words == null ? 0 : lines.get(0).words.length));
 
         if (mPlayback.state == PlaybackState.STATE_PLAYING) {
@@ -511,7 +511,7 @@ public final class Spotify extends AbsPublisher {
                 }
             }
         } catch (Throwable t) {
-            logE(TAG, "Lyric loop error", t);
+            logE(tag, "Lyric loop error", t);
         }
 
         if (mIsRunning && token == mLoopToken) {
@@ -564,7 +564,7 @@ public final class Spotify extends AbsPublisher {
             data.setTranslation(new SuperLyricLine(line.transliteratedWords));
         }
         sendLyric(data);
-        logD(TAG, "sendLyric: track=" + song.trackId + ", start=" + line.startTimeMs);
+        logD(tag, "sendLyric: track=" + song.trackId + ", start=" + line.startTimeMs);
     }
 
     // ------------------------------ 会话头捕获 ------------------------------
@@ -572,7 +572,7 @@ public final class Spotify extends AbsPublisher {
     private void hookSessionHeaders() {
         try {
             Class<?> headersClass = findClass("okhttp3.Headers");
-            logD(TAG, "Session headers target: class=" + headersClass.getName()
+            logD(tag, "Session headers target: class=" + headersClass.getName()
                 + ", classloader=" + headersClass.getClassLoader());
             hookAllConstructor(headersClass, new AbsHook() {
                 @Override
@@ -583,9 +583,9 @@ public final class Spotify extends AbsPublisher {
                     }
                 }
             });
-            logI(TAG, "Session headers: okhttp3.Headers constructor hooked");
+            logI(tag, "Session headers: okhttp3.Headers constructor hooked");
         } catch (Throwable t) {
-            logW(TAG, "Session headers: constructor hook unsupported", t);
+            logW(tag, "Session headers: constructor hook unsupported", t);
         }
     }
 

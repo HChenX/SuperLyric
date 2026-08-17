@@ -237,7 +237,7 @@ public final class QQMusic extends AbsPublisher {
                     extractLines(mLyric);
                     if (mLines.isEmpty()) {
                         if (!mLoggedMissingMainLyric) {
-                            logW(TAG, "Failed to parse main lyric; skip status bar lyric until next setLyric");
+                            logW(tag, "Failed to parse main lyric; skip status bar lyric until next setLyric");
                             mLoggedMissingMainLyric = true;
                         }
                         clearLyricCache();
@@ -294,7 +294,7 @@ public final class QQMusic extends AbsPublisher {
                 );
             }
         } catch (Throwable e) {
-            logE(TAG, e);
+            logE(tag, e);
         }
     }
 

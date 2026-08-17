@@ -26,7 +26,6 @@ import android.os.Bundle;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.hchen.processor.HookMaps;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.hooktool.AbsModule;
 import com.hchen.hooktool.ModuleConfig;
@@ -34,6 +33,7 @@ import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.ModuleEntrance;
 import com.hchen.hooktool.log.AndroidLog;
 import com.hchen.hooktool.utils.PrefsTool;
+import com.hchen.processor.HookMaps;
 import com.hchen.superlyric.data.LocalConfig;
 import com.hchen.superlyric.utils.LyricCacheStore;
 
@@ -59,7 +59,7 @@ public final class HookEntrance extends ModuleEntrance {
         ModuleConfig.setLogTag(TAG);
         ModuleConfig.setPrefsName("super_lyric_prefs");
         ModuleConfig.setLogLevel(BuildConfig.DEBUG ? LOG_D : LocalConfig.getLogLevelForXposed());
-        ModuleConfig.setShowHookSuccessLog(LocalConfig.getLogLevelForXposed() == LOG_D);
+        ModuleConfig.setShowHookSuccessLog(BuildConfig.DEBUG || LocalConfig.getLogLevelForXposed() == LOG_D);
         ModuleConfig.setLogExpandPaths(
             "com.hchen.superlyric.hook"
         );
@@ -146,16 +146,15 @@ public final class HookEntrance extends ModuleEntrance {
         AndroidLog.logD(TAG, "handleApplicationCreated: " + context);
         super.handleApplicationCreated(context);
 
-        Context appContext = context.getApplicationContext();
-        if (lastApplicationContext == appContext) return;
-        cacheMigrationExecutor.execute(() -> clearLyricCacheOnFormatUpgrade(appContext));
+        if (lastApplicationContext == context) return;
+        cacheMigrationExecutor.execute(() -> clearLyricCacheOnFormatUpgrade(context));
         List<AbsModule> packageModules = modules.get(context.getPackageName());
         if (packageModules != null) {
             for (AbsModule module : packageModules) {
                 module.handleApplicationCreated(context);
             }
         }
-        lastApplicationContext = appContext;
+        lastApplicationContext = context;
     }
 
     /**
