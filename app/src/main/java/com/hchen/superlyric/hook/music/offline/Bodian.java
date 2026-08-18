@@ -164,7 +164,7 @@ public final class Bodian extends AbsPublisher {
                         data.setLyric(
                             new SuperLyricLine(lyric, matchedLine.words, matchedLine.startTime, matchedLine.endTime)
                         );
-                        if (matchedLine.translation != null) {
+                        if (matchedLine.translation != null && !matchedLine.translation.trim().isEmpty()) {
                             data.setTranslation(
                                 new SuperLyricLine(matchedLine.translation, matchedLine.translationWords,
                                     matchedLine.startTime, matchedLine.endTime)
@@ -340,9 +340,15 @@ public final class Bodian extends AbsPublisher {
                 }
             }
 
-            if (isTranslation && pendingLine != null) {
-                pendingLine.translation = text;
-                pendingLine.translationWords = wordArray;
+            if (isTranslation) {
+                // 翻译行：配给前一个原文行（波点行结构为 [原文, 翻译] 交替，
+                // 且翻译行时间戳指向下一句原文，故不能按时间戳配对）。
+                // 文本非空才配对：空白/空文本翻译丢弃，避免空翻译展示；
+                // 孤儿翻译行（无前序原文行）丢弃，不会污染原文列表
+                if (text != null && !text.trim().isEmpty() && pendingLine != null) {
+                    pendingLine.translation = text;
+                    pendingLine.translationWords = wordArray;
+                }
             } else {
                 pendingLine = new LineData();
                 pendingLine.text = text;

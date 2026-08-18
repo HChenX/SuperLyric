@@ -215,8 +215,9 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
             return;
         }
         sPublisherPids.remove(packageName, pids);
-        long generation = sPublisherGenerations.getOrDefault(packageName, 0L);
+        XposedLog.logI(TAG, "Publisher process died: " + packageName + ", pid: " + pid);
 
+        long generation = sPublisherGenerations.getOrDefault(packageName, 0L);
         mBroadcastExecutor.execute(new Runnable() {
             @Override
             public void run() {

@@ -105,11 +105,14 @@ public final class QQMusic extends AbsPublisher {
     private final List<String> mTransLines = new CopyOnWriteArrayList<>();
     private final List<SuperLyricWord[]> mWordsList = new CopyOnWriteArrayList<>();
     private Object mCurrentSentences;
+    private Object mLastKArr;
     private String mTitle;
     private String mArtist;
     private String mAlbum;
     private int mLastLine = -1;
     private boolean mLoggedMissingMainLyric;
+    // viewDelegate 中 MarqueeLyricView 字段（this.l）——恢复歌词时重新提取
+    private Field marqueeLyricField;
 
     @Override
     protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
@@ -163,7 +166,10 @@ public final class QQMusic extends AbsPublisher {
             new AbsHook() {
                 @Override
                 public void after() {
-                    clearLyricCache();
+                    // 暂停/隐藏歌词：仅停止发布并重置行号，保留歌词缓存。
+                    // 恢复播放时同一首歌不会重新调用 setLyric（u==p.a()），
+                    // 缓存保留可让 findCurrentLine 的引用匹配依然成立，自动续发真实歌词。
+                    mLastLine = -1;
                     sendStop();
                 }
             }
@@ -187,11 +193,13 @@ public final class QQMusic extends AbsPublisher {
                     if (view != null) {
                         view.setVisibility(GONE);
                     }
+                    // 恢复播放：确保歌词缓存可用，由 findCurrentLine 续发
+                    resumeLyric(getThisObject());
                 }
             }
         );
 
-        // lyricModel：获取 MarqueeTextView 文本作为兜底
+        // 状态机入口（this.o 决定显示歌词或提示文本）：MarqueeTextView 文本作为兜底
         Method lyricModelMethod = DexkitCache.findMember("qq_music$6", new IDexkit<MethodData>() {
             @Override
             public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
@@ -210,6 +218,14 @@ public final class QQMusic extends AbsPublisher {
                     return Objects.equals(f.getType(), marqueeTextViewClass);
                 }
             }).findFirst().orElseThrow();
+        // viewDelegate 中 MarqueeLyricView 字段（this.l），恢复歌词时重新提取
+        marqueeLyricField = Arrays.stream(viewDelegateClass.getDeclaredFields())
+            .filter(new Predicate<Field>() {
+                @Override
+                public boolean test(Field f) {
+                    return Objects.equals(f.getType(), marqueeLyricViewClass);
+                }
+            }).findFirst().orElse(null);
         hook(lyricModelMethod,
             new AbsHook() {
                 @Override
@@ -217,7 +233,12 @@ public final class QQMusic extends AbsPublisher {
                     TextView textView = (TextView) getField(marqueeTextViewField, getThisObject());
                     if (textView == null) return;
                     textView.setVisibility(GONE);
-                    sendLyric(textView.getText().toString());
+                    String tip = textView.getText().toString();
+                    // 过滤暂停提示等占位文本
+                    if (isLyricPauseTip(tip)) return;
+                    // 已有歌词数据时由 findCurrentLine 发布，提示文本不参与兜底
+                    if (!mLines.isEmpty()) return;
+                    sendLyric(tip);
                 }
             }
         );
@@ -232,6 +253,8 @@ public final class QQMusic extends AbsPublisher {
                     if (mLyric == null) return;
 
                     clearLyricCache();
+                    // 缓存 k[]（[0]=主歌词, [1]=翻译, [2]=罗马），供恢复播放时复用翻译数据
+                    mLastKArr = getArg(0);
 
                     extractMeta(mLyric);
                     extractLines(mLyric);
@@ -470,10 +493,31 @@ public final class QQMusic extends AbsPublisher {
                     continue;
                 }
                 String text = mText != null ? (String) getField(mText, line) : "";
-                mTransLines.add(text != null ? text : "");
+                mTransLines.add(text != null && !isTranslationPlaceholder(text) ? text : "");
             }
         } catch (Throwable ignored) {
         }
+    }
+
+    /**
+     * QQ音乐翻译歌词中，无翻译的段落会用 "/"、"//" 等纯斜杠占位，需过滤。
+     */
+    private static boolean isTranslationPlaceholder(String text) {
+        String trimmed = text.trim();
+        if (trimmed.isEmpty()) return true;
+        for (int i = 0; i < trimmed.length(); i++) {
+            if (trimmed.charAt(i) != '/') return false;
+        }
+        return true;
+    }
+
+    /**
+     * 判断是否为 QQ音乐 状态栏的暂停/提示占位文本（如 "歌曲已暂停，即将隐藏歌词"）。
+     */
+    private static boolean isLyricPauseTip(String text) {
+        String trimmed = text == null ? "" : text.trim();
+        if (trimmed.isEmpty()) return true;
+        return trimmed.contains("歌曲已暂停");
     }
 
     private void discoverWordsField(Object sentence) {
@@ -485,6 +529,30 @@ public final class QQMusic extends AbsPublisher {
                 mWords = field;
                 return;
             }
+        }
+    }
+
+    /**
+     * 恢复播放时兜底：仅当歌词缓存失效时从 MarqueeLyricView.mLyric 重新提取，
+     * 并重置行号由 findCurrentLine 续发。缓存有效时不重置 mLastLine，避免破坏去重。
+     */
+    private void resumeLyric(Object viewDelegate) {
+        try {
+            if (mLines.isEmpty() || mCurrentSentences == null) {
+                Object marqueeView = getField(marqueeLyricField, viewDelegate);
+                if (marqueeView == null) return;
+                Object mLyric = getField(marqueeView, "mLyric");
+                if (mLyric == null) return;
+                extractMeta(mLyric);
+                extractLines(mLyric);
+                if (mLines.isEmpty()) return;
+                if (mLastKArr != null) {
+                    extractTranslation(mLastKArr);
+                }
+                // 重新提取成功，重置行号由 findCurrentLine 续发
+                mLastLine = -1;
+            }
+        } catch (Throwable ignored) {
         }
     }
 

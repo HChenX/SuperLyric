@@ -137,7 +137,6 @@ public final class SuperLyricProxy extends AbsModule {
                         boolean isKilled = (boolean) Optional.ofNullable(getField(app, "mKilled")).orElse(true);
                         if (isKilled) {
                             sSuperLyricService.onProcessDied(info.packageName, pid);
-                            logI(tag, "Publisher process died: " + info.packageName + ", pid: " + pid);
                         }
                     }
                 }

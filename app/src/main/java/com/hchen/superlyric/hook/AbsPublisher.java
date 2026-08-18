@@ -51,6 +51,7 @@ public abstract class AbsPublisher extends AbsModule {
     @CallSuper
     @Override
     protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
+        SuperLyricHelper.registerPublisher();
         HotfixDisabler.disableAllHotfixes();
     }
 
@@ -58,7 +59,6 @@ public abstract class AbsPublisher extends AbsModule {
     @Override
     protected void onApplicationCreated(@NonNull Context context) {
         ModuleData.setClassLoader(context.getClassLoader());
-        SuperLyricHelper.registerPublisher();
         sPackageName = context.getPackageName();
         sAudioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         try {
