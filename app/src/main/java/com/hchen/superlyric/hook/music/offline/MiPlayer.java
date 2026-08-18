@@ -21,8 +21,8 @@ package com.hchen.superlyric.hook.music.offline;
 import androidx.annotation.NonNull;
 
 import com.hchen.processor.HookThis;
-import com.hchen.superlyric.patches.qqmusic.QQMusicLyricDistributor;
 import com.hchen.superlyric.hook.AbsPublisher;
+import com.hchen.superlyric.patches.qqmusic.QQMusicLyricDistributor;
 
 import io.github.libxposed.api.XposedModuleInterface;
 

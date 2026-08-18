@@ -24,8 +24,8 @@ import androidx.annotation.Nullable;
 import com.google.gson.Gson;
 import com.google.gson.JsonSyntaxException;
 import com.hchen.hooktool.log.XposedLog;
-import com.hchen.superlyricapi.SuperLyricWord;
 import com.hchen.superlyric.utils.LyricCacheStore;
+import com.hchen.superlyricapi.SuperLyricWord;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -38,9 +38,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import okhttp3.Call;
 import okhttp3.OkHttpClient;
@@ -161,7 +161,7 @@ public final class SpotifyLyricAnalysis {
      * @param id 音轨标识（已剥 spotify:track: 前缀）
      * @return 歌词接口原始响应字节
      * @throws LyricNotFoundException 接口 404（无歌词）
-     * @throws IOException           网络错误 / 非成功状态码
+     * @throws IOException            网络错误 / 非成功状态码
      */
     @NonNull
     public static byte[] fetchLyric(@NonNull String id, @NonNull HeaderSnapshot headers) throws IOException {
@@ -229,7 +229,7 @@ public final class SpotifyLyricAnalysis {
         return output.toByteArray();
     }
 
-    public enum ParseType { READY, EMPTY, MALFORMED }
+    public enum ParseType {READY, EMPTY, MALFORMED}
 
     public static final class ParseResult {
         @NonNull
@@ -428,7 +428,8 @@ public final class SpotifyLyricAnalysis {
                 int fieldEnd = reader.ensureEnd(len);
                 if (fieldEnd > end) throw new IOException("Field exceeds parent message");
                 if (field == 2) {
-                    if (len > MAX_PROTO_STRING_BYTES) throw new IOException("Lyric string too large");
+                    if (len > MAX_PROTO_STRING_BYTES)
+                        throw new IOException("Lyric string too large");
                     words = new String(reader.readBytes(len), StandardCharsets.UTF_8);
                 } else if (field == 3) {
                     if (syllables == null) syllables = new ArrayList<>();
@@ -608,7 +609,7 @@ public final class SpotifyLyricAnalysis {
      */
     @Nullable
     private static SuperLyricWord[] toSuperLyricWords(@NonNull String text, @Nullable List<Syllable> syllables,
-                                                       long lineStart, long lineEnd) {
+                                                      long lineStart, long lineEnd) {
         if (syllables == null || syllables.isEmpty()) return null;
 
         SuperLyricWord[] result = new SuperLyricWord[syllables.size()];
@@ -745,7 +746,9 @@ public final class SpotifyLyricAnalysis {
 
     // 解析后的不可变模型（JSON 与 protobuf 两路共用）
 
-    /** 解析后的歌词数据（不可变）。 */
+    /**
+     * 解析后的歌词数据（不可变）。
+     */
     private static final class LyricsData {
         @NonNull
         final List<LyricLine> lines;
@@ -755,7 +758,9 @@ public final class SpotifyLyricAnalysis {
         }
     }
 
-    /** 解析后的歌词行（不可变）。 */
+    /**
+     * 解析后的歌词行（不可变）。
+     */
     private static final class LyricLine {
         final long startTimeMs;
         @Nullable
@@ -776,7 +781,9 @@ public final class SpotifyLyricAnalysis {
         }
     }
 
-    /** 解析后的逐字块（不可变）：{@code count} 为 UTF-16 字符数。 */
+    /**
+     * 解析后的逐字块（不可变）：{@code count} 为 UTF-16 字符数。
+     */
     private static final class Syllable {
         final long startTimeMs;
         final int count;

@@ -35,14 +35,19 @@ import com.hchen.hooktool.log.AndroidLog;
 import com.hchen.hooktool.utils.PrefsTool;
 import com.hchen.processor.HookMaps;
 import com.hchen.superlyric.data.LocalConfig;
+import com.hchen.superlyric.data.NetworkMode;
+import com.hchen.superlyric.data.PrefsKey;
+import com.hchen.superlyric.data.SupportApps;
 import com.hchen.superlyric.utils.LyricCacheStore;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -103,6 +108,7 @@ public final class HookEntrance extends ModuleEntrance {
                     version
                 );
 
+                Set<String> networks = PrefsTool.prefs().getStringSet(PrefsKey.NETWORK_LYRICS_MODE, new HashSet<>());
 
                 ClassLoader previousLoader = moduleClassLoaders.get(param.getPackageName());
                 if (modules.containsKey(param.getPackageName()) && previousLoader == param.getClassLoader()) {
@@ -120,6 +126,16 @@ public final class HookEntrance extends ModuleEntrance {
                 List<AbsModule> packageModules = new ArrayList<>();
                 for (String path : Objects.requireNonNull(HookMaps.ON_PACKAGE_LOADED.get(param.getPackageName()))) {
                     try {
+                        if (networks.contains(param.getPackageName()) || SupportApps.sSupportNetworkApps.get(param.getPackageName()) == NetworkMode.ONLY) {
+                            if (path.contains("offline")) {
+                                continue;
+                            }
+                        } else {
+                            if (path.contains("online")) {
+                                continue;
+                            }
+                        }
+
                         AbsModule module = (AbsModule) HookEntrance.class.getClassLoader()
                             .loadClass(path)
                             .getDeclaredConstructor()

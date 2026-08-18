@@ -27,8 +27,8 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonSyntaxException;
 import com.hchen.hooktool.log.XposedLog;
-import com.hchen.superlyricapi.SuperLyricWord;
 import com.hchen.superlyric.utils.LyricCacheStore;
+import com.hchen.superlyricapi.SuperLyricWord;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -398,7 +398,8 @@ public final class NeteaseLyricAnalysis {
                 long duration = parseNonNegativeLong(wordMatcher.group(2));
                 long end = checkedEnd(start, duration);
                 String text = wordMatcher.group(3);
-                if (start < 0L || duration < 0L || end <= start || text == null || text.isEmpty()) continue;
+                if (start < 0L || duration < 0L || end <= start || text == null || text.isEmpty())
+                    continue;
                 words.add(new ParsedWord(start, end, text));
             }
             words.sort(Comparator.comparingLong(word -> word.begin));

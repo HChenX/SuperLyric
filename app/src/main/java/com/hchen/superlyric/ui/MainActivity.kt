@@ -23,11 +23,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -45,7 +40,6 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -111,6 +105,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         window.isNavigationBarContrastEnforced = false
+        Application.addPrefsReadyListener {
+            PackageLoader.loadPackages(this)
+        }
         PackageLoader.loadPackages(this)
 
         setContent {
@@ -175,7 +172,6 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun CompactScreenLayout() {
-        val isSearching by viewModel.isSearching.collectAsState()
         val pagerState = LocalPagerState.current
         val handlePagerChange = LocalHandlePagerChange.current
 
@@ -185,34 +181,28 @@ class MainActivity : ComponentActivity() {
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             bottomBar = {
-                AnimatedVisibility(
-                    visible = !isSearching,
-                    enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
-                    exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Bottom)
-                ) {
-                    BlurredBar(backdrop = backdrop, blurEnabled = blurActive) {
-                        NavigationBar(
-                            mode = NavigationBarDisplayMode.IconWithSelectedLabel,
-                            color = if (blurActive) Color.Transparent else colorScheme.surface
-                        ) {
-                            NavigationBarItem(
-                                label = stringResource(R.string.home),
-                                icon = MiuixIcons.HorizontalSplit,
-                                selected = pagerState.currentPage == UIConstants.HOME_PAGE_INDEX,
-                                onClick = {
-                                    handlePagerChange(false, UIConstants.HOME_PAGE_INDEX)
-                                }
-                            )
+                BlurredBar(backdrop = backdrop, blurEnabled = blurActive) {
+                    NavigationBar(
+                        mode = NavigationBarDisplayMode.IconWithSelectedLabel,
+                        color = if (blurActive) Color.Transparent else colorScheme.surface
+                    ) {
+                        NavigationBarItem(
+                            label = stringResource(R.string.home),
+                            icon = MiuixIcons.HorizontalSplit,
+                            selected = pagerState.currentPage == UIConstants.HOME_PAGE_INDEX,
+                            onClick = {
+                                handlePagerChange(false, UIConstants.HOME_PAGE_INDEX)
+                            }
+                        )
 
-                            NavigationBarItem(
-                                label = stringResource(R.string.about),
-                                icon = MiuixIcons.Info,
-                                selected = pagerState.currentPage == UIConstants.ABOUT_PAGE_INDEX,
-                                onClick = {
-                                    handlePagerChange(false, UIConstants.ABOUT_PAGE_INDEX)
-                                }
-                            )
-                        }
+                        NavigationBarItem(
+                            label = stringResource(R.string.about),
+                            icon = MiuixIcons.Info,
+                            selected = pagerState.currentPage == UIConstants.ABOUT_PAGE_INDEX,
+                            onClick = {
+                                handlePagerChange(false, UIConstants.ABOUT_PAGE_INDEX)
+                            }
+                        )
                     }
                 }
             }

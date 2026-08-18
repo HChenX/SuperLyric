@@ -54,9 +54,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -100,6 +102,7 @@ fun AboutLayout(
     isWideScreen: Boolean = false
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val iconPainter = remember(context) {
         BitmapPainter(
             context.packageManager
@@ -435,7 +438,7 @@ fun AboutLayout(
                 }
             ) {
                 Card(
-                    colors =  CardDefaults.defaultColors(
+                    colors = CardDefaults.defaultColors(
                         color = MiuixTheme.colorScheme.secondaryContainer,
                     )
                 ) {
@@ -473,6 +476,7 @@ fun AboutLayout(
                         text = stringResource(android.R.string.ok),
                         onClick = {
                             isContributorsDialogShowing = false
+                            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
                         },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.textButtonColorsPrimary()

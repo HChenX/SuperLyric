@@ -85,6 +85,7 @@ public final class Spotify extends AbsPublisher {
     // 避免 stopLoop→startLoop 时序下出现双链并行
     private volatile boolean mIsRunning = false;
     private volatile long mLoopToken = 0L;
+
     private static final class HeaderWait {
         @NonNull
         final String trackId;
@@ -112,7 +113,9 @@ public final class Spotify extends AbsPublisher {
     private final ConcurrentHashMap<String, Integer> mAuthRefreshCounts = new ConcurrentHashMap<>();
 
 
-    /** 歌曲上下文快照：音轨标识 + 标题/歌手，与歌词配对发布的元数据来源。 */
+    /**
+     * 歌曲上下文快照：音轨标识 + 标题/歌手，与歌词配对发布的元数据来源。
+     */
     private static final class SongInfo {
         @NonNull
         final String trackId;
@@ -128,7 +131,9 @@ public final class Spotify extends AbsPublisher {
         }
     }
 
-    /** 歌词快照：所属音轨标识 + 规整后的行列表（不可变）。 */
+    /**
+     * 歌词快照：所属音轨标识 + 规整后的行列表（不可变）。
+     */
     private static final class LyricData {
         @NonNull
         final String trackId;
@@ -141,7 +146,9 @@ public final class Spotify extends AbsPublisher {
         }
     }
 
-    /** 播放状态不可变快照：state / position / speed 与锚点时间一次写入。 */
+    /**
+     * 播放状态不可变快照：state / position / speed 与锚点时间一次写入。
+     */
     private static final class PlaybackSnapshot {
         static final PlaybackSnapshot INITIAL =
             new PlaybackSnapshot(PlaybackState.STATE_NONE, 0L, 0f, 0L);
@@ -159,7 +166,9 @@ public final class Spotify extends AbsPublisher {
         }
     }
 
-    /** 歌曲上下文快照：当前歌曲 + 歌词（可为空）+ 已展示行索引，整体原子替换。 */
+    /**
+     * 歌曲上下文快照：当前歌曲 + 歌词（可为空）+ 已展示行索引，整体原子替换。
+     */
     private static final class TrackSnapshot {
         final long generation;
         @NonNull
@@ -438,8 +447,10 @@ public final class Spotify extends AbsPublisher {
         SpotifyLyricAnalysis.HeaderSnapshot headers = SpotifyLyricAnalysis.currentHeaders();
         if (wait == null || headers == null || headers.generation <= wait.headerGeneration) return;
         String taskKey = taskKey(wait.trackId, wait.trackGeneration);
-        if (!isCurrentTrack(wait.trackId, wait.trackGeneration) || mDownloadingIds.contains(taskKey)) return;
-        if (mHeaderWait.compareAndSet(wait, null)) fetchLyricsForTrack(wait.trackId, wait.trackGeneration);
+        if (!isCurrentTrack(wait.trackId, wait.trackGeneration) || mDownloadingIds.contains(taskKey))
+            return;
+        if (mHeaderWait.compareAndSet(wait, null))
+            fetchLyricsForTrack(wait.trackId, wait.trackGeneration);
     }
 
     /**
@@ -524,7 +535,8 @@ public final class Spotify extends AbsPublisher {
      */
     private static long estimatePosition(@NonNull PlaybackSnapshot playback, long now) {
         long base = Math.max(0L, playback.position);
-        if (!Float.isFinite(playback.speed) || playback.speed < 0f || now <= playback.anchorTime) return base;
+        if (!Float.isFinite(playback.speed) || playback.speed < 0f || now <= playback.anchorTime)
+            return base;
         long elapsed = now - playback.anchorTime;
         double delta = elapsed * (double) playback.speed;
         if (!Double.isFinite(delta) || delta >= Long.MAX_VALUE) return Long.MAX_VALUE;

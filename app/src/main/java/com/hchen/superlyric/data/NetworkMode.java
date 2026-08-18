@@ -16,20 +16,24 @@
 
  * Copyright (C) 2025-2026 HChenX
  */
-package com.hchen.superlyric.hook.music.online;
-
-import com.hchen.processor.HookThis;
-import com.hchen.superlyric.hook.music.online.netease.NeteasePublisher;
+package com.hchen.superlyric.data;
 
 /**
- * 网易云音乐。
+ * 应用对网络歌词获取模式的支持程度。
+ *
+ * <p>用于 {@link SupportApps#sSupportNetworkApps}：键为包名，值为应用在
+ * 离线 Hook 与在线网络两种获取模式间的能力。不在此映射中的应用不支持网络模式。
  *
  * @author 焕晨HChen
  */
-@HookThis(targetPackage = "com.netease.cloudmusic")
-public final class Netease extends NeteasePublisher {
-    @Override
-    protected String lyricCacheProvider() {
-        return "Netease";
-    }
+public enum NetworkMode {
+    /**
+     * 默认使用 Hook 模式，但允许用户切换为网络获取（如网易云、荣耀音乐）。
+     */
+    OPTIONAL,
+
+    /**
+     * 仅支持网络获取，无法切换为 Hook 模式（如 Spotify）。
+     */
+    ONLY
 }

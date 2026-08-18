@@ -457,7 +457,10 @@ public final class QQMusic extends AbsPublisher {
             // mText 可能尚未初始化（extractLines 未执行或失败），此时兜底用遍历
             if (mText == null && !lines.isEmpty() && lines.get(0) != null) {
                 for (Field f : lines.get(0).getClass().getDeclaredFields()) {
-                    if (f.getType() == String.class) { mText = f; break; }
+                    if (f.getType() == String.class) {
+                        mText = f;
+                        break;
+                    }
                 }
             }
 

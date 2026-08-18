@@ -21,10 +21,10 @@ package com.hchen.superlyric.hook.music.offline;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.hchen.processor.HookThis;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
+import com.hchen.processor.HookThis;
 import com.hchen.superlyric.hook.AbsPublisher;
 import com.hchen.superlyric.utils.BluetoothFaker;
 import com.hchen.superlyricapi.SuperLyricData;
@@ -164,7 +164,8 @@ public final class Qishui extends AbsPublisher {
                 if (second == null || index < 0 || index >= second.size()) return;
 
                 Object trackPlayable = getArg(0);
-                if (lastPair == pair && lastTrackPlayable == trackPlayable && lastIndex == index) return;
+                if (lastPair == pair && lastTrackPlayable == trackPlayable && lastIndex == index)
+                    return;
 
                 Object sentence = second.get(index);
                 LyricData lyricData = create(sentence);

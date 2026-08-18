@@ -30,7 +30,7 @@ import java.util.Set;
  * @author 焕晨HChen
  */
 public final class SupportApps {
-    public static final Set<String> mMediaAppPackages = new HashSet<>() {
+    public static final Set<String> sMediaAppPackages = new HashSet<>() {
         {
             add("remix.myplayer"); // APlayer
             add("com.apple.android.music"); // 苹果音乐
@@ -66,7 +66,14 @@ public final class SupportApps {
         }
     };
 
-    public static HashMap<String, Integer> mPackageLabelRes = new HashMap<>() {
+    // key: package, value: network mode support (absent = no network mode)
+    public static HashMap<String, NetworkMode> sSupportNetworkApps = new HashMap<>() {{
+        put("com.hihonor.cloudmusic", NetworkMode.OPTIONAL); // 荣耀音乐
+        put("com.netease.cloudmusic", NetworkMode.OPTIONAL); // 网易云音乐
+        put("com.spotify.music", NetworkMode.ONLY); // Spotify
+    }};
+
+    public static HashMap<String, Integer> sPackageLabelRes = new HashMap<>() {
         {
             put("remix.myplayer", R.string.aplayer_music); // APlayer
             put("com.apple.android.music", R.string.apple_music); // 苹果音乐

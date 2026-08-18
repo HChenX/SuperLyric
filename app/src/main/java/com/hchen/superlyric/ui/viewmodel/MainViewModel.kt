@@ -18,14 +18,17 @@
  */
 package com.hchen.superlyric.ui.viewmodel
 
+import android.annotation.SuppressLint
 import android.content.SharedPreferences
+import androidx.compose.ui.util.fastFirstOrNull
 import androidx.core.content.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.hchen.hooktool.data.AppData
-import com.hchen.superlyric.data.ApiAppData
 import com.hchen.superlyric.data.PrefsKey
+import com.hchen.superlyric.data.apps.ApiAppData
+import com.hchen.superlyric.data.apps.NetworkAppData
 import com.hchen.superlyric.ui.Application
 import com.hchen.superlyric.utils.PackageLoader
 import kotlinx.coroutines.Dispatchers
@@ -65,14 +68,14 @@ class MainViewModel(
     private val _apiApps = MutableStateFlow<List<ApiAppData>>(emptyList())
     val apiApps: StateFlow<List<ApiAppData>> = _apiApps.asStateFlow()
 
+    private val _networkApps = MutableStateFlow<List<NetworkAppData>>(emptyList())
+    val networkApps: StateFlow<List<NetworkAppData>> = _networkApps.asStateFlow()
+
     private val _currentApp = MutableStateFlow(AppData())
     val currentApp: StateFlow<AppData> = _currentApp.asStateFlow()
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
-
-    private val _isSearching = MutableStateFlow(false)
-    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
 
     init {
         addPrefsReadyListener(prefsReadyListener)
@@ -81,6 +84,7 @@ class MainViewModel(
 
     private fun loadApps() {
         _hookApps.value = PackageLoader.getMediaApps().toList()
+        _networkApps.value = PackageLoader.getMediaNetworkApps().toList()
         _apiApps.value = PackageLoader.getMediaApiApps().toList()
     }
 
@@ -102,8 +106,25 @@ class MainViewModel(
                 }
             }
 
+            is MainUiAction.UpdateNetworkApp -> {
+                val currentPrefs = Application.getRemotePreferences()
+                if (currentPrefs != null && prefs === currentPrefs) {
+                    currentPrefs.edit {
+                        val apps = currentPrefs.getStringSet(PrefsKey.NETWORK_LYRICS_MODE, emptySet<String>())
+                        val newApps = apps.orEmpty().toMutableSet()
+                        if (action.isAdd) {
+                            newApps.add(action.packageName)
+                        } else {
+                            newApps.remove(action.packageName)
+                        }
+
+                        putStringSet(PrefsKey.NETWORK_LYRICS_MODE, newApps)
+                    }
+                    refreshData()
+                }
+            }
+
             is MainUiAction.Refresh -> refreshData()
-            is MainUiAction.Searching -> _isSearching.value = action.isSearching
             is MainUiAction.CurrentApp -> _currentApp.value = action.appData
         }
     }
@@ -112,20 +133,26 @@ class MainViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             _isRefreshing.value = true
             try {
-                delay(500)
                 reloadApps().awaitCompletion()
                 loadApps()
+
+                delay(300)
+                _currentApp.value = _currentApp.value.packageName?.let { pkg ->
+                    _hookApps.value.fastFirstOrNull { it.packageName == pkg }
+                        ?: _networkApps.value.fastFirstOrNull { it.packageName == pkg }
+                } ?: AppData()
             } finally {
                 _isRefreshing.value = false
             }
         }
     }
 
+    @SuppressLint("EmptySuperCall")
     override fun onCleared() {
+        super.onCleared()
         removePrefsReadyListener(prefsReadyListener)
         removeAppLoadedListener(appLoadedListener)
         prefs = null
-        super.onCleared()
     }
 
     private suspend fun CompletableFuture<Void>.awaitCompletion() {
@@ -143,10 +170,10 @@ class MainViewModel(
 }
 
 sealed class MainUiAction {
-    data class UpdateLogLevel(val value: Int) : MainUiAction()
     data object Refresh : MainUiAction()
-    data class Searching(val isSearching: Boolean) : MainUiAction()
     data class CurrentApp(val appData: AppData) : MainUiAction()
+    data class UpdateLogLevel(val value: Int) : MainUiAction()
+    data class UpdateNetworkApp(val isAdd: Boolean, val packageName: String) : MainUiAction()
 }
 
 class MainViewModelFactory(

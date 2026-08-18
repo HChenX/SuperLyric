@@ -32,7 +32,6 @@ import com.hchen.superlyricapi.SuperLyricData;
 
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.BiConsumer;
 
 /**
  * 播放状态监听

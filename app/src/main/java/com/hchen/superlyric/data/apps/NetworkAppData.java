@@ -16,20 +16,17 @@
 
  * Copyright (C) 2025-2026 HChenX
  */
-package com.hchen.superlyric.hook.music.online;
+package com.hchen.superlyric.data.apps;
 
-import com.hchen.processor.HookThis;
-import com.hchen.superlyric.hook.music.online.netease.NeteasePublisher;
+import com.hchen.hooktool.data.AppData;
 
 /**
- * 网易云音乐。
+ * 支持网络歌词获取的应用数据。
+ *
+ * <p>仅作为类型标记使用：出现在 {@code networkApps} 列表即代表该应用处于网络获取模式，
+ * 与 {@code hookApps}（普通 {@link AppData}）按所属列表区分，无需额外状态字段。
  *
  * @author 焕晨HChen
  */
-@HookThis(targetPackage = "com.netease.cloudmusic")
-public final class Netease extends NeteasePublisher {
-    @Override
-    protected String lyricCacheProvider() {
-        return "Netease";
-    }
+public class NetworkAppData extends AppData {
 }

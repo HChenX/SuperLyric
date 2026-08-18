@@ -23,12 +23,12 @@ import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.processor.HookThis;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.superlyric.patches.TimeoutWatchdog;
+import com.hchen.processor.HookThis;
 import com.hchen.superlyric.hook.AbsPublisher;
+import com.hchen.superlyric.patches.TimeoutWatchdog;
 import com.hchen.superlyric.utils.BluetoothFaker;
 
 import org.luckypray.dexkit.DexKitBridge;

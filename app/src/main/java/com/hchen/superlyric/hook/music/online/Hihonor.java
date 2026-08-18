@@ -26,7 +26,7 @@ import com.hchen.superlyric.hook.music.online.netease.NeteasePublisher;
  *
  * @author 彼岸喵Higanoneko & 焕晨HChen
  */
-// @HookThis(targetPackage = "com.hihonor.cloudmusic")
+@HookThis(targetPackage = "com.hihonor.cloudmusic")
 public final class Hihonor extends NeteasePublisher {
     @Override
     protected String lyricCacheProvider() {

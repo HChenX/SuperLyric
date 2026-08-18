@@ -25,4 +25,5 @@ package com.hchen.superlyric.data;
  */
 public final class PrefsKey {
     public static final String LOG_LEVEL = "log_level";
+    public static final String NETWORK_LYRICS_MODE = "network_lyrics_mode";
 }

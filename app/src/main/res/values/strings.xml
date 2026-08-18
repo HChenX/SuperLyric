@@ -21,11 +21,6 @@
     <string name="log_E">Error</string>
     <string name="log_D">Debug</string>
 
-    <!-- Search -->
-    <string name="select_search">Search app</string>
-    <string name="select_list_empty">The app list is empty</string>
-    <string name="select_none">No search results available at the moment</string>
-
     <!-- Pull to Refresh -->
     <string name="pull_down_to_refresh">Pull down to refresh</string>
     <string name="release_to_refresh">Release to refresh</string>
@@ -33,14 +28,20 @@
     <string name="refresh_successfully">Refreshed successfully</string>
 
     <!-- App Lists -->
-    <string name="apps_api_list">API Support List</string>
-    <string name="apps_hook_list">Hook Support List</string>
+    <string name="apps_list">List of supported applications</string>
+    <string name="apps_list_empty">The application list is empty.</string>
 
     <!-- App Details -->
     <string name="current_version">Version: %1$s, Code: %2$s</string>
     <string name="instructions_for_use">Usage: %s</string>
     <string name="unknown">Not available</string>
     <string name="support_api">API native support</string>
+    <string name="network_mode">Lyrics data will be pulled from the network, please ensure smooth network connection</string>
+    <string name="switch_mode">Switch acquisition mode</string>
+    <string name="switch_mode_hook">Hook</string>
+    <string name="switch_mode_network">Network</string>
+    <string name="switch_mode_restart_hint">Mode switched. Restart the target app to apply.</string>
+    <string name="badge_api">API</string>
 
     <!-- About > Author -->
     <string name="developer">Developer</string>
@@ -57,7 +58,7 @@
 
     <!-- Debug -->
     <string name="debug">Debug</string>
-    <string name="clear_dexkit_cache">Clear Dexkit Cache</string>
+    <string name="clear_dexkit_cache">Clear Cache</string>
     <string name="clear_dexkit_cache_summary">May fix some apps not working properly</string>
     <string name="cleared">Cleared</string>
     <string name="clear_failed">Clear failed</string>

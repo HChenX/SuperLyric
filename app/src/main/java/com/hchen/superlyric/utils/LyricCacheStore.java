@@ -29,8 +29,8 @@ import com.hchen.hooktool.log.XposedLog;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -57,7 +57,9 @@ public final class LyricCacheStore {
     private static final int MAX_PROVIDER_FILES = 256;
     private static final long MAX_CACHE_AGE_MS = 30L * 24L * 60L * 60L * 1000L;
     private static final long TEMP_MAX_AGE_MS = 24L * 60L * 60L * 1000L;
-    /** 单个歌词原始响应上限；正常歌词响应远低于此值。 */
+    /**
+     * 单个歌词原始响应上限；正常歌词响应远低于此值。
+     */
     public static final int MAX_PAYLOAD_BYTES = 2 * 1024 * 1024;
     private static final byte[] VERSION_PREFIX = ("{\"v\":" + CACHE_VERSION + ",\"d\":")
         .getBytes(StandardCharsets.UTF_8);

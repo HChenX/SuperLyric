@@ -16,7 +16,7 @@
 
  * Copyright (C) 2025-2026 HChenX
  */
-package com.hchen.superlyric.data;
+package com.hchen.superlyric.data.apps;
 
 import androidx.annotation.NonNull;
 
@@ -25,7 +25,7 @@ import com.hchen.hooktool.data.AppData;
 import java.util.Objects;
 
 /**
- * 带 API 版本信息的目标应用数据。
+ * 带 API 版本信息的应用数据。
  *
  * @author 焕晨HChen
  */

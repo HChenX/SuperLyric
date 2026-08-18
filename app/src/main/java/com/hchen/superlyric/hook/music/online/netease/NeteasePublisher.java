@@ -543,7 +543,8 @@ public abstract class NeteasePublisher extends AbsPublisher {
      */
     private static long estimatePosition(@NonNull PlaybackSnapshot playback, long now) {
         long base = Math.max(0L, playback.position);
-        if (!Float.isFinite(playback.speed) || playback.speed < 0f || now <= playback.anchorTime) return base;
+        if (!Float.isFinite(playback.speed) || playback.speed < 0f || now <= playback.anchorTime)
+            return base;
         long elapsed = now - playback.anchorTime;
         double delta = elapsed * (double) playback.speed;
         if (!Double.isFinite(delta) || delta >= Long.MAX_VALUE) return Long.MAX_VALUE;
@@ -690,7 +691,8 @@ public abstract class NeteasePublisher extends AbsPublisher {
     private void finishEmpty(long id, long generation, @NonNull String message) {
         synchronized (mSourceStateLock) {
             TrackSnapshot current = mTrackRef.get();
-            if (current == null || current.generation != generation || current.song.id != id) return;
+            if (current == null || current.generation != generation || current.song.id != id)
+                return;
             if (!mTrackRef.compareAndSet(current, current.clearLyric())) return;
             clearRetryFor(id, generation);
             dispatchSourceEvent(LyricSourceMachine.Event.fetchEmpty(id));

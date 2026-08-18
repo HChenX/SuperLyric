@@ -35,7 +35,6 @@ import androidx.compose.foundation.layout.captionBar
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -47,7 +46,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,23 +72,16 @@ import com.hchen.hooktool.core.CoreTool.Companion.getStaticField
 import com.hchen.hooktool.data.AppData
 import com.hchen.hooktool.utils.PrefsTool
 import com.hchen.superlyric.R
-import com.hchen.superlyric.data.ApiAppData
+import com.hchen.superlyric.data.NetworkMode
 import com.hchen.superlyric.data.PrefsKey
 import com.hchen.superlyric.data.SupportApps
+import com.hchen.superlyric.data.apps.ApiAppData
+import com.hchen.superlyric.data.apps.NetworkAppData
 import com.hchen.superlyric.ui.Application
-import com.hchen.superlyric.ui.component.SearchBox
-import com.hchen.superlyric.ui.component.SearchPager
-import com.hchen.superlyric.ui.component.SearchStatus
-import com.hchen.superlyric.ui.component.SearchStatus.Status.COLLAPSED
-import com.hchen.superlyric.ui.component.SearchStatus.Status.COLLAPSING
-import com.hchen.superlyric.ui.component.SearchStatus.Status.EXPANDED
-import com.hchen.superlyric.ui.component.SearchStatus.Status.EXPANDING
-import com.hchen.superlyric.ui.component.TopAppBarAnim
 import com.hchen.superlyric.ui.data.LocalViewModel
 import com.hchen.superlyric.ui.effect.BlurredBar
 import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
 import com.hchen.superlyric.ui.viewmodel.MainUiAction
-import com.hchen.superlyric.utils.PackageLoader
 import com.hchen.superlyricapi.ISuperLyricReceiver
 import com.hchen.superlyricapi.SuperLyricData
 import com.hchen.superlyricapi.SuperLyricHelper
@@ -109,6 +100,7 @@ import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.PullToRefresh
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTitle
+import top.yukonga.miuix.kmp.basic.SmallTitleDefaults
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -122,6 +114,7 @@ import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.layout.DialogDefaults
 import top.yukonga.miuix.kmp.menu.OverlayIconCascadingDropdownMenu
 import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles
 import top.yukonga.miuix.kmp.utils.overScrollVertical
@@ -138,6 +131,7 @@ fun HomeLayout(
     val context = LocalContext.current
     val viewModel = LocalViewModel.current
     val hookApps by viewModel.hookApps.collectAsState()
+    val networkApps by viewModel.networkApps.collectAsState()
     val apiApps by viewModel.apiApps.collectAsState()
     val currentApp by viewModel.currentApp.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -146,40 +140,6 @@ fun HomeLayout(
     val blurActive = backdrop != null
 
     val scrollBehavior = MiuixScrollBehavior()
-    val dynamicTopPadding by remember {
-        derivedStateOf { 12.dp * (1f - scrollBehavior.state.collapsedFraction) }
-    }
-
-    val searchStatus by remember { mutableStateOf(SearchStatus(label = context.getString(R.string.select_search))) }
-    val filteredHookApps = remember(searchStatus.searchText, hookApps) {
-        val query = searchStatus.searchText.trim()
-        if (query.isEmpty()) emptyList()
-        else hookApps.filter { it.label.contains(query, ignoreCase = true) }
-            .also { PackageLoader.sortAppData(it) }
-    }
-    val filteredApiApps = remember(searchStatus.searchText, apiApps) {
-        val query = searchStatus.searchText.trim()
-        if (query.isEmpty()) emptyList()
-        else apiApps.filter { it.label.contains(query, ignoreCase = true) }
-            .also { PackageLoader.sortAppData(it) }
-    }
-
-    LaunchedEffect(searchStatus.searchText, filteredHookApps, filteredApiApps) {
-        searchStatus.resultStatus = when {
-            searchStatus.searchText.isBlank() -> SearchStatus.ResultStatus.DEFAULT
-            filteredHookApps.isEmpty() && filteredApiApps.isEmpty() -> SearchStatus.ResultStatus.EMPTY
-            else -> SearchStatus.ResultStatus.SHOW
-        }
-    }
-
-    LaunchedEffect(searchStatus.current) {
-        when (searchStatus.current) {
-            EXPANDED -> viewModel.handleAction(MainUiAction.Searching(true))
-            EXPANDING -> viewModel.handleAction(MainUiAction.Searching(true))
-            COLLAPSED -> viewModel.handleAction(MainUiAction.Searching(false))
-            COLLAPSING -> viewModel.handleAction(MainUiAction.Searching(false))
-        }
-    }
 
     val pullToRefreshState = rememberPullToRefreshState()
     val show = remember { mutableStateOf(false) }
@@ -271,90 +231,46 @@ fun HomeLayout(
 
     Scaffold(
         topBar = {
-            searchStatus.TopAppBarAnim {
-                BlurredBar(backdrop = backdrop, blurEnabled = blurActive) {
-                    if (isWideScreen) {
-                        SmallTopAppBar(
-                            title = stringResource(R.string.home),
-                            scrollBehavior = scrollBehavior,
-                            defaultWindowInsetsPadding = false,
-                            color = if (blurActive) Color.Transparent else colorScheme.surface,
-                            actions = actions
-                        )
-                    } else {
-                        TopAppBar(
-                            title = stringResource(R.string.home),
-                            scrollBehavior = scrollBehavior,
-                            defaultWindowInsetsPadding = false,
-                            color = if (blurActive) Color.Transparent else colorScheme.surface,
-                            actions = actions
-                        )
-                    }
+            BlurredBar(backdrop = backdrop, blurEnabled = blurActive) {
+                if (isWideScreen) {
+                    SmallTopAppBar(
+                        title = stringResource(R.string.home),
+                        scrollBehavior = scrollBehavior,
+                        defaultWindowInsetsPadding = false,
+                        color = if (blurActive) Color.Transparent else colorScheme.surface,
+                        actions = actions
+                    )
+                } else {
+                    TopAppBar(
+                        title = stringResource(R.string.home),
+                        scrollBehavior = scrollBehavior,
+                        defaultWindowInsetsPadding = false,
+                        color = if (blurActive) Color.Transparent else colorScheme.surface,
+                        actions = actions
+                    )
                 }
             }
         },
-        popupHost = {
-            searchStatus.SearchPager(
-                searchBarTopPadding = dynamicTopPadding,
-                enableRefresh = true,
-                onRefreshing = {
-                    viewModel.handleAction(MainUiAction.Refresh)
-                },
-                result = {
-                    if (filteredApiApps.isNotEmpty()) {
-                        item {
-                            SmallTitle(text = stringResource(R.string.apps_api_list))
-                        }
-
-                        itemsIndexed(
-                            items = filteredApiApps,
-                            key = { _, apiData -> apiData.packageName }
-                        ) { index, apiData ->
-                            AppItemFactory(show, apiData)
-                        }
-                    }
-                    if (filteredHookApps.isNotEmpty()) {
-                        item {
-                            SmallTitle(text = stringResource(R.string.apps_hook_list))
-                        }
-
-                        itemsIndexed(
-                            items = filteredHookApps,
-                            key = { _, appData -> appData.packageName }
-                        ) { index, appData ->
-                            AppItemFactory(show, appData)
-                        }
-                    }
-                },
-                defaultResult = {
-                    EmptyApps(stringResource(R.string.select_none))
-                }
-            )
-        }
     ) { pv ->
-        searchStatus.SearchBox(
-            backdrop = backdrop,
-            searchBarTopPadding = dynamicTopPadding,
-            contentPadding = PaddingValues(top = pv.calculateTopPadding()),
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .clipToBounds()
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clipToBounds()
+            PullToRefresh(
+                isRefreshing = isRefreshing,
+                onRefresh = { viewModel.handleAction(MainUiAction.Refresh) },
+                pullToRefreshState = pullToRefreshState,
+                refreshTexts = listOf(
+                    stringResource(R.string.pull_down_to_refresh),
+                    stringResource(R.string.release_to_refresh),
+                    stringResource(R.string.refreshing),
+                    stringResource(R.string.refresh_successfully)
+                ),
+                contentPadding = PaddingValues(top = pv.calculateTopPadding())
             ) {
-                PullToRefresh(
-                    isRefreshing = isRefreshing,
-                    onRefresh = { viewModel.handleAction(MainUiAction.Refresh) },
-                    pullToRefreshState = pullToRefreshState,
-                    refreshTexts = listOf(
-                        stringResource(R.string.pull_down_to_refresh),
-                        stringResource(R.string.release_to_refresh),
-                        stringResource(R.string.refreshing),
-                        stringResource(R.string.refresh_successfully)
-                    ),
-                    contentPadding = PaddingValues(top = pv.calculateTopPadding() + it.value)
-                ) {
-                    Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
+                Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
+                    if (apiApps.isNotEmpty() || networkApps.isNotEmpty() || hookApps.isNotEmpty()) {
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -362,46 +278,49 @@ fun HomeLayout(
                                 .overScrollVertical()
                                 .nestedScroll(scrollBehavior.nestedScrollConnection),
                             contentPadding = PaddingValues(
-                                top = pv.calculateTopPadding() + it.value,
+                                top = pv.calculateTopPadding(),
                                 bottom = paddingValues.calculateBottomPadding()
                             ),
                             overscrollEffect = null
                         ) {
-                            if (hookApps.isEmpty() && apiApps.isEmpty()) {
-                                item {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(top = 12.dp)
-                                    ) {
-                                        EmptyApps(stringResource(R.string.select_list_empty))
-                                    }
-                                }
-                            } else {
-                                if (apiApps.isNotEmpty()) {
-                                    item {
-                                        SmallTitle(text = stringResource(R.string.apps_api_list))
-                                    }
-                                    itemsIndexed(
-                                        items = apiApps,
-                                        key = { _, apiData -> apiData.packageName }
-                                    ) { index, apiData ->
-                                        AppItemFactory(show, apiData)
-                                    }
-                                }
-
-                                if (hookApps.isNotEmpty()) {
-                                    item {
-                                        SmallTitle(text = stringResource(R.string.apps_hook_list))
-                                    }
-                                    itemsIndexed(
-                                        items = hookApps,
-                                        key = { _, appData -> appData.packageName }
-                                    ) { index, appData ->
-                                        AppItemFactory(show, appData)
-                                    }
-                                }
+                            item {
+                                SmallTitle(text = stringResource(R.string.apps_list))
                             }
+
+                            itemsIndexed(
+                                items = apiApps,
+                                key = { _, apiData -> apiData.packageName }
+                            ) { index, apiData ->
+                                AppItemFactory(show, apiData)
+                            }
+
+                            itemsIndexed(
+                                items = networkApps,
+                                key = { _, apiData -> apiData.packageName }
+                            ) { index, apiData ->
+                                AppItemFactory(show, apiData)
+                            }
+
+                            itemsIndexed(
+                                items = hookApps,
+                                key = { _, appData -> appData.packageName }
+                            ) { index, appData ->
+                                AppItemFactory(show, appData)
+                            }
+                        }
+                    } else {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text(
+                                modifier = Modifier.padding(SmallTitleDefaults.InsideMargin),
+                                text = stringResource(R.string.apps_list_empty),
+                                style = textStyles.subtitle,
+                                textAlign = TextAlign.Center,
+                                color = colorScheme.onBackgroundVariant,
+                            )
                         }
                     }
                 }
@@ -586,26 +505,6 @@ fun HomeLayout(
 }
 
 @Composable
-private fun EmptyApps(
-    text: String
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .imePadding(),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = text,
-            textAlign = TextAlign.Center,
-            fontSize = textStyles.body2.fontSize,
-            color = colorScheme.onSurfaceVariantSummary
-        )
-    }
-}
-
-@Composable
 private fun AppItemFactory(
     show: MutableState<Boolean>,
     appData: AppData
@@ -616,14 +515,8 @@ private fun AppItemFactory(
         title = appData.label,
         summary = appData.packageName,
         icon = appData.icon!!,
-        versionName = when (appData) {
-            is ApiAppData -> appData.apiVersionName
-            else -> appData.versionName
-        },
-        versionCode = when (appData) {
-            is ApiAppData -> appData.apiVersionCode
-            else -> appData.versionCode
-        },
+        isApi = appData is ApiAppData,
+        isNetwork = appData is NetworkAppData,
         onClick = {
             viewModel.handleAction(MainUiAction.CurrentApp(appData))
             show.value = true
@@ -636,8 +529,8 @@ private fun AppItemComponent(
     title: String,
     summary: String,
     icon: Bitmap,
-    versionName: String,
-    versionCode: String,
+    isApi: Boolean,
+    isNetwork: Boolean,
     enabled: Boolean = true,
     onClick: (() -> Unit)? = null,
 ) {
@@ -658,29 +551,28 @@ private fun AppItemComponent(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(6.dp))
-                            .background(colorScheme.tertiaryContainer)
+                            .background(
+                                when {
+                                    isApi -> colorScheme.primaryContainer
+                                    isNetwork -> colorScheme.tertiaryContainer
+                                    else -> colorScheme.secondaryContainer
+                                }
+                            )
                     ) {
                         Text(
-                            text = versionName,
+                            text = when {
+                                isApi -> stringResource(R.string.badge_api)
+                                isNetwork -> stringResource(R.string.switch_mode_network)
+                                else -> stringResource(R.string.switch_mode_hook)
+                            },
                             maxLines = 1,
                             fontSize = 12.sp,
                             overflow = TextOverflow.Visible,
-                            color = colorScheme.onTertiaryContainer,
-                            modifier = Modifier.padding(3.dp)
-                        )
-                    }
-                    Spacer(Modifier.width(3.dp))
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(colorScheme.tertiaryContainer)
-                    ) {
-                        Text(
-                            text = versionCode,
-                            maxLines = 1,
-                            fontSize = 12.sp,
-                            overflow = TextOverflow.Ellipsis,
-                            color = colorScheme.onTertiaryContainer,
+                            color = when {
+                                isApi -> colorScheme.onPrimaryContainer
+                                isNetwork -> colorScheme.onTertiaryContainer
+                                else -> colorScheme.onSecondaryContainer
+                            },
                             modifier = Modifier.padding(3.dp)
                         )
                     }
@@ -710,6 +602,7 @@ private fun AppDetailsDialog(
     show: MutableState<Boolean>,
     appData: AppData
 ) {
+    val viewModel = LocalViewModel.current
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
 
@@ -755,9 +648,7 @@ private fun AppDetailsDialog(
             )
 
             Text(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp),
+                modifier = Modifier.fillMaxWidth(),
                 text = stringResource(
                     R.string.current_version,
                     appData.versionName,
@@ -766,6 +657,47 @@ private fun AppDetailsDialog(
                 fontSize = textStyles.body1.fontSize,
                 textAlign = TextAlign.Center,
                 color = DialogDefaults.summaryColor(),
+            )
+        }
+
+        Spacer(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(12.dp)
+        )
+
+        if (SupportApps.sSupportNetworkApps[appData.packageName] == NetworkMode.OPTIONAL) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.defaultColors(
+                    color = colorScheme.secondaryContainer,
+                )
+            ) {
+                WindowDropdownPreference(
+                    title = stringResource(R.string.switch_mode),
+                    items = listOf(
+                        stringResource(R.string.switch_mode_hook), stringResource(R.string.switch_mode_network)
+                    ),
+                    selectedIndex = if (appData is NetworkAppData) 1 else 0,
+                    onSelectedIndexChange = { index ->
+                        val switchToNetwork = index == 1
+                        val isActuallySwitching = (appData is NetworkAppData) != switchToNetwork
+                        if (isActuallySwitching) {
+                            viewModel.handleAction(MainUiAction.UpdateNetworkApp(switchToNetwork, appData.packageName))
+                            Toast.makeText(
+                                context,
+                                R.string.switch_mode_restart_hint,
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                )
+            }
+
+            Spacer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(12.dp)
             )
         }
 
@@ -783,7 +715,8 @@ private fun AppDetailsDialog(
                     R.string.instructions_for_use,
                     when (appData) {
                         is ApiAppData -> stringResource(R.string.support_api)
-                        else -> stringResource(SupportApps.mPackageLabelRes[appData.packageName] ?: R.string.unknown)
+                        is NetworkAppData -> stringResource(R.string.network_mode)
+                        else -> stringResource(SupportApps.sPackageLabelRes[appData.packageName] ?: R.string.unknown)
                     }
                 ),
                 fontSize = textStyles.body1.fontSize,

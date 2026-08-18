@@ -24,10 +24,10 @@ import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.processor.HookThis;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.superlyric.patches.ScreenMonitorInterception;
+import com.hchen.processor.HookThis;
 import com.hchen.superlyric.hook.AbsPublisher;
+import com.hchen.superlyric.patches.ScreenMonitorInterception;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
