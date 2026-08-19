@@ -7,7 +7,7 @@
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/HChenX/SuperLyric)](https://github.com/HChenX/SuperLyric/releases)
 [![GitHub Release Date](https://img.shields.io/github/release-date/HChenX/SuperLyric)](https://github.com/HChenX/SuperLyric/releases)
 ![last commit](https://img.shields.io/github/last-commit/HChenX/SuperLyric?style=flat)
-![language](https://img.shields.io/badge/language-java-purple)
+![language](https://img.shields.io/badge/language-java%2Fkotlin-purple)
 
 <p><b><a href="README-en.md">English</a> | <a href="README.md">简体中文</a></b></p>
 <p>Lyrics Fetcher | Super Lyric</p>
@@ -21,6 +21,8 @@
   transmission!
 - Completely abandons the traditional broadcast approach, fully embracing the higher-performance,
   lower-latency Binder cross-process capabilities!
+- Lyrics can be acquired via Hook or the network: the acquisition mode is switchable per app for
+  NetEase and Honor Music, Spotify uses the network path, and online lyrics are locally cached.
 
 ---
 
@@ -33,7 +35,7 @@
 - Gramophone (org.akanework.gramophone) -> Meizu Status Bar Lyrics
 - OPPO Music (com.heytap.music) -> Bluetooth Lyrics
 - HiBy Music (com.hiby.music) -> Bluetooth Lyrics
-- Honor Music (com.hihonor.cloudmusic) -> Meizu Status Bar Lyrics
+- Honor Music (com.hihonor.cloudmusic) -> Meizu Status Bar Lyrics / Network
 - Huawei Music (com.huawei.music) -> Bluetooth Lyrics
 - Kde (org.kde.kdeconnect_tp) -> Bluetooth Lyrics
 - Kugou Music (com.kugou.android) -> Hook Acquisition
@@ -46,7 +48,7 @@
 - Mi Music (com.miui.player) -> Bluetooth Lyrics
 - Migu Music (cmccwm.mobilemusic) -> Meizu Status Bar Lyrics
 - MusicFree (fun.upup.musicfree) -> Desktop Lyrics
-- NetEase Cloud Music (com.netease.cloudmusic) -> Meizu Status Bar Lyrics
+- NetEase Cloud Music (com.netease.cloudmusic) -> Meizu Status Bar Lyrics / Network
 - OPPO Music (com.oppo.music) -> Bluetooth Lyrics
 - Poweramp (com.maxmpz.audioplayer) -> Lyrics available only when on the app's lyrics interface
 - QingYan Music (com.xuncorp.qinalt.music) -> Meizu Status Bar Lyrics
@@ -55,10 +57,18 @@
 - RPlayer (com.r.rplayer) -> Bluetooth Lyrics
 - Salt Music (com.salt.music) -> Hook Acquisition
 - Suvine Music (com.xuncorp.suvine.music) -> Meizu Status Bar Lyrics
-- Spotify (com.spotify.music) -> Hook Acquisition
+- Spotify (com.spotify.music) -> Network
 - Symfonium (app.symfonik.music.player) -> Hook Acquisition
 - Flamingo (unknown) -> Native API Support
 - [Cone Player](https://coneplayer.trantor.ink) (ink.trantor.coneplayer) -> Native API Support
+
+> Acquisition notes:
+> - **Hook Acquisition**: hooks the host app's internal lyric data.
+> - **Network**: fetches online lyrics through the host's media session and network stack, with local
+>   caching.
+> - **Meizu / Status Bar / Bluetooth / Desktop Lyrics**: the output target of the lyrics, depending
+>   on the device and host app support.
+> - **Native API Support**: the host app natively integrates SuperLyricApi.
 
 ---
 

@@ -7,7 +7,7 @@
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/HChenX/SuperLyric)](https://github.com/HChenX/SuperLyric/releases)
 [![GitHub Release Date](https://img.shields.io/github/release-date/HChenX/SuperLyric)](https://github.com/HChenX/SuperLyric/releases)
 ![last commit](https://img.shields.io/github/last-commit/HChenX/SuperLyric?style=flat)
-![language](https://img.shields.io/badge/language-java-purple)
+![language](https://img.shields.io/badge/language-java%2Fkotlin-purple)
 
 <p><b><a href="README-en.md">English</a> | <a href="README.md">简体中文</a></b></p>
 <p>歌词获取器 | Super Lyric</p>
@@ -19,6 +19,7 @@
 
 - 基于 Binder 数据传递的音乐软件歌词获取与发布模块！
 - 完全抛弃传统的广播模式，全面拥抱更高性能更低延迟的 Binder 跨进程能力！
+- 支持 Hook / 网络双路径获取歌词：网易云、荣耀音乐可按应用切换获取方式，Spotify 走网络获取，在线歌词带本地缓存。
 
 ---
 
@@ -31,7 +32,7 @@
 - 留声机 (org.akanework.gramophone) -> 魅族状态栏歌词
 - OPPO 音乐 (com.heytap.music) -> 蓝牙歌词
 - 海贝音乐 (com.hiby.music) -> 蓝牙歌词
-- 荣耀音乐 (com.hihonor.cloudmusic) -> 魅族状态栏歌词
+- 荣耀音乐 (com.hihonor.cloudmusic) -> 魅族状态栏歌词 / 网络获取
 - 华为音乐 (com.huawei.music) -> 蓝牙歌词
 - Kde (org.kde.kdeconnect_tp) -> 蓝牙歌词
 - 酷狗音乐 (com.kugou.android) -> Hook 获取
@@ -44,7 +45,7 @@
 - 小米音乐 (com.miui.player) -> 蓝牙歌词
 - 咪咕音乐 (cmccwm.mobilemusic) -> 魅族状态栏歌词
 - MusicFree (fun.upup.musicfree) -> 桌面歌词
-- 网易云音乐 (com.netease.cloudmusic) -> 魅族状态栏歌词
+- 网易云音乐 (com.netease.cloudmusic) -> 魅族状态栏歌词 / 网络获取
 - OPPO 音乐 (com.oppo.music) -> 蓝牙歌词
 - Poweramp (com.maxmpz.audioplayer) -> 仅处于软件歌词界面时可获取到歌词
 - 青盐音乐 (com.xuncorp.qinalt.music) -> 魅族状态栏歌词
@@ -53,10 +54,16 @@
 - RPlayer (com.r.rplayer) -> 蓝牙歌词
 - 椒盐音乐 (com.salt.music) -> Hook 获取
 - 糖醋音乐 (com.xuncorp.suvine.music) -> 魅族状态栏歌词
-- Spotify (com.spotify.music) -> Hook 获取
+- Spotify (com.spotify.music) -> 网络获取
 - Symfonium (app.symfonik.music.player) -> Hook 获取
 - Flamingo (unknown) -> Api 原生支持
 - [光锥音乐](https://coneplayer.trantor.ink) (ink.trantor.coneplayer) -> Api 原生支持
+
+> 获取方式说明：
+> - **Hook 获取**：Hook 宿主应用内部歌词数据。
+> - **网络获取**：通过宿主媒体会话与网络栈拉取在线歌词，带本地缓存。
+> - **魅族状态栏歌词 / 状态栏歌词 / 蓝牙歌词 / 桌面歌词**：歌词的输出目标，视设备与宿主应用支持情况而定。
+> - **Api 原生支持**：宿主应用原生集成了 SuperLyricApi。
 
 ---
 
