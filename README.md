@@ -58,6 +58,7 @@
 - Symfonium (app.symfonik.music.player) -> Hook 获取
 - Flamingo (unknown) -> Api 原生支持
 - [光锥音乐](https://coneplayer.trantor.ink) (ink.trantor.coneplayer) -> Api 原生支持
+- Tidal (com.aspiro.tidal) -> Hook 获取
 
 > 获取方式说明：
 > - **Hook 获取**：Hook 宿主应用内部歌词数据。
