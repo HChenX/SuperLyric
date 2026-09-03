@@ -28,6 +28,8 @@ import android.os.SystemClock;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.hchen.dexkitcache.DexkitCache;
+import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.processor.HookThis;
 import com.hchen.superlyric.hook.AbsPublisher;
@@ -37,7 +39,15 @@ import com.hchen.superlyric.utils.LyricCacheStore;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricLine;
 
+import org.luckypray.dexkit.DexKitBridge;
+import org.luckypray.dexkit.query.FindClass;
+import org.luckypray.dexkit.query.matchers.ClassMatcher;
+import org.luckypray.dexkit.query.matchers.MethodMatcher;
+import org.luckypray.dexkit.result.ClassDataList;
+
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -54,8 +64,10 @@ import io.github.libxposed.api.XposedModuleInterface;
  * Spotify 歌词提供者。
  * <p>
  * hook 宿主媒体会话（setPlaybackState / setMetadata）取音轨与播放状态，
- * hook 宿主网络栈（okhttp3.Headers）捕获会话头，调用 Spotify color-lyrics
- * 私有接口拉取歌词，按「位置插值 + Handler 轮询」推进当前行发布，音译进翻译槽位。
+ * hook 宿主网络栈（明文 okhttp3.Headers，9.1.78+ R8 混淆宿主退化为 DexKit
+ * 结构指纹扫描，见 {@link #hookSessionHeaders()}）捕获会话头，调用 Spotify
+ * color-lyrics 私有接口拉取歌词，按「位置插值 + Handler 轮询」推进当前行发布，
+ * 音译进翻译槽位。
  * 磁盘缓存命中不触发网络请求；404 视为无歌词；广告 / 无法解析音轨 → sendStop。
  * <p>
  * Inspired from LyricProvider/spotify-music.
@@ -70,6 +82,8 @@ public final class Spotify extends AbsPublisher {
     private HandlerThread mLyricThread;
     private Handler mLyricHandler;
     private boolean mHooksInitialized;
+    // 会话头尚未捕获时只告警一次，便于真机日志直接判定捕获链路失效
+    private boolean mLoggedNoSessionHeaders;
 
     // 播放状态（setPlaybackState 写入，轮询线程读取）：
     // 单一不可变快照整体发布，避免 state/position/speed/锚点多次 volatile 写入的中间态
@@ -368,6 +382,7 @@ public final class Spotify extends AbsPublisher {
 
             SpotifyLyricAnalysis.HeaderSnapshot headers = SpotifyLyricAnalysis.currentHeaders();
             if (headers == null) {
+                logNoSessionHeadersOnce();
                 waitForHeaders(id, 0L, generation);
                 return;
             }
@@ -440,6 +455,20 @@ public final class Spotify extends AbsPublisher {
             mHeaderWait.set(new HeaderWait(id, headerGeneration, trackGeneration));
             resumeHeaderWaitIfReady();
         }
+    }
+
+    /**
+     * 会话头尚未捕获时的一次性告警：正常宿主很快会发起带鉴权的网络请求触发捕获，
+     * 稍后由 {@link #resumeHeaderWaitIfReady()} 续拉歌词。若该告警出现后请求持续
+     * 401，说明本版本宿主的会话头 Hook 未生效（如网络栈结构变化），日志可观测性
+     * 约定参见 devtemp/docs/host-obfuscation-dexkit-capture.md 第 8 节。
+     */
+    private void logNoSessionHeadersOnce() {
+        if (mLoggedNoSessionHeaders) return;
+        mLoggedNoSessionHeaders = true;
+        logW(tag, "No Spotify session headers captured yet, waiting for an authenticated "
+            + "host request; if lyric requests keep failing with 401, the session-header "
+            + "hook is not effective on this Spotify build");
     }
 
     private void resumeHeaderWaitIfReady() {
@@ -581,24 +610,137 @@ public final class Spotify extends AbsPublisher {
 
     // ------------------------------ 会话头捕获 ------------------------------
 
+    /**
+     * 会话头捕获采用「明文快速通道 + DexKit 结构指纹兜底」两级策略。
+     * <p>
+     * Spotify 9.1.78+ 对全量 dex（含 okhttp 5.x）启用 R8 混淆重命名后，明文
+     * {@code okhttp3.Headers} 已不存在（ClassNotFoundException），旧实现只能
+     * 眼睁睁看着 color-lyrics 请求缺登录头而全部 401。混淆改不掉构造器名
+     * {@code <init>}、参数类型引用 {@code java.lang.String[]} 与协议键字符串，
+     * 因此结构兜底路径据此定位候选类并全量 Hook，捕获侧只认目标键。
+     * 完整方法论与落地骨架见 devtemp/docs/host-obfuscation-dexkit-capture.md。
+     */
     private void hookSessionHeaders() {
+        AbsHook captureHook = new AbsHook() {
+            @Override
+            public void after() {
+                Object[] args = getArgs();
+                if (args != null && args.length > 0 && args[0] instanceof String[]) {
+                    captureNamesAndValues((String[]) args[0]);
+                }
+            }
+        };
+
+        // ① 明文快速通道：兼容未混淆 / 部分混淆的旧版本宿主。
         try {
             Class<?> headersClass = findClass("okhttp3.Headers");
-            logD(tag, "Session headers target: class=" + headersClass.getName()
-                + ", classloader=" + headersClass.getClassLoader());
-            hookAllConstructor(headersClass, new AbsHook() {
-                @Override
-                public void after() {
-                    Object[] args = getArgs();
-                    if (args != null && args.length > 0 && args[0] instanceof String[]) {
-                        captureNamesAndValues((String[]) args[0]);
-                    }
-                }
-            });
-            logI(tag, "Session headers: okhttp3.Headers constructor hooked");
+            hookAllConstructor(headersClass, captureHook);
+            logI(tag, "Session headers: plaintext okhttp3.Headers hooked");
+            return;
         } catch (Throwable t) {
-            logW(tag, "Session headers: constructor hook unsupported", t);
+            logD(tag, "Session headers: plaintext okhttp3.Headers unavailable "
+                + "(host R8-obfuscated), switch to DexKit structural scan", t);
         }
+
+        // ② DexKit 结构指纹兜底：不锁类名，锁「类含 <init>(String[]) 构造器」。
+        hookSessionHeadersByStructure(captureHook);
+    }
+
+    /**
+     * R8 混淆宿主的会话头捕获兜底：Hook 结构扫描出的全部候选类，
+     * 捕获侧（{@link #captureNamesAndValues}）只认 Spotify 会话关键键，多命中不误伤。
+     */
+    private void hookSessionHeadersByStructure(@NonNull AbsHook captureHook) {
+        int hooked = 0;
+        List<String> hookedClasses = new ArrayList<>();
+        for (Class<?> candidate : findHeaderCandidateClasses()) {
+            try {
+                hookAllConstructor(candidate, captureHook);
+                hooked++;
+                hookedClasses.add(candidate.getName());
+            } catch (Throwable t) {
+                logW(tag, "Session headers: hook constructors of DexKit candidate "
+                    + candidate.getName() + " failed", t);
+            }
+        }
+        if (hooked == 0) {
+            logW(tag, "Session headers: no DexKit candidate hooked; color-lyrics requests "
+                + "will stay 401 on this Spotify build");
+            return;
+        }
+        logI(tag, "Session headers: hooked " + hooked + " DexKit candidate class(es) "
+            + "by <init>(String[]) fingerprint: " + hookedClasses);
+    }
+
+    /**
+     * 结构指纹定位「含 {@code <init>(String[])} 构造器」的候选类（会话头容器语义）。
+     * <p>
+     * 匹配条件只依赖不可混淆件，理论上无需随宿主版本调整；扫描结果经
+     * {@link DexkitCache} 持久化（宿主版本变化自动清缓存重扫，同版本内后续启动
+     * 直接读缓存，无需每次实扫）。若将来必须调整匹配条件，请同步更换缓存 key 或
+     * 提升 {@code super_lyric_dexkit_cache_version}，避免复用旧指纹的扫描结果。
+     * <p>
+     * 先精确查询（构造器形态 + 实现 {@link Iterable}，对应 okhttp Headers「可迭代
+     * 键值容器」语义，过滤噪音候选）；为空再宽松查询（仅构造器形态）。两者皆空说明
+     * 宿主网络栈结构已变（如替换为 Cronet），保留 401 可观测，不影响其它 Hook。
+     */
+    @NonNull
+    private List<Class<?>> findHeaderCandidateClasses() {
+        List<Class<?>> candidates = new ArrayList<>();
+
+        // 精确查询缓存键：含 <init>(String[]) 构造器且实现 Iterable 的类
+        try {
+            Class<?>[] precise = DexkitCache.findMember("spotify$headers_ctor_iterable",
+                new IDexkit<ClassDataList>() {
+                    @NonNull
+                    @Override
+                    public ClassDataList dexkit(@NonNull DexKitBridge bridge) {
+                        return bridge.findClass(FindClass.create()
+                            .matcher(ClassMatcher.create()
+                                .addInterface(ClassMatcher.create(Iterable.class))
+                                .addMethod(MethodMatcher.create()
+                                    .name("<init>")
+                                    .paramTypes("java.lang.String[]")
+                                )
+                            )
+                        );
+                    }
+                });
+            if (precise != null) {
+                Collections.addAll(candidates, precise);
+            }
+        } catch (Throwable t) {
+            logD(tag, "Session headers: precise DexKit scan (<init>(String[]) + Iterable) "
+                + "failed, fallback to loose scan", t);
+        }
+        if (!candidates.isEmpty()) return candidates;
+
+        // 宽松查询缓存键：仅含 <init>(String[]) 构造器的类
+        logD(tag, "Session headers: precise DexKit scan matched nothing, run loose scan");
+        try {
+            Class<?>[] loose = DexkitCache.findMember("spotify$headers_ctor",
+                new IDexkit<ClassDataList>() {
+                    @NonNull
+                    @Override
+                    public ClassDataList dexkit(@NonNull DexKitBridge bridge) {
+                        return bridge.findClass(FindClass.create()
+                            .matcher(ClassMatcher.create()
+                                .addMethod(MethodMatcher.create()
+                                    .name("<init>")
+                                    .paramTypes("java.lang.String[]")
+                                )
+                            )
+                        );
+                    }
+                });
+            if (loose != null) {
+                Collections.addAll(candidates, loose);
+            }
+        } catch (Throwable t) {
+            logW(tag, "Session headers: loose DexKit scan failed; session headers "
+                + "unavailable on this build", t);
+        }
+        return candidates;
     }
 
     private void captureNamesAndValues(@NonNull String[] namesAndValues) {
