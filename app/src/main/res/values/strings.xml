@@ -133,4 +133,5 @@
     <string name="nisheng_music">Enable the "Bluetooth lyrics" feature</string>
     <string name="huawei_music">Enable the "Bluetooth lyrics" feature</string>
     <string name="kde_music">Enable the "Bluetooth lyrics" feature</string>
+    <string name="lgext">Get Lyric from Lot's of external apps</string>
 </resources>
