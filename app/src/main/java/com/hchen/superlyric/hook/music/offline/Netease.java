@@ -166,6 +166,7 @@ public final class Netease extends AbsPublisher {
                         String name = null;
                         String artists = null;
                         String album = null;
+                        long playingMusicId = 0L;
 
                         if (mMusicInfoProvider != null) {
                             Object musicInfo = callMethod(mMusicInfoMethod, mMusicInfoProvider);
@@ -173,7 +174,15 @@ public final class Netease extends AbsPublisher {
                                 name = (String) callMethod(musicInfo, "getName");
                                 artists = (String) callMethod(musicInfo, "getArtistsName");
                                 album = (String) callMethod(musicInfo, "getAlbumName");
+                                playingMusicId = musicIdOf(musicInfo);
                             }
+                        }
+
+                        // 切歌瞬间的迟到回调：监听所属音轨已不是当前播放音轨，跳过以免旧歌词配新歌曲信息再次发布
+                        long musicId = listenerMusicId(getThisObject());
+                        if (playingMusicId > 0L && musicId != playingMusicId) {
+                            logD(tag, "Offline lyric belongs to " + musicId + " but playing " + playingMusicId + ", skip");
+                            return;
                         }
 
                         List<?> mSentences = (List<?>) getField(getThisObject(), "mSentences");
@@ -211,7 +220,6 @@ public final class Netease extends AbsPublisher {
                             data.setTranslation(new SuperLyricLine(translate));
                         }
                         sendLyric(data);
-                        long musicId = listenerMusicId(getThisObject());
                         mPublishedMusicId = musicId;
                         mResolvedMusicId = musicId;
                     }
@@ -425,7 +433,18 @@ public final class Netease extends AbsPublisher {
         try {
             if (mMusicInfoProvider == null) return 0L;
             Object musicInfo = callMethod(mMusicInfoMethod, mMusicInfoProvider);
-            return musicInfo == null ? 0L : toLong(callMethod(musicInfo, "getFilterMusicId"));
+            return musicInfo == null ? 0L : musicIdOf(musicInfo);
+        } catch (Throwable t) {
+            return 0L;
+        }
+    }
+
+    /**
+     * MusicInfo 的过滤后音轨标识（与 LrcLoaderManager / m0 使用的音轨标识一致），读取失败返回 0。
+     */
+    private long musicIdOf(@NonNull Object musicInfo) {
+        try {
+            return toLong(callMethod(musicInfo, "getFilterMusicId"));
         } catch (Throwable t) {
             return 0L;
         }

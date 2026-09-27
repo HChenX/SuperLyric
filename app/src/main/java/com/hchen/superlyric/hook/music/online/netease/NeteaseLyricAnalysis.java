@@ -350,32 +350,51 @@ public final class NeteaseLyricAnalysis {
             List<ParsedLine> lines = parseYrc(response.yrc.lyric);
             if (!lines.isEmpty()) {
                 // 逐字歌词里的制作信息行时间戳全部为 0，优先取 LRC 中带真实时间的同一组信息
-                List<ParsedLine> credits = parseCredits(lrc);
-                return withCredits(lines, credits.isEmpty() ? parseCredits(response.yrc.lyric) : credits);
+                List<ParsedLine> credits = parseCredits(lrc, lrcOffset(lrc));
+                return withCredits(lines, credits.isEmpty() ? parseCredits(response.yrc.lyric, 0L) : credits);
             }
         }
         if (!TextUtils.isEmpty(lrc)) {
             List<ParsedLine> lines = parseLrc(lrc);
-            if (!lines.isEmpty()) return withCredits(lines, parseCredits(lrc));
+            if (!lines.isEmpty()) return withCredits(lines, parseCredits(lrc, lrcOffset(lrc)));
         }
         return null;
     }
 
     /**
      * 解析 JSON 制作信息行（作词 / 作曲等），按开始时间稳定排序。
+     *
+     * @param offset 与所在 LRC 正文一致的 {@code [offset:]} 偏移，保证制作信息与正文在同一时间轴
      */
     @NonNull
-    private static List<ParsedLine> parseCredits(@Nullable String raw) {
+    private static List<ParsedLine> parseCredits(@Nullable String raw, long offset) {
         List<ParsedLine> credits = new ArrayList<>();
         if (TextUtils.isEmpty(raw)) return credits;
         for (String rawLine : raw.split("\\r?\\n", -1)) {
             String line = rawLine.trim();
             if (!line.startsWith("{")) continue;
             ParsedLine credit = parseCreditLine(line);
-            if (credit != null) credits.add(credit);
+            if (credit == null) continue;
+            long begin = offset == 0L ? credit.begin : Math.max(0L, safeAdd(credit.begin, offset));
+            credits.add(new ParsedLine(begin, begin, credit.text, credit.words, true));
         }
         credits.sort(Comparator.comparingLong(entry -> entry.begin));
         return credits;
+    }
+
+    /**
+     * LRC 的 {@code [offset:]} 全局偏移（与 {@link #finalizeLrc} 的正文偏移一致），缺失 / 非法时为 0。
+     */
+    private static long lrcOffset(@Nullable String raw) {
+        if (TextUtils.isEmpty(raw)) return 0L;
+        Map<String, String> meta = new HashMap<>();
+        for (String rawLine : raw.split("\\r?\\n", -1)) {
+            String trimmed = rawLine.trim();
+            if (trimmed.startsWith("[") && !LRC_LINE_VALIDATOR.matcher(trimmed).matches()) {
+                parseLrcMeta(trimmed, meta);
+            }
+        }
+        return parseLongOrDefault(meta.get("offset"), 0L);
     }
 
     /**
