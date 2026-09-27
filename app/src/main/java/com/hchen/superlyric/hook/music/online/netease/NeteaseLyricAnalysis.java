@@ -24,6 +24,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonSyntaxException;
 import com.hchen.hooktool.log.XposedLog;
@@ -86,6 +88,10 @@ public final class NeteaseLyricAnalysis {
         Pattern.compile("^\\[\\d{1,3}[ :.]\\d{2}(?:[ :.]\\d{1,3})?].*");
     private static final Pattern LRC_TAG_PATTERN =
         Pattern.compile("\\[(\\d{1,3})[ :.](\\d{2})(?:[ :.](\\d{1,3}))?]");
+    /**
+     * 制作信息行的最短展示时长，短于此值的时间槽丢弃。
+     */
+    private static final long MIN_CREDIT_DURATION_MS = 100L;
 
     private static final Gson gson = new Gson();
 
@@ -276,6 +282,7 @@ public final class NeteaseLyricAnalysis {
      * 解析接口原始 JSON 为行级数据模型：
      * <ul>
      *   <li>逐字原词（yrc）优先 → LRC 纯文本回退</li>
+     *   <li>首句之前接入 JSON 制作信息行（作词 / 作曲等），前奏期间也有推送</li>
      *   <li>翻译 ytlrc 优先 → tlyric</li>
      *   <li>音译 romalrc</li>
      *   <li>翻译 / 音译按 {@code findClosest(begin, 1000)} 容差匹配到源行</li>
@@ -319,16 +326,17 @@ public final class NeteaseLyricAnalysis {
         List<ParsedLine> translations = parseTranslationLines(response);
         List<ParsedLine> romas = parseRomaLines(response);
 
+        // 制作信息行（作词 / 作曲等）不配翻译 / 音译，避免误吸附紧随其后的首句翻译
         return source.stream()
             .map(line -> new LyricLineData(
                 line.begin,
                 line.end,
                 line.text,
                 toSuperLyricWords(line.words),
-                Optional.ofNullable(findClosest(translations, line.begin, 1000L))
+                line.credit ? null : Optional.ofNullable(findClosest(translations, line.begin, 1000L))
                     .map(match -> match.text)
                     .orElse(null),
-                Optional.ofNullable(findClosest(romas, line.begin, 1000L))
+                line.credit ? null : Optional.ofNullable(findClosest(romas, line.begin, 1000L))
                     .map(match -> match.text)
                     .orElse(null)
             ))
@@ -337,15 +345,91 @@ public final class NeteaseLyricAnalysis {
 
     @Nullable
     private static List<ParsedLine> parseSourceLines(@NonNull LyricResponse response) {
+        String lrc = response.lrc != null ? response.lrc.lyric : null;
         if (response.yrc != null && !TextUtils.isEmpty(response.yrc.lyric)) {
             List<ParsedLine> lines = parseYrc(response.yrc.lyric);
-            if (!lines.isEmpty()) return lines;
+            if (!lines.isEmpty()) {
+                // 逐字歌词里的制作信息行时间戳全部为 0，优先取 LRC 中带真实时间的同一组信息
+                List<ParsedLine> credits = parseCredits(lrc);
+                return withCredits(lines, credits.isEmpty() ? parseCredits(response.yrc.lyric) : credits);
+            }
         }
-        if (response.lrc != null && !TextUtils.isEmpty(response.lrc.lyric)) {
-            List<ParsedLine> lines = parseLrc(response.lrc.lyric);
-            if (!lines.isEmpty()) return lines;
+        if (!TextUtils.isEmpty(lrc)) {
+            List<ParsedLine> lines = parseLrc(lrc);
+            if (!lines.isEmpty()) return withCredits(lines, parseCredits(lrc));
         }
         return null;
+    }
+
+    /**
+     * 解析 JSON 制作信息行（作词 / 作曲等），按开始时间稳定排序。
+     */
+    @NonNull
+    private static List<ParsedLine> parseCredits(@Nullable String raw) {
+        List<ParsedLine> credits = new ArrayList<>();
+        if (TextUtils.isEmpty(raw)) return credits;
+        for (String rawLine : raw.split("\\r?\\n", -1)) {
+            String line = rawLine.trim();
+            if (!line.startsWith("{")) continue;
+            ParsedLine credit = parseCreditLine(line);
+            if (credit != null) credits.add(credit);
+        }
+        credits.sort(Comparator.comparingLong(entry -> entry.begin));
+        return credits;
+    }
+
+    /**
+     * 把首句之前的制作信息行接到歌词前面：网易云客户端在前奏阶段逐条展示它们，
+     * 否则前奏期间没有任何推送。每条持续到下一条（末条到首句）开始，不与正文重叠。
+     */
+    @NonNull
+    private static List<ParsedLine> withCredits(@NonNull List<ParsedLine> lines, @NonNull List<ParsedLine> credits) {
+        if (lines.isEmpty() || credits.isEmpty()) return lines;
+        long firstBegin = lines.get(0).begin;
+        List<ParsedLine> leading = new ArrayList<>();
+        for (ParsedLine credit : credits) {
+            if (credit.begin < firstBegin) leading.add(credit);
+        }
+        if (leading.isEmpty()) return lines;
+
+        List<ParsedLine> result = new ArrayList<>(leading.size() + lines.size());
+        for (int i = 0; i < leading.size(); i++) {
+            ParsedLine credit = leading.get(i);
+            long end = i + 1 < leading.size() ? leading.get(i + 1).begin : firstBegin;
+            // 过短的时间槽只会一闪而过（如逐字首句紧贴 0ms），直接丢弃
+            if (end - credit.begin >= MIN_CREDIT_DURATION_MS) {
+                result.add(new ParsedLine(credit.begin, end, credit.text, credit.words, true));
+            }
+        }
+        result.addAll(lines);
+        return Collections.unmodifiableList(result);
+    }
+
+    /**
+     * 解析网易云 JSON 制作信息行：{@code {"t":开始ms,"c":[{"tx":"作词: "},{"tx":"某某"}]}}；
+     * 格式不符 / 空文本返回 {@code null}。
+     */
+    @Nullable
+    private static ParsedLine parseCreditLine(@NonNull String line) {
+        try {
+            JsonObject object = gson.fromJson(line, JsonObject.class);
+            if (object == null || !object.has("t") || !object.has("c")) return null;
+            long begin = object.get("t").getAsLong();
+            JsonArray parts = object.getAsJsonArray("c");
+            if (begin < 0L || parts == null) return null;
+
+            StringBuilder text = new StringBuilder();
+            for (JsonElement part : parts) {
+                if (!part.isJsonObject()) continue;
+                JsonElement tx = part.getAsJsonObject().get("tx");
+                if (tx != null && tx.isJsonPrimitive()) text.append(tx.getAsString());
+            }
+            String content = text.toString().trim();
+            if (content.isEmpty()) return null;
+            return new ParsedLine(begin, begin, content, Collections.emptyList(), true);
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     @Nullable
@@ -685,6 +769,11 @@ public final class NeteaseLyricAnalysis {
         public final boolean pureMusic;
         @Nullable
         public final List<LyricLineData> lines;
+        /**
+         * 整首是否带翻译 / 音译：与网易云一致按整首决定翻译槽位来源，避免逐行来回切换。
+         */
+        public final boolean hasTranslation;
+        public final boolean hasRoma;
 
         public LyricData(@NonNull ResultType type, int code, boolean pureMusic,
                          @Nullable List<LyricLineData> lines) {
@@ -692,6 +781,8 @@ public final class NeteaseLyricAnalysis {
             this.code = code;
             this.pureMusic = pureMusic;
             this.lines = lines;
+            this.hasTranslation = lines != null && lines.stream().anyMatch(line -> line.translation != null);
+            this.hasRoma = lines != null && lines.stream().anyMatch(line -> line.roma != null);
         }
 
         public boolean hasLyrics() {
@@ -706,12 +797,21 @@ public final class NeteaseLyricAnalysis {
         final String text;
         @NonNull
         final List<ParsedWord> words;
+        /**
+         * 是否为 JSON 制作信息行（作词 / 作曲等）。
+         */
+        final boolean credit;
 
         ParsedLine(long begin, long end, @NonNull String text, @NonNull List<ParsedWord> words) {
+            this(begin, end, text, words, false);
+        }
+
+        ParsedLine(long begin, long end, @NonNull String text, @NonNull List<ParsedWord> words, boolean credit) {
             this.begin = begin;
             this.end = end;
             this.text = text;
             this.words = words;
+            this.credit = credit;
         }
     }
 
