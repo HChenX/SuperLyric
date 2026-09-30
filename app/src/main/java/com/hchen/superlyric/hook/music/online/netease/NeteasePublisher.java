@@ -80,11 +80,11 @@ public abstract class NeteasePublisher extends AbsPublisher {
     private static final long LOOP_INTERVAL_MS = 42L;
 
     /**
-     * App 内歌词显示设置：0=翻译，1=罗马音，-1=无（只发原词）。
+     * App 内歌词显示设置 showLyricSetting：0=翻译优先（无翻译时退回音译），1=音译优先（无音译时退回翻译），
+     * 其他=只发原词。网易云自身在未设置时按 0 处理，这里保持一致。
      */
     private static final int LYRIC_SETTING_TRANSLATION = 0;
     private static final int LYRIC_SETTING_ROMA = 1;
-    private static final int LYRIC_SETTING_OFF = -1;
 
     /**
      * 启动早期设置查找失败后的定时退避重试次数上限（首次切歌时另有惰性重试兜底）。
@@ -115,8 +115,8 @@ public abstract class NeteasePublisher extends AbsPublisher {
     private volatile long mLoopToken = 0L;
 
     // App 内歌词显示设置联动（DexKit 偏好工厂；启动早期失败会延迟退避重试 + 首次切歌惰性重试，
-    // 成功前按 -1 只发原词，成功后注册变更监听即时生效）
-    private volatile int mLyricSetting = LYRIC_SETTING_OFF;
+    // 成功前按网易云默认的翻译优先，成功后注册变更监听即时生效）
+    private volatile int mLyricSetting = LYRIC_SETTING_TRANSLATION;
     private volatile boolean mLyricSettingLinked = false;
     private SharedPreferences mPreference;
     private SharedPreferences.OnSharedPreferenceChangeListener mPreferenceListener;
@@ -273,7 +273,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
      * <p>
      * 启动早期（Application.attach 期间）偏好工厂可能因 App Context 未就绪而失败；
      * 失败不永久降级——由 {@link #scheduleLyricSettingRetry(int)} 定时退避重试，
-     * 并在首次切歌时惰性重试兜底。链接成功前按 -1 只发原词，成功后即时生效。
+     * 并在首次切歌时惰性重试兜底。链接成功前按网易云默认的翻译优先，成功后即时生效。
      */
     private void linkLyricSetting() {
         if (mLyricSettingLinked) return;
@@ -301,12 +301,12 @@ public abstract class NeteasePublisher extends AbsPublisher {
                     }
                 });
                 SharedPreferences prefs = (SharedPreferences) method.invoke(null);
-                int value = prefs.getInt("showLyricSetting", LYRIC_SETTING_OFF);
+                int value = prefs.getInt("showLyricSetting", LYRIC_SETTING_TRANSLATION);
 
                 if (mPreferenceListener == null) {
                     mPreferenceListener = (sharedPreferences, key) -> {
                         if (TextUtils.equals("showLyricSetting", key)) {
-                            mLyricSetting = sharedPreferences.getInt(key, LYRIC_SETTING_OFF);
+                            mLyricSetting = sharedPreferences.getInt(key, LYRIC_SETTING_TRANSLATION);
                             logD(tag, "Lyric display setting changed: showLyricSetting=" + mLyricSetting);
                         }
                     };
@@ -323,9 +323,9 @@ public abstract class NeteasePublisher extends AbsPublisher {
                 logI(tag, "Lyric display setting linked: showLyricSetting=" + mLyricSetting);
                 logD(tag, "Lyric display setting diagnostic: lookup_failed=0, showLyricSetting=" + mLyricSetting);
             } catch (Throwable t) {
-                // 启动早期 Context 未就绪等瞬时失败：保持只发原词并安排重试，不永久降级
-                mLyricSetting = LYRIC_SETTING_OFF;
-                logW(tag, "Lyric display setting lookup failed, keep original-only, will retry", t);
+                // 启动早期 Context 未就绪等瞬时失败：按网易云默认的翻译优先并安排重试，不永久降级
+                mLyricSetting = LYRIC_SETTING_TRANSLATION;
+                logW(tag, "Lyric display setting lookup failed, fall back to translation first, will retry", t);
             }
         }
     }
@@ -525,7 +525,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
                     // CAS 原子推进：切歌 / 重新拉取后旧轮询链的替换失败，立即放弃本轮
                     TrackSnapshot updated = current.withShownIndex(index);
                     if (mTrackRef.compareAndSet(current, updated)) {
-                        sendCurrentLine(line, current.song);
+                        sendCurrentLine(data, line, current.song);
                     }
                 }
             }
@@ -573,7 +573,8 @@ public abstract class NeteasePublisher extends AbsPublisher {
         return -1;
     }
 
-    private void sendCurrentLine(@NonNull NeteaseLyricAnalysis.LyricLineData line, @NonNull SongInfo song) {
+    private void sendCurrentLine(@NonNull NeteaseLyricAnalysis.LyricData lyric,
+                                 @NonNull NeteaseLyricAnalysis.LyricLineData line, @NonNull SongInfo song) {
         // 互斥发布：仅状态机判定为网络来源时发布（无来源时不发布）
         if (!LyricSourceMachine.mayPublishNetwork(mSourceState)) return;
 
@@ -583,7 +584,7 @@ public abstract class NeteasePublisher extends AbsPublisher {
             .setAlbum(song.album)
             .setLyric(new SuperLyricLine(line.text, line.words, line.start, line.end));
 
-        String translationSlot = selectTranslationSlot(line);
+        String translationSlot = selectTranslationSlot(lyric, line);
         if (!TextUtils.isEmpty(translationSlot)) {
             data.setTranslation(new SuperLyricLine(translationSlot));
         }
@@ -593,13 +594,19 @@ public abstract class NeteasePublisher extends AbsPublisher {
     }
 
     /**
-     * 翻译槽位二选一：跟随 App 内设置；-1/未设置/查找失败 → 只发原词。
+     * 翻译槽位二选一：跟随 App 内设置，与网易云 LyricInfo.getLocalMode 一致——
+     * 翻译优先时整首无翻译退回音译，音译优先时整首无音译退回翻译，其他值只发原词。
      */
     @Nullable
-    private String selectTranslationSlot(@NonNull NeteaseLyricAnalysis.LyricLineData line) {
+    private String selectTranslationSlot(@NonNull NeteaseLyricAnalysis.LyricData lyric,
+                                         @NonNull NeteaseLyricAnalysis.LyricLineData line) {
         int setting = mLyricSetting;
-        if (setting == LYRIC_SETTING_TRANSLATION) return line.translation;
-        if (setting == LYRIC_SETTING_ROMA) return line.roma;
+        if (setting == LYRIC_SETTING_TRANSLATION) {
+            return lyric.hasTranslation ? line.translation : line.roma;
+        }
+        if (setting == LYRIC_SETTING_ROMA) {
+            return lyric.hasRoma ? line.roma : line.translation;
+        }
         return null;
     }
 

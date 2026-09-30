@@ -34,5 +34,20 @@
 -keep class com.hchen.dexkitcache.DexkitCache$MemberData {*;}
 -keep class com.hchen.superlyric.utils.MeizuFaker$MeiZuNotification {*;}
 
+# 在线歌词接口 DTO 仅由 Gson 反射填充：字段不保留时 R8 会判定其从未写入，
+# 把 code 常量折叠为 0、删除整段解析逻辑，导致网络模式永远走 API_ERROR
+-keepclassmembers class com.hchen.superlyric.hook.music.online.netease.NeteaseLyricAnalysis$LyricResponse {
+    <init>();
+    <fields>;
+}
+-keepclassmembers class com.hchen.superlyric.hook.music.online.netease.NeteaseLyricAnalysis$LyricContent {
+    <init>();
+    <fields>;
+}
+-keepclassmembers class com.hchen.superlyric.hook.music.online.spotify.SpotifyLyricAnalysis$Json* {
+    <init>();
+    <fields>;
+}
+
 -dontwarn android.os.ServiceManager
 -dontwarn de.robv.android.xposed.XposedHelpers
