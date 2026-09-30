@@ -33,7 +33,6 @@ import com.hchen.superlyricapi.SuperLyricData;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.util.Objects;
 
 import io.github.libxposed.api.XposedModuleInterface;
 
@@ -160,9 +159,15 @@ public final class MobileMusic extends AbsPublisher {
             hook(songChanged, new AbsHook() {
                 @Override
                 public void after() {
-                    boolean changed = !Objects.equals(getArg(0), getArg(1));
+                    Object previousSong = getArg(0);
+                    Object currentSong = getArg(1);
                     handler.post(() -> {
-                        if (changed) liveOffset = null;
+                        try {
+                            if (!MobileMusicLyricData.sameSong(previousSong, currentSong)) liveOffset = null;
+                        } catch (Throwable error) {
+                            liveOffset = null;
+                            logE(tag, "Cannot match Migu changed song", error);
+                        }
                         clearPublishedLyric();
                         startLoop();
                     });
@@ -211,13 +216,17 @@ public final class MobileMusic extends AbsPublisher {
             Object song = getSong.invoke(null);
             Object manager = getManager.invoke(null);
             if (song == null || manager == null) return;
-            if (!Objects.equals(song, parsedSong.get(manager))) return;
+            if (!MobileMusicLyricData.sameSong(song, parsedSong.get(manager))) return;
             OffsetSnapshot snapshot = new OffsetSnapshot(song, lyricParser.get(manager),
                 ((Number) getViewOffset.invoke(view)).longValue());
             handler.post(() -> {
-                if (!snapshot.equals(liveOffset)) {
-                    liveOffset = snapshot;
-                    lastData = null;
+                try {
+                    if (!snapshot.sameOffset(liveOffset)) {
+                        liveOffset = snapshot;
+                        lastData = null;
+                    }
+                } catch (Throwable error) {
+                    logE(tag, "Cannot match Migu live lyric offset", error);
                 }
             });
         } catch (Throwable error) {
@@ -256,7 +265,7 @@ public final class MobileMusic extends AbsPublisher {
                     ((Number) getPosition.invoke(null)).longValue(),
                     ((Number) getDuration.invoke(null)).longValue(), offset);
             }
-            if (!Objects.equals(song, getSong.invoke(null))) {
+            if (!MobileMusicLyricData.sameSong(song, getSong.invoke(null))) {
                 clearPublishedLyric();
             } else if (data == null) {
                 clearPublishedLyric();
@@ -277,8 +286,12 @@ public final class MobileMusic extends AbsPublisher {
     }
 
     private record OffsetSnapshot(Object song, Object parser, long offset) {
-        private boolean matches(Object currentSong, Object currentParser) {
-            return Objects.equals(song, currentSong) && parser == currentParser;
+        private boolean matches(Object currentSong, Object currentParser) throws ReflectiveOperationException {
+            return parser == currentParser && MobileMusicLyricData.sameSong(song, currentSong);
+        }
+
+        private boolean sameOffset(OffsetSnapshot other) throws ReflectiveOperationException {
+            return other != null && offset == other.offset && matches(other.song, other.parser);
         }
     }
 }

@@ -60,9 +60,9 @@ public final class MobileMusicLyricData {
         return data;
     }
 
-    private static boolean sameSong(Object song, Object parsedSong) throws ReflectiveOperationException {
-        if (parsedSong == null) return false;
+    public static boolean sameSong(Object song, Object parsedSong) throws ReflectiveOperationException {
         if (song == parsedSong) return true;
+        if (song == null || parsedSong == null) return false;
         for (String getter : List.of("getSongId", "getContentId", "getLocalPathMd5")) {
             String identity = (String) invoke(song, getter);
             if (identity != null && !identity.isBlank()
