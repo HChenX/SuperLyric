@@ -63,6 +63,7 @@ public final class SupportApps {
             add("com.xuncorp.suvine.music"); // 糖醋音乐
             add("app.symfonik.music.player"); // Symfonium
             add("com.spotify.music"); // Spotify
+            add("com.aspiro.tidal"); // Tidal
         }
     };
 
@@ -106,6 +107,7 @@ public final class SupportApps {
             put("com.xuncorp.suvine.music", R.string.tangcu_music); // 糖醋音乐
             put("app.symfonik.music.player", R.string.symfonium_music); // Symfonium
             put("com.spotify.music", R.string.spotify_music); // Spotify
+            put("com.aspiro.tidal", R.string.tidal_music); // Tidal
         }
     };
 }
