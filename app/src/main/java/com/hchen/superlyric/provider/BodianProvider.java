@@ -74,19 +74,45 @@ public class BodianProvider extends UnifiedLyricProvider {
 
     private final AtomicReference<TrackContext> mActiveTrack = new AtomicReference<>();
 
-    // 自适应行反射字段缓存
-    private volatile Field mLineTimestampField;
-    private volatile Field mLineTextField;
-    private volatile Field mLineIsTransField;
-    private volatile Field mLineSubListField;
-    private volatile boolean mLineFieldsResolved = false;
+    // 线程安全的全局类级反射字段缓存（一次解析，永久复用，杜绝重复搜索）
+    private static final java.util.Map<Class<?>, LineFieldResolver> sLineResolvers = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<Class<?>, SubWordResolver> sSubWordResolvers = new java.util.concurrent.ConcurrentHashMap<>();
 
-    // 自适应逐字子元素反射字段缓存 (5个int字段的语义映射)
-    private volatile Field mSubCharStartField;
-    private volatile Field mSubCharEndField;
-    private volatile Field mSubStartTimeField;
-    private volatile Field mSubEndTimeField;
-    private volatile boolean mSubFieldsResolved = false;
+    private static class LineFieldResolver {
+        final Field timestampField;
+        final Field textField;
+        final Field isTransField;
+        final Field subListField;
+
+        LineFieldResolver(Field timestampField, Field textField, Field isTransField, Field subListField) {
+            this.timestampField = timestampField;
+            this.textField = textField;
+            this.isTransField = isTransField;
+            this.subListField = subListField;
+        }
+
+        boolean isValid() {
+            return timestampField != null && textField != null;
+        }
+    }
+
+    private static class SubWordResolver {
+        final Field charStartField;
+        final Field charEndField;
+        final Field startTimeField;
+        final Field endTimeField;
+
+        SubWordResolver(Field charStartField, Field charEndField, Field startTimeField, Field endTimeField) {
+            this.charStartField = charStartField;
+            this.charEndField = charEndField;
+            this.startTimeField = startTimeField;
+            this.endTimeField = endTimeField;
+        }
+
+        boolean isValid() {
+            return charEndField != null && startTimeField != null && endTimeField != null;
+        }
+    }
 
     @NonNull
     @Override
@@ -329,19 +355,15 @@ public class BodianProvider extends UnifiedLyricProvider {
     private SuperLyricLine[] convertRawLines(@NonNull List<?> rawLines, long totalDuration) {
         if (rawLines.isEmpty()) return null;
 
-        // 首次动态发现行对象的混淆字段
-        if (!mLineFieldsResolved) {
-            resolveLineFields(rawLines.get(0));
-        }
-
-        if (mLineTimestampField == null || mLineTextField == null) {
+        LineFieldResolver lineResolver = getOrResolveLineFields(rawLines.get(0));
+        if (lineResolver == null || !lineResolver.isValid()) {
             AndroidLog.logE(TAG, "Failed to resolve required lyric line fields");
             return null;
         }
 
-        // 尝试从当前歌曲全局样本行动态解析逐字字段映射（优先采用词数 < 字符长的行以严格区分 charStart 与 wordIndex）
-        if (!mSubFieldsResolved && mLineSubListField != null) {
-            resolveSubFieldsFromSong(rawLines);
+        SubWordResolver subResolver = null;
+        if (lineResolver.subListField != null) {
+            subResolver = getOrResolveSubFields(rawLines, lineResolver);
         }
 
         List<ParsedLine> parsedList = new ArrayList<>();
@@ -349,11 +371,11 @@ public class BodianProvider extends UnifiedLyricProvider {
 
         for (Object raw : rawLines) {
             try {
-                Integer timestamp = (Integer) mLineTimestampField.get(raw);
-                String text = (String) mLineTextField.get(raw);
+                Integer timestamp = (Integer) lineResolver.timestampField.get(raw);
+                String text = (String) lineResolver.textField.get(raw);
                 boolean isTranslation = false;
-                if (mLineIsTransField != null) {
-                    Object transObj = mLineIsTransField.get(raw);
+                if (lineResolver.isTransField != null) {
+                    Object transObj = lineResolver.isTransField.get(raw);
                     if (transObj instanceof Boolean) {
                         isTranslation = (Boolean) transObj;
                     }
@@ -363,10 +385,10 @@ public class BodianProvider extends UnifiedLyricProvider {
 
                 // 提取逐字子元素 (若为逐字歌词)
                 SuperLyricWord[] words = null;
-                if (mLineSubListField != null) {
-                    Object subObj = mLineSubListField.get(raw);
+                if (subResolver != null && lineResolver.subListField != null) {
+                    Object subObj = lineResolver.subListField.get(raw);
                     if (subObj instanceof List<?> subList && !subList.isEmpty()) {
-                        words = extractWords(subList, text, timestamp);
+                        words = extractWords(subResolver, subList, text, timestamp);
                     }
                 }
 
@@ -413,19 +435,35 @@ public class BodianProvider extends UnifiedLyricProvider {
     }
 
     /**
-     * 遍历全曲歌词行提取样本，优先寻找词素数量小于字符总长度的行（如包含标点、空格、多字词），
-     * 避免因全单字行中 wordIndex (0,1,2...) 与 charStart (0,1,2...) 数值完全一致而产生歧义误判。
+     * 提取全曲最佳样本行解析逐字词元字段并全局类级缓存。
      */
-    private void resolveSubFieldsFromSong(@NonNull List<?> rawLines) {
+    @Nullable
+    private SubWordResolver getOrResolveSubFields(@NonNull List<?> rawLines, @NonNull LineFieldResolver lineResolver) {
+        for (Object raw : rawLines) {
+            try {
+                Object subObj = lineResolver.subListField.get(raw);
+                if (subObj instanceof List<?> subList && !subList.isEmpty()) {
+                    Object firstElem = subList.get(0);
+                    if (firstElem != null) {
+                        SubWordResolver cached = sSubWordResolvers.get(firstElem.getClass());
+                        if (cached != null && cached.isValid()) {
+                            return cached;
+                        }
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+
         SampleLine preferredSample = null;
         SampleLine fallbackSample = null;
 
         for (Object raw : rawLines) {
             try {
-                String text = (String) mLineTextField.get(raw);
+                String text = (String) lineResolver.textField.get(raw);
                 if (text == null || text.trim().isEmpty()) continue;
 
-                Object subObj = mLineSubListField.get(raw);
+                Object subObj = lineResolver.subListField.get(raw);
                 if (subObj instanceof List<?> subList && !subList.isEmpty()) {
                     SampleLine sl = new SampleLine(subList, text);
                     if (subList.size() >= 2 && subList.size() < text.length()) {
@@ -440,66 +478,71 @@ public class BodianProvider extends UnifiedLyricProvider {
             }
         }
 
+        SubWordResolver resolved = null;
         if (preferredSample != null) {
-            resolveSubFields(preferredSample.subList, preferredSample.text);
+            resolved = resolveSubFields(preferredSample.subList, preferredSample.text);
         } else if (fallbackSample != null) {
-            resolveSubFields(fallbackSample.subList, fallbackSample.text);
+            resolved = resolveSubFields(fallbackSample.subList, fallbackSample.text);
         }
+
+        if (resolved != null && resolved.isValid()) {
+            Object sampleObj = (preferredSample != null ? preferredSample.subList : fallbackSample.subList).get(0);
+            sSubWordResolvers.put(sampleObj.getClass(), resolved);
+            AndroidLog.logI(TAG, "Cached SubWordResolver for " + sampleObj.getClass().getName());
+        }
+
+        return resolved;
     }
 
     /**
-     * 提取逐字数据并映射为 {@link SuperLyricWord} 数组。
-     * <p>
-     * <b>严格防御与连续性闭包校验：</b>
-     * <ul>
-     *   <li>每个词元必须严格从前一词元的结束点无缝连续切分 ({@code cStart == prevEnd})；</li>
-     *   <li>索引范围必须严格满足 {@code 0 <= cStart < cEnd <= lineText.length()}；</li>
-     *   <li>整行拼接的字符必须 100% 严丝合缝还原 {@code lineText}。</li>
-     * </ul>
-     * <p>
-     * 一旦检测到任何越界、反向重叠、不连续或失配，立即将逐字降级为 {@code null}，
-     * 并清空字段映射缓存，绝不向系统界面与下游模块分发非法切片。
-     *
-     * @param subList 宿主逐字词元列表
-     * @param lineText 当前行的完整文本
-     * @param lineStartMs 当前行的起始绝对时间戳 (毫秒)
-     * @return 校验通过的 {@link SuperLyricWord} 数组；存在异常或非逐字行时返回 {@code null}
+     * 提取逐字数据并映射为 {@link SuperLyricWord} 数组，同时施加时序自愈修复。
      */
     @Nullable
-    private SuperLyricWord[] extractWords(@NonNull List<?> subList, @NonNull String lineText, long lineStartMs) {
-        if (subList.isEmpty()) return null;
+    private SuperLyricWord[] extractWords(@NonNull SubWordResolver resolver,
+                                          @NonNull List<?> subList,
+                                          @NonNull String lineText,
+                                          long lineStartMs) {
+        if (subList.isEmpty() || lineText.isEmpty() || !resolver.isValid()) return null;
 
-        if (!mSubFieldsResolved) {
-            resolveSubFields(subList, lineText);
-        }
-
-        if (mSubCharEndField == null || mSubStartTimeField == null || mSubEndTimeField == null) {
-            return null;
-        }
-
-        List<SuperLyricWord> words = new ArrayList<>(subList.size());
+        List<SuperLyricWord> rawWords = new ArrayList<>(subList.size());
         int prevEnd = 0;
+        int textLen = lineText.length();
         StringBuilder reconstructed = new StringBuilder();
 
         for (Object eh : subList) {
+            if (eh == null) continue;
             try {
-                int startOffsetMs = mSubStartTimeField.getInt(eh);
-                int endOffsetMs = mSubEndTimeField.getInt(eh);
+                int cEnd = resolver.charEndField.getInt(eh);
+                int cStart = resolver.charStartField != null ? resolver.charStartField.getInt(eh) : prevEnd;
 
-                int cEnd = mSubCharEndField.getInt(eh);
-                int cStart = mSubCharStartField != null ? mSubCharStartField.getInt(eh) : prevEnd;
-
-                // 严密校验区间合法性与连续性：不可越界、不可倒错、相邻词必须严密无缝承接
-                if (cStart != prevEnd || cStart >= cEnd || cEnd > lineText.length()) {
-                    AndroidLog.logW(TAG, "extractWords: invalid or non-contiguous char range [" + cStart + ".." + cEnd
-                        + "], expectedStart=" + prevEnd + ", lineLen=" + lineText.length() + ", text=\"" + lineText + "\"");
-                    mSubFieldsResolved = false;
-                    return null;
+                // 容错 1：0 长度停顿/标记跳过
+                if (cEnd <= cStart) {
+                    continue;
                 }
 
-                String wordText = lineText.substring(cStart, cEnd);
-                prevEnd = cEnd;
+                // 容错 2：越界截断
+                if (cStart >= textLen) {
+                    continue;
+                }
+                cEnd = Math.min(cEnd, textLen);
+
+                // 容错 3：重叠修正
+                if (cStart < prevEnd) {
+                    cStart = prevEnd;
+                }
+                if (cEnd <= cStart) {
+                    continue;
+                }
+
+                // 容错 4：平滑包含空格等间隙，实现严密连续切分
+                int sliceStart = prevEnd;
+                int sliceEnd = cEnd;
+                String wordText = lineText.substring(sliceStart, sliceEnd);
+                prevEnd = sliceEnd;
                 reconstructed.append(wordText);
+
+                int startOffsetMs = resolver.startTimeField.getInt(eh);
+                int endOffsetMs = resolver.endTimeField.getInt(eh);
 
                 long absStart;
                 long absEnd;
@@ -510,58 +553,138 @@ public class BodianProvider extends UnifiedLyricProvider {
                     absStart = lineStartMs + startOffsetMs;
                     absEnd = lineStartMs + endOffsetMs;
                 }
-                if (absEnd < absStart) {
-                    absEnd = absStart;
-                }
 
-                words.add(new SuperLyricWord(wordText, absStart, absEnd));
+                rawWords.add(new SuperLyricWord(wordText, absStart, absEnd));
             } catch (Throwable t) {
                 AndroidLog.logW(TAG, "Error extracting sub word: " + t.getMessage());
-                mSubFieldsResolved = false;
                 return null;
             }
         }
 
-        // 字符切片必须严丝合缝 100% 还原整行文本
+        if (rawWords.isEmpty()) return null;
+
+        // 字符切片语义一致性校验
         if (prevEnd != lineText.length() || !reconstructed.toString().equals(lineText)) {
-            AndroidLog.logW(TAG, "extractWords: reconstructed words mismatch with line text: '"
-                + reconstructed + "' vs '" + lineText + "', dropping words");
-            mSubFieldsResolved = false;
-            return null;
+            // 允许去除空格后一致（兼容不切空格的逐字约定）
+            String recNoSpace = reconstructed.toString().replaceAll("\\s+", "");
+            String lineNoSpace = lineText.replaceAll("\\s+", "");
+            if (!recNoSpace.equals(lineNoSpace)) {
+                AndroidLog.logW(TAG, "extractWords: reconstructed words mismatch with line text: '"
+                    + reconstructed + "' vs '" + lineText + "', dropping words");
+                return null;
+            }
         }
 
-        return words.isEmpty() ? null : words.toArray(new SuperLyricWord[0]);
+        // 核心时序自愈算法：修复波点音乐源码中由重叠截断导致的 0ms 持续时间与异常时长
+        healWordTimings(rawWords, lineStartMs);
+
+        return rawWords.toArray(new SuperLyricWord[0]);
     }
 
     /**
-     * 基于强类型和反射自适应发现行对象的混淆字段（无排位索引硬编码）。
+     * 波点音乐逐字时序自愈算法。
      * <p>
-     * 通过字段的 Java 类型特征（{@link Integer}, {@link String}, {@code boolean}, {@link List}）
-     * 实现 100% 确定性类型收敛，彻底免疫类成员重命名混淆。
-     *
-     * @param lineObj 宿主行数据实例
+     * <b>逆向根因与自愈原理：</b>
+     * 波点宿主内部 {@code VerbatimLyricsParserImpl.e()} 在处理相邻词元重叠（{@code i3 < hVar2.e}）时，
+     * 存在致命代码：{@code hVar2.e = i3; if (hVar2.d < i3) hVar2.d = i3;}。
+     * 这导致前一词元的起始时间与结束时间双双被覆写为后一词元的起始 {@code i3}，使持续时间瞬间坍缩为 0ms！
+     * <p>
+     * 本自愈器通过全句拓扑时隙链重构：
+     * 1. 当发现词元持续时间 {@code absEnd <= absStart}（0ms 坍缩）时，提取其前驱词元的实际结束点 {@code prevEnd}
+     * 与后继词元的起始点 {@code nextStart}，完整恢复被波点代码抹平的真实演唱时长；
+     * 2. 约束单词最大时长，消除因字段读取异常导致的超大异常间隔；
+     * 3. 严格保障整句所有词元 {@code absEnd > absStart}，杜绝 0ms 词元流入下游。
      */
-    private void resolveLineFields(@NonNull Object lineObj) {
-        Class<?> current = lineObj.getClass();
+    private static void healWordTimings(@NonNull List<SuperLyricWord> words, long lineStartMs) {
+        int size = words.size();
+        for (int i = 0; i < size; i++) {
+            SuperLyricWord cur = words.get(i);
+            long start = cur.getStartTime();
+            long end = cur.getEndTime();
+
+            if (end <= start) {
+                long healedStart = start;
+                long healedEnd = end;
+
+                long prevEnd = (i > 0) ? words.get(i - 1).getEndTime() : lineStartMs;
+                long nextStart = -1L;
+                for (int j = i + 1; j < size; j++) {
+                    SuperLyricWord nw = words.get(j);
+                    if (nw.getEndTime() > nw.getStartTime()) {
+                        nextStart = nw.getStartTime();
+                        break;
+                    }
+                }
+
+                if (prevEnd < end) {
+                    // 场景 1（波点经典坍缩）：start 被前向推移至 end (i3)，真实起始正是前一词的结束 prevEnd！
+                    healedStart = prevEnd;
+                    healedEnd = end;
+                } else if (nextStart > start) {
+                    // 场景 2：end 缺失或被压平，后继词起始于 nextStart
+                    healedStart = start;
+                    healedEnd = nextStart;
+                } else if (nextStart > prevEnd) {
+                    // 场景 3：start 与 end 均被压制，平分 prevEnd 到 nextStart
+                    healedStart = prevEnd;
+                    healedEnd = nextStart;
+                } else {
+                    // 场景 4：按字符长度给予自然音节权重保底 (每字 150ms，最小 120ms)
+                    int len = Math.max(1, cur.getWord().length());
+                    healedStart = start;
+                    healedEnd = start + Math.max(120L, 150L * len);
+                }
+
+                if (healedEnd <= healedStart) {
+                    healedEnd = healedStart + 150L;
+                }
+
+                words.set(i, new SuperLyricWord(cur.getWord(), healedStart, healedEnd));
+            }
+        }
+    }
+
+    /**
+     * 基于强类型和反射自适应发现行对象的混淆字段（无排位索引硬编码，全局类级缓存）。
+     */
+    @Nullable
+    private LineFieldResolver getOrResolveLineFields(@NonNull Object lineObj) {
+        Class<?> clazz = lineObj.getClass();
+        LineFieldResolver cached = sLineResolvers.get(clazz);
+        if (cached != null && cached.isValid()) {
+            return cached;
+        }
+
+        Field timestampField = null;
+        Field textField = null;
+        Field isTransField = null;
+        Field subListField = null;
+
+        Class<?> current = clazz;
         while (current != null && current != Object.class) {
             for (Field f : current.getDeclaredFields()) {
                 f.setAccessible(true);
                 Class<?> type = f.getType();
-                if (type == Integer.class && mLineTimestampField == null) {
-                    mLineTimestampField = f;
-                } else if (type == String.class && mLineTextField == null) {
-                    mLineTextField = f;
-                } else if (type == boolean.class && mLineIsTransField == null) {
-                    mLineIsTransField = f;
-                } else if (List.class.isAssignableFrom(type) && mLineSubListField == null) {
-                    mLineSubListField = f;
+                if (type == Integer.class && timestampField == null) {
+                    timestampField = f;
+                } else if (type == String.class && textField == null) {
+                    textField = f;
+                } else if (type == boolean.class && isTransField == null) {
+                    isTransField = f;
+                } else if (List.class.isAssignableFrom(type) && subListField == null) {
+                    subListField = f;
                 }
             }
             current = current.getSuperclass();
         }
-        if (mLineTimestampField != null && mLineTextField != null) {
-            mLineFieldsResolved = true;
+
+        if (timestampField != null && textField != null) {
+            LineFieldResolver resolver = new LineFieldResolver(timestampField, textField, isTransField, subListField);
+            sLineResolvers.put(clazz, resolver);
+            AndroidLog.logI(TAG, "Cached LineFieldResolver for " + clazz.getName());
+            return resolver;
         }
+        return null;
     }
 
     /**
@@ -569,17 +692,15 @@ public class BodianProvider extends UnifiedLyricProvider {
      * <p>
      * <b>严格数学拓扑与边界判定（零混淆名称硬编码）：</b>
      * <ul>
-     *   <li><b>charEnd:</b> 在多词样本行中，唯一满足首词大于 0、严格单调递增且末词恰好等于行文本长度的字段；</li>
-     *   <li><b>charStart:</b> 在多字词样本行中，唯一满足首词为 0、且后续词严格等于前一词 charEnd 的字段
-     *       （与恒以 1 步进的 wordIndex 产生代数分流，彻底杜绝歧义）；</li>
-     *   <li><b>startMs / endMs:</b> 剩余字段中相对行起始时间的毫秒偏移，满足内聚单调性。</li>
+     *   <li><b>charEnd:</b> 满足首词大于 0、严格单调递增且末词恰好等于行文本长度的字段；</li>
+     *   <li><b>charStart:</b> 首词为 0、且后续词严格等于前一词 charEnd 的字段；</li>
+     *   <li><b>wordIndex:</b> 恒为 0, 1, 2... 的索引字段；</li>
+     *   <li><b>startMs / endMs:</b> 排除上述字段后严格仅剩的 2 个时间戳毫秒偏移字段，按单调性甄别起止。</li>
      * </ul>
-     *
-     * @param subList 逐字词元样本列表
-     * @param sampleText 对应的样本行完整文本
      */
-    private void resolveSubFields(@NonNull List<?> subList, @NonNull String sampleText) {
-        if (subList.isEmpty() || sampleText.isEmpty()) return;
+    @Nullable
+    private SubWordResolver resolveSubFields(@NonNull List<?> subList, @NonNull String sampleText) {
+        if (subList.isEmpty() || sampleText.isEmpty()) return null;
         Object subObj = subList.get(0);
         Class<?> clazz = subObj.getClass();
 
@@ -591,10 +712,11 @@ public class BodianProvider extends UnifiedLyricProvider {
             }
         }
 
-        if (intFields.size() != 5) return;
+        if (intFields.size() != 5) return null;
 
         Field candidateCharEnd = null;
         Field candidateCharStart = null;
+        Field candidateWordIndex = null;
         Field candidateStartMs = null;
         Field candidateEndMs = null;
 
@@ -602,7 +724,6 @@ public class BodianProvider extends UnifiedLyricProvider {
         int subCount = subList.size();
 
         // 1. 利用行边界与单调不变量唯一锁定 charEnd
-        // 边界约束：w[0].end >= 1，w[k].end > w[k-1].end，且末词 w[M-1].end 严格等于文本总长度
         for (Field f : intFields) {
             try {
                 int firstEnd = f.getInt(subList.get(0));
@@ -629,11 +750,10 @@ public class BodianProvider extends UnifiedLyricProvider {
         }
 
         if (candidateCharEnd == null) {
-            return;
+            return null;
         }
 
         // 2. 在锁定 charEnd 的基础上甄别 charStart
-        // 相邻连续性约束：w[0].start == 0，w[k].start == w[k-1].end
         for (Field f : intFields) {
             if (f == candidateCharEnd) continue;
             try {
@@ -657,16 +777,9 @@ public class BodianProvider extends UnifiedLyricProvider {
             }
         }
 
-        // 3. 甄别剩余 3 个字段：排除已确定的 charStart/charEnd 后，找出 wordIndex (k=0..M-1)，剩余 2 个为毫秒偏移
-        List<Field> remaining = new ArrayList<>();
+        // 3. 甄别 wordIndex：排除 charEnd 与 charStart 后，找出恒为 0, 1, 2... 的索引字段
         for (Field f : intFields) {
-            if (f != candidateCharEnd && f != candidateCharStart) {
-                remaining.add(f);
-            }
-        }
-
-        Field candidateWordIndex = null;
-        for (Field f : remaining) {
+            if (f == candidateCharEnd || f == candidateCharStart) continue;
             boolean isWordIdx = true;
             for (int k = 0; k < Math.min(subCount, 10); k++) {
                 try {
@@ -685,23 +798,34 @@ public class BodianProvider extends UnifiedLyricProvider {
             }
         }
 
+        // 4. 甄别 startMs 与 endMs：必须严格从排除 charEnd, charStart, wordIndex 后的剩余字段中筛选
         List<Field> timeCandidates = new ArrayList<>();
-        for (Field f : remaining) {
-            if (f != candidateWordIndex) {
+        for (Field f : intFields) {
+            if (f != candidateCharEnd && f != candidateCharStart && f != candidateWordIndex) {
                 timeCandidates.add(f);
             }
         }
 
-        if (timeCandidates.size() >= 2) {
+        if (timeCandidates.size() == 2) {
             try {
                 Field t0 = timeCandidates.get(0);
                 Field t1 = timeCandidates.get(1);
-                int v0 = t0.getInt(subObj);
-                int v1 = t1.getInt(subObj);
-                int lastV0 = t0.getInt(subList.get(subCount - 1));
-                int lastV1 = t1.getInt(subList.get(subCount - 1));
-                // 起始毫秒恒小于等于结束毫秒，且末词时间通常较大约束
-                if (v0 <= v1 && lastV0 <= lastV1) {
+
+                int t0LeCount = 0;
+                int t1LeCount = 0;
+                for (int k = 0; k < subCount; k++) {
+                    Object elem = subList.get(k);
+                    int v0 = t0.getInt(elem);
+                    int v1 = t1.getInt(elem);
+                    if (v0 <= v1) t0LeCount++;
+                    if (v1 <= v0) t1LeCount++;
+                }
+
+                Object lastElem = subList.get(subCount - 1);
+                int last0 = t0.getInt(lastElem);
+                int last1 = t1.getInt(lastElem);
+
+                if (last0 < last1 || t0LeCount >= t1LeCount) {
                     candidateStartMs = t0;
                     candidateEndMs = t1;
                 } else {
@@ -712,55 +836,15 @@ public class BodianProvider extends UnifiedLyricProvider {
             }
         }
 
-        // 4. 严苛的闭包校验：切片必须 100% 严丝合缝还原样本行文本
         if (candidateCharEnd != null && candidateStartMs != null && candidateEndMs != null) {
-            if (verifyCharPartition(candidateCharStart, candidateCharEnd, subList, sampleText)) {
-                mSubCharStartField = candidateCharStart;
-                mSubCharEndField = candidateCharEnd;
-                mSubStartTimeField = candidateStartMs;
-                mSubEndTimeField = candidateEndMs;
-                mSubFieldsResolved = true;
-                AndroidLog.logI(TAG, "Resolved sub-word fields successfully via invariant topology: charEnd="
-                    + candidateCharEnd.getName()
-                    + ", charStart=" + (candidateCharStart != null ? candidateCharStart.getName() : "contiguous")
-                    + ", startMs=" + candidateStartMs.getName()
-                    + ", endMs=" + candidateEndMs.getName());
-            }
+            AndroidLog.logI(TAG, "Resolved sub-word fields successfully: charEnd=" + candidateCharEnd.getName()
+                + ", charStart=" + (candidateCharStart != null ? candidateCharStart.getName() : "continuous")
+                + ", startMs=" + candidateStartMs.getName()
+                + ", endMs=" + candidateEndMs.getName());
+            return new SubWordResolver(candidateCharStart, candidateCharEnd, candidateStartMs, candidateEndMs);
         }
-    }
 
-    /**
-     * 验证候选字段切片是否对样本行文本构成严谨连续且无重叠的完美切分。
-     *
-     * @param fStart 候选起始字段（可为 null，为 null 时以 prevEnd 推进）
-     * @param fEnd 候选结束字段
-     * @param subList 样本逐字元素列表
-     * @param sampleText 样本行文本
-     * @return 满足连续划分且完全还原文本时返回 true，否则返回 false
-     */
-    private static boolean verifyCharPartition(@Nullable Field fStart, @NonNull Field fEnd,
-                                               @NonNull List<?> subList, @NonNull String sampleText) {
-        if (subList.isEmpty() || sampleText.isEmpty()) return false;
-        try {
-            int prevEnd = 0;
-            StringBuilder sb = new StringBuilder();
-            for (int k = 0; k < subList.size(); k++) {
-                Object eh = subList.get(k);
-                int cEnd = fEnd.getInt(eh);
-                int cStart = fStart != null ? fStart.getInt(eh) : prevEnd;
-
-                // 起始与结束索引有效性
-                if (cStart != prevEnd || cStart >= cEnd || cEnd > sampleText.length()) {
-                    return false;
-                }
-                sb.append(sampleText.substring(cStart, cEnd));
-                prevEnd = cEnd;
-            }
-
-            return prevEnd == sampleText.length() && sb.toString().equals(sampleText);
-        } catch (Throwable ignored) {
-            return false;
-        }
+        return null;
     }
 
     /**

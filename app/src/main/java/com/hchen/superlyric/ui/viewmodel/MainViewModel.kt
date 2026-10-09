@@ -131,7 +131,7 @@ class MainViewModel(
                 if (!targetPkg.isNullOrEmpty()) {
                     _currentApp.value = _hookApps.value.fastFirstOrNull { it.packageName == targetPkg }
                         ?: _apiApps.value.fastFirstOrNull { it.packageName == targetPkg }
-                        ?: AppData()
+                                ?: AppData()
                 }
             } finally {
                 _isRefreshing.value = false

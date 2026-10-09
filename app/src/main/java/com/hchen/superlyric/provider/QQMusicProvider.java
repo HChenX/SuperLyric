@@ -40,13 +40,9 @@ import com.hchen.superlyricapi.SuperLyricWord;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
-import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
-import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.result.ClassData;
 import org.luckypray.dexkit.result.ClassDataList;
-import org.luckypray.dexkit.result.MethodData;
-import org.luckypray.dexkit.result.MethodDataList;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -143,7 +139,8 @@ public class QQMusicProvider extends UnifiedLyricProvider {
         if (str.isEmpty() || str.length() > 80) return false;
         if (str.startsWith("http://") || str.startsWith("https://")) return false;
         if (str.contains("\n") || str.contains("\r") || str.contains("\t")) return false;
-        if ("未知歌手".equals(str) || "未知专辑".equals(str) || "null".equalsIgnoreCase(str)) return false;
+        if ("未知歌手".equals(str) || "未知专辑".equals(str) || "null".equalsIgnoreCase(str))
+            return false;
         // 过滤纯 Hex 密文 / 散列串 / 加密串 (通常长于 16 位的 16 进制字符串)
         if (str.length() >= 16 && str.matches("^[0-9A-Fa-f]+$")) return false;
         // 过滤结构化数据（JSON/XML 等）
@@ -435,8 +432,14 @@ public class QQMusicProvider extends UnifiedLyricProvider {
                 for (int i = 0; i < sampleCount; i++) {
                     try {
                         long val = ((Number) f.get(rawLines.get(i))).longValue();
-                        if (val < 0) { monotonic = false; break; }
-                        if (prev != -1 && val < prev) { monotonic = false; break; }
+                        if (val < 0) {
+                            monotonic = false;
+                            break;
+                        }
+                        if (prev != -1 && val < prev) {
+                            monotonic = false;
+                            break;
+                        }
                         prev = val;
                     } catch (Throwable t) {
                         monotonic = false;
@@ -490,7 +493,8 @@ public class QQMusicProvider extends UnifiedLyricProvider {
     private static boolean isPlausibleLineElement(@Nullable Object obj) {
         if (obj == null) return false;
         Class<?> clazz = obj.getClass();
-        if (clazz.isEnum() || Enum.class.isAssignableFrom(clazz) || clazz.isPrimitive()) return false;
+        if (clazz.isEnum() || Enum.class.isAssignableFrom(clazz) || clazz.isPrimitive())
+            return false;
         if (obj instanceof String || obj instanceof Number || obj instanceof Boolean) return false;
 
         boolean hasString = false;
@@ -743,8 +747,10 @@ public class QQMusicProvider extends UnifiedLyricProvider {
         List<SuperLyricWord> wordList = new ArrayList<>(rawWords.size());
         int prevEnd = 0;
         int textLen = lineText.length();
+        int rawCount = rawWords.size();
 
-        for (Object wordObj : rawWords) {
+        for (int i = 0; i < rawCount; i++) {
+            Object wordObj = rawWords.get(i);
             if (wordObj == null) continue;
             try {
                 int cEnd = resolver.charEndField.getInt(wordObj);
@@ -789,9 +795,30 @@ public class QQMusicProvider extends UnifiedLyricProvider {
                     absStart = lineStartMs;
                 }
 
-                long absEnd = rawDur > 0 ? (absStart + rawDur) : (absStart + 100);
-                if (absEnd < absStart) {
-                    absEnd = absStart + 100;
+                long absEnd;
+                if (rawDur > 0) {
+                    absEnd = absStart + rawDur;
+                } else {
+                    // 启发式自愈：rawDur <= 0 时优先采纳下一词起始，否则按字符权重保底
+                    long nextAbsStart = -1L;
+                    if (i + 1 < rawCount) {
+                        Object nextObj = rawWords.get(i + 1);
+                        if (nextObj != null && resolver.startField != null) {
+                            long nrStart = resolver.startField.getLong(nextObj);
+                            nextAbsStart = (nrStart >= lineStartMs) ? nrStart : (nrStart >= 0 ? lineStartMs + nrStart : -1L);
+                        }
+                    }
+                    if (nextAbsStart > absStart) {
+                        absEnd = nextAbsStart;
+                    } else {
+                        absEnd = absStart + Math.max(120L, (long) text.length() * 150L);
+                        if (lineEndMs > absStart && absEnd > lineEndMs) {
+                            absEnd = lineEndMs;
+                        }
+                    }
+                }
+                if (absEnd <= absStart) {
+                    absEnd = absStart + Math.max(120L, (long) text.length() * 150L);
                 }
 
                 wordList.add(new SuperLyricWord(text, absStart, absEnd));
@@ -811,6 +838,7 @@ public class QQMusicProvider extends UnifiedLyricProvider {
             wordList.set(wordList.size() - 1, new SuperLyricWord(paddedText, last.getStartTime(), last.getEndTime()));
         }
 
+        LyricSanitizer.healWordTimings(wordList, lineStartMs, lineEndMs);
         Collections.sort(wordList, Comparator.comparingLong(SuperLyricWord::getStartTime));
         return wordList.toArray(new SuperLyricWord[0]);
     }
@@ -822,7 +850,8 @@ public class QQMusicProvider extends UnifiedLyricProvider {
     private List<?> extractRawLines(@Nullable Object lyricObj) {
         if (lyricObj == null) return null;
         Class<?> clazz = lyricObj.getClass();
-        if (clazz.isEnum() || Enum.class.isAssignableFrom(clazz) || clazz.isPrimitive()) return null;
+        if (clazz.isEnum() || Enum.class.isAssignableFrom(clazz) || clazz.isPrimitive())
+            return null;
 
         String className = clazz.getName().toLowerCase();
         // 歌词对象必须来源于歌词相关包名或类名
@@ -888,7 +917,8 @@ public class QQMusicProvider extends UnifiedLyricProvider {
             if (isPlausibleHumanText(active.getArtist())) artist = active.getArtist();
             if (isPlausibleHumanText(active.getAlbum())) album = active.getAlbum();
             if (active.getDuration() > 0) duration = active.getDuration();
-            if (active.getTrackId() != null && !active.getTrackId().isEmpty()) trackId = active.getTrackId();
+            if (active.getTrackId() != null && !active.getTrackId().isEmpty())
+                trackId = active.getTrackId();
         }
 
         // 2. 从 songInfo 提取标准化字段

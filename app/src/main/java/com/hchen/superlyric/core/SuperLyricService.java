@@ -556,7 +556,8 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
                         stopToNotify = new SuperLyricData();
                     }
                 }
-                case PlaybackState.STATE_STOPPED, PlaybackState.STATE_NONE, PlaybackState.STATE_ERROR -> {
+                case PlaybackState.STATE_STOPPED, PlaybackState.STATE_NONE,
+                     PlaybackState.STATE_ERROR -> {
                     if (TextUtils.equals(mActivePublisher, packageName)) {
                         mActivePublisher = null;
                         mSystemTracker.stop();

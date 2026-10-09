@@ -313,7 +313,8 @@ public class AppleMusicProvider extends UnifiedLyricProvider {
                                 boolean hasAccept = false;
                                 for (StackTraceElement element : Thread.currentThread().getStackTrace()) {
                                     String s = element.toString();
-                                    if (!hasGetItemAtIndex && s.contains("getItemAtIndex")) hasGetItemAtIndex = true;
+                                    if (!hasGetItemAtIndex && s.contains("getItemAtIndex"))
+                                        hasGetItemAtIndex = true;
                                     if (!hasAccept && s.contains(".accept")) hasAccept = true;
                                     if (hasGetItemAtIndex && hasAccept) break;
                                 }
@@ -495,6 +496,7 @@ public class AppleMusicProvider extends UnifiedLyricProvider {
                             }
                         }
                         if (!wordList.isEmpty()) {
+                            LyricSanitizer.healWordTimings(wordList, start, end);
                             superLyricWords = wordList.toArray(new SuperLyricWord[0]);
                         }
                     }

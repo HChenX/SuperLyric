@@ -222,11 +222,15 @@ public final class LyricOrchestrator {
         }
 
         // 确保元数据完备
-        if (!fullData.hasTitle() && !context.getTitle().isEmpty()) fullData.setTitle(context.getTitle());
-        if (!fullData.hasArtist() && !context.getArtist().isEmpty()) fullData.setArtist(context.getArtist());
-        if (!fullData.hasAlbum() && !context.getAlbum().isEmpty()) fullData.setAlbum(context.getAlbum());
+        if (!fullData.hasTitle() && !context.getTitle().isEmpty())
+            fullData.setTitle(context.getTitle());
+        if (!fullData.hasArtist() && !context.getArtist().isEmpty())
+            fullData.setArtist(context.getArtist());
+        if (!fullData.hasAlbum() && !context.getAlbum().isEmpty())
+            fullData.setAlbum(context.getAlbum());
         if (!fullData.hasLyricId()) fullData.setLyricId(context.getTrackId());
-        if (!fullData.hasDuration() && context.getDuration() > 0) fullData.setDuration(context.getDuration());
+        if (!fullData.hasDuration() && context.getDuration() > 0)
+            fullData.setDuration(context.getDuration());
 
         // 向下兼容：首句填充到单行通道
         if (fullData.hasAllLyrics() && fullData.getAllLyricsCount() > 0 && !fullData.hasLyric()) {

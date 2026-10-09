@@ -34,6 +34,7 @@ import com.hchen.superlyric.publisher.UnifiedLyricProvider;
 import com.hchen.superlyric.publisher.engine.IHookLyricEngine;
 import com.hchen.superlyric.publisher.model.ProviderCapability;
 import com.hchen.superlyric.publisher.model.TrackContext;
+import com.hchen.superlyric.utils.LyricSanitizer;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricLine;
 import com.hchen.superlyricapi.SuperLyricWord;
@@ -363,9 +364,34 @@ public class KuGouProvider extends UnifiedLyricProvider {
                             long d = (dTimes != null && w < dTimes.length) ? dTimes[w] : 0;
                             // 兼容绝对毫秒与行内相对偏移两种时序约定
                             long wStart = (b >= lineStart) ? b : (lineStart + b);
-                            long wEnd = Math.max(wStart, wStart + d);
+                            long wEnd;
+                            if (d > 0) {
+                                wEnd = wStart + d;
+                            } else {
+                                // 启发式自愈：d <= 0 时优先采纳下一词起始，否则按字符权重保底
+                                long nextStart = -1L;
+                                if (w + 1 < bTimes.length) {
+                                    long nb = bTimes[w + 1];
+                                    nextStart = (nb >= lineStart) ? nb : (lineStart + nb);
+                                }
+                                if (nextStart > wStart) {
+                                    wEnd = nextStart;
+                                } else {
+                                    wEnd = wStart + Math.max(120L, (long) wText.length() * 150L);
+                                    if (lineEnd > wStart && wEnd > lineEnd) {
+                                        wEnd = lineEnd;
+                                    }
+                                }
+                            }
+                            if (wEnd <= wStart) {
+                                wEnd = wStart + Math.max(120L, (long) wText.length() * 150L);
+                            }
                             wordList.add(new SuperLyricWord(wText, wStart, wEnd));
                         }
+                    }
+
+                    if (!wordList.isEmpty()) {
+                        LyricSanitizer.healWordTimings(wordList, lineStart, lineEnd);
                     }
                 }
 

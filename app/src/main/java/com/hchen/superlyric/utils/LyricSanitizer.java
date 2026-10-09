@@ -103,7 +103,7 @@ public final class LyricSanitizer {
         SuperLyricWord[] cleanWords = null;
 
         if (rawWords != null && rawWords.length > 0) {
-            cleanWords = validateAndCleanWords(rawWords, cleanText);
+            cleanWords = validateAndCleanWords(rawWords, cleanText, start, end);
         }
 
         return new SuperLyricLine(
@@ -120,7 +120,10 @@ public final class LyricSanitizer {
      * 严密校验并清洗逐字数据。若存在任何越界或破坏性风险，一律拒绝并降级为 null。
      */
     @Nullable
-    private static SuperLyricWord[] validateAndCleanWords(@NonNull SuperLyricWord[] rawWords, @NonNull String cleanLineText) {
+    private static SuperLyricWord[] validateAndCleanWords(@NonNull SuperLyricWord[] rawWords,
+                                                          @NonNull String cleanLineText,
+                                                          long lineStart,
+                                                          long lineEnd) {
         List<SuperLyricWord> validated = new ArrayList<>(rawWords.length);
         StringBuilder wordsTextBuilder = new StringBuilder();
 
@@ -167,7 +170,68 @@ public final class LyricSanitizer {
             }
         }
 
+        // 致命防线 3：全局逐字时序自愈与 0ms 持续时间消除
+        healWordTimings(validated, lineStart, lineEnd);
+
         return validated.toArray(new SuperLyricWord[0]);
+    }
+
+    /**
+     * 全局逐字时序自愈与 0ms/异常时长兜底修复。
+     * <p>
+     * 针对各 Provider（如波点、酷狗、QQ音乐等）可能因上游解析截断或重叠产生的 0ms 词元，
+     * 利用前后词的时序拓扑间隙无缝自愈，确保所有词元持续时间严格大于 0。
+     */
+    public static void healWordTimings(@NonNull List<SuperLyricWord> words, long lineStart, long lineEnd) {
+        int size = words.size();
+        for (int i = 0; i < size; i++) {
+            SuperLyricWord cur = words.get(i);
+            long start = cur.getStartTime();
+            long end = cur.getEndTime();
+
+            if (end <= start) {
+                long healedStart = start;
+                long healedEnd = end;
+
+                long prevEnd = (i > 0) ? words.get(i - 1).getEndTime() : lineStart;
+                long nextStart = -1L;
+                for (int j = i + 1; j < size; j++) {
+                    SuperLyricWord nw = words.get(j);
+                    if (nw.getEndTime() > nw.getStartTime()) {
+                        nextStart = nw.getStartTime();
+                        break;
+                    }
+                }
+
+                if (prevEnd < end) {
+                    // 场景 1：起始时间被错误前推至结束时间，前一词的真实结束点（或行起始）作为当前词起始（典型如波点音乐 0ms 折叠缺陷）
+                    healedStart = prevEnd;
+                    healedEnd = end;
+                } else if (nextStart > start) {
+                    // 场景 2：结束时间缺失或被压平，延展至后继词起始
+                    healedStart = start;
+                    healedEnd = nextStart;
+                } else if (nextStart > prevEnd) {
+                    // 场景 3：起止均被压制，平分前后时隙
+                    healedStart = prevEnd;
+                    healedEnd = nextStart;
+                } else {
+                    // 场景 4：按字符权重给予正数时长保底 (每字 150ms，最小 120ms)
+                    int charCount = Math.max(1, cur.getWord().length());
+                    healedStart = start;
+                    healedEnd = start + Math.max(120L, 150L * charCount);
+                    if (lineEnd > healedStart && healedEnd > lineEnd) {
+                        healedEnd = lineEnd;
+                    }
+                }
+
+                if (healedEnd <= healedStart) {
+                    healedEnd = healedStart + 150L;
+                }
+
+                words.set(i, new SuperLyricWord(cur.getWord(), healedStart, healedEnd));
+            }
+        }
     }
 
     /**

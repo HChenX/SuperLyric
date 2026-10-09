@@ -347,7 +347,8 @@ public class SaltMusicProvider extends UnifiedLyricProvider {
      */
     private synchronized void resolveModelFields() {
         if (mFieldsResolved) return;
-        if (mLyricsDocumentClass == null || mLyricsLineClass == null || mLyricsCellClass == null) return;
+        if (mLyricsDocumentClass == null || mLyricsLineClass == null || mLyricsCellClass == null)
+            return;
 
         try {
             // 1. LyricsDocument 字段解析
@@ -558,7 +559,9 @@ public class SaltMusicProvider extends UnifiedLyricProvider {
                 StringBuilder wordsSb = new StringBuilder();
 
                 if (rawCells != null && !rawCells.isEmpty()) {
-                    for (Object cellObj : rawCells) {
+                    int cellCount = rawCells.size();
+                    for (int c = 0; c < cellCount; c++) {
+                        Object cellObj = rawCells.get(c);
                         if (cellObj == null) continue;
                         long ct1 = mFieldCellTime1 != null ? (long) mFieldCellTime1.get(cellObj) : 0L;
                         long ct2 = mFieldCellTime2 != null ? (long) mFieldCellTime2.get(cellObj) : 0L;
@@ -567,8 +570,34 @@ public class SaltMusicProvider extends UnifiedLyricProvider {
                         String cText = mFieldCellText != null ? (String) mFieldCellText.get(cellObj) : null;
                         if (cText != null) {
                             wordsSb.append(cText);
-                            wordsList.add(new SuperLyricWord(cText, (int) cStart, (int) cEnd));
+                            if (cEnd <= cStart) {
+                                // 启发式自愈：cEnd <= cStart 时优先采纳下一词起始，否则按字符权重保底
+                                long nextStart = -1L;
+                                if (c + 1 < cellCount) {
+                                    Object nextCell = rawCells.get(c + 1);
+                                    if (nextCell != null && mFieldCellTime1 != null && mFieldCellTime2 != null) {
+                                        long nct1 = (long) mFieldCellTime1.get(nextCell);
+                                        long nct2 = (long) mFieldCellTime2.get(nextCell);
+                                        nextStart = Math.min(nct1, nct2);
+                                    }
+                                }
+                                if (nextStart > cStart) {
+                                    cEnd = nextStart;
+                                } else {
+                                    cEnd = cStart + Math.max(120L, (long) cText.length() * 150L);
+                                    if (lineEnd > cStart && cEnd > lineEnd) {
+                                        cEnd = lineEnd;
+                                    }
+                                }
+                            }
+                            if (cEnd <= cStart) {
+                                cEnd = cStart + Math.max(120L, (long) cText.length() * 150L);
+                            }
+                            wordsList.add(new SuperLyricWord(cText, cStart, cEnd));
                         }
+                    }
+                    if (!wordsList.isEmpty()) {
+                        LyricSanitizer.healWordTimings(wordsList, lineStart, lineEnd);
                     }
                 }
 

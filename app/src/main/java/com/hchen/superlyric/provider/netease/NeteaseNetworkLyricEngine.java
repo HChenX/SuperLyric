@@ -747,14 +747,26 @@ public class NeteaseNetworkLyricEngine implements INetworkLyricEngine {
                         wStart = lastWordEnd;
                         wEnd = Math.max(wStart, wEnd);
                     }
-                    if (wEnd < wStart) {
-                        wEnd = wStart;
+                    if (wEnd <= wStart) {
+                        long nextStart = -1L;
+                        if (i + 1 < tags.size()) {
+                            nextStart = Math.max(0L, tags.get(i + 1).startMs + offsetMs);
+                        }
+                        if (nextStart > wStart) {
+                            wEnd = nextStart;
+                        } else {
+                            wEnd = wStart + Math.max(120L, (long) wText.length() * 150L);
+                        }
                     }
 
                     words.add(new SuperLyricWord(wText, wStart, wEnd));
                     fullText.append(wText);
                     lastWordEnd = wEnd;
                 }
+            }
+
+            if (!words.isEmpty()) {
+                LyricSanitizer.healWordTimings(words, lineStart, lineEnd);
             }
 
             // 严密对齐：行文本严禁单方面 trim()，必须与 words 累加字符严格一致，避免触发 Sanitizer 长度越界判定
