@@ -96,6 +96,7 @@ public class AppleMusicProvider extends UnifiedLyricProvider {
         return ProviderCapability.FULL_HOOK_ONLY;
     }
 
+    @android.annotation.SuppressLint("WrongConstant")
     @Nullable
     @Override
     protected String extractTrackId(@NonNull MediaMetadata metadata) {

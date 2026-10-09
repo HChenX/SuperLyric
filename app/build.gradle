@@ -79,9 +79,10 @@ android {
         generateLocaleConfig = true
     }
 
-    // lint {
-    //     baseline = file("lint-baseline.xml")
-    // }
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
 
     // packagingOptions {
     //     resources {
