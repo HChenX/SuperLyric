@@ -1,19 +1,19 @@
 /*
  * This file is part of SuperLyric.
-
+ *
  * SuperLyric is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
  * published by the Free Software Foundation, either version 3 of the
  * License.
-
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
-
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
-
+ *
  * Copyright (C) 2025-2026 HChenX
  */
 package com.hchen.superlyric;
@@ -21,7 +21,6 @@ package com.hchen.superlyric;
 import static com.hchen.hooktool.ModuleConfig.LOG_D;
 
 import android.content.Context;
-import android.os.Bundle;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -35,24 +34,21 @@ import com.hchen.hooktool.log.AndroidLog;
 import com.hchen.hooktool.utils.PrefsTool;
 import com.hchen.processor.HookMaps;
 import com.hchen.superlyric.data.LocalConfig;
-import com.hchen.superlyric.data.NetworkMode;
-import com.hchen.superlyric.data.PrefsKey;
-import com.hchen.superlyric.data.SupportApps;
 import com.hchen.superlyric.utils.LyricCacheStore;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Hook 入口
+ * SuperLyric 核心 Hook 入口。
+ * <p>
+ * 基于全新统一架构，直接按目标包名加载对应的 UnifiedLyricProvider 或系统代理，
+ * 彻底消除 offline / online 路径割裂。
  *
  * @author 焕晨HChen
  */
@@ -66,10 +62,12 @@ public final class HookEntrance extends ModuleEntrance {
         ModuleConfig.setLogLevel(BuildConfig.DEBUG ? LOG_D : LocalConfig.getLogLevelForXposed());
         ModuleConfig.setShowHookSuccessLog(BuildConfig.DEBUG || LocalConfig.getLogLevelForXposed() == LOG_D);
         ModuleConfig.setLogExpandPaths(
-            "com.hchen.superlyric.hook"
+            "com.hchen.superlyric.publisher",
+            "com.hchen.superlyric.provider",
+            "com.hchen.superlyric.core"
         );
         ModuleConfig.setLogExpandIgnoreClassNames(
-            "com.hchen.superlyric.hook.AbsPublisher"
+            "com.hchen.superlyric.publisher.AbsPublisher"
         );
     }
 
@@ -92,7 +90,7 @@ public final class HookEntrance extends ModuleEntrance {
 
     @Override
     public void handlePackageReady(@NonNull PackageReadyParam param) {
-        AndroidLog.logD(TAG, "handlePackageReady: " + param.getClassLoader() + ", " + param.getAppComponentFactory() + ", " + param);
+        AndroidLog.logD(TAG, "handlePackageReady: " + param.getPackageName() + " with loader: " + param.getClassLoader());
         super.handlePackageReady(param);
 
         if (HookMaps.ON_PACKAGE_LOADED.containsKey(param.getPackageName())) {
@@ -108,8 +106,6 @@ public final class HookEntrance extends ModuleEntrance {
                     version
                 );
 
-                Set<String> networks = PrefsTool.prefs().getStringSet(PrefsKey.NETWORK_LYRICS_MODE, new HashSet<>());
-
                 ClassLoader previousLoader = moduleClassLoaders.get(param.getPackageName());
                 if (modules.containsKey(param.getPackageName()) && previousLoader == param.getClassLoader()) {
                     for (AbsModule module : Objects.requireNonNull(modules.get(param.getPackageName()))) {
@@ -118,24 +114,13 @@ public final class HookEntrance extends ModuleEntrance {
                     return;
                 }
                 if (previousLoader != null && previousLoader != param.getClassLoader()) {
-                    AndroidLog.logE(TAG, "Ignore package reload with a different ClassLoader: "
-                        + param.getPackageName());
+                    AndroidLog.logE(TAG, "Ignore package reload with different ClassLoader: " + param.getPackageName());
                     return;
                 }
 
                 List<AbsModule> packageModules = new ArrayList<>();
                 for (String path : Objects.requireNonNull(HookMaps.ON_PACKAGE_LOADED.get(param.getPackageName()))) {
                     try {
-                        if (networks.contains(param.getPackageName()) || SupportApps.sSupportNetworkApps.get(param.getPackageName()) == NetworkMode.ONLY) {
-                            if (path.contains("offline")) {
-                                continue;
-                            }
-                        } else {
-                            if (path.contains("online")) {
-                                continue;
-                            }
-                        }
-
                         AbsModule module = (AbsModule) HookEntrance.class.getClassLoader()
                             .loadClass(path)
                             .getDeclaredConstructor()
@@ -159,7 +144,7 @@ public final class HookEntrance extends ModuleEntrance {
 
     @Override
     public void handleApplicationCreated(@NonNull Context context) {
-        AndroidLog.logD(TAG, "handleApplicationCreated: " + context);
+        AndroidLog.logD(TAG, "handleApplicationCreated: " + context.getPackageName());
         super.handleApplicationCreated(context);
 
         if (lastApplicationContext == context) return;
@@ -173,10 +158,6 @@ public final class HookEntrance extends ModuleEntrance {
         lastApplicationContext = context;
     }
 
-    /**
-     * 缓存格式版本升级时清空在线歌词缓存：旧格式缓存与新版本不兼容，整体失效避免脏命中。
-     * 通过 SharedPreferences 记录已清理过的格式版本，同版本内不重复清空。
-     */
     private void clearLyricCacheOnFormatUpgrade(@NonNull Context context) {
         try {
             int lastCleared = PrefsTool.prefs(context).getInt("super_lyric_cache_format", 0);
@@ -225,16 +206,5 @@ public final class HookEntrance extends ModuleEntrance {
     @Override
     public boolean isHotReloadingAllowed(@NonNull String packageName) {
         return false;
-    }
-
-    @NonNull
-    @Override
-    public Map<String, Object> handleHotReloading(@Nullable Bundle extras) {
-        return super.handleHotReloading(extras);
-    }
-
-    @Override
-    public void handleHotReloaded(@NonNull HotReloadedParam param, @NonNull ClassLoader classLoader) {
-        super.handleHotReloaded(param, classLoader);
     }
 }

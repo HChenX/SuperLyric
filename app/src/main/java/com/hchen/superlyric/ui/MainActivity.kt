@@ -61,6 +61,7 @@ import com.hchen.superlyric.ui.data.UIConstants
 import com.hchen.superlyric.ui.effect.BlurredBar
 import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
 import com.hchen.superlyric.ui.screen.AboutLayout
+import com.hchen.superlyric.ui.screen.ApiLayout
 import com.hchen.superlyric.ui.screen.HomeLayout
 import com.hchen.superlyric.ui.viewmodel.MainViewModel
 import com.hchen.superlyric.ui.viewmodel.MainViewModelFactory
@@ -82,6 +83,7 @@ import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.HorizontalSplit
 import top.yukonga.miuix.kmp.icon.extended.Info
+import top.yukonga.miuix.kmp.icon.extended.Music
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
@@ -122,16 +124,24 @@ class MainActivity : ComponentActivity() {
         val handlePagerChange: (Boolean, Int) -> Unit = remember(pagerState, coroutineScope) {
             { isWideScreen, page ->
                 coroutineScope.launch {
-                    if (isWideScreen)
+                    if (isWideScreen) {
                         pagerState.scrollToPage(page)
-                    else pagerState.animateScrollToPage(page)
+                    } else {
+                        pagerState.animateScrollToPage(page)
+                    }
                 }
             }
         }
 
         var showUnavailable by remember { mutableStateOf(false) }
+        var unavailableReason by remember { mutableStateOf("") }
         LaunchedEffect(Unit) {
-            showUnavailable = !SuperLyricHelper.isAvailable()
+            if (!SuperLyricHelper.isAvailable()) {
+                val errorMsg = runCatching { SuperLyricHelper.registerPublisher() }
+                    .exceptionOrNull()?.message ?: "Unknown"
+                unavailableReason = errorMsg
+                showUnavailable = true
+            }
         }
 
         CompositionLocalProvider(
@@ -143,25 +153,23 @@ class MainActivity : ComponentActivity() {
                 BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
                     val isWideScreen = maxWidth > UIConstants.WIDE_SCREEN_THRESHOLD ||
                             (maxWidth > UIConstants.MEDIUM_WIDTH_THRESHOLD && (maxHeight.value / maxWidth.value < UIConstants.PORTRAIT_ASPECT_RATIO_THRESHOLD))
-                    if (isWideScreen) WideScreenLayout() else CompactScreenLayout()
+                    if (isWideScreen) {
+                        WideScreenLayout()
+                    } else {
+                        CompactScreenLayout()
+                    }
                 }
             }
 
             WindowDialog(
                 show = showUnavailable,
                 title = stringResource(R.string.warn),
-                summary = stringResource(
-                    R.string.service_unavailable,
-                    runCatching { SuperLyricHelper.registerPublisher() }
-                        .exceptionOrNull()?.message ?: "Unknown"
-                )
+                summary = stringResource(R.string.service_unavailable, unavailableReason)
             ) {
                 Row(horizontalArrangement = Arrangement.Absolute.SpaceBetween) {
                     TextButton(
                         text = stringResource(android.R.string.ok),
-                        onClick = {
-                            showUnavailable = false
-                        },
+                        onClick = { showUnavailable = false },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.textButtonColorsPrimary()
                     )
@@ -171,7 +179,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun CompactScreenLayout() {
+    private fun CompactScreenLayout(modifier: Modifier = Modifier) {
         val pagerState = LocalPagerState.current
         val handlePagerChange = LocalHandlePagerChange.current
 
@@ -179,30 +187,21 @@ class MainActivity : ComponentActivity() {
         val blurActive = backdrop != null
 
         Scaffold(
-            modifier = Modifier.fillMaxSize(),
+            modifier = modifier.fillMaxSize(),
             bottomBar = {
                 BlurredBar(backdrop = backdrop, blurEnabled = blurActive) {
                     NavigationBar(
                         mode = NavigationBarDisplayMode.IconWithSelectedLabel,
                         color = if (blurActive) Color.Transparent else colorScheme.surface
                     ) {
-                        NavigationBarItem(
-                            label = stringResource(R.string.home),
-                            icon = MiuixIcons.HorizontalSplit,
-                            selected = pagerState.currentPage == UIConstants.HOME_PAGE_INDEX,
-                            onClick = {
-                                handlePagerChange(false, UIConstants.HOME_PAGE_INDEX)
-                            }
-                        )
-
-                        NavigationBarItem(
-                            label = stringResource(R.string.about),
-                            icon = MiuixIcons.Info,
-                            selected = pagerState.currentPage == UIConstants.ABOUT_PAGE_INDEX,
-                            onClick = {
-                                handlePagerChange(false, UIConstants.ABOUT_PAGE_INDEX)
-                            }
-                        )
+                        navigationItems.forEach { item ->
+                            NavigationBarItem(
+                                label = stringResource(item.labelRes),
+                                icon = item.icon,
+                                selected = pagerState.currentPage == item.index,
+                                onClick = { handlePagerChange(false, item.index) }
+                            )
+                        }
                     }
                 }
             }
@@ -217,19 +216,21 @@ class MainActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun WideScreenLayout() {
+    private fun WideScreenLayout(modifier: Modifier = Modifier) {
         val windowWidth = LocalWindowInfo.current.containerSize.width
         var weight by remember(windowWidth) { mutableFloatStateOf(0.25f) }
         val dragState = rememberDraggableState { delta ->
-            val nextWeight = weight + delta / windowWidth
-            weight = nextWeight.coerceIn(0.25f, 0.3f)
+            if (windowWidth > 0) {
+                val nextWeight = weight + delta / windowWidth
+                weight = nextWeight.coerceIn(0.25f, 0.3f)
+            }
         }
 
         val scrollBehavior = MiuixScrollBehavior()
         val pagerState = LocalPagerState.current
         val handlePagerChange = LocalHandlePagerChange.current
 
-        Scaffold(modifier = Modifier.fillMaxSize()) {
+        Scaffold(modifier = modifier.fillMaxSize()) {
             Row(
                 modifier = Modifier
                     .fillMaxSize()
@@ -260,17 +261,13 @@ class MainActivity : ComponentActivity() {
                                 Card(
                                     modifier = Modifier.padding(top = 12.dp)
                                 ) {
-                                    BasicComponent(
-                                        title = stringResource(R.string.home),
-                                        onClick = { handlePagerChange(true, UIConstants.HOME_PAGE_INDEX) },
-                                        holdDownState = pagerState.currentPage == UIConstants.HOME_PAGE_INDEX
-                                    )
-
-                                    BasicComponent(
-                                        title = stringResource(R.string.about),
-                                        onClick = { handlePagerChange(true, UIConstants.ABOUT_PAGE_INDEX) },
-                                        holdDownState = pagerState.currentPage == UIConstants.ABOUT_PAGE_INDEX
-                                    )
+                                    navigationItems.forEach { item ->
+                                        BasicComponent(
+                                            title = stringResource(item.labelRes),
+                                            onClick = { handlePagerChange(true, item.index) },
+                                            holdDownState = pagerState.currentPage == item.index
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -301,11 +298,12 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun UiContent(
         paddingValues: PaddingValues,
-        isWideScreen: Boolean = false
+        isWideScreen: Boolean = false,
+        modifier: Modifier = Modifier
     ) {
         val pagerState = LocalPagerState.current
         HorizontalPager(
-            modifier = Modifier.fillMaxSize(),
+            modifier = modifier.fillMaxSize(),
             state = pagerState,
             beyondViewportPageCount = 1,
             userScrollEnabled = false,
@@ -317,10 +315,26 @@ class MainActivity : ComponentActivity() {
                     HomeLayout(paddingValues, isWideScreen)
                 }
 
+                UIConstants.API_PAGE_INDEX -> {
+                    ApiLayout(paddingValues, isWideScreen)
+                }
+
                 UIConstants.ABOUT_PAGE_INDEX -> {
                     AboutLayout(paddingValues, isWideScreen)
                 }
             }
         }
     }
-}
+
+    private data class NavigationItemData(
+        val index: Int,
+        val labelRes: Int,
+        val icon: androidx.compose.ui.graphics.vector.ImageVector
+    )
+
+    private val navigationItems = listOf(
+        NavigationItemData(UIConstants.HOME_PAGE_INDEX, R.string.home, MiuixIcons.HorizontalSplit),
+        NavigationItemData(UIConstants.API_PAGE_INDEX, R.string.api, MiuixIcons.Music),
+        NavigationItemData(UIConstants.ABOUT_PAGE_INDEX, R.string.about, MiuixIcons.Info)
+    )
+}

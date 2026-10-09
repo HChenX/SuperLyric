@@ -135,11 +135,93 @@ internal object BgEffectConfig {
         pointOffset = 0.2f,
     )
 
+    // OS3 Sunset Data (API Screen: Warm Sunset Amber & Rose Gold Twilight)
+
+    private val OS3_SUNSET_PHONE_LIGHT = Config(
+        points = floatArrayOf(0.8f, 0.2f, 1.0f, 0.8f, 0.9f, 1.0f, 0.2f, 0.9f, 1.0f, 0.2f, 0.2f, 1.0f),
+        colors1 = floatArrayOf(
+            1.0f, 0.86f, 0.78f, 1.0f,
+            0.98f, 0.78f, 0.82f, 1.0f,
+            1.0f, 0.82f, 0.70f, 1.0f,
+            0.95f, 0.80f, 0.90f, 1.0f
+        ),
+        colors2 = floatArrayOf(
+            1.0f, 0.80f, 0.72f, 1.0f,
+            1.0f, 0.84f, 0.80f, 1.0f,
+            1.0f, 0.88f, 0.76f, 1.0f,
+            0.98f, 0.77f, 0.84f, 1.0f
+        ),
+        colors3 = floatArrayOf(
+            1.0f, 0.89f, 0.74f, 1.0f,
+            0.98f, 0.76f, 0.76f, 1.0f,
+            0.99f, 0.84f, 0.72f, 1.0f,
+            0.96f, 0.82f, 0.88f, 1.0f
+        ),
+        colorInterpPeriod = 5.0f,
+        lightOffset = 0.08f,
+        saturateOffset = 0.18f,
+        pointOffset = 0.2f,
+    )
+
+    private val OS3_SUNSET_PHONE_DARK = Config(
+        points = floatArrayOf(0.8f, 0.2f, 1.0f, 0.8f, 0.9f, 1.0f, 0.2f, 0.9f, 1.0f, 0.2f, 0.2f, 1.0f),
+        colors1 = floatArrayOf(
+            0.48f, 0.12f, 0.26f, 0.45f,
+            0.44f, 0.18f, 0.07f, 0.42f,
+            0.36f, 0.09f, 0.38f, 0.45f,
+            0.45f, 0.16f, 0.09f, 0.40f
+        ),
+        colors2 = floatArrayOf(
+            0.46f, 0.20f, 0.08f, 0.40f,
+            0.42f, 0.11f, 0.22f, 0.45f,
+            0.42f, 0.17f, 0.08f, 0.40f,
+            0.38f, 0.10f, 0.30f, 0.45f
+        ),
+        colors3 = floatArrayOf(
+            0.40f, 0.10f, 0.32f, 0.45f,
+            0.48f, 0.20f, 0.09f, 0.40f,
+            0.44f, 0.13f, 0.26f, 0.45f,
+            0.46f, 0.12f, 0.22f, 0.45f
+        ),
+        colorInterpPeriod = 8.0f,
+        lightOffset = 0.0f,
+        saturateOffset = 0.15f,
+        pointOffset = 0.35f,
+    )
+
+    private val OS3_SUNSET_PAD_LIGHT = Config(
+        points = floatArrayOf(0.8f, 0.2f, 1.0f, 0.8f, 0.9f, 1.0f, 0.2f, 0.9f, 1.0f, 0.2f, 0.2f, 1.0f),
+        colors1 = OS3_SUNSET_PHONE_LIGHT.colors1,
+        colors2 = OS3_SUNSET_PHONE_LIGHT.colors2,
+        colors3 = OS3_SUNSET_PHONE_LIGHT.colors3,
+        colorInterpPeriod = 7.0f,
+        lightOffset = 0.08f,
+        saturateOffset = 0.18f,
+        pointOffset = 0.2f,
+    )
+
+    private val OS3_SUNSET_PAD_DARK = Config(
+        points = floatArrayOf(0.8f, 0.2f, 1.0f, 0.8f, 0.9f, 1.0f, 0.2f, 0.9f, 1.0f, 0.2f, 0.2f, 1.0f),
+        colors1 = OS3_SUNSET_PHONE_DARK.colors1,
+        colors2 = OS3_SUNSET_PHONE_DARK.colors2,
+        colors3 = OS3_SUNSET_PHONE_DARK.colors3,
+        colorInterpPeriod = 7.0f,
+        lightOffset = 0.0f,
+        saturateOffset = 0.15f,
+        pointOffset = 0.2f,
+    )
+
     internal fun get(
         deviceType: DeviceType,
         isDark: Boolean,
         isOs3: Boolean,
-    ): Config = if (!isOs3) {
+        theme: BgEffectTheme = BgEffectTheme.DEFAULT,
+    ): Config = if (theme == BgEffectTheme.SUNSET) {
+        when (deviceType) {
+            DeviceType.PHONE -> if (!isDark) OS3_SUNSET_PHONE_LIGHT else OS3_SUNSET_PHONE_DARK
+            DeviceType.PAD -> if (!isDark) OS3_SUNSET_PAD_LIGHT else OS3_SUNSET_PAD_DARK
+        }
+    } else if (!isOs3) {
         when (deviceType) {
             DeviceType.PHONE -> if (!isDark) OS2_PHONE_LIGHT else OS2_PHONE_DARK
             DeviceType.PAD -> if (!isDark) OS2_PAD_LIGHT else OS2_PAD_DARK

@@ -6,6 +6,7 @@
 
     <!-- Navigation -->
     <string name="home">主页</string>
+    <string name="api">API</string>
     <string name="about">关于</string>
 
     <!-- Warning -->
@@ -35,7 +36,7 @@
     <string name="current_version">版本名：%1$s，版本号：%2$s</string>
     <string name="instructions_for_use">使用方法：%s</string>
     <string name="unknown">未知</string>
-    <string name="support_api">API 原生支持</string>
+    <string name="support_api">应用原生集成 SuperLyric API，正常播放即可</string>
     <string name="network_mode">将从网络拉取歌词数据，请确保网络连接畅通</string>
     <string name="switch_mode">切换获取模式</string>
     <string name="switch_mode_hook">Hook</string>
@@ -95,21 +96,78 @@
     <string name="receiver_data">接收器实时数据</string>
     <string name="receiver_data_format">Publisher：%1$s\nData：%2$s</string>
 
-    <!-- Music App Instructions (API) -->
-    <string name="jiaoyan_music">无需额外设置</string>
-    <string name="apple_music">无需额外设置</string>
+    <!-- API Screen -->
+    <string name="api_debug">API 调试</string>
+    <string name="api_debug_and_test">API 调试与测试</string>
+    <string name="api_debug_listen_control">监听控制</string>
+    <string name="api_debug_pause_listen">暂停接收监听</string>
+    <string name="api_debug_pause_listen_summary_paused">已暂停新包接收，保持当前画面</string>
+    <string name="api_debug_pause_listen_summary_running">正常监听实时歌词推送中</string>
+    <string name="api_debug_mock_injection">模拟数据注入</string>
+    <string name="api_debug_inject_full">模拟发送全量歌词包</string>
+    <string name="api_debug_inject_full_summary">注入 6 句完整带逐字时戳、翻译与音译的示例歌曲</string>
+    <string name="api_debug_injected_full_toast">已注入全量模拟歌词</string>
+    <string name="api_debug_advance_line">推进单句进度 (+1)</string>
+    <string name="api_debug_advance_line_summary">前进到下一句歌词，模拟播放进度向前推进</string>
+    <string name="api_debug_advance_word">步进逐字进度 (+400ms)</string>
+    <string name="api_debug_advance_word_summary">步进当前行内部播放毫秒数，实时测试逐字高亮动效</string>
+    <string name="api_debug_inject_stop">模拟发送停止事件 (ON_STOP)</string>
+    <string name="api_debug_inject_stop_summary">模拟音乐播放器发送播放停止广播</string>
+    <string name="api_debug_injected_stop_toast">已发送停止事件</string>
+    <string name="api_debug_service_sync_reset">远程服务同步与重置</string>
+    <string name="api_debug_pull_latest">主动拉取远程最新歌词</string>
+    <string name="api_debug_pull_latest_summary">远程调用 SuperLyricHelper.getLatestLyric()</string>
+    <string name="api_debug_pull_success">已成功拉取最新歌词包</string>
+    <string name="api_debug_pull_no_data">当前无活跃歌词数据</string>
+    <string name="api_debug_reset_stats">重置统计与清空缓存</string>
+    <string name="api_debug_reset_stats_summary">清空接收计数与内存中的全量歌词缓存</string>
+    <string name="api_debug_reset_toast">已重置统计与缓存</string>
+    <string name="api_not_playing">暂未开始播放</string>
+    <string name="unknown_artist">未知歌手</string>
+    <string name="unknown_album">未知专辑</string>
+    <string name="unknown_title">未知歌曲</string>
+    <string name="api_back_to_current_line">回到播放行</string>
+    <string name="api_empty_lyrics_title">暂无播放中的歌词</string>
+    <string name="api_empty_lyrics_subtitle">在受支持的播放器中播放音乐\n或点击右上角「调试」面板注入模拟数据</string>
+    <string name="api_panel_title">API 实时数据面板</string>
+    <string name="api_status_paused">已暂停</string>
+    <string name="api_status_stop">播放停止</string>
+    <string name="api_status_streaming">实时推送中</string>
+    <string name="api_status_standby">待命中</string>
+    <string name="api_source_format">来源：%s</string>
+    <string name="api_source_none">无活跃源</string>
+    <string name="api_packet_seq_format">包序号：#%1$d (全: %2$d | 增: %3$d)</string>
+    <string name="api_monitor_title">运行监控与统计</string>
+    <string name="api_system_service_status">系统服务状态</string>
+    <string name="api_status_available_version">可用 (v%s)</string>
+    <string name="api_latest_event_type">最近事件类型</string>
+    <string name="api_none">无</string>
+    <string name="api_update_timestamp">更新时间戳</string>
+    <string name="api_current_metadata">当前媒体元数据</string>
+    <string name="api_current_line_detail">当前歌词句明细 [%s]</string>
+    <string name="api_no_main_lyric">(无主歌词)</string>
+    <string name="api_tag_trans">译</string>
+    <string name="api_tag_secondary">音</string>
+    <string name="api_words_breakdown">逐字拆解 (%d 词)：</string>
+    <string name="api_all_lyrics_context">全量歌词上下文</string>
+    <string name="api_total_lines">共 %d 行</string>
+
+    <!-- Music App Instructions (Active - 4.0 Unified Architecture) -->
+    <string name="jiaoyan_music">无需额外设置，正常播放即可</string>
+    <string name="apple_music">无需额外设置，正常播放即可</string>
+    <string name="bodian_music">无需额外设置，正常播放即可</string>
+    <string name="kugou_music">无需额外设置，正常播放即可</string>
+    <string name="migu_music">无需额外设置，正常播放即可</string>
+    <string name="qq_music">无需额外设置，正常播放即可</string>
+    <string name="wangyiyun_music">保持网络畅通，正常播放即可</string>
+    <string name="spotify_music">保持网络畅通，正常播放即可</string>
+
+    <!-- Legacy / Standby App Instructions -->
     <string name="symfonium_music">无需额外设置</string>
-    <string name="spotify_music">无需额外设置</string>
     <string name="tidal_music">无需额外设置</string>
-    <string name="kugou_music">无需额外设置</string>
     <string name="kugou_lite_music">无需额外设置\n3.0.1 和 5.1.5 版本支持逐字</string>
-
     <string name="haibei_music">未知</string>
-
-    <!-- Music App Instructions (Meizu-style) -->
-    <string name="wangyiyun_music">开启设置中的“魅族状态栏歌词”功能即可</string>
     <string name="wangyiyun_rongyao_music">开启设置中的“魅族状态栏歌词”功能即可</string>
-    <string name="migu_music">开启设置中的“魅族状态栏歌词”功能即可</string>
     <string name="aplayer_music">开启设置中的“状态栏歌词”功能即可</string>
     <string name="lmusic_music">开启设置中的“魅族状态栏歌词”功能即可</string>
     <string name="yinliu_music">开启设置中的“魅族状态栏歌词”功能即可</string>
@@ -117,14 +175,8 @@
     <string name="tangcu_music">开启设置中的“魅族状态栏歌词”功能即可</string>
     <string name="qingyan_music">开启设置中的“魅族状态栏歌词”功能即可</string>
     <string name="gramophone_music">开启设置中的“魅族状态栏歌词”功能即可</string>
-
-    <!-- Music App Instructions (Desktop Lyrics) -->
     <string name="musicfree_music">开启“桌面歌词”功能</string>
     <string name="luoxue_music">开启“桌面歌词”功能</string>
-
-    <!-- Music App Instructions (Status Bar / Bluetooth Lyrics) -->
-    <string name="bodian_music">开启“状态栏歌词”功能</string>
-    <string name="qq_music">开启“状态栏歌词”功能</string>
     <string name="qq_music_xiaomi">开启“车载蓝牙歌词”或“通知栏歌词”功能</string>
     <string name="qq_music_meizu">开启“蓝牙歌词”功能</string>
     <string name="oppo_music">开启“蓝牙歌词”功能</string>
