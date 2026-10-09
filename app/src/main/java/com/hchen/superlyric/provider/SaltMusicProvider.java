@@ -494,6 +494,10 @@ public class SaltMusicProvider extends UnifiedLyricProvider {
         if (doc == null) {
             mCurrentLyricsData.set(null);
             checkSongAndUpdateTrack();
+            TrackContext active = mActiveTrack.get();
+            if (active != null && mOrchestrator != null) {
+                mOrchestrator.onHookDeterminedInvalid(active);
+            }
             return;
         }
 
@@ -521,6 +525,12 @@ public class SaltMusicProvider extends UnifiedLyricProvider {
             }
             logI(tag, "Successfully captured Salt Player lyrics: trackId=" + fullData.getLyricId()
                 + ", title=" + fullData.getTitle() + ", lines=" + fullData.getAllLyrics().length);
+        } else {
+            mCurrentLyricsData.set(null);
+            TrackContext active = mActiveTrack.get();
+            if (active != null && mOrchestrator != null) {
+                mOrchestrator.onHookDeterminedInvalid(active);
+            }
         }
     }
 

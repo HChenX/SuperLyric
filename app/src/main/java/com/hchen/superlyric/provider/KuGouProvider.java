@@ -222,7 +222,7 @@ public class KuGouProvider extends UnifiedLyricProvider {
         }
 
         SuperLyricData fullData = convertLyricData(lyricDataObj, songHash);
-        if (fullData != null) {
+        if (fullData != null && fullData.hasAllLyrics()) {
             mLastProcessedHash = songHash;
             TrackContext context = mActiveTrack.get();
             if (context == null || !TextUtils.equals(context.getTrackId(), fullData.getLyricId())) {
@@ -233,6 +233,11 @@ public class KuGouProvider extends UnifiedLyricProvider {
             if (mOrchestrator != null) {
                 mOrchestrator.onTrackChanged(context);
                 mOrchestrator.onHookFullLyricCaptured(context, fullData);
+            }
+        } else {
+            TrackContext active = mActiveTrack.get();
+            if (active != null && mOrchestrator != null) {
+                mOrchestrator.onHookDeterminedInvalid(active);
             }
         }
     }

@@ -29,6 +29,7 @@ import com.hchen.superlyric.publisher.model.TrackContext;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricLine;
 
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -102,7 +103,9 @@ public final class LyricOrchestrator {
         }
 
         mCurrentTrack.set(context);
+        mTracker.onTrackChanged(context);
         mTracker.stop();
+        mTracker.setLyrics(null);
         AbsPublisher.publishStop();
 
         if (mNetworkEngine != null) {
@@ -161,7 +164,7 @@ public final class LyricOrchestrator {
      */
     public synchronized void onHookDeterminedInvalid(@NonNull TrackContext context) {
         TrackContext current = mCurrentTrack.get();
-        if (current == null || !current.matches(context.getTrackId(), context.getGeneration())) {
+        if (current == null || !Objects.equals(current.getTrackId(), context.getTrackId())) {
             return;
         }
 
@@ -270,15 +273,15 @@ public final class LyricOrchestrator {
      * 最终降级至单句 Hook 兜底模式。
      */
     private void fallbackToLegacy(@NonNull TrackContext context) {
+        mTracker.stop();
+        mTracker.setLyrics(null);
         if (mLegacyEngine != null) {
             AndroidLog.logI(TAG, "All full lyric sources ineffective, falling back to legacy single-line hook for " + context.getTrackId());
             mState.set(State.LEGACY_FALLBACK);
-            mTracker.stop();
             mLegacyEngine.enableLegacyHook();
         } else {
             AndroidLog.logD(TAG, "No legacy hook available, keeping blank for " + context.getTrackId());
             mState.set(State.IDLE);
-            mTracker.stop();
             AbsPublisher.publishStop();
         }
     }
@@ -286,6 +289,7 @@ public final class LyricOrchestrator {
     public synchronized void onPlaybackStopped() {
         AndroidLog.logD(TAG, "onPlaybackStopped: stopping tracker and resetting orchestrator to IDLE");
         mTracker.stop();
+        mTracker.setLyrics(null);
         AbsPublisher.publishStop();
         if (mLegacyEngine != null) {
             mLegacyEngine.disableLegacyHook();

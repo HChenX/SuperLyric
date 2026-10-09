@@ -210,6 +210,23 @@ public class BodianProvider extends UnifiedLyricProvider {
                     String statusName = status != null ? status.toString() : "";
                     if ("FAILED".equalsIgnoreCase(statusName) || "NONE".equalsIgnoreCase(statusName)) {
                         TrackContext active = mActiveTrack.get();
+                        if (runnerThis != null) {
+                            try {
+                                Object music = extractMusicFromRunner(runnerThis);
+                                if (music != null) {
+                                    String rid = safeString(getField(music, "rid"));
+                                    String title = safeString(callMethod(music, "getName"));
+                                    String artist = safeString(callMethod(music, "getArtist"));
+                                    String trackId = !rid.isEmpty() ? rid : (title + "_" + artist);
+                                    if (active == null || !Objects.equals(active.getTrackId(), trackId)) {
+                                        long gen = mTrackGeneration.incrementAndGet();
+                                        active = new TrackContext(gen, trackId, title, artist, "", 0L);
+                                        mActiveTrack.set(active);
+                                    }
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                        }
                         if (active != null && mOrchestrator != null) {
                             mOrchestrator.onHookDeterminedInvalid(active);
                         }
@@ -275,6 +292,9 @@ public class BodianProvider extends UnifiedLyricProvider {
             List<?> rawLines = extractLinesFromILyrics(iLyrics);
             if (rawLines == null || rawLines.isEmpty()) {
                 AndroidLog.logW(TAG, "Extracted raw lyric lines list is empty for: " + trackId);
+                if (mOrchestrator != null) {
+                    mOrchestrator.onHookDeterminedInvalid(context);
+                }
                 return;
             }
 
@@ -282,6 +302,9 @@ public class BodianProvider extends UnifiedLyricProvider {
             SuperLyricLine[] lyricLines = convertRawLines(rawLines, duration);
             if (lyricLines == null || lyricLines.length == 0) {
                 AndroidLog.logW(TAG, "Converted SuperLyricLine array is empty for: " + trackId);
+                if (mOrchestrator != null) {
+                    mOrchestrator.onHookDeterminedInvalid(context);
+                }
                 return;
             }
 
@@ -311,6 +334,9 @@ public class BodianProvider extends UnifiedLyricProvider {
             SuperLyricData cleanData = LyricSanitizer.sanitizeData(data);
             if (cleanData == null) {
                 AndroidLog.logW(TAG, "Sanitized Bodian full lyric data is null for: " + trackId);
+                if (mOrchestrator != null) {
+                    mOrchestrator.onHookDeterminedInvalid(context);
+                }
                 return;
             }
 

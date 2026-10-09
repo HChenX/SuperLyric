@@ -280,10 +280,15 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
                     }
                     session.latestLyric = merged;
                 } else {
-                    session.latestLyric = data;
+                    XposedLog.logW(TAG, "Ignoring stale incremental lyric for " + packageName
+                        + ": packet trackId=" + data.getLyricId()
+                        + ", session trackId=" + session.latestLyric.getLyricId());
+                    return;
                 }
             } else {
-                session.latestLyric = data;
+                XposedLog.logW(TAG, "Ignoring orphaned incremental lyric without full lyric for " + packageName
+                    + ": packet trackId=" + data.getLyricId());
+                return;
             }
 
             // 仲裁判定：当前上报应用是否有权成为全局活跃发布者

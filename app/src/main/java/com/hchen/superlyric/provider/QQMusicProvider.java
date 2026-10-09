@@ -227,6 +227,10 @@ public class QQMusicProvider extends UnifiedLyricProvider {
             List<ParsedLine> parsedLines = extractLines(mainLyric);
             if (parsedLines == null || parsedLines.isEmpty()) {
                 AndroidLog.logW(TAG, "[" + source + "] No lines extracted from main lyric");
+                TrackContext active = mActiveTrack.get();
+                if (active != null && mOrchestrator != null) {
+                    mOrchestrator.onHookDeterminedInvalid(active);
+                }
                 return;
             }
 

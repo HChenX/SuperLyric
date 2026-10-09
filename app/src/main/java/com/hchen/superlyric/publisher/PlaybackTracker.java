@@ -27,10 +27,12 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.superlyric.publisher.model.TrackContext;
 import com.hchen.superlyric.utils.LyricSanitizer;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricLine;
 
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -62,6 +64,7 @@ public final class PlaybackTracker {
 
     private final AtomicReference<PlaybackSnapshot> mPlaybackRef = new AtomicReference<>(PlaybackSnapshot.INITIAL);
     private final AtomicReference<SuperLyricData> mCurrentLyricRef = new AtomicReference<>();
+    private final AtomicReference<String> mBoundTrackId = new AtomicReference<>();
     private volatile int mLastShownIndex = -1;
     @Nullable
     private volatile OnProgressAdvanceListener mListener;
@@ -86,8 +89,9 @@ public final class PlaybackTracker {
     public void setLyrics(@Nullable SuperLyricData lyricData) {
         SuperLyricData clean = LyricSanitizer.sanitizeData(lyricData);
         mCurrentLyricRef.set(clean);
+        mBoundTrackId.set(clean != null ? clean.getLyricId() : null);
         mLastShownIndex = -1;
-        AndroidLog.logD(TAG, "setLyrics: " + (clean != null ? ("title=" + clean.getTitle() + ", lines=" + clean.getAllLyricsCount()) : "null"));
+        AndroidLog.logD(TAG, "setLyrics: " + (clean != null ? ("title=" + clean.getTitle() + ", lines=" + clean.getAllLyricsCount() + ", trackId=" + clean.getLyricId()) : "null"));
         checkLoopStatus();
     }
 
@@ -109,6 +113,19 @@ public final class PlaybackTracker {
             mLastShownIndex = -1;
         }
         checkLoopStatus();
+    }
+
+    /**
+     * 音轨变更通知：若当前绑定的歌词不属于新音轨，立即停止追踪并彻底清空缓存歌词，杜绝切歌后残留推送。
+     */
+    public void onTrackChanged(@Nullable TrackContext context) {
+        String newTrackId = context != null ? context.getTrackId() : null;
+        String boundId = mBoundTrackId.get();
+        if (boundId != null && !Objects.equals(boundId, newTrackId)) {
+            AndroidLog.logD(TAG, "onTrackChanged: stopping tracker and clearing stale lyrics ('"
+                + boundId + "' != '" + newTrackId + "')");
+            stop();
+        }
     }
 
     /**
@@ -164,19 +181,23 @@ public final class PlaybackTracker {
     }
 
     public void stop() {
-        AndroidLog.logD(TAG, "stop: tracker loop stopped");
+        AndroidLog.logD(TAG, "stop: tracker loop stopped and lyrics cleared");
         mIsRunning = false;
         mLastShownIndex = -1;
+        mCurrentLyricRef.set(null);
+        mBoundTrackId.set(null);
     }
 
     private synchronized void checkLoopStatus() {
         PlaybackSnapshot playback = mPlaybackRef.get();
         SuperLyricData lyric = mCurrentLyricRef.get();
+        String boundId = mBoundTrackId.get();
 
         boolean canPlay = playback.state == PlaybackState.STATE_PLAYING
             && lyric != null
             && lyric.hasAllLyrics()
-            && lyric.getAllLyricsCount() > 0;
+            && lyric.getAllLyricsCount() > 0
+            && (boundId == null || Objects.equals(boundId, lyric.getLyricId()));
 
         if (canPlay) {
             if (!mIsRunning) {
@@ -195,8 +216,10 @@ public final class PlaybackTracker {
         try {
             PlaybackSnapshot playback = mPlaybackRef.get();
             SuperLyricData lyric = mCurrentLyricRef.get();
+            String boundId = mBoundTrackId.get();
 
-            if (playback.state != PlaybackState.STATE_PLAYING || lyric == null || !lyric.hasAllLyrics()) {
+            if (playback.state != PlaybackState.STATE_PLAYING || lyric == null || !lyric.hasAllLyrics()
+                || (boundId != null && !Objects.equals(boundId, lyric.getLyricId()))) {
                 mIsRunning = false;
                 return;
             }
