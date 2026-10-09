@@ -103,6 +103,7 @@ import com.hchen.superlyric.ui.effect.blend.ColorBlendToken
 import com.hchen.superlyric.ui.effect.cardBlur
 import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
 import com.hchen.superlyricapi.ISuperLyricReceiver
+import com.hchen.superlyricapi.SuperLyricCache
 import com.hchen.superlyricapi.SuperLyricData
 import com.hchen.superlyricapi.SuperLyricHelper
 import com.hchen.superlyricapi.SuperLyricLine
@@ -1515,13 +1516,6 @@ internal object ApiReceiverManager {
     private var fullPackets = 0
     private var progressPackets = 0
 
-    private var cachedAllLyrics: Array<SuperLyricLine>? = null
-    private var cachedTitle: String? = null
-    private var cachedArtist: String? = null
-    private var cachedAlbum: String? = null
-    private var cachedLyricId: String? = null
-    private var cachedDuration: Long = 0
-
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     val mReceiver = object : ISuperLyricReceiver.Stub() {
@@ -1568,63 +1562,14 @@ internal object ApiReceiverManager {
     private fun handleIncomingLyric(publisher: String?, data: SuperLyricData?) {
         totalPackets++
         val isFull = data != null && data.hasAllLyrics()
-
         if (isFull) {
             fullPackets++
-            cachedAllLyrics = data.allLyrics
-            if (data.hasTitle() && !data.title.isNullOrEmpty()) cachedTitle = data.title
-            if (data.hasArtist() && !data.artist.isNullOrEmpty()) cachedArtist = data.artist
-            if (data.hasAlbum() && !data.album.isNullOrEmpty()) cachedAlbum = data.album
-            if (data.hasLyricId() && !data.lyricId.isNullOrEmpty()) cachedLyricId = data.lyricId
-            if (data.hasDuration() && data.duration > 0) cachedDuration = data.duration
         } else {
             progressPackets++
-            // 判定是否切换了新歌曲（lyricId 改变或 title 改变）
-            val isNewTrack = (data != null && data.hasLyricId() && !data.lyricId.isNullOrEmpty() && data.lyricId != cachedLyricId) ||
-                    (data != null && data.hasTitle() && !data.title.isNullOrEmpty() && data.title != cachedTitle)
-
-            if (isNewTrack) {
-                // 发生切歌，旧歌词全量缓存失效
-                cachedAllLyrics = null
-            }
-
-            if (data != null) {
-                if (data.hasTitle() && !data.title.isNullOrEmpty()) cachedTitle = data.title
-                if (data.hasArtist() && !data.artist.isNullOrEmpty()) cachedArtist = data.artist
-                if (data.hasAlbum() && !data.album.isNullOrEmpty()) cachedAlbum = data.album
-                if (data.hasLyricId() && !data.lyricId.isNullOrEmpty()) cachedLyricId = data.lyricId
-                if (data.hasDuration() && data.duration > 0) cachedDuration = data.duration
-            }
-
-            // 当只获取到增量包且缺少全量歌词缓存或歌曲变动时，自动向上拉取全量包
-            val needPullFull = (cachedAllLyrics == null) || isNewTrack
-
-            if (needPullFull) {
-                scope.launch {
-                    try {
-                        val latest = SuperLyricHelper.getLatestLyric()
-                        if (latest != null && latest.hasAllLyrics()) {
-                            cachedAllLyrics = latest.allLyrics
-                            if (latest.hasTitle() && !latest.title.isNullOrEmpty()) cachedTitle = latest.title
-                            if (latest.hasArtist() && !latest.artist.isNullOrEmpty()) cachedArtist = latest.artist
-                            if (latest.hasAlbum() && !latest.album.isNullOrEmpty()) cachedAlbum = latest.album
-                            if (latest.hasLyricId() && !latest.lyricId.isNullOrEmpty()) cachedLyricId = latest.lyricId
-                            if (latest.hasDuration() && latest.duration > 0) cachedDuration = latest.duration
-
-                            val cur = receiverFlow.value
-                            receiverFlow.value = cur.copy(
-                                allLyricsCache = cachedAllLyrics,
-                                data = mergeWithCache(cur.data ?: latest)
-                            )
-                        }
-                    } catch (e: Throwable) {
-                        android.util.Log.w("ApiReceiverManager", "Auto-pull full lyric failed", e)
-                    }
-                }
-            }
         }
 
-        val effectiveData = mergeWithCache(data)
+        // 使用官方 SuperLyricCache 统一解析增量与全量歌词
+        val effectiveData = SuperLyricCache.resolve(data) ?: data
         val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
         receiverFlow.value = ApiReceiverState(
             publisher = publisher,
@@ -1634,14 +1579,14 @@ internal object ApiReceiverManager {
             packetSeq = totalPackets,
             fullCount = fullPackets,
             progressCount = progressPackets,
-            allLyricsCache = cachedAllLyrics
+            allLyricsCache = effectiveData?.allLyrics
         )
     }
 
     private fun handleIncomingStop(publisher: String?, data: SuperLyricData?) {
         totalPackets++
         val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
-        val effectiveData = mergeWithCache(data)
+        val effectiveData = SuperLyricCache.resolve(data) ?: data
         receiverFlow.value = ApiReceiverState(
             publisher = publisher,
             data = effectiveData,
@@ -1650,36 +1595,8 @@ internal object ApiReceiverManager {
             packetSeq = totalPackets,
             fullCount = fullPackets,
             progressCount = progressPackets,
-            allLyricsCache = cachedAllLyrics
+            allLyricsCache = effectiveData?.allLyrics
         )
-    }
-
-    private fun mergeWithCache(data: SuperLyricData?): SuperLyricData? {
-        if (data == null) return null
-        val hasLyrics = data.hasAllLyrics()
-        val hasTitle = data.hasTitle() && !data.title.isNullOrEmpty()
-        val hasArtist = data.hasArtist() && !data.artist.isNullOrEmpty()
-        if (hasLyrics && hasTitle && hasArtist) return data
-
-        val merged = SuperLyricData()
-            .setTitle(data.title?.takeIf { it.isNotEmpty() } ?: cachedTitle)
-            .setArtist(data.artist?.takeIf { it.isNotEmpty() } ?: cachedArtist)
-            .setAlbum(data.album?.takeIf { it.isNotEmpty() } ?: cachedAlbum)
-            .setLyricId(data.lyricId?.takeIf { it.isNotEmpty() } ?: cachedLyricId)
-            .setDuration(if (data.hasDuration() && data.duration > 0) data.duration else cachedDuration)
-            .setCurrentLyricIndex(data.currentLyricIndex)
-            .setPosition(data.position)
-            .setLyric(data.currentLyric)
-            .setExtra(data.extra)
-
-        if (data.hasTranslation()) merged.setTranslation(data.translation)
-        if (data.hasSecondary()) merged.setSecondary(data.secondary)
-        if (data.hasAllLyrics()) {
-            merged.setAllLyrics(data.allLyrics)
-        } else if (cachedAllLyrics != null) {
-            merged.setAllLyrics(cachedAllLyrics)
-        }
-        return merged
     }
 
     fun pullLatest(onComplete: ((Boolean) -> Unit)? = null) {
@@ -1687,25 +1604,19 @@ internal object ApiReceiverManager {
             try {
                 val latest = SuperLyricHelper.getLatestLyric()
                 if (latest != null) {
-                    if (latest.hasAllLyrics()) cachedAllLyrics = latest.allLyrics
-                    if (latest.hasTitle() && !latest.title.isNullOrEmpty()) cachedTitle = latest.title
-                    if (latest.hasArtist() && !latest.artist.isNullOrEmpty()) cachedArtist = latest.artist
-                    if (latest.hasAlbum() && !latest.album.isNullOrEmpty()) cachedAlbum = latest.album
-                    if (latest.hasLyricId() && !latest.lyricId.isNullOrEmpty()) cachedLyricId = latest.lyricId
-                    if (latest.hasDuration() && latest.duration > 0) cachedDuration = latest.duration
-
+                    val effectiveData = SuperLyricCache.resolve(latest) ?: latest
                     totalPackets++
                     if (latest.hasAllLyrics()) fullPackets++ else progressPackets++
                     val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
                     receiverFlow.value = ApiReceiverState(
                         publisher = "SuperLyricService",
-                        data = mergeWithCache(latest),
+                        data = effectiveData,
                         eventType = "PULL_LATEST",
                         receiveTime = time,
                         packetSeq = totalPackets,
                         fullCount = fullPackets,
                         progressCount = progressPackets,
-                        allLyricsCache = cachedAllLyrics
+                        allLyricsCache = effectiveData.allLyrics
                     )
                     withContext(Dispatchers.Main) {
                         onComplete?.invoke(true)
@@ -1771,22 +1682,26 @@ internal object ApiReceiverManager {
 
     fun advanceMockProgress() {
         val current = receiverFlow.value
-        val lines = current.allLyricsCache ?: current.data?.allLyrics
+        val data = current.data ?: run {
+            injectMockLyric()
+            return
+        }
+        val lines = current.allLyricsCache ?: data.allLyrics
         if (lines.isNullOrEmpty()) {
             injectMockLyric()
             return
         }
-        val curIdx = current.data?.currentLyricIndex ?: 0
+        val curIdx = data.currentLyricIndex
         val nextIdx = (curIdx + 1) % lines.size
         val nextLine = lines[nextIdx]
         val nextPos = nextLine.startTime + 100
 
         val progressData = SuperLyricData()
-            .setTitle(current.data?.title ?: cachedTitle)
-            .setArtist(current.data?.artist ?: cachedArtist)
-            .setAlbum(current.data?.album ?: cachedAlbum)
-            .setLyricId(current.data?.lyricId ?: cachedLyricId)
-            .setDuration(current.data?.duration ?: cachedDuration)
+            .setTitle(data.title)
+            .setArtist(data.artist)
+            .setAlbum(data.album)
+            .setLyricId(data.lyricId)
+            .setDuration(data.duration)
             .setPosition(nextPos)
             .setCurrentLyricIndex(nextIdx)
             .setLyric(nextLine)
@@ -1827,18 +1742,17 @@ internal object ApiReceiverManager {
         val targetLine = if (nextIdx in lines.indices) lines[nextIdx] else curLine
 
         val progressData = SuperLyricData()
-            .setTitle(data.title ?: cachedTitle)
-            .setArtist(data.artist ?: cachedArtist)
-            .setAlbum(data.album ?: cachedAlbum)
-            .setLyricId(data.lyricId ?: cachedLyricId)
-            .setDuration(if (data.hasDuration() && data.duration > 0) data.duration else cachedDuration)
+            .setTitle(data.title)
+            .setArtist(data.artist)
+            .setAlbum(data.album)
+            .setLyricId(data.lyricId)
+            .setDuration(if (data.hasDuration() && data.duration > 0) data.duration else 0)
             .setPosition(nextPos)
             .setCurrentLyricIndex(nextIdx)
             .setLyric(targetLine)
 
         if (data.hasTranslation()) progressData.setTranslation(data.translation)
         if (data.hasSecondary()) progressData.setSecondary(data.secondary)
-        progressData.setAllLyrics(lines)
 
         handleIncomingLyric(current.publisher ?: "MockDebugPublisher", progressData)
     }
@@ -1852,12 +1766,7 @@ internal object ApiReceiverManager {
         totalPackets = 0
         fullPackets = 0
         progressPackets = 0
-        cachedAllLyrics = null
-        cachedTitle = null
-        cachedArtist = null
-        cachedAlbum = null
-        cachedLyricId = null
-        cachedDuration = 0
+        SuperLyricCache.clear()
         receiverFlow.value = ApiReceiverState()
     }
 }
