@@ -6,11 +6,12 @@
 
     <!-- Navigation -->
     <string name="home">Home</string>
+    <string name="api">API</string>
     <string name="about">About</string>
 
     <!-- Warning -->
     <string name="warn">Warning</string>
-    <string name="service_unavailable">SuperLyric service is unavailable and will not be able to transmit lyrics data properly. Please restart your phone and try again! \Code: %s</string>
+    <string name="service_unavailable">SuperLyric service is unavailable and will not be able to transmit lyrics data properly. Please restart your phone and try again! \nCode: %s</string>
     <string name="no_activity">No app is available to open this link</string>
 
     <!-- Log Level -->
@@ -35,7 +36,7 @@
     <string name="current_version">Version: %1$s, Code: %2$s</string>
     <string name="instructions_for_use">Usage: %s</string>
     <string name="unknown">Not available</string>
-    <string name="support_api">API native support</string>
+    <string name="support_api">Natively integrated with SuperLyric API, play normally</string>
     <string name="network_mode">Lyrics data will be pulled from the network, please ensure smooth network connection</string>
     <string name="switch_mode">Switch acquisition mode</string>
     <string name="switch_mode_hook">Hook</string>
@@ -95,19 +96,76 @@
     <string name="receiver_data">Receiver Real-time Data</string>
     <string name="receiver_data_format">Publisher: %1$s\nData: %2$s</string>
 
-    <!-- Music App Instructions (API) -->
-    <string name="jiaoyan_music">No additional setup required</string>
-    <string name="apple_music">No additional setup required</string>
+    <!-- API Screen -->
+    <string name="api_debug">API Debug</string>
+    <string name="api_debug_and_test">API Debug &amp; Test</string>
+    <string name="api_debug_listen_control">Listener Control</string>
+    <string name="api_debug_pause_listen">Pause Reception</string>
+    <string name="api_debug_pause_listen_summary_paused">Packet reception paused, keeping current view</string>
+    <string name="api_debug_pause_listen_summary_running">Listening for real-time lyrics stream</string>
+    <string name="api_debug_mock_injection">Mock Data Injection</string>
+    <string name="api_debug_inject_full">Inject Full Lyric Packet</string>
+    <string name="api_debug_inject_full_summary">Inject 6 sample lines with per-word timestamps, translation &amp; pinyin</string>
+    <string name="api_debug_injected_full_toast">Full mock lyrics injected</string>
+    <string name="api_debug_advance_line">Advance Line (+1)</string>
+    <string name="api_debug_advance_line_summary">Advance to next line, simulating forward playback progress</string>
+    <string name="api_debug_advance_word">Step Word Progress (+400ms)</string>
+    <string name="api_debug_advance_word_summary">Step forward current line progress by 400ms to test per-word animation</string>
+    <string name="api_debug_inject_stop">Inject Stop Event (ON_STOP)</string>
+    <string name="api_debug_inject_stop_summary">Simulate player sending playback stopped broadcast</string>
+    <string name="api_debug_injected_stop_toast">Stop event injected</string>
+    <string name="api_debug_service_sync_reset">Remote Service Sync &amp; Reset</string>
+    <string name="api_debug_pull_latest">Pull Latest Remote Lyrics</string>
+    <string name="api_debug_pull_latest_summary">Remote invoke SuperLyricHelper.getLatestLyric()</string>
+    <string name="api_debug_pull_success">Successfully pulled latest lyric packet</string>
+    <string name="api_debug_pull_no_data">No active lyric data available</string>
+    <string name="api_debug_reset_stats">Reset Stats &amp; Clear Cache</string>
+    <string name="api_debug_reset_stats_summary">Clear packet counters and in-memory full lyric cache</string>
+    <string name="api_debug_reset_toast">Stats &amp; cache reset</string>
+    <string name="api_not_playing">Not playing</string>
+    <string name="unknown_artist">Unknown Artist</string>
+    <string name="unknown_album">Unknown Album</string>
+    <string name="unknown_title">Unknown Title</string>
+    <string name="api_back_to_current_line">Back to Playing Line</string>
+    <string name="api_empty_lyrics_title">No Lyrics Playing</string>
+    <string name="api_empty_lyrics_subtitle">Play music in a supported player\nor tap the Debug panel in the top-right to inject mock data</string>
+    <string name="api_panel_title">API Real-time Dashboard</string>
+    <string name="api_status_paused">Paused</string>
+    <string name="api_status_stop">Stopped</string>
+    <string name="api_status_streaming">Streaming</string>
+    <string name="api_status_standby">Standby</string>
+    <string name="api_source_format">Source: %s</string>
+    <string name="api_source_none">No active source</string>
+    <string name="api_packet_seq_format">Packet: #%1$d (Full: %2$d | Inc: %3$d)</string>
+    <string name="api_monitor_title">Runtime Monitor &amp; Stats</string>
+    <string name="api_system_service_status">System Service Status</string>
+    <string name="api_status_available_version">Available (v%s)</string>
+    <string name="api_latest_event_type">Latest Event Type</string>
+    <string name="api_none">None</string>
+    <string name="api_update_timestamp">Update Timestamp</string>
+    <string name="api_current_metadata">Current Media Metadata</string>
+    <string name="api_current_line_detail">Current Line Detail [%s]</string>
+    <string name="api_no_main_lyric">(No Main Lyric)</string>
+    <string name="api_tag_trans">Trans</string>
+    <string name="api_tag_secondary">Pinyin</string>
+    <string name="api_words_breakdown">Word Breakdown (%d words):</string>
+    <string name="api_all_lyrics_context">Full Lyrics Context</string>
+    <string name="api_total_lines">%d lines in total</string>
+
+    <!-- Music App Instructions (Active - 4.0 Unified Architecture) -->
+    <string name="jiaoyan_music">No additional setup required, play normally</string>
+    <string name="apple_music">No additional setup required, play normally</string>
+    <string name="bodian_music">No additional setup required, play normally</string>
+    <string name="kugou_music">No additional setup required, play normally</string>
+    <string name="qq_music">No additional setup required, play normally</string>
+    <string name="wangyiyun_music">Keep network connected, play normally</string>
+    <string name="spotify_music">Keep network connected, play normally</string>
+
+    <!-- Legacy / Standby App Instructions -->
     <string name="symfonium_music">No additional setup required</string>
-    <string name="spotify_music">No additional setup required</string>
     <string name="tidal_music">No additional setup required</string>
-    <string name="kugou_music">No additional setup required</string>
     <string name="kugou_lite_music">No additional setup required\n3.0.1 &amp; 5.1.5 version supports per-word lyrics.</string>
-
     <string name="haibei_music">Unknown</string>
-
-    <!-- Music App Instructions (Meizu-style) -->
-    <string name="wangyiyun_music">Enable the "Meizu status bar lyrics" option in settings</string>
     <string name="wangyiyun_rongyao_music">Enable the "Meizu status bar lyrics" option in settings</string>
     <string name="migu_music">Enable the "Meizu status bar lyrics" option in settings</string>
     <string name="aplayer_music">Enable the "Status bar lyrics" option in settings</string>
@@ -117,14 +175,8 @@
     <string name="tangcu_music">Enable the "Meizu status bar lyrics" option in settings</string>
     <string name="qingyan_music">Enable the "Meizu status bar lyrics" option in settings</string>
     <string name="gramophone_music">Enable the "Meizu status bar lyrics" option in settings</string>
-
-    <!-- Music App Instructions (Desktop Lyrics) -->
     <string name="musicfree_music">Enable the "desktop lyrics" feature</string>
     <string name="luoxue_music">Enable the "desktop lyrics" feature</string>
-
-    <!-- Music App Instructions (Status Bar / Bluetooth Lyrics) -->
-    <string name="bodian_music">Enable the "status bar lyrics" feature</string>
-    <string name="qq_music">Enable the "status bar lyrics" feature</string>
     <string name="qq_music_xiaomi">Enable the "Car Bluetooth Lyrics" or "Notification Bar Lyrics" function</string>
     <string name="qq_music_meizu">Enable the "Bluetooth lyrics" feature</string>
     <string name="oppo_music">Enable the "Bluetooth lyrics" feature</string>

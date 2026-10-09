@@ -1,53 +1,31 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
-
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
-
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
+# 保留源文件与行号信息，供 Xposed 日志与异常崩溃栈排查
 -keepattributes SourceFile,LineNumberTable
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
-
+# Xposed 模块入口：由 LSPosed 框架通过 java_init.list 反射调用无参构造函数加载
 -keep class com.hchen.superlyric.HookEntrance {
     <init>();
 }
--keep class * extends com.hchen.hooktool.ModuleEntrance
--keep class * extends com.hchen.hooktool.AbsModule
--keep class com.hchen.superlyric.hook.**
--keep class com.hchen.superlyric.hook.**$*
--keep class com.hchen.superlyric.hook.** {
-    <init>();
-}
--keep class com.hchen.superlyricapi.** {*;}
--keep class com.hchen.dexkitcache.DexkitCache$MemberData {*;}
--keep class com.hchen.superlyric.utils.MeizuFaker$MeiZuNotification {*;}
 
-# 在线歌词接口 DTO 仅由 Gson 反射填充：字段不保留时 R8 会判定其从未写入，
-# 把 code 常量折叠为 0、删除整段解析逻辑，导致网络模式永远走 API_ERROR
--keepclassmembers class com.hchen.superlyric.hook.music.online.netease.NeteaseLyricAnalysis$LyricResponse {
+# 动态加载的模块与 Provider：HookEntrance 通过 HookMaps 映射表反射类名并调用无参构造实例化
+-keep class * extends com.hchen.hooktool.ModuleEntrance {
     <init>();
-    <fields>;
 }
--keepclassmembers class com.hchen.superlyric.hook.music.online.netease.NeteaseLyricAnalysis$LyricContent {
+-keep class * extends com.hchen.hooktool.AbsModule {
     <init>();
-    <fields>;
 }
--keepclassmembers class com.hchen.superlyric.hook.music.online.spotify.SpotifyLyricAnalysis$Json* {
+
+# 开放 API 与跨进程通信：AIDL 接口、Binder Stub 与 Parcelable 序列化模型
+-keep class com.hchen.superlyricapi.** { *; }
+
+# Dexkit 磁盘缓存数据类
+-keep class com.hchen.dexkitcache.DexkitCache$MemberData { *; }
+
+# Spotify 在线歌词接口 DTO 仅由 Gson 反射填充：保留字段以防 R8 判定未写入导致解析失效
+-keepclassmembers class com.hchen.superlyric.provider.spotify.SpotifyLyricAnalysis$Json* {
     <init>();
     <fields>;
 }
 
+# 隐藏 API / 仅编译依赖警告抑制
 -dontwarn android.os.ServiceManager
 -dontwarn de.robv.android.xposed.XposedHelpers

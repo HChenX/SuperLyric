@@ -28,11 +28,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
+import com.hchen.superlyric.ui.data.UIConstants
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
@@ -44,6 +46,11 @@ import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.floor
 
+enum class BgEffectTheme {
+    DEFAULT,
+    SUNSET,
+}
+
 @Composable
 fun BgEffectBackground(
     dynamicBackground: Boolean,
@@ -52,6 +59,7 @@ fun BgEffectBackground(
     isFullSize: Boolean = false,
     effectBackground: Boolean = true,
     isOs3Effect: Boolean = true,
+    effectTheme: BgEffectTheme = BgEffectTheme.DEFAULT,
     alpha: () -> Float = { 1f },
     content: @Composable (BoxScope.() -> Unit),
 ) {
@@ -68,8 +76,8 @@ fun BgEffectBackground(
         val deviceType = if (shouldShowSplitPane()) DeviceType.PAD else DeviceType.PHONE
         val painter = remember(isOs3Effect) { BgEffectPainter(isOs3Effect) }
 
-        val preset = remember(deviceType, isDarkTheme, isOs3Effect) {
-            BgEffectConfig.get(deviceType, isDarkTheme, isOs3Effect)
+        val preset = remember(deviceType, isDarkTheme, isOs3Effect, effectTheme) {
+            BgEffectConfig.get(deviceType, isDarkTheme, isOs3Effect, effectTheme)
         }
 
         val colorStage = remember { Animatable(0f) }
@@ -119,7 +127,8 @@ private fun shouldShowSplitPane(): Boolean {
         val widthDp = windowInfo.containerSize.width.toDp()
         val heightDp = windowInfo.containerSize.height.toDp()
         val ratio = heightDp / widthDp
-        widthDp >= 840.dp || (widthDp >= 600.dp && ratio < 1.2f)
+        widthDp >= UIConstants.WIDE_SCREEN_THRESHOLD ||
+            (widthDp >= UIConstants.MEDIUM_WIDTH_THRESHOLD && ratio < UIConstants.PORTRAIT_ASPECT_RATIO_THRESHOLD)
     }
 }
 
@@ -162,3 +171,28 @@ fun BlurredBar(
         content()
     }
 }
+
+@Composable
+fun Modifier.cardBlur(
+    backdrop: LayerBackdrop?,
+    cardBlend: List<BlendColorEntry>,
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp),
+    blurRadius: Float = 60f,
+): Modifier = this.then(
+    if (backdrop != null) {
+        Modifier.textureBlur(
+            backdrop = backdrop,
+            shape = shape,
+            blurRadius = blurRadius,
+            noiseCoefficient = BlurDefaults.NoiseCoefficient,
+            colors = BlurDefaults.blurColors(
+                blendColors = cardBlend,
+                brightness = 0f,
+                contrast = 1f,
+                saturation = 1f,
+            ),
+        )
+    } else {
+        Modifier
+    }
+)

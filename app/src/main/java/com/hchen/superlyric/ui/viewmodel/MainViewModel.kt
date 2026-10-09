@@ -1,19 +1,19 @@
 /*
  * This file is part of SuperLyric.
-
+ *
  * SuperLyric is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
  * published by the Free Software Foundation, either version 3 of the
  * License.
-
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
-
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
-
+ *
  * Copyright (C) 2025-2026 HChenX
  */
 package com.hchen.superlyric.ui.viewmodel
@@ -28,7 +28,6 @@ import androidx.lifecycle.viewModelScope
 import com.hchen.hooktool.data.AppData
 import com.hchen.superlyric.data.PrefsKey
 import com.hchen.superlyric.data.apps.ApiAppData
-import com.hchen.superlyric.data.apps.NetworkAppData
 import com.hchen.superlyric.ui.Application
 import com.hchen.superlyric.utils.PackageLoader
 import kotlinx.coroutines.Dispatchers
@@ -68,9 +67,6 @@ class MainViewModel(
     private val _apiApps = MutableStateFlow<List<ApiAppData>>(emptyList())
     val apiApps: StateFlow<List<ApiAppData>> = _apiApps.asStateFlow()
 
-    private val _networkApps = MutableStateFlow<List<NetworkAppData>>(emptyList())
-    val networkApps: StateFlow<List<NetworkAppData>> = _networkApps.asStateFlow()
-
     private val _currentApp = MutableStateFlow(AppData())
     val currentApp: StateFlow<AppData> = _currentApp.asStateFlow()
 
@@ -80,18 +76,23 @@ class MainViewModel(
     init {
         addPrefsReadyListener(prefsReadyListener)
         addAppLoadedListener(appLoadedListener)
+        loadApps()
+        Application.getRemotePreferences()?.let { sp ->
+            prefs = sp
+            loadPrefs(sp)
+        }
     }
 
     private fun loadApps() {
         _hookApps.value = PackageLoader.getMediaApps().toList()
-        _networkApps.value = PackageLoader.getMediaNetworkApps().toList()
         _apiApps.value = PackageLoader.getMediaApiApps().toList()
     }
 
     private fun loadPrefs(sharedPreferences: SharedPreferences) {
         viewModelScope.launch(Dispatchers.IO) {
-            if (prefs === sharedPreferences && Application.getRemotePreferences() === sharedPreferences) {
-                _logLevel.value = sharedPreferences.getInt(PrefsKey.LOG_LEVEL, 0)
+            runCatching {
+                val level = sharedPreferences.getInt(PrefsKey.LOG_LEVEL, 0)
+                _logLevel.value = level
             }
         }
     }
@@ -99,28 +100,12 @@ class MainViewModel(
     fun handleAction(action: MainUiAction) {
         when (action) {
             is MainUiAction.UpdateLogLevel -> {
-                val currentPrefs = Application.getRemotePreferences()
-                if (currentPrefs != null && prefs === currentPrefs) {
-                    currentPrefs.edit { putInt(PrefsKey.LOG_LEVEL, action.value) }
-                    _logLevel.value = action.value
-                }
-            }
-
-            is MainUiAction.UpdateNetworkApp -> {
-                val currentPrefs = Application.getRemotePreferences()
-                if (currentPrefs != null && prefs === currentPrefs) {
-                    currentPrefs.edit {
-                        val apps = currentPrefs.getStringSet(PrefsKey.NETWORK_LYRICS_MODE, emptySet<String>())
-                        val newApps = apps.orEmpty().toMutableSet()
-                        if (action.isAdd) {
-                            newApps.add(action.packageName)
-                        } else {
-                            newApps.remove(action.packageName)
-                        }
-
-                        putStringSet(PrefsKey.NETWORK_LYRICS_MODE, newApps)
+                val currentPrefs = Application.getRemotePreferences() ?: prefs
+                if (currentPrefs != null) {
+                    runCatching {
+                        currentPrefs.edit { putInt(PrefsKey.LOG_LEVEL, action.value) }
                     }
-                    refreshData()
+                    _logLevel.value = action.value
                 }
             }
 
@@ -133,14 +118,21 @@ class MainViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             _isRefreshing.value = true
             try {
-                reloadApps().awaitCompletion()
+                runCatching {
+                    reloadApps().awaitCompletion()
+                }.onFailure { e ->
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    android.util.Log.e("MainViewModel", "Failed to reload apps", e)
+                }
                 loadApps()
 
                 delay(300)
-                _currentApp.value = _currentApp.value.packageName?.let { pkg ->
-                    _hookApps.value.fastFirstOrNull { it.packageName == pkg }
-                        ?: _networkApps.value.fastFirstOrNull { it.packageName == pkg }
-                } ?: AppData()
+                val targetPkg = _currentApp.value.packageName
+                if (!targetPkg.isNullOrEmpty()) {
+                    _currentApp.value = _hookApps.value.fastFirstOrNull { it.packageName == targetPkg }
+                        ?: _apiApps.value.fastFirstOrNull { it.packageName == targetPkg }
+                        ?: AppData()
+                }
             } finally {
                 _isRefreshing.value = false
             }
@@ -173,7 +165,6 @@ sealed class MainUiAction {
     data object Refresh : MainUiAction()
     data class CurrentApp(val appData: AppData) : MainUiAction()
     data class UpdateLogLevel(val value: Int) : MainUiAction()
-    data class UpdateNetworkApp(val isAdd: Boolean, val packageName: String) : MainUiAction()
 }
 
 class MainViewModelFactory(

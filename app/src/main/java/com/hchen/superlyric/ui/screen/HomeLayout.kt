@@ -1,27 +1,27 @@
 /*
  * This file is part of SuperLyric.
-
+ *
  * SuperLyric is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
  * published by the Free Software Foundation, either version 3 of the
  * License.
-
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
-
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
-
+ *
  * Copyright (C) 2025-2026 HChenX
  */
 package com.hchen.superlyric.ui.screen
 
 import android.annotation.SuppressLint
-import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,13 +29,9 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.captionBar
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,8 +39,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,34 +62,22 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.edit
-import com.hchen.hooktool.core.CoreTool.Companion.getStaticField
 import com.hchen.hooktool.data.AppData
 import com.hchen.hooktool.utils.PrefsTool
 import com.hchen.superlyric.R
-import com.hchen.superlyric.data.NetworkMode
 import com.hchen.superlyric.data.PrefsKey
 import com.hchen.superlyric.data.SupportApps
 import com.hchen.superlyric.data.apps.ApiAppData
-import com.hchen.superlyric.data.apps.NetworkAppData
 import com.hchen.superlyric.ui.Application
 import com.hchen.superlyric.ui.data.LocalViewModel
 import com.hchen.superlyric.ui.effect.BlurredBar
 import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
 import com.hchen.superlyric.ui.viewmodel.MainUiAction
-import com.hchen.superlyricapi.ISuperLyricReceiver
-import com.hchen.superlyricapi.SuperLyricData
-import com.hchen.superlyricapi.SuperLyricHelper
-import com.hchen.superlyricapi.SuperLyricLine
-import com.hchen.superlyricapi.SuperLyricWord
-import kotlinx.coroutines.flow.MutableStateFlow
-import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.DropdownEntry
 import top.yukonga.miuix.kmp.basic.DropdownItem
 import top.yukonga.miuix.kmp.basic.Icon
-import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.PullToRefresh
 import top.yukonga.miuix.kmp.basic.Scaffold
@@ -108,30 +90,27 @@ import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.rememberPullToRefreshState
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Close
-import top.yukonga.miuix.kmp.icon.extended.Ok
+import top.yukonga.miuix.kmp.icon.extended.Music
 import top.yukonga.miuix.kmp.icon.extended.Settings
 import top.yukonga.miuix.kmp.layout.DialogDefaults
 import top.yukonga.miuix.kmp.menu.OverlayIconCascadingDropdownMenu
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.WindowDropdownPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import top.yukonga.miuix.kmp.window.WindowBottomSheet
 import top.yukonga.miuix.kmp.window.WindowDialog
 
 @Composable
 @SuppressLint("LocalContextGetResourceValueCall")
 fun HomeLayout(
     paddingValues: PaddingValues,
-    isWideScreen: Boolean = false
+    isWideScreen: Boolean = false,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val viewModel = LocalViewModel.current
     val hookApps by viewModel.hookApps.collectAsState()
-    val networkApps by viewModel.networkApps.collectAsState()
     val apiApps by viewModel.apiApps.collectAsState()
     val currentApp by viewModel.currentApp.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
@@ -140,9 +119,8 @@ fun HomeLayout(
     val blurActive = backdrop != null
 
     val scrollBehavior = MiuixScrollBehavior()
-
     val pullToRefreshState = rememberPullToRefreshState()
-    val show = remember { mutableStateOf(false) }
+    var isDetailDialogVisible by remember { mutableStateOf(false) }
 
     val logLevel by viewModel.logLevel.collectAsState()
     val logLevels = remember {
@@ -154,45 +132,18 @@ fun HomeLayout(
         )
     }
 
-    val state by AnalogReceiver.receiverFlow.collectAsState()
-    val registered by AnalogReceiver.registeredFlow.collectAsState()
-    val paused by AnalogReceiver.pausedFlow.collectAsState()
-    var isApiTestDialogShowing by remember { mutableStateOf(false) }
-
-    LaunchedEffect(isApiTestDialogShowing) {
-        if (!isApiTestDialogShowing) {
-            if (SuperLyricHelper.isAvailable()) {
-                if (SuperLyricHelper.isReceiverRegistered(AnalogReceiver.mReceiver)) {
-                    SuperLyricHelper.unregisterReceiver(AnalogReceiver.mReceiver)
-                    AnalogReceiver.registeredFlow.value = false
-                    AnalogReceiver.receiverFlow.value = ReceiverState()
-                }
-            }
-        }
-    }
-
     val settingsEntries = remember(logLevel) {
         listOf(
             DropdownEntry(
                 items = listOf(
                     DropdownItem(
-                        text = context.getString(R.string.api_test),
-                        selected = false,
-                        onClick = {
-                            if (SuperLyricHelper.isAvailable()) {
-                                isApiTestDialogShowing = true
-                            } else {
-                                Toast.makeText(context, context.getString(R.string.service_not_started), Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    ),
-                    DropdownItem(
                         text = context.getString(R.string.clear_dexkit_cache),
                         selected = false,
                         onClick = {
-                            if (Application.getRemotePreferences() != null) {
-                                var version = Application.getRemotePreferences().getInt("super_lyric_dexkit_cache_version", 0)
-                                Application.getRemotePreferences().edit { putInt("super_lyric_dexkit_cache_version", ++version) }
+                            val remotePrefs = Application.getRemotePreferences()
+                            if (remotePrefs != null) {
+                                var version = remotePrefs.getInt("super_lyric_dexkit_cache_version", 0)
+                                remotePrefs.edit { putInt("super_lyric_dexkit_cache_version", ++version) }
                                 Toast.makeText(context, context.getString(R.string.cleared), Toast.LENGTH_SHORT).show()
                             } else {
                                 Toast.makeText(context, context.getString(R.string.clear_failed), Toast.LENGTH_SHORT).show()
@@ -230,6 +181,7 @@ fun HomeLayout(
     }
 
     Scaffold(
+        modifier = modifier.fillMaxSize(),
         topBar = {
             BlurredBar(backdrop = backdrop, blurEnabled = blurActive) {
                 if (isWideScreen) {
@@ -270,7 +222,7 @@ fun HomeLayout(
                 contentPadding = PaddingValues(top = pv.calculateTopPadding())
             ) {
                 Box(modifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier) {
-                    if (apiApps.isNotEmpty() || networkApps.isNotEmpty() || hookApps.isNotEmpty()) {
+                    if (apiApps.isNotEmpty() || hookApps.isNotEmpty()) {
                         LazyColumn(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -283,29 +235,38 @@ fun HomeLayout(
                             ),
                             overscrollEffect = null
                         ) {
-                            item {
+                            item(key = "title_supported_apps") {
                                 SmallTitle(text = stringResource(R.string.apps_list))
                             }
 
                             itemsIndexed(
                                 items = apiApps,
-                                key = { _, apiData -> apiData.packageName }
-                            ) { index, apiData ->
-                                AppItemFactory(show, apiData)
-                            }
-
-                            itemsIndexed(
-                                items = networkApps,
-                                key = { _, apiData -> apiData.packageName }
-                            ) { index, apiData ->
-                                AppItemFactory(show, apiData)
+                                key = { _, apiData -> "api_${apiData.packageName}" },
+                                contentType = { _, _ -> "app_item" }
+                            ) { _, apiData ->
+                                AppItemComponent(
+                                    appData = apiData,
+                                    isApi = true,
+                                    onClick = {
+                                        viewModel.handleAction(MainUiAction.CurrentApp(apiData))
+                                        isDetailDialogVisible = true
+                                    }
+                                )
                             }
 
                             itemsIndexed(
                                 items = hookApps,
-                                key = { _, appData -> appData.packageName }
-                            ) { index, appData ->
-                                AppItemFactory(show, appData)
+                                key = { _, appData -> "hook_${appData.packageName}" },
+                                contentType = { _, _ -> "app_item" }
+                            ) { _, appData ->
+                                AppItemComponent(
+                                    appData = appData,
+                                    isApi = false,
+                                    onClick = {
+                                        viewModel.handleAction(MainUiAction.CurrentApp(appData))
+                                        isDetailDialogVisible = true
+                                    }
+                                )
                             }
                         }
                     } else {
@@ -328,266 +289,109 @@ fun HomeLayout(
         }
 
         AppDetailsDialog(
-            show = show,
-            appData = currentApp
+            show = isDetailDialogVisible,
+            appData = currentApp,
+            onDismiss = { isDetailDialogVisible = false }
         )
+    }
+}
 
-        WindowBottomSheet(
-            show = isApiTestDialogShowing,
-            title = stringResource(R.string.api_test),
-            allowDismiss = false,
-            startAction = {
-                IconButton(
-                    onClick = { isApiTestDialogShowing = false },
-                ) {
-                    Icon(
-                        imageVector = MiuixIcons.Close,
-                        contentDescription = "Cancel",
-                        tint = colorScheme.onBackground,
-                    )
-                }
-            },
-            endAction = {
-                IconButton(
-                    onClick = { isApiTestDialogShowing = false },
-                ) {
-                    Icon(
-                        imageVector = MiuixIcons.Ok,
-                        contentDescription = "Confirm",
-                        tint = colorScheme.onBackground,
-                    )
-                }
-            },
-            onDismissRequest = {
-                isApiTestDialogShowing = false
-            }
-        ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .scrollEndHaptic()
-                    .overScrollVertical(),
-                contentPadding = PaddingValues(bottom = 12.dp)
-            ) {
-                item {
-                    SmallTitle(text = stringResource(R.string.basic_status), insideMargin = PaddingValues(16.dp, 8.dp))
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp),
-                        colors = CardDefaults.defaultColors(
-                            color = colorScheme.secondaryContainer,
-                        )
-                    ) {
-                        BasicComponent(
-                            title = stringResource(
-                                R.string.api_status_format,
-                                if (SuperLyricHelper.isAvailable()) stringResource(R.string.api_status_available) else stringResource(R.string.api_status_unavailable)
-                            )
-                        )
-                        BasicComponent(
-                            title = stringResource(
-                                R.string.api_version_format,
-                                SuperLyricHelper.getApiVersion()
-                            )
-                        )
-
-                        BasicComponent(
-                            title = stringResource(
-                                R.string.registration_status_format,
-                                if (SuperLyricHelper.isPublisherRegistered()) stringResource(R.string.registered) else stringResource(R.string.unregistered)
-                            ),
-                            summary = stringResource(
-                                R.string.service_status_format,
-                                SuperLyricHelper::class.java.getStaticField("mManager").toString()
-                            )
-                        )
-                    }
-
-                    SmallTitle(text = stringResource(R.string.simulate_publish), insideMargin = PaddingValues(16.dp, 8.dp))
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp),
-                        colors = CardDefaults.defaultColors(
-                            color = colorScheme.secondaryContainer,
-                        )
-                    ) {
-                        ArrowPreference(
-                            title = stringResource(R.string.test_publish_lyric),
-                            onClick = {
-                                SuperLyricHelper.sendLyric(
-                                    SuperLyricData()
-                                        .setLyric(
-                                            SuperLyricLine(
-                                                "测试歌词",
-                                                arrayOf(
-                                                    SuperLyricWord("测", 0, 500),
-                                                    SuperLyricWord("试", 500, 1000),
-                                                    SuperLyricWord("歌", 1000, 1500),
-                                                    SuperLyricWord("词", 1500, 2000)
-                                                ),
-                                                0,
-                                                2000
-                                            )
-                                        )
-                                        .setTranslation(
-                                            SuperLyricLine(
-                                                "测试翻译"
-                                            )
-                                        )
-                                )
-
-                                Toast.makeText(context, context.getString(R.string.published), Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                        ArrowPreference(
-                            title = stringResource(R.string.test_publish_stop),
-                            onClick = {
-                                SuperLyricHelper.sendStop(SuperLyricData())
-                                Toast.makeText(context, context.getString(R.string.published), Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                    }
-
-                    SmallTitle(text = stringResource(R.string.simulate_receive), insideMargin = PaddingValues(16.dp, 8.dp))
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.defaultColors(
-                            color = colorScheme.secondaryContainer,
-                        )
-                    ) {
-                        ArrowPreference(
-                            title = if (!registered) stringResource(R.string.register_receiver) else stringResource(R.string.unregister_receiver),
-                            summary = stringResource(
-                                R.string.current_status_format,
-                                if (registered) stringResource(R.string.registered) else stringResource(R.string.unregistered)
-                            ),
-                            onClick = {
-                                if (!SuperLyricHelper.isReceiverRegistered(AnalogReceiver.mReceiver)) {
-                                    SuperLyricHelper.registerReceiver(AnalogReceiver.mReceiver)
-                                    AnalogReceiver.registeredFlow.value = true
-                                    Toast.makeText(context, context.getString(R.string.registered), Toast.LENGTH_SHORT).show()
-                                } else {
-                                    SuperLyricHelper.unregisterReceiver(AnalogReceiver.mReceiver)
-                                    AnalogReceiver.registeredFlow.value = false
-                                    AnalogReceiver.receiverFlow.value = ReceiverState()
-                                    Toast.makeText(context, context.getString(R.string.destroyed), Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        )
-                        ArrowPreference(
-                            title = if (!paused) stringResource(R.string.pause_receive) else stringResource(R.string.resume_receive),
-                            onClick = {
-                                AnalogReceiver.pausedFlow.value = !paused
-                            }
-                        )
-                        BasicComponent(
-                            title = stringResource(R.string.receiver_data),
-                            summary = stringResource(
-                                R.string.receiver_data_format,
-                                state.publisher ?: "null",
-                                state.data?.toString() ?: "null"
-                            )
-                        )
-                    }
-
-                    Spacer(
-                        Modifier.padding(
-                            bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() +
-                                    WindowInsets.captionBar.asPaddingValues().calculateBottomPadding(),
-                        ),
-                    )
-                }
-            }
+/**
+ * Modern pill badge indicating whether the app is supported via Hook or native API.
+ * Uses high-contrast, theme-adaptive tones (fresh primary for API, vivid violet for Hook)
+ * to avoid dull and inactive-looking gray badges.
+ */
+@Composable
+private fun AppTypeBadge(
+    isApi: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val isDark = isSystemInDarkTheme()
+    val (backgroundColor, textColor) = if (isApi) {
+        if (isDark) {
+            colorScheme.primary.copy(alpha = 0.22f) to colorScheme.primary
+        } else {
+            colorScheme.primary.copy(alpha = 0.12f) to colorScheme.primary
         }
+    } else {
+        if (isDark) {
+            Color(0xFF7C4DFF).copy(alpha = 0.22f) to Color(0xFFD1C4E9)
+        } else {
+            Color(0xFF6750A4).copy(alpha = 0.12f) to Color(0xFF6750A4)
+        }
+    }
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(backgroundColor)
+            .padding(horizontal = 7.dp, vertical = 3.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = if (isApi) stringResource(R.string.badge_api) else stringResource(R.string.switch_mode_hook),
+            maxLines = 1,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = textColor,
+            overflow = TextOverflow.Visible
+        )
     }
 }
 
 @Composable
-private fun AppItemFactory(
-    show: MutableState<Boolean>,
-    appData: AppData
-) {
-    val viewModel = LocalViewModel.current
-
-    AppItemComponent(
-        title = appData.label,
-        summary = appData.packageName,
-        icon = appData.icon!!,
-        isApi = appData is ApiAppData,
-        isNetwork = appData is NetworkAppData,
-        onClick = {
-            viewModel.handleAction(MainUiAction.CurrentApp(appData))
-            show.value = true
-        }
-    )
-}
-
-@Composable
 private fun AppItemComponent(
-    title: String,
-    summary: String,
-    icon: Bitmap,
+    appData: AppData,
     isApi: Boolean,
-    isNetwork: Boolean,
     enabled: Boolean = true,
     onClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
     Card(
-        modifier = Modifier
+        modifier = modifier
             .padding(horizontal = 12.dp)
             .padding(bottom = 12.dp)
     ) {
         ArrowPreference(
             enabled = enabled,
-            title = title,
-            summary = summary,
+            title = appData.label.ifEmpty { appData.packageName.orEmpty() },
+            summary = appData.packageName.orEmpty(),
             endActions = {
                 Row(
                     horizontalArrangement = Arrangement.Absolute.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(
-                                when {
-                                    isApi -> colorScheme.primaryContainer
-                                    isNetwork -> colorScheme.tertiaryContainer
-                                    else -> colorScheme.secondaryContainer
-                                }
-                            )
-                    ) {
-                        Text(
-                            text = when {
-                                isApi -> stringResource(R.string.badge_api)
-                                isNetwork -> stringResource(R.string.switch_mode_network)
-                                else -> stringResource(R.string.switch_mode_hook)
-                            },
-                            maxLines = 1,
-                            fontSize = 12.sp,
-                            overflow = TextOverflow.Visible,
-                            color = when {
-                                isApi -> colorScheme.onPrimaryContainer
-                                isNetwork -> colorScheme.onTertiaryContainer
-                                else -> colorScheme.onSecondaryContainer
-                            },
-                            modifier = Modifier.padding(3.dp)
-                        )
-                    }
+                    AppTypeBadge(isApi = isApi)
                 }
             },
             startAction = {
                 Box(Modifier.padding(end = 8.dp)) {
-                    Icon(
-                        painter = BitmapPainter(icon.asImageBitmap()),
-                        contentDescription = "App Icon",
-                        tint = Color.Unspecified,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                    )
+                    val iconBitmap = appData.icon?.asImageBitmap()
+                    if (iconBitmap != null) {
+                        Icon(
+                            painter = BitmapPainter(iconBitmap),
+                            contentDescription = appData.label,
+                            tint = Color.Unspecified,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(colorScheme.surfaceContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = MiuixIcons.Music,
+                                contentDescription = appData.label,
+                                tint = colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
                 }
             },
             onClick = {
@@ -599,38 +403,55 @@ private fun AppItemComponent(
 
 @Composable
 private fun AppDetailsDialog(
-    show: MutableState<Boolean>,
-    appData: AppData
+    show: Boolean,
+    appData: AppData,
+    onDismiss: () -> Unit
 ) {
-    val viewModel = LocalViewModel.current
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
 
     WindowDialog(
-        show = show.value,
-        onDismissRequest = {
-            show.value = false
-        }
+        show = show,
+        onDismissRequest = onDismiss
     ) {
         Column(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Icon(
-                painter = BitmapPainter(appData.icon!!.asImageBitmap()),
-                contentDescription = "App Icon",
-                tint = Color.Unspecified,
-                modifier = Modifier
-                    .size(72.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .padding(bottom = 6.dp)
-            )
+            val iconBitmap = appData.icon?.asImageBitmap()
+            if (iconBitmap != null) {
+                Icon(
+                    painter = BitmapPainter(iconBitmap),
+                    contentDescription = appData.label,
+                    tint = Color.Unspecified,
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .padding(bottom = 6.dp)
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(colorScheme.surfaceContainer)
+                        .padding(bottom = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = MiuixIcons.Music,
+                        contentDescription = appData.label,
+                        tint = colorScheme.primary,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+            }
 
             Text(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 3.dp),
-                text = appData.label,
+                text = appData.label.ifEmpty { appData.packageName.orEmpty() },
                 fontSize = textStyles.title4.fontSize,
                 fontWeight = FontWeight.Medium,
                 textAlign = TextAlign.Center,
@@ -641,7 +462,7 @@ private fun AppDetailsDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(bottom = 6.dp),
-                text = appData.packageName,
+                text = appData.packageName.orEmpty(),
                 fontSize = textStyles.body1.fontSize,
                 textAlign = TextAlign.Center,
                 color = DialogDefaults.summaryColor(),
@@ -651,7 +472,7 @@ private fun AppDetailsDialog(
                 modifier = Modifier.fillMaxWidth(),
                 text = stringResource(
                     R.string.current_version,
-                    appData.versionName,
+                    appData.versionName.orEmpty(),
                     appData.versionCode
                 ),
                 fontSize = textStyles.body1.fontSize,
@@ -666,41 +487,6 @@ private fun AppDetailsDialog(
                 .height(12.dp)
         )
 
-        if (SupportApps.sSupportNetworkApps[appData.packageName] == NetworkMode.OPTIONAL) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.defaultColors(
-                    color = colorScheme.secondaryContainer,
-                )
-            ) {
-                WindowDropdownPreference(
-                    title = stringResource(R.string.switch_mode),
-                    items = listOf(
-                        stringResource(R.string.switch_mode_hook), stringResource(R.string.switch_mode_network)
-                    ),
-                    selectedIndex = if (appData is NetworkAppData) 1 else 0,
-                    onSelectedIndexChange = { index ->
-                        val switchToNetwork = index == 1
-                        val isActuallySwitching = (appData is NetworkAppData) != switchToNetwork
-                        if (isActuallySwitching) {
-                            viewModel.handleAction(MainUiAction.UpdateNetworkApp(switchToNetwork, appData.packageName))
-                            Toast.makeText(
-                                context,
-                                R.string.switch_mode_restart_hint,
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    }
-                )
-            }
-
-            Spacer(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(12.dp)
-            )
-        }
-
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -713,10 +499,10 @@ private fun AppDetailsDialog(
                     .padding(12.dp),
                 text = stringResource(
                     R.string.instructions_for_use,
-                    when (appData) {
-                        is ApiAppData -> stringResource(R.string.support_api)
-                        is NetworkAppData -> stringResource(R.string.network_mode)
-                        else -> stringResource(SupportApps.sPackageLabelRes[appData.packageName] ?: R.string.unknown)
+                    if (appData is ApiAppData) {
+                        stringResource(R.string.support_api)
+                    } else {
+                        stringResource(SupportApps.sPackageLabelRes[appData.packageName] ?: R.string.unknown)
                     }
                 ),
                 fontSize = textStyles.body1.fontSize,
@@ -735,7 +521,7 @@ private fun AppDetailsDialog(
                 text = stringResource(android.R.string.cancel),
                 onClick = {
                     haptic.performHapticFeedback(HapticFeedbackType.Reject)
-                    show.value = false
+                    onDismiss()
                 },
                 modifier = Modifier.weight(1f)
             )
@@ -744,15 +530,19 @@ private fun AppDetailsDialog(
                 text = stringResource(android.R.string.ok),
                 onClick = {
                     try {
-                        val intent = context.packageManager.getLaunchIntentForPackage(appData.packageName)
+                        val pkgName = appData.packageName.orEmpty()
+                        val intent = context.packageManager.getLaunchIntentForPackage(pkgName)
                         if (intent != null) {
                             context.startActivity(intent)
+                        } else {
+                            Toast.makeText(context, R.string.no_activity, Toast.LENGTH_SHORT).show()
                         }
                     } catch (_: Throwable) {
+                        Toast.makeText(context, R.string.no_activity, Toast.LENGTH_SHORT).show()
                     }
 
                     haptic.performHapticFeedback(HapticFeedbackType.Confirm)
-                    show.value = false
+                    onDismiss()
                 },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.textButtonColorsPrimary()
@@ -760,31 +550,3 @@ private fun AppDetailsDialog(
         }
     }
 }
-
-private object AnalogReceiver {
-    val registeredFlow = MutableStateFlow(false)
-    val pausedFlow = MutableStateFlow(false)
-    val receiverFlow = MutableStateFlow(ReceiverState())
-    val mReceiver = object : ISuperLyricReceiver.Stub() {
-        override fun onLyric(publisher: String?, data: SuperLyricData?) {
-            if (pausedFlow.value) return
-            receiverFlow.value = ReceiverState(
-                publisher = publisher,
-                data = data
-            )
-        }
-
-        override fun onStop(publisher: String?, data: SuperLyricData?) {
-            if (pausedFlow.value) return
-            receiverFlow.value = ReceiverState(
-                publisher = publisher,
-                data = data
-            )
-        }
-    }
-}
-
-private data class ReceiverState(
-    val publisher: String? = null,
-    val data: SuperLyricData? = null
-)
