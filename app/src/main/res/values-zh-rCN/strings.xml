@@ -157,6 +157,7 @@
     <string name="apple_music">无需额外设置，正常播放即可</string>
     <string name="bodian_music">无需额外设置，正常播放即可</string>
     <string name="kugou_music">无需额外设置，正常播放即可</string>
+    <string name="migu_music">无需额外设置，正常播放即可</string>
     <string name="qq_music">无需额外设置，正常播放即可</string>
     <string name="wangyiyun_music">保持网络畅通，正常播放即可</string>
     <string name="spotify_music">保持网络畅通，正常播放即可</string>
@@ -167,7 +168,6 @@
     <string name="kugou_lite_music">无需额外设置\n3.0.1 和 5.1.5 版本支持逐字</string>
     <string name="haibei_music">未知</string>
     <string name="wangyiyun_rongyao_music">开启设置中的“魅族状态栏歌词”功能即可</string>
-    <string name="migu_music">开启设置中的“魅族状态栏歌词”功能即可</string>
     <string name="aplayer_music">开启设置中的“状态栏歌词”功能即可</string>
     <string name="lmusic_music">开启设置中的“魅族状态栏歌词”功能即可</string>
     <string name="yinliu_music">开启设置中的“魅族状态栏歌词”功能即可</string>

@@ -28,6 +28,7 @@
 - Apple Music (com.apple.android.music) -> Hook 获取
 - 波点音乐 (cn.wenyu.bodian) -> Hook 获取
 - 酷狗音乐 (com.kugou.android) -> Hook 获取
+- 咪咕音乐 (cmccwm.mobilemusic) -> Hook 获取
 - 网易云音乐 (com.netease.cloudmusic) -> 网络获取
 - QQ 音乐 (com.tencent.qqmusic) -> Hook 获取
 - 椒盐音乐 (com.salt.music) -> Hook 获取
@@ -50,7 +51,6 @@
 - 魅族音乐 (com.meizu.media.music) -> 魅族状态栏歌词
 - 拟声音乐 (com.mimicry.mymusic) -> 魅族状态栏歌词
 - 小米音乐 (com.miui.player) -> 蓝牙歌词
-- 咪咕音乐 (cmccwm.mobilemusic) -> 魅族状态栏歌词
 - MusicFree (fun.upup.musicfree) -> 桌面歌词
 - OPPO 音乐 (com.oppo.music) -> 蓝牙歌词
 - Poweramp (com.maxmpz.audioplayer) -> 仅处于软件歌词界面时可获取到歌词
