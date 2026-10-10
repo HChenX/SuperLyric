@@ -30,6 +30,9 @@ import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.processor.HookThis;
 import com.hchen.superlyric.engine.multisource.MultiSourceLyricEngine;
+import com.hchen.superlyric.parser.KuwoLrcxParser;
+import com.hchen.superlyric.parser.QrcDecoder;
+import com.hchen.superlyric.parser.SodaJsonParser;
 import com.hchen.superlyric.publisher.UnifiedLyricProvider;
 import com.hchen.superlyric.publisher.engine.IHookLyricEngine;
 import com.hchen.superlyric.publisher.engine.INetworkLyricEngine;
@@ -88,7 +91,6 @@ public class SaltMusicProvider extends UnifiedLyricProvider {
     // 核心数据模型类
     private volatile Class<?> mLyricsDocumentClass;
     private volatile Class<?> mLyricsLineClass;
-    private volatile Class<?> mLyricsCellClass;
     private volatile Class<?> mSongClass;
 
     // 宿主业务方法
@@ -108,13 +110,8 @@ public class SaltMusicProvider extends UnifiedLyricProvider {
 
     private volatile Field mFieldLineTime1;
     private volatile Field mFieldLineTime2;
-    private volatile Field mFieldLineCells;
     private volatile Field mFieldLineSubText;
     private volatile Field mFieldLineMainText;
-
-    private volatile Field mFieldCellTime1;
-    private volatile Field mFieldCellTime2;
-    private volatile Field mFieldCellText;
 
     public SaltMusicProvider() {
         super();
@@ -330,21 +327,8 @@ public class SaltMusicProvider extends UnifiedLyricProvider {
                 }
             });
 
-            mLyricsCellClass = DexkitCache.findMember("salt_lyrics_cell_class_v1", new IDexkit<ClassData>() {
-                @Nullable
-                @Override
-                public ClassData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
-                    return bridge.findClass(FindClass.create()
-                        .matcher(ClassMatcher.create()
-                            .usingEqStrings("LyricsCell(startTime=")
-                        )
-                    ).single();
-                }
-            });
-
             logI(tag, "Resolved Salt Player lyric model classes: document=" + mLyricsDocumentClass
-                + ", line=" + mLyricsLineClass
-                + ", cell=" + mLyricsCellClass);
+                + ", line=" + mLyricsLineClass);
         } catch (Throwable t) {
             logE(tag, "Failed to find Salt Player model classes via DexKit", t);
         }
@@ -355,11 +339,11 @@ public class SaltMusicProvider extends UnifiedLyricProvider {
      */
     private synchronized void resolveModelFields() {
         if (mFieldsResolved) return;
-        if (mLyricsDocumentClass == null || mLyricsLineClass == null || mLyricsCellClass == null)
+        if (mLyricsDocumentClass == null)
             return;
 
         try {
-            // 1. LyricsDocument 字段解析
+            // 1. LyricsDocument 字段解析 (提取原始 sourceText 字符串与备用行列表)
             for (Field f : mLyricsDocumentClass.getDeclaredFields()) {
                 if (Modifier.isStatic(f.getModifiers())) continue;
                 if (List.class.isAssignableFrom(f.getType())) {
@@ -371,60 +355,33 @@ public class SaltMusicProvider extends UnifiedLyricProvider {
                 }
             }
 
-            // 2. LyricsLine 字段解析
-            List<Field> lineLongs = new ArrayList<>();
-            List<Field> lineStrings = new ArrayList<>();
-            for (Field f : mLyricsLineClass.getDeclaredFields()) {
-                if (Modifier.isStatic(f.getModifiers())) continue;
-                if (f.getType() == long.class) {
-                    f.setAccessible(true);
-                    lineLongs.add(f);
-                } else if (f.getType() == String.class) {
-                    f.setAccessible(true);
-                    lineStrings.add(f);
-                } else if (List.class.isAssignableFrom(f.getType()) && !ArrayList.class.equals(f.getType())) {
-                    f.setAccessible(true);
-                    mFieldLineCells = f;
-                }
-            }
-            if (lineLongs.size() >= 2) {
-                mFieldLineTime1 = lineLongs.get(0);
-                mFieldLineTime2 = lineLongs.get(1);
-            }
-            if (lineStrings.size() >= 2) {
-                mFieldLineSubText = lineStrings.get(0);
-                mFieldLineMainText = lineStrings.get(1);
-            } else if (lineStrings.size() == 1) {
-                mFieldLineMainText = lineStrings.get(0);
-            }
-            if (mFieldLineCells == null) {
+            // 2. LyricsLine 字段解析 (备用文本行)
+            if (mLyricsLineClass != null) {
+                List<Field> lineLongs = new ArrayList<>();
+                List<Field> lineStrings = new ArrayList<>();
                 for (Field f : mLyricsLineClass.getDeclaredFields()) {
-                    if (!Modifier.isStatic(f.getModifiers()) && List.class.isAssignableFrom(f.getType())) {
+                    if (Modifier.isStatic(f.getModifiers())) continue;
+                    if (f.getType() == long.class) {
                         f.setAccessible(true);
-                        mFieldLineCells = f;
-                        break;
+                        lineLongs.add(f);
+                    } else if (f.getType() == String.class) {
+                        f.setAccessible(true);
+                        lineStrings.add(f);
                     }
                 }
-            }
-
-            // 3. LyricsCell 字段解析
-            List<Field> cellLongs = new ArrayList<>();
-            for (Field f : mLyricsCellClass.getDeclaredFields()) {
-                if (Modifier.isStatic(f.getModifiers())) continue;
-                if (f.getType() == long.class) {
-                    f.setAccessible(true);
-                    cellLongs.add(f);
-                } else if (f.getType() == String.class) {
-                    f.setAccessible(true);
-                    mFieldCellText = f;
+                if (lineLongs.size() >= 2) {
+                    mFieldLineTime1 = lineLongs.get(0);
+                    mFieldLineTime2 = lineLongs.get(1);
+                }
+                if (lineStrings.size() >= 2) {
+                    mFieldLineSubText = lineStrings.get(0);
+                    mFieldLineMainText = lineStrings.get(1);
+                } else if (lineStrings.size() == 1) {
+                    mFieldLineMainText = lineStrings.get(0);
                 }
             }
-            if (cellLongs.size() >= 2) {
-                mFieldCellTime1 = cellLongs.get(0);
-                mFieldCellTime2 = cellLongs.get(1);
-            }
 
-            mFieldsResolved = (mFieldDocLines != null && mFieldLineTime1 != null && mFieldLineCells != null);
+            mFieldsResolved = (mFieldDocSource != null || mFieldDocLines != null);
             logI(tag, "Model fields resolved successfully: resolved=" + mFieldsResolved);
         } catch (Throwable t) {
             logE(tag, "Failed to resolve model fields", t);
@@ -544,6 +501,11 @@ public class SaltMusicProvider extends UnifiedLyricProvider {
 
     /**
      * 解析宿主原生 LyricsDocument 结构为标准 SuperLyricData。
+     * <p>
+     * 优化机制：
+     * 1. 优先提取原始 sourceText 纯文本，交由 KuwoLrcxParser / SodaJsonParser / QrcDecoder 进行数学高精度解析；
+     * 2. 彻底抛弃宿主深层混淆的 LyricsCell 反射链，规避 0ms 坍缩及越界缺陷；
+     * 3. 若无原生逐字源文本，平滑降级至 DocLines 纯文本行解析，并交由 MultiSourceLyricEngine 网络引擎兜底增强。
      */
     @Nullable
     private SuperLyricData parseLyricsDocument(@NonNull Object docObj) {
@@ -551,108 +513,6 @@ public class SaltMusicProvider extends UnifiedLyricProvider {
             if (!mFieldsResolved) {
                 resolveModelFields();
             }
-            if (mFieldDocLines == null) {
-                return null;
-            }
-
-            List<?> rawLines = (List<?>) mFieldDocLines.get(docObj);
-            if (rawLines == null || rawLines.isEmpty()) {
-                return null;
-            }
-
-            List<SuperLyricLine> resultLines = new ArrayList<>(rawLines.size());
-            for (Object lineObj : rawLines) {
-                if (lineObj == null) continue;
-
-                long t1 = mFieldLineTime1 != null ? (long) mFieldLineTime1.get(lineObj) : 0L;
-                long t2 = mFieldLineTime2 != null ? (long) mFieldLineTime2.get(lineObj) : 0L;
-                long lineStart = Math.min(t1, t2);
-                long lineEnd = Math.max(t1, t2);
-
-                String str1 = mFieldLineSubText != null ? (String) mFieldLineSubText.get(lineObj) : null;
-                String str2 = mFieldLineMainText != null ? (String) mFieldLineMainText.get(lineObj) : null;
-
-                List<?> rawCells = mFieldLineCells != null ? (List<?>) mFieldLineCells.get(lineObj) : null;
-                List<SuperLyricWord> wordsList = new ArrayList<>();
-                StringBuilder wordsSb = new StringBuilder();
-
-                if (rawCells != null && !rawCells.isEmpty()) {
-                    int cellCount = rawCells.size();
-                    for (int c = 0; c < cellCount; c++) {
-                        Object cellObj = rawCells.get(c);
-                        if (cellObj == null) continue;
-                        long ct1 = mFieldCellTime1 != null ? (long) mFieldCellTime1.get(cellObj) : 0L;
-                        long ct2 = mFieldCellTime2 != null ? (long) mFieldCellTime2.get(cellObj) : 0L;
-                        long cStart = Math.min(ct1, ct2);
-                        long cEnd = Math.max(ct1, ct2);
-                        String cText = mFieldCellText != null ? (String) mFieldCellText.get(cellObj) : null;
-                        if (cText != null) {
-                            wordsSb.append(cText);
-                            if (cEnd <= cStart) {
-                                // 启发式自愈：cEnd <= cStart 时优先采纳下一词起始，否则按字符权重保底
-                                long nextStart = -1L;
-                                if (c + 1 < cellCount) {
-                                    Object nextCell = rawCells.get(c + 1);
-                                    if (nextCell != null && mFieldCellTime1 != null && mFieldCellTime2 != null) {
-                                        long nct1 = (long) mFieldCellTime1.get(nextCell);
-                                        long nct2 = (long) mFieldCellTime2.get(nextCell);
-                                        nextStart = Math.min(nct1, nct2);
-                                    }
-                                }
-                                if (nextStart > cStart) {
-                                    cEnd = nextStart;
-                                } else {
-                                    cEnd = cStart + Math.max(120L, (long) cText.length() * 150L);
-                                    if (lineEnd > cStart && cEnd > lineEnd) {
-                                        cEnd = lineEnd;
-                                    }
-                                }
-                            }
-                            if (cEnd <= cStart) {
-                                cEnd = cStart + Math.max(120L, (long) cText.length() * 150L);
-                            }
-                            wordsList.add(new SuperLyricWord(cText, cStart, cEnd));
-                        }
-                    }
-                    if (!wordsList.isEmpty()) {
-                        LyricSanitizer.healWordTimings(wordsList, lineStart, lineEnd);
-                    }
-                }
-
-                String fullWordsText = wordsSb.toString();
-                String mainText;
-                String subText;
-
-                if (!TextUtils.isEmpty(fullWordsText)) {
-                    if (TextUtils.equals(str2, fullWordsText)) {
-                        mainText = str2;
-                        subText = str1;
-                    } else if (TextUtils.equals(str1, fullWordsText)) {
-                        mainText = str1;
-                        subText = str2;
-                    } else {
-                        mainText = !TextUtils.isEmpty(str2) ? str2 : fullWordsText;
-                        subText = str1;
-                    }
-                } else {
-                    mainText = !TextUtils.isEmpty(str2) ? str2 : str1;
-                    subText = !TextUtils.isEmpty(str2) ? str1 : null;
-                }
-
-                SuperLyricWord[] wordsArr = wordsList.size() > 1 ? wordsList.toArray(new SuperLyricWord[0]) : null;
-                SuperLyricLine rawLine = new SuperLyricLine(mainText, wordsArr, subText, lineStart, lineEnd);
-                SuperLyricLine sanitized = LyricSanitizer.sanitizeLine(rawLine);
-                if (sanitized != null) {
-                    resultLines.add(sanitized);
-                }
-            }
-
-            if (resultLines.isEmpty()) {
-                return null;
-            }
-
-            SuperLyricData fullData = new SuperLyricData();
-            fullData.setAllLyrics(resultLines.toArray(new SuperLyricLine[0]));
 
             Object song = getCurrentSongFromController();
             String title = null;
@@ -689,13 +549,102 @@ public class SaltMusicProvider extends UnifiedLyricProvider {
                 duration = active.getDuration();
             }
 
-            fullData.setLyricId(trackId);
-            fullData.setTitle(title);
-            fullData.setArtist(artist);
-            fullData.setAlbum(album);
-            fullData.setDuration(duration);
+            // 1. 优先尝试解析原始 sourceText 报文字符串
+            String sourceText = null;
+            if (mFieldDocSource != null) {
+                try {
+                    sourceText = (String) mFieldDocSource.get(docObj);
+                } catch (Throwable ignored) {
+                }
+            }
 
-            return LyricSanitizer.sanitizeData(fullData);
+            if (!TextUtils.isEmpty(sourceText)) {
+                String trimmed = sourceText.trim();
+
+                // 1.1 Kuwo / Bodian LRCX 逐字格式
+                if (trimmed.contains("[kuwo:") || (trimmed.contains("<") && trimmed.contains(">") && trimmed.matches("(?s).*<\\d+,\\d+>.*"))) {
+                    SuperLyricData lrcxData = KuwoLrcxParser.parseLrcx(trimmed, title, artist, album, duration);
+                    if (lrcxData != null && lrcxData.getAllLyrics() != null && lrcxData.getAllLyrics().length > 0) {
+                        if (TextUtils.isEmpty(lrcxData.getLyricId())) lrcxData.setLyricId(trackId);
+                        logI(tag, "Successfully parsed raw LRCX sourceText: lines=" + lrcxData.getAllLyrics().length);
+                        return LyricSanitizer.sanitizeData(lrcxData);
+                    }
+                }
+
+                // 1.2 汽水 / 现代 JSON 逐字歌词格式
+                if (trimmed.startsWith("{") && (trimmed.contains("sentences") || trimmed.contains("sentence_list"))) {
+                    SuperLyricLine[] jsonLines = SodaJsonParser.parseJson(trimmed);
+                    if (jsonLines != null && jsonLines.length > 0) {
+                        SuperLyricData jsonData = new SuperLyricData();
+                        jsonData.setAllLyrics(jsonLines);
+                        jsonData.setLyricId(trackId);
+                        jsonData.setTitle(title);
+                        jsonData.setArtist(artist);
+                        jsonData.setAlbum(album);
+                        jsonData.setDuration(duration);
+                        logI(tag, "Successfully parsed raw JSON sourceText: lines=" + jsonLines.length);
+                        return LyricSanitizer.sanitizeData(jsonData);
+                    }
+                }
+
+                // 1.3 QQ 音乐 QRC XML / 加密格式
+                if (trimmed.contains("<QrcInfos") || trimmed.contains("<LyricInfo") || (trimmed.startsWith("[") && trimmed.contains("(") && trimmed.contains(")"))) {
+                    SuperLyricLine[] qrcLines = QrcDecoder.decodeFromHexOrBase64(trimmed);
+                    if (qrcLines != null && qrcLines.length > 0) {
+                        SuperLyricData qrcData = new SuperLyricData();
+                        qrcData.setAllLyrics(qrcLines);
+                        qrcData.setLyricId(trackId);
+                        qrcData.setTitle(title);
+                        qrcData.setArtist(artist);
+                        qrcData.setAlbum(album);
+                        qrcData.setDuration(duration);
+                        logI(tag, "Successfully parsed raw QRC sourceText: lines=" + qrcLines.length);
+                        return LyricSanitizer.sanitizeData(qrcData);
+                    }
+                }
+            }
+
+            // 2. 兜底策略：提取宿主已解析的纯文本行（完全规避 Cells 反射），由网络引擎进一步择优
+            if (mFieldDocLines != null) {
+                List<?> rawLines = (List<?>) mFieldDocLines.get(docObj);
+                if (rawLines != null && !rawLines.isEmpty()) {
+                    List<SuperLyricLine> resultLines = new ArrayList<>(rawLines.size());
+                    for (Object lineObj : rawLines) {
+                        if (lineObj == null) continue;
+
+                        long t1 = mFieldLineTime1 != null ? (long) mFieldLineTime1.get(lineObj) : 0L;
+                        long t2 = mFieldLineTime2 != null ? (long) mFieldLineTime2.get(lineObj) : 0L;
+                        long lineStart = Math.min(t1, t2);
+                        long lineEnd = Math.max(t1, t2);
+
+                        String str1 = mFieldLineSubText != null ? (String) mFieldLineSubText.get(lineObj) : null;
+                        String str2 = mFieldLineMainText != null ? (String) mFieldLineMainText.get(lineObj) : null;
+
+                        String mainText = !TextUtils.isEmpty(str2) ? str2 : str1;
+                        String subText = !TextUtils.isEmpty(str2) ? str1 : null;
+
+                        SuperLyricLine rawLine = new SuperLyricLine(mainText, null, subText, lineStart, lineEnd);
+                        SuperLyricLine sanitized = LyricSanitizer.sanitizeLine(rawLine);
+                        if (sanitized != null) {
+                            resultLines.add(sanitized);
+                        }
+                    }
+
+                    if (!resultLines.isEmpty()) {
+                        SuperLyricData lineData = new SuperLyricData();
+                        lineData.setAllLyrics(resultLines.toArray(new SuperLyricLine[0]));
+                        lineData.setLyricId(trackId);
+                        lineData.setTitle(title);
+                        lineData.setArtist(artist);
+                        lineData.setAlbum(album);
+                        lineData.setDuration(duration);
+                        logI(tag, "Successfully parsed fallback document lines: lines=" + resultLines.size());
+                        return LyricSanitizer.sanitizeData(lineData);
+                    }
+                }
+            }
+
+            return null;
         } catch (Throwable t) {
             logE(tag, "Failed to parse LyricsDocument", t);
             return null;
