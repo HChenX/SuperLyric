@@ -32,9 +32,11 @@ import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.processor.HookThis;
+import com.hchen.superlyric.engine.multisource.MultiSourceLyricEngine;
 import com.hchen.superlyric.publisher.AbsPublisher;
 import com.hchen.superlyric.publisher.UnifiedLyricProvider;
 import com.hchen.superlyric.publisher.engine.IHookLyricEngine;
+import com.hchen.superlyric.publisher.engine.INetworkLyricEngine;
 import com.hchen.superlyric.publisher.model.ProviderCapability;
 import com.hchen.superlyric.publisher.model.TrackContext;
 import com.hchen.superlyric.utils.LyricSanitizer;
@@ -93,7 +95,13 @@ public class AppleMusicProvider extends UnifiedLyricProvider {
     @NonNull
     @Override
     public ProviderCapability capability() {
-        return ProviderCapability.FULL_HOOK_ONLY;
+        return ProviderCapability.FULL_HOOK_WITH_NETWORK;
+    }
+
+    @Nullable
+    @Override
+    protected INetworkLyricEngine createNetworkEngine() {
+        return new MultiSourceLyricEngine();
     }
 
     @android.annotation.SuppressLint("WrongConstant")

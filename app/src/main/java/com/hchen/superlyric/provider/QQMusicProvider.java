@@ -29,8 +29,11 @@ import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.hooktool.log.AndroidLog;
 import com.hchen.processor.HookThis;
+import com.hchen.superlyric.engine.multisource.MultiSourceLyricEngine;
+import com.hchen.superlyric.engine.multisource.QQMusicLyricSource;
 import com.hchen.superlyric.publisher.UnifiedLyricProvider;
 import com.hchen.superlyric.publisher.engine.IHookLyricEngine;
+import com.hchen.superlyric.publisher.engine.INetworkLyricEngine;
 import com.hchen.superlyric.publisher.model.ProviderCapability;
 import com.hchen.superlyric.publisher.model.TrackContext;
 import com.hchen.superlyric.utils.LyricSanitizer;
@@ -54,6 +57,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
@@ -94,7 +98,13 @@ public class QQMusicProvider extends UnifiedLyricProvider {
     @NonNull
     @Override
     public ProviderCapability capability() {
-        return ProviderCapability.FULL_HOOK_ONLY;
+        return ProviderCapability.FULL_HOOK_WITH_NETWORK;
+    }
+
+    @Nullable
+    @Override
+    protected INetworkLyricEngine createNetworkEngine() {
+        return new MultiSourceLyricEngine();
     }
 
     @Nullable
@@ -320,6 +330,31 @@ public class QQMusicProvider extends UnifiedLyricProvider {
                 + ", lines=" + lyricLines.length
                 + ", hasWords=" + hasWords
                 + ", hasTrans=" + hasTrans);
+
+            // 若 Hook 截获到的歌词缺失逐字时间戳，但已获取到官方 songMID 或 songID，
+            // 立即在后台异步拉取官方 QRC 逐字歌词，实现无感热升级
+            if (!hasWords && (!meta.songMid.isEmpty() || meta.songNumericId > 0)) {
+                final TrackContext capturedContext = context;
+                CompletableFuture.runAsync(() -> {
+                    try {
+                        SuperLyricData qrcData = QQMusicLyricSource.fetchLyricByMid(meta.songMid, meta.songNumericId, meta.title, meta.artist);
+                        if (qrcData != null && qrcData.hasAllLyrics()) {
+                            SuperLyricData cleanQrc = LyricSanitizer.sanitizeData(qrcData);
+                            if (cleanQrc != null) {
+                                TrackContext currentActive = mActiveTrack.get();
+                                if (currentActive != null && currentActive.matches(capturedContext.getTrackId(), capturedContext.getGeneration())) {
+                                    AndroidLog.logI(TAG, "Successfully enriched non-verbatim hook lyric with official QRC for " + meta.trackId);
+                                    if (mOrchestrator != null) {
+                                        mOrchestrator.onHookFullLyricCaptured(currentActive, cleanQrc);
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Throwable t) {
+                        AndroidLog.logW(TAG, "Enrichment with QRC failed: " + t.getMessage());
+                    }
+                });
+            }
         } catch (Throwable t) {
             AndroidLog.logE(TAG, "[" + source + "] Error handling captured lyrics", t);
         }
@@ -1077,7 +1112,7 @@ public class QQMusicProvider extends UnifiedLyricProvider {
             }
         }
 
-        return new TrackMetadata(title, artist, album, trackId, duration);
+        return new TrackMetadata(title, artist, album, trackId, songMid, songNumericId, duration);
     }
 
     private static class LineFieldResolver {
@@ -1142,13 +1177,17 @@ public class QQMusicProvider extends UnifiedLyricProvider {
         final String artist;
         final String album;
         final String trackId;
+        final String songMid;
+        final long songNumericId;
         final long duration;
 
-        TrackMetadata(String title, String artist, String album, String trackId, long duration) {
+        TrackMetadata(String title, String artist, String album, String trackId, String songMid, long songNumericId, long duration) {
             this.title = title;
             this.artist = artist;
             this.album = album;
             this.trackId = trackId;
+            this.songMid = songMid;
+            this.songNumericId = songNumericId;
             this.duration = duration;
         }
     }
