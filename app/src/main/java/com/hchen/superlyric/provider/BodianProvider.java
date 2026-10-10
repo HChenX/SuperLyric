@@ -27,6 +27,8 @@ import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.hooktool.log.AndroidLog;
 import com.hchen.processor.HookThis;
 import com.hchen.superlyric.engine.multisource.MultiSourceLyricEngine;
+import com.hchen.superlyric.parser.KuwoLrcxParser;
+import com.hchen.superlyric.parser.SodaJsonParser;
 import com.hchen.superlyric.publisher.UnifiedLyricProvider;
 import com.hchen.superlyric.publisher.engine.IHookLyricEngine;
 import com.hchen.superlyric.publisher.engine.INetworkLyricEngine;
@@ -34,8 +36,6 @@ import com.hchen.superlyric.publisher.model.ProviderCapability;
 import com.hchen.superlyric.publisher.model.TrackContext;
 import com.hchen.superlyric.utils.LyricSanitizer;
 import com.hchen.superlyricapi.SuperLyricData;
-import com.hchen.superlyricapi.SuperLyricLine;
-import com.hchen.superlyricapi.SuperLyricWord;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
@@ -47,25 +47,30 @@ import org.luckypray.dexkit.result.ClassDataList;
 import org.luckypray.dexkit.result.MethodData;
 import org.luckypray.dexkit.result.MethodDataList;
 
-import java.lang.reflect.Field;
+import java.io.File;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 波点音乐统一歌词提供者。
  * <p>
- * <b>逆向适配说明 (波点音乐 5.9.8+)：</b>
+ * <b>架构革新与原生报文自解析 (波点音乐 5.9.8+)：</b>
  * <ul>
- *   <li><b>歌词解析流水线：</b>
- *       宿主在接收到歌词下载完成后，由 {@code LyricsRunner4Flutter} (包含唯一特征字符串 "LyricsRunner4Flutter")
- *       根据格式 (LRC / 逐字 LRCX) 实例化对应解析器生成未折行的全量歌词对象 {@code ILyrics}。
- *       解析完成通过该类的分发方法分发给观察者和全局状态。
- *       我们在分发方法拦截，直接捕获反序列化完成的完整歌词行和当前歌曲实体 ({@code Music})。</li>
- *   <li><b>播放状态与时钟调度：</b>
- *       已完全由系统框架级 {@code MediaSessionManager} 全局监听与驱动，无需应用内私有播放器委托 Hook。</li>
+ *   <li><b>彻底斩断末端混淆反射：</b>
+ *       全面废除在数据消费末端（{@code LyricsRunner4Flutter.g}）拦截并反射解析混淆行/词模型（{@code aVarA}）的旧方案，
+ *       杜绝因宿主内部代码混淆、字段重构带来的脆弱性；</li>
+ *   <li><b>源头截获原始报文流：</b>
+ *       在 {@code LyricsRunner4Flutter} 构造器（传入 {@code Music} 实体与本地下载歌词文件路径）
+ *       以及 {@code LyricsStream.f(byte[])} 原始字节流接收点实施轻量拦截，直接捕获未经宿主篡改的原生歌词报文；</li>
+ *   <li><b>模块原生自解析与零 0ms 坍缩：</b>
+ *       直接由 {@link KuwoLrcxParser}（或 JSON 格式下的 {@link SodaJsonParser}）进行高精数学自解析，
+ *       从根本上彻底避开波点宿主内部 {@code VerbatimLyricsParserImpl.e()} 粗暴重叠裁切造成的 0ms 坍缩缺陷；</li>
+ *   <li><b>双轨网络引擎兜底：</b>
+ *       未命中或纯本地音轨时无缝交由 {@link MultiSourceLyricEngine} 进行多源聚合打分拉取。</li>
  * </ul>
  *
  * @author 焕晨HChen
@@ -75,46 +80,8 @@ public class BodianProvider extends UnifiedLyricProvider {
     private static final String TAG = "BodianProvider";
 
     private final AtomicReference<TrackContext> mActiveTrack = new AtomicReference<>();
-
-    // 线程安全的全局类级反射字段缓存（一次解析，永久复用，杜绝重复搜索）
-    private static final java.util.Map<Class<?>, LineFieldResolver> sLineResolvers = new java.util.concurrent.ConcurrentHashMap<>();
-    private static final java.util.Map<Class<?>, SubWordResolver> sSubWordResolvers = new java.util.concurrent.ConcurrentHashMap<>();
-
-    private static class LineFieldResolver {
-        final Field timestampField;
-        final Field textField;
-        final Field isTransField;
-        final Field subListField;
-
-        LineFieldResolver(Field timestampField, Field textField, Field isTransField, Field subListField) {
-            this.timestampField = timestampField;
-            this.textField = textField;
-            this.isTransField = isTransField;
-            this.subListField = subListField;
-        }
-
-        boolean isValid() {
-            return timestampField != null && textField != null;
-        }
-    }
-
-    private static class SubWordResolver {
-        final Field charStartField;
-        final Field charEndField;
-        final Field startTimeField;
-        final Field endTimeField;
-
-        SubWordResolver(Field charStartField, Field charEndField, Field startTimeField, Field endTimeField) {
-            this.charStartField = charStartField;
-            this.charEndField = charEndField;
-            this.startTimeField = startTimeField;
-            this.endTimeField = endTimeField;
-        }
-
-        boolean isValid() {
-            return charEndField != null && startTimeField != null && endTimeField != null;
-        }
-    }
+    private final AtomicReference<Object> mCurrentMusic = new AtomicReference<>();
+    private volatile String mLastProcessedFilePath = null;
 
     @NonNull
     @Override
@@ -134,7 +101,8 @@ public class BodianProvider extends UnifiedLyricProvider {
         return new IHookLyricEngine() {
             @Override
             public void initHooks() {
-                hookLyricDispatch();
+                hookLyricsRunnerInit();
+                hookLyricsStreamByte();
             }
 
             @Override
@@ -145,128 +113,172 @@ public class BodianProvider extends UnifiedLyricProvider {
             @Nullable
             @Override
             public SuperLyricData tryExtractFullLyric(@NonNull TrackContext context) {
-                // 波点音乐为异步解析回调驱动模式，歌词解析就绪时由 hook 直接捕获并上报
+                // 异步报文事件驱动，拦截到原始数据后即时上报
                 return null;
             }
         };
     }
 
     /**
-     * Hook 歌词分发中枢。
+     * 通道 1：Hook {@code LyricsRunner4Flutter} 构造函数。
      * <p>
-     * 遵循从大到小两段式收敛原则：
-     * <ol>
-     *   <li>查找包含常量字符串 {@code "LyricsRunner4Flutter"} 的候选大类；</li>
-     *   <li>在候选类中筛选包含 3 个参数且返回值为 {@code void} 的分发方法 ({@code g(status, rawLyrics, foldedLyrics)})，
-     *       排除同样引用该常量但仅有无参 {@code call()} 回调的内部类 ({@code $a})。</li>
-     * </ol>
+     * 构造函数入参为：{@code (Music music, int lyricStatus, String lyricPath)}。
+     * 在其构造完成瞬间，保存曲目元数据并直接读取原始文件内容自解析。
      */
-    private void hookLyricDispatch() {
+    private void hookLyricsRunnerInit() {
         try {
-            Method dispatchMethod = DexkitCache.findMember("bodian_lyric_dispatch_v2", new IDexkit<MethodData>() {
+            Class<?> runnerClass = DexkitCache.findMember("bodian_lyrics_runner_class_v1", new IDexkit<ClassData>() {
                 @Nullable
                 @Override
-                public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
-                    // 大类收敛：包含 "LyricsRunner4Flutter" 常量字符串的所有候选类
-                    ClassDataList runnerClasses = bridge.findClass(FindClass.create()
+                public ClassData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                    ClassDataList list = bridge.findClass(FindClass.create()
                         .matcher(ClassMatcher.create()
                             .usingEqStrings("LyricsRunner4Flutter")
                         )
                     );
-
-                    if (runnerClasses == null || runnerClasses.isEmpty()) {
-                        AndroidLog.logE(TAG, "DexKit failed to locate LyricsRunner4Flutter class");
-                        return null;
-                    }
-
-                    // 方法收敛：遍历候选类，甄别拥有 3 参数且返回 void 的分发方法（排除内部类与构造函数）
-                    for (ClassData cd : runnerClasses) {
-                        MethodDataList methods = bridge.findMethod(FindMethod.create()
-                            .matcher(MethodMatcher.create()
-                                .declaredClass(cd.getName())
-                                .paramCount(3)
-                                .returnType(void.class)
-                            )
-                        );
-                        if (methods != null) {
-                            for (MethodData md : methods) {
-                                if (md.isMethod()) {
-                                    return md;
-                                }
+                    if (list != null && !list.isEmpty()) {
+                        for (ClassData cd : list) {
+                            if (!cd.getName().contains("$")) {
+                                return cd;
                             }
                         }
+                        return list.get(0);
                     }
-
-                    AndroidLog.logE(TAG, "Cannot find Bodian lyric dispatch method in candidate classes");
                     return null;
                 }
             });
 
-            if (dispatchMethod == null) {
-                AndroidLog.logE(TAG, "Cannot find Bodian lyric dispatch method");
+            if (runnerClass == null) {
+                AndroidLog.logW(TAG, "DexKit failed to locate LyricsRunner4Flutter class");
                 return;
             }
 
-            hook(dispatchMethod, new AbsHook() {
-                @Override
-                public void after() {
-                    Object status = getArg(0);
-                    Object iLyrics = getArg(1); // 未折行的完整 ILyrics 对象
-                    Object runnerThis = getThisObject();
-
-                    // 状态判定：如果是失败状态则告知协调器
-                    String statusName = status != null ? status.toString() : "";
-                    if ("FAILED".equalsIgnoreCase(statusName) || "NONE".equalsIgnoreCase(statusName)) {
-                        TrackContext active = mActiveTrack.get();
-                        if (runnerThis != null) {
+            for (Constructor<?> c : runnerClass.getDeclaredConstructors()) {
+                if (c.getParameterCount() == 3) {
+                    c.setAccessible(true);
+                    hook(c, new AbsHook() {
+                        @Override
+                        public void after() {
                             try {
-                                Object music = extractMusicFromRunner(runnerThis);
+                                Object music = getArg(0);
+                                String filePath = safeString(getArg(2));
                                 if (music != null) {
-                                    String rid = safeString(getField(music, "rid"));
-                                    String title = safeString(callMethod(music, "getName"));
-                                    String artist = safeString(callMethod(music, "getArtist"));
-                                    String trackId = !rid.isEmpty() ? rid : (title + "_" + artist);
-                                    if (active == null || !Objects.equals(active.getTrackId(), trackId)) {
-                                        long gen = mTrackGeneration.incrementAndGet();
-                                        active = new TrackContext(gen, trackId, title, artist, "", 0L);
-                                        mActiveTrack.set(active);
-                                    }
+                                    mCurrentMusic.set(music);
                                 }
-                            } catch (Throwable ignored) {
+                                if (!filePath.isEmpty()) {
+                                    processRawLyricFile(music, filePath, "RunnerInit");
+                                }
+                            } catch (Throwable t) {
+                                AndroidLog.logW(TAG, "Error in LyricsRunner4Flutter constructor hook: " + t.getMessage());
                             }
                         }
-                        if (active != null && mOrchestrator != null) {
-                            mOrchestrator.onHookDeterminedInvalid(active);
-                        }
-                        return;
-                    }
-
-                    if (!"SUCCESS".equalsIgnoreCase(statusName) || iLyrics == null || runnerThis == null) {
-                        return;
-                    }
-
-                    handleFullLyricCaptured(runnerThis, iLyrics);
+                    });
+                    AndroidLog.logI(TAG, "Hooked LyricsRunner4Flutter constructor successfully");
+                    break;
                 }
-            });
-
-            AndroidLog.logI(TAG, "Hooked Bodian lyric dispatch method: " + dispatchMethod.getName());
+            }
         } catch (Throwable t) {
-            AndroidLog.logE(TAG, "Failed to hook Bodian lyric dispatch", t);
+            AndroidLog.logE(TAG, "Failed to hook LyricsRunner4Flutter constructor", t);
         }
     }
 
     /**
-     * 处理捕获到的整首歌词与当前曲目信息。
+     * 通道 2：Hook {@code LyricsStream.f(byte[])} 原生报文字节流入口。
+     * <p>
+     * 宿主读取完歌词本地文件或网络流后，统一通过 {@code f(byte[] bArr)} 进行文本转换。
+     * 直接在此截取原始字节数组，规避一切文件未写毕与延迟读取竞争。
      */
-    private void handleFullLyricCaptured(@NonNull Object runner, @NonNull Object iLyrics) {
+    private void hookLyricsStreamByte() {
         try {
-            // 1. 从 LyricsRunner4Flutter 提取当前 Music 对象
-            Object music = extractMusicFromRunner(runner);
+            Method streamMethod = DexkitCache.findMember("bodian_lyrics_stream_f_v1", new IDexkit<MethodData>() {
+                @Nullable
+                @Override
+                public MethodData dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                    ClassDataList list = bridge.findClass(FindClass.create()
+                        .matcher(ClassMatcher.create()
+                            .usingEqStrings("LyricsStream")
+                        )
+                    );
+                    if (list == null || list.isEmpty()) return null;
+
+                    for (ClassData cd : list) {
+                        MethodDataList methods = bridge.findMethod(FindMethod.create()
+                            .matcher(MethodMatcher.create()
+                                .declaredClass(cd.getName())
+                                .paramTypes(byte[].class)
+                            )
+                        );
+                        if (methods != null && !methods.isEmpty()) {
+                            return methods.get(0);
+                        }
+                    }
+                    return null;
+                }
+            });
+
+            if (streamMethod == null) {
+                AndroidLog.logW(TAG, "DexKit failed to locate LyricsStream.f(byte[]) method");
+                return;
+            }
+
+            hook(streamMethod, new AbsHook() {
+                @Override
+                public void before() {
+                    try {
+                        byte[] bArr = (byte[]) getArg(0);
+                        if (bArr != null && bArr.length > 0) {
+                            String rawText = new String(bArr, StandardCharsets.UTF_8);
+                            processRawLyricText(mCurrentMusic.get(), rawText, "LyricsStream.f");
+                        }
+                    } catch (Throwable t) {
+                        AndroidLog.logW(TAG, "Error in LyricsStream.f hook: " + t.getMessage());
+                    }
+                }
+            });
+
+            AndroidLog.logI(TAG, "Hooked LyricsStream.f method successfully: " + streamMethod.getName());
+        } catch (Throwable t) {
+            AndroidLog.logE(TAG, "Failed to hook LyricsStream.f method", t);
+        }
+    }
+
+    /**
+     * 读取并自解析本地歌词原始文件。
+     */
+    private void processRawLyricFile(@Nullable Object music, @NonNull String filePath, @NonNull String source) {
+        if (filePath.isEmpty() || Objects.equals(mLastProcessedFilePath, filePath)) {
+            return;
+        }
+
+        try {
+            File f = new File(filePath);
+            if (!f.exists() || !f.isFile() || f.length() == 0) {
+                return;
+            }
+            mLastProcessedFilePath = filePath;
+            byte[] bytes = Files.readAllBytes(f.toPath());
+            String rawText = new String(bytes, StandardCharsets.UTF_8);
+            processRawLyricText(music, rawText, source + "->File");
+        } catch (Throwable t) {
+            AndroidLog.logW(TAG, "Failed to process raw lyric file (" + filePath + "): " + t.getMessage());
+        }
+    }
+
+    /**
+     * 核心：接收原生歌词报文，由 SuperLyric 原生解析器自解析与调度上报。
+     */
+    private void processRawLyricText(@Nullable Object music, @NonNull String rawText, @NonNull String source) {
+        if (rawText.trim().isEmpty()) {
+            return;
+        }
+
+        try {
+            // 1. 提取当前曲目元数据
             String title = "";
             String artist = "";
             String album = "";
             String rid = "";
-            long duration = 0;
+            long duration = 0L;
 
             if (music != null) {
                 title = safeString(callMethod(music, "getName"));
@@ -278,655 +290,77 @@ public class BodianProvider extends UnifiedLyricProvider {
                 if (durObj instanceof Number) {
                     duration = ((Number) durObj).longValue();
                 }
-                if (duration <= 0) {
-                    Object durAlt = callMethod(music, "getDur");
-                    if (durAlt instanceof Number) {
-                        duration = ((Number) durAlt).longValue();
-                    }
-                }
             }
 
-            // 生成新的音轨上下文
-            long gen = mTrackGeneration.incrementAndGet();
-            String trackId = !rid.isEmpty() ? rid : (title + "_" + artist);
+            TrackContext active = mActiveTrack.get();
+            if (active != null) {
+                if (title.isEmpty() && active.getTitle() != null) title = active.getTitle();
+                if (artist.isEmpty() && active.getArtist() != null) artist = active.getArtist();
+                if (album.isEmpty() && active.getAlbum() != null) album = active.getAlbum();
+                if (duration <= 0 && active.getDuration() > 0) duration = active.getDuration();
+            }
+
+            // 2. 根据报文特征自适应原生解析
+            SuperLyricData parsedData;
+            String trimmed = rawText.trim();
+            if (trimmed.startsWith("{") || trimmed.contains("\"sentences\"")) {
+                // 汽水/Luna 原生 JSON 报文
+                var lines = SodaJsonParser.parseJson(trimmed);
+                if (lines != null && lines.length > 0) {
+                    parsedData = new SuperLyricData();
+                    parsedData.setTitle(title);
+                    parsedData.setArtist(artist);
+                    parsedData.setAlbum(album);
+                    parsedData.setDuration(duration);
+                    parsedData.setAllLyrics(lines);
+                } else {
+                    parsedData = null;
+                }
+            } else {
+                // 酷我/波点 原生 LRCX / LRC 报文
+                parsedData = KuwoLrcxParser.parseLrcx(trimmed, title, artist, album, duration);
+            }
+
+            if (parsedData == null || !parsedData.hasAllLyrics()) {
+                AndroidLog.logW(TAG, "[" + source + "] Failed to parse raw lyric text, lines=0");
+                if (active != null && mOrchestrator != null) {
+                    mOrchestrator.onHookDeterminedInvalid(active);
+                }
+                return;
+            }
+
+            SuperLyricData cleanData = LyricSanitizer.sanitizeData(parsedData);
+            if (cleanData == null) {
+                return;
+            }
+
+            String trackId = !rid.isEmpty() ? rid : (active != null ? active.getTrackId() : (title + "_" + artist));
+            cleanData.setLyricId(trackId);
+
+            long gen;
+            if (active != null && Objects.equals(active.getTrackId(), trackId)) {
+                gen = active.getGeneration();
+            } else {
+                gen = mTrackGeneration.incrementAndGet();
+            }
+
             TrackContext context = new TrackContext(gen, trackId, title, artist, album, duration);
             mActiveTrack.set(context);
 
             if (mOrchestrator != null) {
                 mOrchestrator.onTrackChanged(context);
-            }
-
-            // 2. 从 ILyrics 提取原始行列表
-            List<?> rawLines = extractLinesFromILyrics(iLyrics);
-            if (rawLines == null || rawLines.isEmpty()) {
-                AndroidLog.logW(TAG, "Extracted raw lyric lines list is empty for: " + trackId);
-                if (mOrchestrator != null) {
-                    mOrchestrator.onHookDeterminedInvalid(context);
-                }
-                return;
-            }
-
-            // 3. 将宿主数据结构解析转换为标准 SuperLyricLine[]
-            SuperLyricLine[] lyricLines = convertRawLines(rawLines, duration);
-            if (lyricLines == null || lyricLines.length == 0) {
-                AndroidLog.logW(TAG, "Converted SuperLyricLine array is empty for: " + trackId);
-                if (mOrchestrator != null) {
-                    mOrchestrator.onHookDeterminedInvalid(context);
-                }
-                return;
-            }
-
-            // 4. 构建全量 SuperLyricData
-            SuperLyricData data = new SuperLyricData();
-            data.setTitle(title);
-            data.setArtist(artist);
-            data.setAlbum(album);
-            data.setDuration(duration);
-            data.setAllLyrics(lyricLines);
-            data.setLyricId(trackId);
-
-            boolean hasTrans = false;
-            boolean hasWords = false;
-            for (SuperLyricLine line : lyricLines) {
-                if (line.hasTranslation()) hasTrans = true;
-                if (line.getWords() != null && line.getWords().length > 0) hasWords = true;
-                if (hasTrans && hasWords) break;
-            }
-            AndroidLog.logI(TAG, "Successfully extracted Bodian full lyrics: trackId=" + trackId
-                + ", title=" + title
-                + ", artist=" + artist
-                + ", lines=" + lyricLines.length
-                + ", hasTrans=" + hasTrans
-                + ", hasWords=" + hasWords);
-
-            SuperLyricData cleanData = LyricSanitizer.sanitizeData(data);
-            if (cleanData == null) {
-                AndroidLog.logW(TAG, "Sanitized Bodian full lyric data is null for: " + trackId);
-                if (mOrchestrator != null) {
-                    mOrchestrator.onHookDeterminedInvalid(context);
-                }
-                return;
-            }
-
-            // 5. 移交协调器广播全量包并启动 Tracker
-            if (mOrchestrator != null) {
                 mOrchestrator.onHookFullLyricCaptured(context, cleanData);
             }
+
+            AndroidLog.logI(TAG, "[" + source + "] Successfully parsed raw lyric stream for: " + title + " - " + artist
+                + " (trackId=" + trackId + ", lines=" + cleanData.getAllLyrics().length + ")");
         } catch (Throwable t) {
-            AndroidLog.logE(TAG, "Error handling captured Bodian lyric", t);
+            AndroidLog.logE(TAG, "[" + source + "] Error processing raw lyric text", t);
         }
     }
 
-    /**
-     * 从 ILyrics 中找到返回 List 的获取所有行方法并调用。
-     */
-    @Nullable
-    private List<?> extractLinesFromILyrics(@NonNull Object iLyrics) {
-        // 遍历所有无参返回 List 的方法
-        for (Method method : iLyrics.getClass().getMethods()) {
-            if (method.getParameterCount() == 0 && List.class.isAssignableFrom(method.getReturnType())) {
-                try {
-                    method.setAccessible(true);
-                    Object result = method.invoke(iLyrics);
-                    if (result instanceof List<?> list && !list.isEmpty()) {
-                        // 确认元素不是 String (如果是 List<String> 则是纯文本列表，非行模型)
-                        Object first = list.get(0);
-                        if (!(first instanceof String)) {
-                            return list;
-                        }
-                    }
-                } catch (Throwable ignored) {
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 将宿主的原始行列表转换映射为 SuperLyricLine 数组。
-     */
-    @Nullable
-    private SuperLyricLine[] convertRawLines(@NonNull List<?> rawLines, long totalDuration) {
-        if (rawLines.isEmpty()) return null;
-
-        LineFieldResolver lineResolver = getOrResolveLineFields(rawLines.get(0));
-        if (lineResolver == null || !lineResolver.isValid()) {
-            AndroidLog.logE(TAG, "Failed to resolve required lyric line fields");
-            return null;
-        }
-
-        SubWordResolver subResolver = null;
-        if (lineResolver.subListField != null) {
-            subResolver = getOrResolveSubFields(rawLines, lineResolver);
-        }
-
-        List<ParsedLine> parsedList = new ArrayList<>();
-        ParsedLine pendingOriginal = null;
-
-        for (Object raw : rawLines) {
-            try {
-                Integer timestamp = (Integer) lineResolver.timestampField.get(raw);
-                String text = (String) lineResolver.textField.get(raw);
-                boolean isTranslation = false;
-                if (lineResolver.isTransField != null) {
-                    Object transObj = lineResolver.isTransField.get(raw);
-                    if (transObj instanceof Boolean) {
-                        isTranslation = (Boolean) transObj;
-                    }
-                }
-
-                if (text == null || timestamp == null) continue;
-
-                // 提取逐字子元素 (若为逐字歌词)
-                SuperLyricWord[] words = null;
-                if (subResolver != null && lineResolver.subListField != null) {
-                    Object subObj = lineResolver.subListField.get(raw);
-                    if (subObj instanceof List<?> subList && !subList.isEmpty()) {
-                        words = extractWords(subResolver, subList, text, timestamp);
-                    }
-                }
-
-                if (isTranslation) {
-                    // 波点音乐带翻译行交替排布且挂在对应原文后
-                    if (!text.trim().isEmpty() && pendingOriginal != null) {
-                        pendingOriginal.translation = text;
-                    }
-                } else {
-                    pendingOriginal = new ParsedLine(text, timestamp, words);
-                    parsedList.add(pendingOriginal);
-                }
-            } catch (Throwable t) {
-                AndroidLog.logW(TAG, "Error parsing single raw line: " + t.getMessage());
-            }
-        }
-
-        if (parsedList.isEmpty()) return null;
-
-        // 计算每行起始与结束时间并经过全局安全清洗
-        SuperLyricLine[] result = new SuperLyricLine[parsedList.size()];
-        for (int i = 0; i < parsedList.size(); i++) {
-            ParsedLine cur = parsedList.get(i);
-            long endMs;
-            if (i + 1 < parsedList.size()) {
-                endMs = parsedList.get(i + 1).startMs;
-            } else if (totalDuration > 0) {
-                endMs = totalDuration;
-            } else {
-                endMs = cur.startMs + 5000;
-            }
-
-            SuperLyricLine rawLine = new SuperLyricLine(
-                cur.text,
-                cur.words,
-                cur.translation,
-                cur.startMs,
-                endMs
-            );
-            result[i] = LyricSanitizer.sanitizeLine(rawLine);
-        }
-
-        return result;
-    }
-
-    /**
-     * 提取全曲最佳样本行解析逐字词元字段并全局类级缓存。
-     */
-    @Nullable
-    private SubWordResolver getOrResolveSubFields(@NonNull List<?> rawLines, @NonNull LineFieldResolver lineResolver) {
-        for (Object raw : rawLines) {
-            try {
-                Object subObj = lineResolver.subListField.get(raw);
-                if (subObj instanceof List<?> subList && !subList.isEmpty()) {
-                    Object firstElem = subList.get(0);
-                    if (firstElem != null) {
-                        SubWordResolver cached = sSubWordResolvers.get(firstElem.getClass());
-                        if (cached != null && cached.isValid()) {
-                            return cached;
-                        }
-                    }
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-
-        SampleLine preferredSample = null;
-        SampleLine fallbackSample = null;
-
-        for (Object raw : rawLines) {
-            try {
-                String text = (String) lineResolver.textField.get(raw);
-                if (text == null || text.trim().isEmpty()) continue;
-
-                Object subObj = lineResolver.subListField.get(raw);
-                if (subObj instanceof List<?> subList && !subList.isEmpty()) {
-                    SampleLine sl = new SampleLine(subList, text);
-                    if (subList.size() >= 2 && subList.size() < text.length()) {
-                        preferredSample = sl;
-                        break;
-                    }
-                    if (fallbackSample == null && subList.size() >= 2) {
-                        fallbackSample = sl;
-                    }
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-
-        SubWordResolver resolved = null;
-        if (preferredSample != null) {
-            resolved = resolveSubFields(preferredSample.subList, preferredSample.text);
-        } else if (fallbackSample != null) {
-            resolved = resolveSubFields(fallbackSample.subList, fallbackSample.text);
-        }
-
-        if (resolved != null && resolved.isValid()) {
-            Object sampleObj = (preferredSample != null ? preferredSample.subList : fallbackSample.subList).get(0);
-            sSubWordResolvers.put(sampleObj.getClass(), resolved);
-            AndroidLog.logI(TAG, "Cached SubWordResolver for " + sampleObj.getClass().getName());
-        }
-
-        return resolved;
-    }
-
-    /**
-     * 提取逐字数据并映射为 {@link SuperLyricWord} 数组，同时施加时序自愈修复。
-     */
-    @Nullable
-    private SuperLyricWord[] extractWords(@NonNull SubWordResolver resolver,
-                                          @NonNull List<?> subList,
-                                          @NonNull String lineText,
-                                          long lineStartMs) {
-        if (subList.isEmpty() || lineText.isEmpty() || !resolver.isValid()) return null;
-
-        List<SuperLyricWord> rawWords = new ArrayList<>(subList.size());
-        int prevEnd = 0;
-        int textLen = lineText.length();
-        StringBuilder reconstructed = new StringBuilder();
-
-        for (Object eh : subList) {
-            if (eh == null) continue;
-            try {
-                int cEnd = resolver.charEndField.getInt(eh);
-                int cStart = resolver.charStartField != null ? resolver.charStartField.getInt(eh) : prevEnd;
-
-                // 容错 1：0 长度停顿/标记跳过
-                if (cEnd <= cStart) {
-                    continue;
-                }
-
-                // 容错 2：越界截断
-                if (cStart >= textLen) {
-                    continue;
-                }
-                cEnd = Math.min(cEnd, textLen);
-
-                // 容错 3：重叠修正
-                if (cStart < prevEnd) {
-                    cStart = prevEnd;
-                }
-                if (cEnd <= cStart) {
-                    continue;
-                }
-
-                // 容错 4：平滑包含空格等间隙，实现严密连续切分
-                int sliceStart = prevEnd;
-                int sliceEnd = cEnd;
-                String wordText = lineText.substring(sliceStart, sliceEnd);
-                prevEnd = sliceEnd;
-                reconstructed.append(wordText);
-
-                int startOffsetMs = resolver.startTimeField.getInt(eh);
-                int endOffsetMs = resolver.endTimeField.getInt(eh);
-
-                long absStart;
-                long absEnd;
-                if (startOffsetMs >= lineStartMs) {
-                    absStart = startOffsetMs;
-                    absEnd = endOffsetMs;
-                } else {
-                    absStart = lineStartMs + startOffsetMs;
-                    absEnd = lineStartMs + endOffsetMs;
-                }
-
-                rawWords.add(new SuperLyricWord(wordText, absStart, absEnd));
-            } catch (Throwable t) {
-                AndroidLog.logW(TAG, "Error extracting sub word: " + t.getMessage());
-                return null;
-            }
-        }
-
-        if (rawWords.isEmpty()) return null;
-
-        // 字符切片语义一致性校验
-        if (prevEnd != lineText.length() || !reconstructed.toString().equals(lineText)) {
-            // 允许去除空格后一致（兼容不切空格的逐字约定）
-            String recNoSpace = reconstructed.toString().replaceAll("\\s+", "");
-            String lineNoSpace = lineText.replaceAll("\\s+", "");
-            if (!recNoSpace.equals(lineNoSpace)) {
-                AndroidLog.logW(TAG, "extractWords: reconstructed words mismatch with line text: '"
-                    + reconstructed + "' vs '" + lineText + "', dropping words");
-                return null;
-            }
-        }
-
-        // 核心时序自愈算法：修复波点音乐源码中由重叠截断导致的 0ms 持续时间与异常时长
-        healWordTimings(rawWords, lineStartMs);
-
-        return rawWords.toArray(new SuperLyricWord[0]);
-    }
-
-    /**
-     * 波点音乐逐字时序自愈算法。
-     * <p>
-     * <b>逆向根因与自愈原理：</b>
-     * 波点宿主内部 {@code VerbatimLyricsParserImpl.e()} 在处理相邻词元重叠（{@code i3 < hVar2.e}）时，
-     * 存在致命代码：{@code hVar2.e = i3; if (hVar2.d < i3) hVar2.d = i3;}。
-     * 这导致前一词元的起始时间与结束时间双双被覆写为后一词元的起始 {@code i3}，使持续时间瞬间坍缩为 0ms！
-     * <p>
-     * 本自愈器通过全句拓扑时隙链重构：
-     * 1. 当发现词元持续时间 {@code absEnd <= absStart}（0ms 坍缩）时，提取其前驱词元的实际结束点 {@code prevEnd}
-     * 与后继词元的起始点 {@code nextStart}，完整恢复被波点代码抹平的真实演唱时长；
-     * 2. 约束单词最大时长，消除因字段读取异常导致的超大异常间隔；
-     * 3. 严格保障整句所有词元 {@code absEnd > absStart}，杜绝 0ms 词元流入下游。
-     */
-    private static void healWordTimings(@NonNull List<SuperLyricWord> words, long lineStartMs) {
-        int size = words.size();
-        for (int i = 0; i < size; i++) {
-            SuperLyricWord cur = words.get(i);
-            long start = cur.getStartTime();
-            long end = cur.getEndTime();
-
-            if (end <= start) {
-                long healedStart = start;
-                long healedEnd = end;
-
-                long prevEnd = (i > 0) ? words.get(i - 1).getEndTime() : lineStartMs;
-                long nextStart = -1L;
-                for (int j = i + 1; j < size; j++) {
-                    SuperLyricWord nw = words.get(j);
-                    if (nw.getEndTime() > nw.getStartTime()) {
-                        nextStart = nw.getStartTime();
-                        break;
-                    }
-                }
-
-                if (prevEnd < end) {
-                    // 场景 1（波点经典坍缩）：start 被前向推移至 end (i3)，真实起始正是前一词的结束 prevEnd！
-                    healedStart = prevEnd;
-                    healedEnd = end;
-                } else if (nextStart > start) {
-                    // 场景 2：end 缺失或被压平，后继词起始于 nextStart
-                    healedStart = start;
-                    healedEnd = nextStart;
-                } else if (nextStart > prevEnd) {
-                    // 场景 3：start 与 end 均被压制，平分 prevEnd 到 nextStart
-                    healedStart = prevEnd;
-                    healedEnd = nextStart;
-                } else {
-                    // 场景 4：按字符长度给予自然音节权重保底 (每字 150ms，最小 120ms)
-                    int len = Math.max(1, cur.getWord().length());
-                    healedStart = start;
-                    healedEnd = start + Math.max(120L, 150L * len);
-                }
-
-                if (healedEnd <= healedStart) {
-                    healedEnd = healedStart + 150L;
-                }
-
-                words.set(i, new SuperLyricWord(cur.getWord(), healedStart, healedEnd));
-            }
-        }
-    }
-
-    /**
-     * 基于强类型和反射自适应发现行对象的混淆字段（无排位索引硬编码，全局类级缓存）。
-     */
-    @Nullable
-    private LineFieldResolver getOrResolveLineFields(@NonNull Object lineObj) {
-        Class<?> clazz = lineObj.getClass();
-        LineFieldResolver cached = sLineResolvers.get(clazz);
-        if (cached != null && cached.isValid()) {
-            return cached;
-        }
-
-        Field timestampField = null;
-        Field textField = null;
-        Field isTransField = null;
-        Field subListField = null;
-
-        Class<?> current = clazz;
-        while (current != null && current != Object.class) {
-            for (Field f : current.getDeclaredFields()) {
-                f.setAccessible(true);
-                Class<?> type = f.getType();
-                if (type == Integer.class && timestampField == null) {
-                    timestampField = f;
-                } else if (type == String.class && textField == null) {
-                    textField = f;
-                } else if (type == boolean.class && isTransField == null) {
-                    isTransField = f;
-                } else if (List.class.isAssignableFrom(type) && subListField == null) {
-                    subListField = f;
-                }
-            }
-            current = current.getSuperclass();
-        }
-
-        if (timestampField != null && textField != null) {
-            LineFieldResolver resolver = new LineFieldResolver(timestampField, textField, isTransField, subListField);
-            sLineResolvers.put(clazz, resolver);
-            AndroidLog.logI(TAG, "Cached LineFieldResolver for " + clazz.getName());
-            return resolver;
-        }
-        return null;
-    }
-
-    /**
-     * 自适应解析逐字元素 ({@code com.tme.push.y2.e$h}) 的反射字段映射。
-     * <p>
-     * <b>严格数学拓扑与边界判定（零混淆名称硬编码）：</b>
-     * <ul>
-     *   <li><b>charEnd:</b> 满足首词大于 0、严格单调递增且末词恰好等于行文本长度的字段；</li>
-     *   <li><b>charStart:</b> 首词为 0、且后续词严格等于前一词 charEnd 的字段；</li>
-     *   <li><b>wordIndex:</b> 恒为 0, 1, 2... 的索引字段；</li>
-     *   <li><b>startMs / endMs:</b> 排除上述字段后严格仅剩的 2 个时间戳毫秒偏移字段，按单调性甄别起止。</li>
-     * </ul>
-     */
-    @Nullable
-    private SubWordResolver resolveSubFields(@NonNull List<?> subList, @NonNull String sampleText) {
-        if (subList.isEmpty() || sampleText.isEmpty()) return null;
-        Object subObj = subList.get(0);
-        Class<?> clazz = subObj.getClass();
-
-        List<Field> intFields = new ArrayList<>();
-        for (Field f : clazz.getDeclaredFields()) {
-            if (f.getType() == int.class) {
-                f.setAccessible(true);
-                intFields.add(f);
-            }
-        }
-
-        if (intFields.size() != 5) return null;
-
-        Field candidateCharEnd = null;
-        Field candidateCharStart = null;
-        Field candidateWordIndex = null;
-        Field candidateStartMs = null;
-        Field candidateEndMs = null;
-
-        int textLen = sampleText.length();
-        int subCount = subList.size();
-
-        // 1. 利用行边界与单调不变量唯一锁定 charEnd
-        for (Field f : intFields) {
-            try {
-                int firstEnd = f.getInt(subList.get(0));
-                int lastEnd = f.getInt(subList.get(subCount - 1));
-                if (firstEnd <= 0 || lastEnd != textLen) {
-                    continue;
-                }
-                boolean strictlyIncreasing = true;
-                int prev = firstEnd;
-                for (int k = 1; k < subCount; k++) {
-                    int cur = f.getInt(subList.get(k));
-                    if (cur <= prev || cur > textLen) {
-                        strictlyIncreasing = false;
-                        break;
-                    }
-                    prev = cur;
-                }
-                if (strictlyIncreasing) {
-                    candidateCharEnd = f;
-                    break;
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-
-        if (candidateCharEnd == null) {
-            return null;
-        }
-
-        // 2. 在锁定 charEnd 的基础上甄别 charStart
-        for (Field f : intFields) {
-            if (f == candidateCharEnd) continue;
-            try {
-                int firstStart = f.getInt(subList.get(0));
-                if (firstStart != 0) continue;
-
-                boolean matchesCharEnd = true;
-                for (int k = 1; k < subCount; k++) {
-                    int curStart = f.getInt(subList.get(k));
-                    int prevEnd = candidateCharEnd.getInt(subList.get(k - 1));
-                    if (curStart != prevEnd) {
-                        matchesCharEnd = false;
-                        break;
-                    }
-                }
-                if (matchesCharEnd) {
-                    candidateCharStart = f;
-                    break;
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-
-        // 3. 甄别 wordIndex：排除 charEnd 与 charStart 后，找出恒为 0, 1, 2... 的索引字段
-        for (Field f : intFields) {
-            if (f == candidateCharEnd || f == candidateCharStart) continue;
-            boolean isWordIdx = true;
-            for (int k = 0; k < Math.min(subCount, 10); k++) {
-                try {
-                    if (f.getInt(subList.get(k)) != k) {
-                        isWordIdx = false;
-                        break;
-                    }
-                } catch (Throwable ignored) {
-                    isWordIdx = false;
-                    break;
-                }
-            }
-            if (isWordIdx) {
-                candidateWordIndex = f;
-                break;
-            }
-        }
-
-        // 4. 甄别 startMs 与 endMs：必须严格从排除 charEnd, charStart, wordIndex 后的剩余字段中筛选
-        List<Field> timeCandidates = new ArrayList<>();
-        for (Field f : intFields) {
-            if (f != candidateCharEnd && f != candidateCharStart && f != candidateWordIndex) {
-                timeCandidates.add(f);
-            }
-        }
-
-        if (timeCandidates.size() == 2) {
-            try {
-                Field t0 = timeCandidates.get(0);
-                Field t1 = timeCandidates.get(1);
-
-                int t0LeCount = 0;
-                int t1LeCount = 0;
-                for (int k = 0; k < subCount; k++) {
-                    Object elem = subList.get(k);
-                    int v0 = t0.getInt(elem);
-                    int v1 = t1.getInt(elem);
-                    if (v0 <= v1) t0LeCount++;
-                    if (v1 <= v0) t1LeCount++;
-                }
-
-                Object lastElem = subList.get(subCount - 1);
-                int last0 = t0.getInt(lastElem);
-                int last1 = t1.getInt(lastElem);
-
-                if (last0 < last1 || t0LeCount >= t1LeCount) {
-                    candidateStartMs = t0;
-                    candidateEndMs = t1;
-                } else {
-                    candidateStartMs = t1;
-                    candidateEndMs = t0;
-                }
-            } catch (Throwable ignored) {
-            }
-        }
-
-        if (candidateCharEnd != null && candidateStartMs != null && candidateEndMs != null) {
-            AndroidLog.logI(TAG, "Resolved sub-word fields successfully: charEnd=" + candidateCharEnd.getName()
-                + ", charStart=" + (candidateCharStart != null ? candidateCharStart.getName() : "continuous")
-                + ", startMs=" + candidateStartMs.getName()
-                + ", endMs=" + candidateEndMs.getName());
-            return new SubWordResolver(candidateCharStart, candidateCharEnd, candidateStartMs, candidateEndMs);
-        }
-
-        return null;
-    }
-
-    /**
-     * 从 LyricsRunner4Flutter 查找并获取 Music 实例。
-     */
-    @Nullable
-    private Object extractMusicFromRunner(@NonNull Object runner) {
-        Class<?> cur = runner.getClass();
-        while (cur != null && cur != Object.class) {
-            for (Field f : cur.getDeclaredFields()) {
-                f.setAccessible(true);
-                try {
-                    Object val = f.get(runner);
-                    if (val != null && val.getClass().getName().contains("Music")) {
-                        return val;
-                    }
-                } catch (Exception ignored) {
-                }
-            }
-            cur = cur.getSuperclass();
-        }
-        return null;
-    }
-
+    @NonNull
     private static String safeString(@Nullable Object obj) {
-        return obj == null ? "" : Objects.toString(obj);
-    }
-
-    private static class ParsedLine {
-        final String text;
-        final long startMs;
-        final SuperLyricWord[] words;
-        String translation;
-
-        ParsedLine(String text, long startMs, SuperLyricWord[] words) {
-            this.text = text;
-            this.startMs = startMs;
-            this.words = words;
-        }
-    }
-
-    private static class SampleLine {
-        final List<?> subList;
-        final String text;
-
-        SampleLine(@NonNull List<?> subList, @NonNull String text) {
-            this.subList = subList;
-            this.text = text;
-        }
+        return obj instanceof String ? ((String) obj).trim() : "";
     }
 }
