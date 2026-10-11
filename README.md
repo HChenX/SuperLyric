@@ -27,7 +27,8 @@
 
 - Apple Music (com.apple.android.music) -> Hook 获取
 - 波点音乐 (cn.wenyu.bodian) -> Hook 获取
-- 酷狗音乐 (com.kugou.android) -> Hook 获取
+- 酷狗音乐 (com.kugou.android) -> 网络获取
+- 酷狗概念版 (com.kugou.android.lite) -> 网络获取
 - 网易云音乐 (com.netease.cloudmusic) -> 网络获取
 - QQ 音乐 (com.tencent.qqmusic) -> Hook 获取
 - 椒盐音乐 (com.salt.music) -> Hook 获取
@@ -43,7 +44,6 @@
 - 荣耀音乐 (com.hihonor.cloudmusic) -> 魅族状态栏歌词 / 网络获取
 - 华为音乐 (com.huawei.music) -> 蓝牙歌词
 - Kde (org.kde.kdeconnect_tp) -> 蓝牙歌词
-- 酷狗音乐概念版 (com.kugou.android.lite) -> Hook 获取
 - 酷我音乐 (cn.kuwo.player) -> 蓝牙歌词
 - LMusic (com.lalilu.lmusic) -> 魅族状态栏歌词
 - LX Music (cn.toside.music.mobile) -> 桌面歌词

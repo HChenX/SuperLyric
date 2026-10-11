@@ -43,7 +43,7 @@ public final class SupportApps {
             // add("com.huawei.music"); // 华为音乐
             // add("org.kde.kdeconnect_tp"); // Kde
             add("com.kugou.android"); // 酷狗音乐
-            // add("com.kugou.android.lite"); // 酷狗概念版
+            add("com.kugou.android.lite"); // 酷狗概念版
             // add("cn.kuwo.player"); // 酷我音乐
             // add("com.lalilu.lmusic"); // LMusic
             // add("cn.toside.music.mobile"); // LX Music
@@ -80,7 +80,7 @@ public final class SupportApps {
             // put("com.huawei.music", R.string.huawei_music);
             // put("org.kde.kdeconnect_tp", R.string.kde_music);
             put("com.kugou.android", R.string.kugou_music);
-            // put("com.kugou.android.lite", R.string.kugou_lite_music);
+            put("com.kugou.android.lite", R.string.kugou_lite_music);
             // put("cn.kuwo.player", R.string.kuwo_music);
             // put("com.lalilu.lmusic", R.string.lmusic_music);
             // put("cn.toside.music.mobile", R.string.luoxue_music);

@@ -30,7 +30,8 @@
 
 - Apple Music (com.apple.android.music) -> Hook Acquisition
 - BoDian Music (cn.wenyu.bodian) -> Hook Acquisition
-- Kugou Music (com.kugou.android) -> Hook Acquisition
+- Kugou Music (com.kugou.android) -> Network
+- Kugou Music Lite (com.kugou.android.lite) -> Network
 - NetEase Cloud Music (com.netease.cloudmusic) -> Network
 - QQ Music (com.tencent.qqmusic) -> Hook Acquisition
 - Salt Music (com.salt.music) -> Hook Acquisition
@@ -46,7 +47,6 @@
 - Honor Music (com.hihonor.cloudmusic) -> Meizu Status Bar Lyrics / Network
 - Huawei Music (com.huawei.music) -> Bluetooth Lyrics
 - Kde (org.kde.kdeconnect_tp) -> Bluetooth Lyrics
-- Kugou Music Lite (com.kugou.android.lite) -> Hook Acquisition
 - Kuwo Music (cn.kuwo.player) -> Bluetooth Lyrics
 - LMusic (com.lalilu.lmusic) -> Meizu Status Bar Lyrics
 - LX Music (cn.toside.music.mobile) -> Desktop Lyrics
