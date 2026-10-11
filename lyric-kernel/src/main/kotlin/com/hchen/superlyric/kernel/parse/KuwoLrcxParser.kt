@@ -92,6 +92,10 @@ object KuwoLrcxParser {
         val taggedLines = ArrayList<LyricLine>()
         val untaggedLines = ArrayList<LyricLine>()
 
+        // 被识别成"行"、却没能产出任何文本的时间戳。必须记下来：译文的配对要靠主行的时间戳，
+        // 一条主行被丢弃而时间戳没留下痕迹，它的译文就会在下面被误判成独立主行
+        val discardedStarts = HashSet<Long>()
+
         for (raw in text.lineSequence()) {
             val trimmed = raw.trim()
             if (trimmed.isEmpty()) continue
@@ -113,10 +117,16 @@ object KuwoLrcxParser {
                 lineMatch.groupValues[3],
             )
             val content = trimmed.substring(lineMatch.range.last + 1)
-            if (content.isBlank()) continue
+            if (content.isBlank()) {
+                discardedStarts.add(lineStart)
+                continue
+            }
 
             val line = parseLine(content, lineStart, c, d)
-            if (line == null) continue
+            if (line == null) {
+                discardedStarts.add(lineStart)
+                continue
+            }
 
             // 判据必须看**原始标签值**，不能看 line.words：`<0,0>` 这类全零标签产出的
             // 是零时长词，而 parseLine 会给零时长词兜一个 fallback 时长，
@@ -135,10 +145,16 @@ object KuwoLrcxParser {
         val translationEntries = ArrayList<TimeText>()
         val mainLineStarts = taggedLines.mapTo(HashSet()) { it.startMs }
         for (untagged in untaggedLines) {
-            if (untagged.startMs in mainLineStarts) {
-                translationEntries += TimeText(untagged.startMs, untagged.text)
-            } else {
-                taggedLines.add(untagged)
+            when {
+                untagged.startMs in mainLineStarts ->
+                    translationEntries += TimeText(untagged.startMs, untagged.text)
+
+                // 同一时间戳上还有一条内容为空、被丢弃的主行：这条无标签行就是它的译文，
+                // 只是主行没内容可挂。提升为主行会把这句译文当歌词下发出去 ——
+                // 真机实测（波点）末行正是如此：译文成了整首歌的最后一句"歌词"
+                untagged.startMs in discardedStarts -> Unit
+
+                else -> taggedLines.add(untagged)
             }
         }
 

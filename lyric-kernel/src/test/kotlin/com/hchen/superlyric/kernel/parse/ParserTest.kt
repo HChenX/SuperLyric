@@ -236,6 +236,25 @@ class ParserTest {
     }
 
     @Test
+    fun `a translation whose main line is empty is discarded instead of promoted`() {
+        // 真机报文（波点《Dream It Possible》）的末尾形状：译文行之后的主行**只有时间戳、
+        // 内容为空**，被解析器丢弃。丢弃时若不留下时间戳痕迹，这条译文就找不到主行，
+        // 会被当成"无逐字数据的独立主行"提升 —— 实测整首歌的最后一行变成了一句译文
+        val text = "$lrcxHeader\n" +
+            "[00:01.00]<0,0>梦想成真\n" +
+            "[00:01.00]<1000,500>And we'll dream it possible\n" +
+            "[00:05.00]<0,0>我们期盼梦想成真\n" +
+            "[00:05.00]"
+
+        val doc = KuwoLrcxParser.parse(text)
+
+        assertNotNull(doc)
+        assertEquals(1, doc!!.lines.size, "失去主行的译文不得成为独立主行")
+        assertEquals("And we'll dream it possible", doc.lines[0].text)
+        assertEquals("梦想成真", doc.lines[0].translation)
+    }
+
+    @Test
     fun `text without a kuwo header is not treated as lrcx`() {
         assertFalse(KuwoLrcxParser.canParse("[00:01.00]<1000,500>Hello"))
         assertNull(KuwoLrcxParser.parse("[00:01.00]<1000,500>Hello"))
