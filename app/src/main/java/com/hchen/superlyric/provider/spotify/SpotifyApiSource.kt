@@ -25,10 +25,9 @@ import com.hchen.superlyric.kernel.model.LyricLine
 import com.hchen.superlyric.kernel.model.LyricWord
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
+import com.hchen.superlyric.provider.base.FetchSlot
 import com.hchen.superlyric.utils.LyricCacheStore
 import com.hchen.superlyric.utils.LyricDiag
-
-import java.util.concurrent.Executors
 
 /**
  * Spotify 官方接口取词来源
@@ -51,31 +50,26 @@ class SpotifyApiSource : LyricSource {
 
     override val sourceName: String = "SpotifyApi"
 
-    private val executor = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "SuperLyric-SpotifyApi").apply { isDaemon = true }
-    }
-
-    @Volatile
-    private var cancelled = false
+    private val requests = FetchSlot()
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
-        cancelled = false
-        executor.execute {
-            val outcome = runCatching { resolve(identity) }
+        val token = requests.open()
+        requests.execute {
+            val outcome = runCatching { resolve(identity, token) }
                 .getOrElse { error ->
                     AndroidLog.logW(sourceName, "Fetch failed: ${error.message}")
                     LyricOutcome.TransientFailure(error)
                 }
-            if (!cancelled) session.deliver(outcome)
+            if (requests.isCurrent(token)) session.deliver(outcome)
         }
     }
 
     override fun cancel() {
-        cancelled = true
+        requests.invalidate()
         SpotifyLyricAnalysis.cancelExcept(null)
     }
 
-    private fun resolve(identity: TrackIdentity): LyricOutcome {
+    private fun resolve(identity: TrackIdentity, token: Long): LyricOutcome {
         val trackId = TrackIdentity.normalizeStableId(identity.stableId)
             ?: return LyricOutcome.Unsupported("spotify: no track id")
 
@@ -84,7 +78,11 @@ class SpotifyApiSource : LyricSource {
 
         var lastError: Throwable? = null
         repeat(MAX_ATTEMPTS) { attempt ->
-            if (cancelled) return@repeat
+            if (!requests.isCurrent(token)) {
+                // 已切歌或被取消：再重试多少次也没人收。原来是 `return@repeat`，
+                // 那只是跳过本轮、循环照转，白占着线程睡满整个退避窗口
+                return LyricOutcome.TransientFailure(null)
+            }
 
             val headers = SpotifyLyricAnalysis.currentHeaders()
             if (headers == null) {
@@ -96,7 +94,9 @@ class SpotifyApiSource : LyricSource {
                 val data = SpotifyLyricAnalysis.fetchLyric(trackId, headers)
                 val lines = SpotifyLyricAnalysis.parseLyrics(data).orEmpty()
                 if (lines.isEmpty()) {
-                    return LyricOutcome.NoLyrics("spotify: empty lyric")
+                    // 真正的"无歌词"已由 404 → LyricNotFoundException 处理掉了。
+                    // 这里是拿到了响应体却读不出行——属"这次查不成"，绝不能当确定无歌词
+                    return LyricOutcome.TransientFailure(null)
                 }
                 SpotifyLyricAnalysis.invalidate(headers)
                 // 只缓存**已成功解析**的 protobuf 原始响应；命中后连会话头都不再需要，

@@ -94,6 +94,8 @@ public final class SpotifyLyricAnalysis {
     private static final Map<String, Call> activeCalls = new ConcurrentHashMap<>();
 
     private static final OkHttpClient client = new OkHttpClient.Builder()
+        // 比 QQ / 酷狗 / 网易云的 4/6/12 宽松是**有意**的：这一家取回后还要跑一遍
+        // protobuf 分析，服务端也更慢。要"统一"之前先确认它不需要这个余量
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .callTimeout(30, TimeUnit.SECONDS)

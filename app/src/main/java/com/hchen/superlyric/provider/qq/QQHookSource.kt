@@ -22,9 +22,8 @@ import com.hchen.hooktool.log.AndroidLog
 import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
+import com.hchen.superlyric.provider.base.FetchSlot
 import com.hchen.superlyric.provider.base.HookLyricSource
-
-import java.util.concurrent.Executors
 
 /**
  * QQ 音乐 Hook 取词来源：从宿主取回官方 songMID，再自行拉取原生 QRC
@@ -42,9 +41,11 @@ class QQHookSource : HookLyricSource {
 
     override val sourceName: String = "QQHook"
 
-    private val executor = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "SuperLyric-QQHook").apply { isDaemon = true }
-    }
+    /** 取词执行槽位：见 [FetchSlot]——单线程会让新歌排在上一首在途请求后面 */
+    private val fetches = FetchSlot()
+
+    /** [deliveredMid] / [inFlightMid] 的锁：见 [claimFetch] */
+    private val dedupLock = Any()
 
     @Volatile
     private var session: LyricSource.Session? = null
@@ -90,8 +91,7 @@ class QQHookSource : HookLyricSource {
         // 清空不会误伤本次取词，只会丢掉已经死掉的旧代际的登记。反之不清则致命：
         // 切走再切回同一首曲目时，本方法会直接命中 deliveredMid，一个请求都不发，
         // 编排器空等 Hook 超时后转检索，检索不成便是纯音乐占位
-        deliveredMid = null
-        inFlightMid = null
+        clearDedupState()
 
         val mid = QQIdentity.midOf(identity)
         if (mid != null) {
@@ -106,8 +106,7 @@ class QQHookSource : HookLyricSource {
         session = null
         pendingIdentity = null
         // 播放停止后重新播放同一首歌必须能再次取词，因此这里要清空去重状态
-        deliveredMid = null
-        inFlightMid = null
+        clearDedupState()
     }
 
     private fun onSongInfoCaptured(songMid: String, songId: Long, title: String, artist: String) {
@@ -115,13 +114,34 @@ class QQHookSource : HookLyricSource {
 
         // 仅判断"当前有没有人在等结果"；真正投给谁由 fetchAsync 在投递时决定
         if (session == null) return
+        if (songMid.isEmpty()) return
         val base = pendingIdentity ?: return
 
-        // 宿主上报的元数据比 MediaSession 更可靠，缺失时用它补齐
+        val baseMid = QQIdentity.midOf(base)
+
+        // 锚点常**先于**新曲目的元数据到达（实测早约 8~30ms）。此刻它说的是下一首，
+        // 而编排器还没切歌：照取不误的话，这轮请求会带着上一首的曲名、歌手与时长出门
+        // （实测：一首曲目被发布成了上一首的歌名），而且它属于旧代际，结果只会被丢弃。
+        // 留给随后的 start() 取词——那时编排器手里才是权威身份
+        //
+        // 这一次不会白丢：[capturedMid] 已在上面更新，因此下一次 buildIdentity 就会带上
+        // 这个 mid，编排器随即判定切歌并调用 start()，由它按权威身份取词。
+        // 若日志里这行之后**没有**紧跟着本来源的取词记录，说明切歌没被判定出来——
+        // 那是身份抖动（宿主上报的标识乱变），不是本处的取舍问题
+        if (baseMid != null && baseMid != songMid) {
+            AndroidLog.logD(
+                sourceName,
+                "Anchor for $songMid predates the track change (current $baseMid); " +
+                    "capturedMid updated, deferring the fetch to start()",
+            )
+            return
+        }
+
+        // 曲名与歌手以**锚点**为准：它们与 songMid 同属一次上报，而 base 可能仍是上一首
         val identity = base.copy(
             stableId = TrackIdentity.stableId(NAMESPACE, songMid),
-            title = base.title.ifBlank { title },
-            artist = base.artist.ifBlank { artist },
+            title = title.ifBlank { base.title },
+            artist = artist.ifBlank { base.artist },
         )
         pendingIdentity = identity
 
@@ -140,12 +160,11 @@ class QQHookSource : HookLyricSource {
      * 本次进程里就再也走不到 Hook 路径了
      */
     private fun fetchAsync(mid: String, songId: Long, identity: TrackIdentity) {
-        if (mid == deliveredMid || mid == inFlightMid) return
-        inFlightMid = mid
+        if (!claimFetch(mid)) return
 
-        executor.execute {
+        fetches.execute {
             val outcome = QQNetwork.fetchByMid(mid, songId, identity)
-            if (inFlightMid == mid) inFlightMid = null
+            releaseInFlight(mid)
 
             val target = session
             val current = pendingIdentity
@@ -154,9 +173,34 @@ class QQHookSource : HookLyricSource {
                 return@execute
             }
 
-            if (outcome is LyricOutcome.Success) deliveredMid = mid
+            if (outcome is LyricOutcome.Success) markDelivered(mid)
             target.deliver(outcome)
         }
+    }
+
+    /**
+     * 认领一次取词
+     *
+     * 去重的"查—改"必须互斥：[start] 跑在编排器线程、锚点回调跑在宿主线程、投递跑在取词池
+     * 的线程上，三者并发时两次检查可以同时通过，同一首歌会发两次网络请求
+     */
+    private fun claimFetch(mid: String): Boolean = synchronized(dedupLock) {
+        if (mid == deliveredMid || mid == inFlightMid) return@synchronized false
+        inFlightMid = mid
+        true
+    }
+
+    private fun releaseInFlight(mid: String): Unit = synchronized(dedupLock) {
+        if (inFlightMid == mid) inFlightMid = null
+    }
+
+    private fun markDelivered(mid: String): Unit = synchronized(dedupLock) {
+        deliveredMid = mid
+    }
+
+    private fun clearDedupState(): Unit = synchronized(dedupLock) {
+        deliveredMid = null
+        inFlightMid = null
     }
 
     private companion object {

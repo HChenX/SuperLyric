@@ -27,6 +27,7 @@ import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
+import com.hchen.superlyric.provider.base.readTextBounded
 import com.hchen.superlyric.utils.LyricCacheStore
 import com.hchen.superlyric.utils.LyricDiag
 
@@ -69,12 +70,20 @@ internal object QQNetwork {
 
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
-    /** 检索候选低于此分不采纳。 */
-    private const val MIN_ACCEPT_SCORE = 85.0
-
+    /**
+     * 取词的整体时限预算
+     *
+     * connect/read 都只约束**单次操作**：read 超时在每次读到数据后都会重置，
+     * 一个"永远挤一点数据"的服务端能把请求拖到无限久。callTimeout 给整次调用封顶——
+     * 取词跑在来源自己的线程上，拖住它就是拖住后面的每一次切歌
+     *
+     * 与 Spotify 的 15/15/30 不同是**有意**的：那家要跑 protobuf 分析且服务端更慢，
+     * 这里的三家只取 JSON
+     */
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(4, TimeUnit.SECONDS)
         .readTimeout(6, TimeUnit.SECONDS)
+        .callTimeout(12, TimeUnit.SECONDS)
         .build()
 
     /** (ct, cv, User-Agent) */
@@ -89,13 +98,19 @@ internal object QQNetwork {
      * 依次尝试"移动端 + 桌面端"两套入口与两套客户端标识，任一命中即返回。
      */
     fun fetchByMid(songMid: String, songId: Long, identity: TrackIdentity): LyricOutcome {
-        if (songMid.isBlank() && songId <= 0L) return LyricOutcome.NoLyrics("qq: no identifier")
+        // 没有标识就压根没查询过，谈不上"平台说没有歌词"：它是"我们查不了"。
+        // 判成 NoLyrics 会为一次查不到下发纯音乐占位
+        if (songMid.isBlank() && songId <= 0L) return LyricOutcome.Unsupported("qq: no identifier")
 
         val cacheKey = songMid.trim().ifBlank { songId.toString() }
         readCached(cacheKey, identity)?.let { return it }
 
         var lastFailure: Throwable? = null
         var reachedServer = false
+
+        // 是否见过**非空**的 lyric 字段。它与"服务端没有 lyric 字段"必须分开：
+        // 前者说明服务端有歌词而我们没解开（解密/解析失败），后者才是"平台确定没有歌词"
+        var sawLyricPayload = false
 
         for (url in listOf(URL_PRIMARY, URL_FALLBACK)) {
             for ((ct, cv, userAgent) in clientProfiles) {
@@ -109,6 +124,7 @@ internal object QQNetwork {
 
                     val lyricRaw = data.optString("lyric", "")
                     if (lyricRaw.isEmpty()) continue
+                    sawLyricPayload = true
 
                     val outcome = parsePayloads(lyricRaw, data, identity)
                     if (outcome != null) {
@@ -126,7 +142,22 @@ internal object QQNetwork {
 
         return when {
             lastFailure != null -> LyricOutcome.TransientFailure(lastFailure)
+
+            // 服务端**给了** lyric 字段，是我们没解开（解密失败或解析不出行）。
+            // 这不是"平台没有歌词"：把它当无歌词，会把一首有歌词的曲目钉成纯音乐占位。
+            // 也不要返回 null——调用方用 null 表达另一种含义
+            sawLyricPayload -> {
+                AndroidLog.logW(
+                    TAG,
+                    "Platform returned a lyric payload that could not be decoded; treating it as retryable",
+                )
+                LyricOutcome.TransientFailure(null)
+            }
+
+            // 依次试完所有入口都到达了服务端，且都不是"A 有 B 无"或"解不开"：
+            // 这才是平台确定没有歌词
             reachedServer -> LyricOutcome.NoLyrics("qq: platform returned no lyric")
+
             else -> LyricOutcome.TransientFailure(null)
         }
     }
@@ -160,7 +191,7 @@ internal object QQNetwork {
     /**
      * 按歌名 + 歌手检索，返回打分最高的 `mid to id`
      *
-     * @return 未达到 [MIN_ACCEPT_SCORE] 时返回 null
+     * @return 未达到 [LyricScorer.MIN_ACCEPT_SCORE] 时返回 null
      */
     fun searchBest(identity: TrackIdentity): Pair<String, Long>? {
         if (identity.title.isBlank()) return null
@@ -197,7 +228,7 @@ internal object QQNetwork {
             ?: return null
 
         var best: Pair<String, Long>? = null
-        var bestScore = MIN_ACCEPT_SCORE
+        var bestScore = LyricScorer.MIN_ACCEPT_SCORE
 
         for (index in 0 until songs.length()) {
             val item = songs.optJSONObject(index) ?: continue
@@ -211,7 +242,6 @@ internal object QQNetwork {
                 item.optString("title", item.optString("songname", "")),
                 readSingers(item),
                 item.optLong("interval", 0L) * 1000L,
-                true,
             )
             // 用 `>` 而不是 `>=`：同分时采纳检索的排序首位。
             // 同一首歌的不同版本可能登记成完全相同的歌名/歌手/时长，打分器无从区分，
@@ -303,12 +333,26 @@ internal object QQNetwork {
         return QrcCipher.decrypt(bytes)
     }
 
+    /**
+     * 取候选的歌手名
+     *
+     * 与 `title` 同样做多键兜底：只认一种键的形状，平台换一次 schema 就会让歌手分
+     * 静默退化成常量，而歌手是 35% 的权重
+     */
     private fun readSingers(item: JSONObject): String {
-        val singers = item.optJSONArray("singer") ?: return ""
-        val names = ArrayList<String>(singers.length())
-        for (index in 0 until singers.length()) {
-            val name = singers.optJSONObject(index)?.optString("name", "") ?: continue
-            if (name.isNotEmpty()) names += name
+        item.optString("singer", "").takeIf { it.isNotBlank() }?.let { return it }
+        item.optString("singername", "").takeIf { it.isNotBlank() }?.let { return it }
+
+        val array = item.optJSONArray("singer") ?: item.optJSONArray("singers") ?: return ""
+        val names = ArrayList<String>(array.length())
+        for (index in 0 until array.length()) {
+            val element = array.opt(index)
+            val name = when (element) {
+                is JSONObject -> element.optString("name", "")
+                is String -> element
+                else -> ""
+            }
+            if (name.isNotBlank()) names += name
         }
         return names.joinToString("/")
     }
@@ -328,7 +372,7 @@ internal object QQNetwork {
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("HTTP ${response.code} from $url")
-            return response.body.string()
+            return response.body.readTextBounded()
         }
     }
 

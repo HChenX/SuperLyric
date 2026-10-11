@@ -281,11 +281,19 @@ public final class SaltAnchors {
     private static void reportSong(@Nullable Object song, @NonNull LyricsListener listener) {
         if (song == null) return;
 
-        String songId = invoke(song, "getId");
-        String title = invoke(song, "getTitle");
-        String artist = invoke(song, "getArtist");
+        String songId = invokeOrNull(song, "getId");
+        if (songId == null || songId.isEmpty()) {
+            // 取不到宿主标识就没法把歌词与曲目关联起来。曾经失败时返回 "<XXXException>" 这类
+            // 标记串并当成真实值传下去，songStore 以标记为键、永远查不中，真曲名丢失后退回
+            // 被歌词污染的 MediaMetadata——宁可这一轮不报，也不能报一个假标识
+            AndroidLog.logW(TAG, "Song.getId() unavailable; skipping track info for this callback");
+            return;
+        }
 
-        listener.onSong(songId, title, artist, parseLong(invoke(song, "getDuration")));
+        String title = orEmpty(invokeOrNull(song, "getTitle"));
+        String artist = orEmpty(invokeOrNull(song, "getArtist"));
+
+        listener.onSong(songId, title, artist, parseLong(invokeOrNull(song, "getDuration")));
 
         if (songId.equals(sLastDumpedSongId)) return;
         sLastDumpedSongId = songId;
@@ -301,7 +309,8 @@ public final class SaltAnchors {
         LyricDiag.dumpPayload(TAG, "SONG", builder.toString());
     }
 
-    private static long parseLong(@NonNull String value) {
+    private static long parseLong(@Nullable String value) {
+        if (value == null) return 0L;
         try {
             return Long.parseLong(value.trim());
         } catch (Throwable ignored) {
@@ -309,7 +318,28 @@ public final class SaltAnchors {
         }
     }
 
-    /** 反射调用无参 getter；失败时返回标记串而不是抛出。 */
+    @NonNull
+    private static String orEmpty(@Nullable String value) {
+        return value == null ? "" : value;
+    }
+
+    /**
+     * 反射调用无参 getter；失败或返回 {@code null} 时返回 {@code null}。
+     *
+     * <p>给**语义路径**用：取不到就得是"取不到"，不能用一个字符串冒充真实值。
+     * 诊断转储请用 {@link #invoke}。
+     */
+    @Nullable
+    private static String invokeOrNull(@NonNull Object target, @NonNull String method) {
+        try {
+            Object value = target.getClass().getMethod(method).invoke(target);
+            return value == null ? null : String.valueOf(value);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** 反射调用无参 getter；失败时返回标记串（含异常类型）而不是抛出。仅供诊断转储。 */
     @NonNull
     private static String invoke(@NonNull Object target, @NonNull String method) {
         try {

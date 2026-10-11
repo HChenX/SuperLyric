@@ -35,10 +35,12 @@ import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.result.ClassData;
+import org.luckypray.dexkit.result.ClassDataList;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Apple Music Hook 锚点与歌词抽取。
@@ -74,16 +76,34 @@ public final class AppleAnchors {
     /** 锚点：MediaPlaybackManager 中的固定日志串。 */
     private static final String PM_ANCHOR = "Unrecognized PlayerTimedTextItem.AnchorType: ";
 
+    /**
+     * 请求歌词的去抖窗口
+     *
+     * 宿主切歌时会连着发几次队列变化，逐个去请求会让它重复加载歌词；350ms 是实测够覆盖
+     * 这一串、又不至于让人察觉延迟的值。
+     *
+     * 去抖任务跑在**宿主主线程**：宿主的 ViewModel 必须在主线程触碰，不能挪到我们自己的线程
+     */
     private static final long REQUEST_DEBOUNCE_MS = 350L;
 
     private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
 
     private static volatile Object sLyricViewModel;
-    private static volatile Object sCurrentPlaybackItem;
     private static volatile String sLastRequestedItemId;
     private static volatile Runnable sPendingRequest;
     private static volatile LyricsListener sListener;
     private static volatile boolean sInstalled;
+
+    /**
+     * {@code PlaybackItem.setId} 兜底锚点的插桩计数
+     *
+     * 这条兜底靠匹配调用栈里的字符串（{@code getItemAtIndex} / {@code .accept}），
+     * 宿主混淆改名后它就再也命中不了——而"从未命中"与"根本没插桩"在日志里长得一模一样。
+     * 计数放在这里，正是为了让这两者能被区分开
+     */
+    private static final AtomicInteger sSetIdProbes = new AtomicInteger();
+    private static final AtomicInteger sSetIdCaptures = new AtomicInteger();
+    private static final int SET_ID_REPORT_AFTER = 200;
 
     private AppleAnchors() {
     }
@@ -121,10 +141,22 @@ public final class AppleAnchors {
 
     /** 抽取结果回调。 */
     public interface LyricsListener {
-        void onLyrics(@NonNull List<AppleLine> lines);
+        /**
+         * @param itemId 本次结果所属的曲目标识（宿主 {@code PlaybackItem} 的 id）；
+         *               取不到时为 null
+         */
+        void onLyrics(@NonNull List<AppleLine> lines, @Nullable String itemId);
 
-        /** 宿主明确表示这首曲目没有歌词。 */
-        void onNoLyrics();
+        /**
+         * 宿主明确表示这首曲目没有歌词。
+         *
+         * <p>{@code itemId} 是**被判定**的那一首，不是"现在正在播的那一首"：取词有 350ms
+         * 去抖，这个回调可能落在切歌窗口内。调用方必须拿它与当前曲目比对后再决定是否采纳——
+         * 无词结论一旦被误采纳，会经由"纯音乐占位"把有歌词的曲目永久钉死。
+         *
+         * @param itemId 被判定为无词的曲目标识；取不到时为 null
+         */
+        void onNoLyrics(@Nullable String itemId);
     }
 
     /**
@@ -206,11 +238,19 @@ public final class AppleAnchors {
             Class<?> managerClass = DexkitCache.findMember(PM_CACHE_KEY, new IDexkit<ClassData>() {
                 @Override
                 public ClassData dexkit(DexKitBridge bridge) throws ReflectiveOperationException {
-                    return bridge.findClass(FindClass.create()
+                    ClassDataList classes = bridge.findClass(FindClass.create()
                         .matcher(ClassMatcher.create()
                             .usingEqStrings(PM_ANCHOR)
                         )
-                    ).singleOrNull();
+                    );
+                    if (classes == null || classes.isEmpty()) return null;
+                    // 命中多个时报错不要沉默：另一处锚点用的是 get(0)，两处取舍不一致的话
+                    // "到底挂了哪一个"就无法从日志判断，而这个类一旦选错，本 Provider 全程失效
+                    if (classes.size() > 1) {
+                        AndroidLog.logW(TAG, "MediaPlaybackManager anchor matched " + classes.size()
+                            + " classes; using the first: " + classes.get(0).getName());
+                    }
+                    return classes.get(0);
                 }
             });
             if (managerClass == null) {
@@ -265,6 +305,7 @@ public final class AppleAnchors {
                             if (!(id instanceof String trackId) || trackId.isEmpty()) return;
 
                             // 只接受来自"队列逐项构建"这一条路径的赋值，避免误捕其它 setId
+                            sSetIdProbes.incrementAndGet();
                             boolean fromQueueBuild = false;
                             boolean fromCallback = false;
                             for (StackTraceElement element : Thread.currentThread().getStackTrace()) {
@@ -274,9 +315,18 @@ public final class AppleAnchors {
                                 if (fromQueueBuild && fromCallback) break;
                             }
                             if (fromQueueBuild && fromCallback) {
+                                sSetIdCaptures.incrementAndGet();
                                 Object item = getThisObject();
-                                sCurrentPlaybackItem = item;
                                 scheduleRequestLyrics(item);
+                                return;
+                            }
+
+                            // 一次都没命中就说明这条兜底已经死了（取词现在只靠 MediaPlaybackManager，
+                            // 而它若同时失效，本 Provider 会静默地什么都不做）
+                            if (sSetIdProbes.get() == SET_ID_REPORT_AFTER && sSetIdCaptures.get() == 0) {
+                                AndroidLog.logW(TAG, "PlaybackItem.setId fallback anchor matched nothing in "
+                                    + SET_ID_REPORT_AFTER + " invocations; the getItemAtIndex/.accept frames "
+                                    + "were probably renamed. Lyric requests rely on MediaPlaybackManager alone.");
                             }
                         } catch (Throwable t) {
                             AndroidLog.logW(TAG, "Error in PlaybackItem.setId hook: " + t.getMessage());
@@ -301,7 +351,6 @@ public final class AppleAnchors {
 
             Class<?> playbackItemClass = CoreTool.findClass(PLAYBACK_ITEM_CLASS);
             if (playbackItemClass.isInstance(candidate)) {
-                sCurrentPlaybackItem = candidate;
                 scheduleRequestLyrics(candidate);
             }
         } catch (Throwable t) {
@@ -328,7 +377,7 @@ public final class AppleAnchors {
         try {
             if (!hasLyrics(playbackItem)) {
                 AndroidLog.logI(TAG, "PlaybackItem reports no lyrics available");
-                notifyNoLyrics();
+                notifyNoLyrics(readItemId(playbackItem));
                 return;
             }
 
@@ -392,12 +441,16 @@ public final class AppleAnchors {
 
         Object sections = CoreTool.callMethodIfExists(songInfo, "getSections");
         if (sections == null) {
-            AndroidLog.logD(TAG, "No lyric sections for the current track");
-            notifyNoLyrics();
+            // 取不到 sections 说明**我们的反射没打通**（方法改名/类型不符），
+            // 而不是宿主说"这首没有歌词"。此处绝不能 notifyNoLyrics：那是一个允许下发
+            // 纯音乐占位的确定性结论，会把一首有歌词的曲目永久钉成纯音乐。
+            // 不投递任何结论，交给编排器超时兜底
+            AndroidLog.logW(TAG, "Cannot read lyric sections; leaving the verdict to the orchestrator");
             return;
         }
 
         List<AppleLine> lines = new ArrayList<>();
+        long attempted = 0;
         long sectionCount = asLong(CoreTool.callMethodIfExists(sections, "size"));
 
         for (long s = 0; s < sectionCount; s++) {
@@ -412,16 +465,27 @@ public final class AppleAnchors {
                 Object line = unwrap(CoreTool.callMethodIfExists(sectionLines, "get", l));
                 if (line == null) continue;
 
+                attempted++;
                 AppleLine extracted = extractLine(line);
                 if (extracted != null) lines.add(extracted);
             }
         }
 
         if (lines.isEmpty()) {
-            notifyNoLyrics();
+            if (attempted > 0) {
+                // 看到了行，却一行都没读出来 ⇒ 是我们的反射没打通，不是宿主没有歌词
+                AndroidLog.logW(TAG, "Read " + attempted
+                    + " lyric lines but none was usable; not a no-lyrics verdict");
+                return;
+            }
+            // 这里没有直接的 playbackItem，用"最后一次请求的那首"作为被判定对象——
+            // 宿主构建歌词就是在回应那次请求。为空时交给上层按"无法判定"处理
+            notifyNoLyrics(sLastRequestedItemId);
         } else {
             LyricsListener listener = sListener;
-            if (listener != null) listener.onLyrics(Collections.unmodifiableList(lines));
+            if (listener != null) {
+                listener.onLyrics(Collections.unmodifiableList(lines), sLastRequestedItemId);
+            }
         }
     }
 
@@ -432,9 +496,13 @@ public final class AppleAnchors {
         Object begin = CoreTool.callMethodIfExists(line, "getBegin");
         Object end = CoreTool.callMethodIfExists(line, "getEnd");
 
-        if (!(rawText instanceof String text) || !(begin instanceof Integer start) || !(end instanceof Integer stop)) {
+        if (!(rawText instanceof String text)) {
             return null;
         }
+        // 只认 Integer 的代价：宿主把毫秒换成 Long 的那一刻起**每一行都被丢弃**，
+        // 上层随即得出"整首无歌词"。同文件的 asLong 本来就对 Number 容错
+        long start = asLong(begin);
+        long stop = asLong(end);
 
         List<AppleWord> words = new ArrayList<>();
         Object wordVector = CoreTool.callMethodIfExists(line, "getWords");
@@ -447,8 +515,8 @@ public final class AppleAnchors {
                 Object wordText = CoreTool.callMethodIfExists(word, "getHtmlLineText");
                 Object wordBegin = CoreTool.callMethodIfExists(word, "getBegin");
                 Object wordEnd = CoreTool.callMethodIfExists(word, "getEnd");
-                if (wordText instanceof String wt && wordBegin instanceof Integer wb && wordEnd instanceof Integer we) {
-                    words.add(new AppleWord(wt, wb, we));
+                if (wordText instanceof String wt && wordBegin instanceof Number && wordEnd instanceof Number) {
+                    words.add(new AppleWord(wt, asLong(wordBegin), asLong(wordEnd)));
                 }
             }
         }
@@ -471,8 +539,8 @@ public final class AppleAnchors {
         return value instanceof Number number ? number.longValue() : 0L;
     }
 
-    private static void notifyNoLyrics() {
+    private static void notifyNoLyrics(@Nullable String itemId) {
         LyricsListener listener = sListener;
-        if (listener != null) listener.onNoLyrics();
+        if (listener != null) listener.onNoLyrics(itemId);
     }
 }

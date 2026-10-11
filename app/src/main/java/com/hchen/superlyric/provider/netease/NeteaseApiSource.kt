@@ -26,6 +26,8 @@ import com.hchen.superlyric.kernel.orchestrate.LyricSource
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
+import com.hchen.superlyric.provider.base.FetchSlot
+import com.hchen.superlyric.provider.base.readTextBounded
 import com.hchen.superlyric.utils.LyricCacheStore
 import com.hchen.superlyric.utils.LyricDiag
 
@@ -33,7 +35,6 @@ import org.json.JSONObject
 
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
-import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 import okhttp3.MediaType.Companion.toMediaType
@@ -63,32 +64,34 @@ class NeteaseApiSource : LyricSource {
 
     override val sourceName: String = "NeteaseApi"
 
-    private val executor = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "SuperLyric-NeteaseApi").apply { isDaemon = true }
-    }
-
-    @Volatile
-    private var cancelled = false
+    private val requests = FetchSlot()
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
-        cancelled = false
-        executor.execute {
+        val token = requests.open()
+        requests.execute {
             val outcome = runCatching { resolve(identity) }
                 .getOrElse { error ->
                     AndroidLog.logW(sourceName, "Fetch failed: ${error.message}")
                     LyricOutcome.TransientFailure(error)
                 }
-            if (!cancelled) session.deliver(outcome)
+            if (requests.isCurrent(token)) session.deliver(outcome)
         }
     }
 
     override fun cancel() {
-        cancelled = true
+        requests.invalidate()
     }
 
     private fun resolve(identity: TrackIdentity): LyricOutcome {
-        val songId = songIdOf(identity) ?: searchSongId(identity)
-            ?: return LyricOutcome.NoLyrics("netease: no song id")
+        val songId = songIdOf(identity) ?: when (val outcome = searchSongId(identity)) {
+            is SearchOutcome.Found -> outcome.songId
+            // 检索空集**不是**平台在说"这首没有歌词"：它说的是"我们没搜到这首歌"，而宿主
+            // 上报的曲名/歌手并不总是干净（同名版本、修饰后缀、被改写的字段都够让它搜空）。
+            // 判成 NoLyrics 会给一首有歌词的曲目下发纯音乐占位
+            SearchOutcome.NoCandidate -> return LyricOutcome.TransientFailure(null)
+            // 与上一条同理：报文读不出来/"这次没查成"同样不是曲目结论
+            SearchOutcome.Failed -> return LyricOutcome.TransientFailure(null)
+        }
 
         val payload = fetchLyricPayload(songId)
             ?: return LyricOutcome.TransientFailure(null)
@@ -99,7 +102,8 @@ class NeteaseApiSource : LyricSource {
         }
 
         val main = lyricText(payload, "yrc").ifEmpty { lyricText(payload, "lrc") }
-        if (main.isEmpty()) {
+        if (main.isBlank()) {
+            // 平台给的歌词体是空的：这才是确定结论
             return LyricOutcome.NoLyrics("netease: empty lyric")
         }
 
@@ -118,7 +122,10 @@ class NeteaseApiSource : LyricSource {
                 durationMs = identity.durationMs,
                 lyricId = identity.stableId,
             )
-        ) ?: return LyricOutcome.NoLyrics("netease: parsed empty")
+        ) ?: return LyricOutcome.TransientFailure(null)
+        // 上面那格已经覆盖了"平台给的是空歌词体"这条确定结论；走到这里说明歌词体**非空**
+        // 而我们没解析出行——那是"这次没读出来"，不是"平台没有歌词"。
+        // 判成 NoLyrics 会下发纯音乐占位，把一首有歌词的曲目钉死
 
         AndroidLog.logI(
             sourceName,
@@ -197,27 +204,58 @@ class NeteaseApiSource : LyricSource {
     private fun hasAnyLyricChannel(payload: JSONObject): Boolean =
         NET_LYRIC_KEYS.any { key -> lyricText(payload, key).isNotEmpty() }
 
-    private fun searchSongId(identity: TrackIdentity): Long? {
-        if (identity.title.isBlank()) return null
+    /**
+     * 检索结果
+     *
+     * 三者都不构成"这首没有歌词"这一结论：平台从未就**曲目**表态，它只回答了"这次检索的
+     * 结果"。因此 [NoCandidate] 与 [Failed] 都归为可重试失败——把检索落空当终态，等于用
+     * 一次搜不到替平台断言曲目无歌词
+     */
+    private sealed interface SearchOutcome {
+        data class Found(val songId: Long) : SearchOutcome
+
+        /** 平台检索返回空集：**我们**没搜到，不是平台说这首没有歌词 */
+        data object NoCandidate : SearchOutcome
+
+        /** 这次没查成：没标题、报文畸形、或候选里没有一个能采信 */
+        data object Failed : SearchOutcome
+    }
+
+    private fun searchSongId(identity: TrackIdentity): SearchOutcome {
+        if (identity.title.isBlank()) return SearchOutcome.Failed
 
         val keyword = if (identity.artist.isBlank()) identity.title else "${identity.title} ${identity.artist}"
         val json = get("$URL_SEARCH?s=${URLEncoder.encode(keyword, StandardCharsets.UTF_8.name())}&type=1&limit=5")
-            ?: return null
+            ?: return SearchOutcome.Failed
 
-        val songs = json.optJSONObject("result")?.optJSONArray("songs") ?: return null
-        if (songs.length() == 0) return null
+        val songs = json.optJSONObject("result")?.optJSONArray("songs") ?: return SearchOutcome.Failed
+        if (songs.length() == 0) return SearchOutcome.NoCandidate
 
-        // 网易云接口不返回时长，无法做时长校验；只接受歌名完全一致的候选
+        // 网易云接口不返回时长，无法做时长校验；只接受歌名完全一致的候选，
+        // 且必须**同时比对歌手**——同名不同曲配上别人的歌词是本项目最严重的可见缺陷。
+        // 目标歌手未知时 artistCompatible 恒真，不会因此收窄
         val normalizedTitle = identity.title.trim()
         for (index in 0 until songs.length()) {
             val song = songs.optJSONObject(index) ?: continue
-            if (song.optString("name", "").trim() == normalizedTitle) {
-                val id = song.optLong("id", 0L)
-                if (id > 0L) return id
-            }
+            if (song.optString("name", "").trim() != normalizedTitle) continue
+            if (!TrackIdentity.artistCompatible(identity.artist, songArtists(song))) continue
+
+            val id = song.optLong("id", 0L)
+            if (id > 0L) return SearchOutcome.Found(id)
         }
-        AndroidLog.logD(sourceName, "No exactly-matching NetEase candidate for \"$keyword\"")
-        return null
+        AndroidLog.logD(sourceName, "No credible NetEase candidate for \"$keyword\"")
+        return SearchOutcome.Failed
+    }
+
+    /** 候选的歌手名；接口未给出 artists 数组时返回空串（此时不做歌手约束） */
+    private fun songArtists(song: JSONObject): String {
+        val artists = song.optJSONArray("artists") ?: return ""
+        val names = ArrayList<String>(artists.length())
+        for (index in 0 until artists.length()) {
+            artists.optJSONObject(index)?.optString("name", "")
+                ?.takeIf { it.isNotBlank() }?.let { names += it }
+        }
+        return names.joinToString("/")
     }
 
     private fun songIdOf(identity: TrackIdentity): Long? =
@@ -241,7 +279,7 @@ class NeteaseApiSource : LyricSource {
             .build()
 
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) null else response.body.string().let(::JSONObject)
+            if (!response.isSuccessful) null else response.body.readTextBounded().let(::JSONObject)
         }
     } catch (t: Throwable) {
         AndroidLog.logW(sourceName, "POST failed: ${t.message}")
@@ -257,7 +295,7 @@ class NeteaseApiSource : LyricSource {
             .build()
 
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) null else response.body.string().let(::JSONObject)
+            if (!response.isSuccessful) null else response.body.readTextBounded().let(::JSONObject)
         }
     } catch (t: Throwable) {
         AndroidLog.logW(sourceName, "GET failed: ${t.message}")
@@ -290,9 +328,16 @@ class NeteaseApiSource : LyricSource {
         /** 接口可能返回的全部歌词通道，用于判断响应是否为空壳 */
         val NET_LYRIC_KEYS = listOf("yrc", "lrc", "ytlrc", "tlyric", "yromalrc", "romalrc")
 
+        /**
+         * 取词的整体时限预算
+         *
+         * read 超时只约束单次读，每次读到数据就重置，挡不住"永远挤一点数据"的服务端；
+         * callTimeout 给整次调用封顶。与 QQ / 酷狗的 4/6/12 一致，Spotify 另有一套更大的值
+         */
         val client: OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(4, TimeUnit.SECONDS)
             .readTimeout(6, TimeUnit.SECONDS)
+            .callTimeout(12, TimeUnit.SECONDS)
             .build()
     }
 }

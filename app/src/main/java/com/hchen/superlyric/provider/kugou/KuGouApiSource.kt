@@ -27,6 +27,8 @@ import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
 import com.hchen.superlyric.kernel.decode.DecodeException
 import com.hchen.superlyric.kernel.decode.PayloadBytes
+import com.hchen.superlyric.provider.base.FetchSlot
+import com.hchen.superlyric.provider.base.readTextBounded
 import com.hchen.superlyric.utils.LyricCacheStore
 import com.hchen.superlyric.utils.LyricDiag
 
@@ -37,7 +39,6 @@ import java.io.IOException
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.Locale
-import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 import okhttp3.OkHttpClient
@@ -65,27 +66,22 @@ class KuGouApiSource : LyricSource {
 
     override val sourceName: String = "KugouApi"
 
-    private val executor = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "SuperLyric-KugouApi").apply { isDaemon = true }
-    }
-
-    @Volatile
-    private var cancelled = false
+    private val requests = FetchSlot()
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
-        cancelled = false
-        executor.execute {
+        val token = requests.open()
+        requests.execute {
             val outcome = runCatching { resolve(identity) }
                 .getOrElse { error ->
                     AndroidLog.logW(sourceName, "Fetch failed: ${error.message}")
                     LyricOutcome.TransientFailure(error)
                 }
-            if (!cancelled) session.deliver(outcome)
+            if (requests.isCurrent(token)) session.deliver(outcome)
         }
     }
 
     override fun cancel() {
-        cancelled = true
+        requests.invalidate()
     }
 
     private fun resolve(identity: TrackIdentity): LyricOutcome {
@@ -100,10 +96,14 @@ class KuGouApiSource : LyricSource {
         }
 
         val searchedHash = searchBestHash(identity)
-            ?: return LyricOutcome.NoLyrics("kugou: no candidate")
+            // 检索落空 ≠ 平台确定没有歌词：可能只是没匹配上，或报文结构变了。
+            // NoLyrics 允许下发纯音乐占位，误判一次就把有歌词的曲目钉死了
+            ?: return LyricOutcome.TransientFailure(null)
 
         attempt(searchedHash, identity)?.let { return it }
-        return LyricOutcome.NoLyrics("kugou: no lyric for hash $searchedHash")
+        // attempt 返回 null 只说明**这个哈希没拿到可用歌词**（下载失败、解码失败、
+        // 或平台确实没有），不足以判定"这首歌没有歌词"
+        return LyricOutcome.TransientFailure(null)
     }
 
     /**
@@ -166,7 +166,7 @@ class KuGouApiSource : LyricSource {
     /**
      * 按歌名 + 歌手检索候选，返回打分最高的 Hash
      *
-     * 采纳门槛见 [MIN_ACCEPT_SCORE]
+     * 采纳门槛见 [LyricScorer.MIN_ACCEPT_SCORE]
      */
     private fun searchBestHash(identity: TrackIdentity): String? {
         if (identity.title.isBlank()) return null
@@ -179,13 +179,16 @@ class KuGouApiSource : LyricSource {
         val info = JSONObject(json).optJSONObject("data")?.optJSONArray("info") ?: return null
 
         var bestHash: String? = null
-        var bestScore = MIN_ACCEPT_SCORE
+        var bestScore = LyricScorer.MIN_ACCEPT_SCORE
         val candidates = ArrayList<String>(info.length())
 
         for (index in 0 until info.length()) {
             val item = info.optJSONObject(index) ?: continue
+            // 这个哈希来自**响应**而不是本模块，必须与身份里那个同样受正则约束：
+            // 它会不经校验地拼进请求 URL（`downloadKrc`）。顺带也过滤掉形态不对的候选，
+            // 省掉几次注定失败的往返
             val hash = item.optString("hash", "")
-            if (hash.isEmpty()) continue
+            if (!HASH_PATTERN.matches(hash)) continue
 
             val candidateTitle = item.optString("songname", "")
             val candidateArtist = item.optString("singername", "")
@@ -197,7 +200,6 @@ class KuGouApiSource : LyricSource {
                 candidateTitle,
                 candidateArtist,
                 candidateDurationMs,
-                true,
             )
             candidates += "\"$candidateTitle\"/\"$candidateArtist\"/${candidateDurationMs / 1000}s" +
                 "=${score.roundTo1()} hash=$hash"
@@ -239,7 +241,9 @@ class KuGouApiSource : LyricSource {
         if (id.isEmpty() || accessKey.isEmpty()) return null
 
         val downloadUrl = "http://krcs.kugou.com/download?ver=1&client=mobi" +
-            "&id=$id&accesskey=$accessKey&fmt=krc&charset=utf8"
+            "&id=${URLEncoder.encode(id, StandardCharsets.UTF_8.name())}" +
+            "&accesskey=${URLEncoder.encode(accessKey, StandardCharsets.UTF_8.name())}" +
+            "&fmt=krc&charset=utf8"
         val downloadJson = get(downloadUrl)
 
         return JSONObject(downloadJson).optString("content", "").ifEmpty { null }
@@ -272,7 +276,7 @@ class KuGouApiSource : LyricSource {
         val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).build()
         httpClient.newCall(request).execute().use { response: Response ->
             if (!response.isSuccessful) throw IOException("HTTP ${response.code} from $url")
-            return response.body.string()
+            return response.body.readTextBounded()
         }
     }
 
@@ -282,14 +286,18 @@ class KuGouApiSource : LyricSource {
 
         const val USER_AGENT = "KuGou2012-7093-Android601"
 
-        /** 检索候选低于此分不采纳。 */
-        const val MIN_ACCEPT_SCORE = 85.0
-
         val HASH_PATTERN = Regex("^[0-9a-fA-F]{32}$")
 
+        /**
+         * 取词的整体时限预算
+         *
+         * read 超时只约束单次读，每次读到数据就重置，挡不住"永远挤一点数据"的服务端；
+         * callTimeout 给整次调用封顶。与 QQ / 网易云的 4/6/12 一致，Spotify 另有一套更大的值
+         */
         val httpClient: OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(4, TimeUnit.SECONDS)
             .readTimeout(6, TimeUnit.SECONDS)
+            .callTimeout(12, TimeUnit.SECONDS)
             .build()
     }
 }

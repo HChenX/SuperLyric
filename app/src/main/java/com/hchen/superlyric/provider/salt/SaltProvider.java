@@ -58,9 +58,16 @@ public class SaltProvider extends MusicProvider {
         return TAG;
     }
 
-    /** Hook 取词来源；同时用于读取宿主的真实曲目信息。 */
+    /**
+     * Hook 取词来源；同时用于读取宿主的真实曲目信息。
+     *
+     * <p>{@code volatile} 是必需的：在 {@code onPackageReady} 的线程上写，在宿主
+     * {@code MediaSession} 回调线程上经 {@link #buildIdentity} 读。可见性失败时读到 null，
+     * 会静默退化为使用**宿主元数据**——而椒盐会把当前歌词行写进 TITLE，元数据完全不可信。
+     * 基类的 {@code hookSource} 出于同一原因也是 volatile。
+     */
     @Nullable
-    private SaltHookSource saltHookSource;
+    private volatile SaltHookSource saltHookSource;
 
     @NonNull
     @Override

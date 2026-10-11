@@ -103,7 +103,10 @@ public final class QQAnchors {
 
         String process = currentProcessName();
         if (process != null && process.indexOf(':') >= 0 && !process.endsWith(TARGET_PROCESS_SUFFIX)) {
-            AndroidLog.logD(TAG, "Skipping lyric anchor in non-player sub-process: " + process);
+            // I 级而非 D 级：判据写死了子进程名，宿主一旦改名这里就**永不挂载**且悄无声息，
+            // 必须能在默认日志级别下看见"没挂"
+            AndroidLog.logI(TAG, "Skipping lyric anchor in non-player sub-process: " + process
+                + " (expected suffix: " + TARGET_PROCESS_SUFFIX + ")");
             return;
         }
 

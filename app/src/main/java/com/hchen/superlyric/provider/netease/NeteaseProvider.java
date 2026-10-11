@@ -102,10 +102,16 @@ public class NeteaseProvider extends MusicProvider {
                 new AbsHook() {
                     @Override
                     public void before() {
-                        if (Objects.equals(WRAPPER_APPLICATION, getArg(1))) {
+                        Object className = getArg(1);
+                        if (Objects.equals(WRAPPER_APPLICATION, className)) {
                             setArg(1, REAL_APPLICATION);
                             AndroidLog.logI(TAG, "Bypassed NetEase wrapper to CloudMusicApplication");
+                            return;
                         }
+                        // 没命中也要留痕。本 Provider 的类注释写着：绕过失败意味着"后续 Hook 全部失配"，
+                        // 而"宿主换了壳类名"与"这个 Hook 压根没跑到"必须在日志里能分开。
+                        // newApplication 每个进程只走一次，不会刷屏
+                        AndroidLog.logI(TAG, "Application class is " + className + "; no wrapper to bypass");
                     }
                 }
             );
