@@ -1,0 +1,20 @@
+plugins {
+    id 'org.jetbrains.kotlin.jvm'
+}
+
+kotlin {
+    jvmToolchain(21)
+}
+
+dependencies {
+    api libs.lyrics.core
+    implementation libs.gson
+
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.platform.launcher
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

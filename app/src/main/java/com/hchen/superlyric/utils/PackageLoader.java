@@ -1,19 +1,19 @@
 /*
  * This file is part of SuperLyric.
-
+ *
  * SuperLyric is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
  * published by the Free Software Foundation, either version 3 of the
  * License.
-
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
-
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
-
+ *
  * Copyright (C) 2025-2026 HChenX
  */
 package com.hchen.superlyric.utils;
@@ -21,7 +21,6 @@ package com.hchen.superlyric.utils;
 import static com.hchen.superlyric.data.SupportApps.sMediaAppPackages;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 
@@ -31,27 +30,20 @@ import com.hchen.hooktool.data.AppData;
 import com.hchen.hooktool.log.AndroidLog;
 import com.hchen.hooktool.utils.BitmapTool;
 import com.hchen.hooktool.utils.PackageTool;
-import com.hchen.superlyric.data.NetworkMode;
-import com.hchen.superlyric.data.PrefsKey;
-import com.hchen.superlyric.data.SupportApps;
 import com.hchen.superlyric.data.apps.ApiAppData;
-import com.hchen.superlyric.data.apps.NetworkAppData;
-import com.hchen.superlyric.ui.Application;
 
 import java.text.Collator;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * 包加载器。扫描请求在单线程中执行；扫描期间到达的并发请求会合并为一次后续重扫。
+ * 扫描并加载已安装的支持音乐应用列表。
  *
  * @author 焕晨HChen
  */
@@ -60,7 +52,6 @@ public final class PackageLoader {
     private static final Object LOAD_LOCK = new Object();
     private static volatile List<AppData> sMediaApps = List.of();
     private static volatile List<ApiAppData> sMediaApiApps = List.of();
-    private static volatile List<NetworkAppData> sMediaNetworkApps = List.of();
     private static final List<Runnable> sPackageLoadedListeners = new CopyOnWriteArrayList<>();
     private static final ExecutorService EXECUTOR_SERVICE = Executors.newSingleThreadExecutor();
     private static final Collator COLLATOR = Collator.getInstance(Locale.CHINA);
@@ -69,14 +60,6 @@ public final class PackageLoader {
     private static boolean rescanRequested;
     private static long completedLoadCount;
 
-    /**
-     * 请求扫描已安装应用。
-     *
-     * <p>若扫描正在进行，本次请求会与其他并发请求合并为紧随其后的一次重扫，返回值在该重扫完成后结束。</p>
-     *
-     * @param context 用于访问包管理器的上下文；内部仅保存其 applicationContext
-     * @return 表示本次请求所对应扫描已完成的 Future
-     */
     @NonNull
     public static CompletableFuture<Void> loadPackages(@NonNull Context context) {
         Context appContext = context.getApplicationContext();
@@ -138,24 +121,12 @@ public final class PackageLoader {
     private static void scanPackages(@NonNull Context context) {
         PackageManager pm = context.getPackageManager();
         List<AppData> mediaApps = new ArrayList<>();
-        List<NetworkAppData> mediaNetworkApps = new ArrayList<>();
         List<ApiAppData> mediaApiApps = new ArrayList<>();
         List<PackageInfo> infos = pm.getInstalledPackages(PackageManager.GET_META_DATA);
+
         for (PackageInfo info : infos) {
             if (sMediaAppPackages.contains(info.packageName)) {
-                if (isMediaNetworkApp(info.packageName)) {
-                    if (info.applicationInfo != null) {
-                        NetworkAppData networkData = new NetworkAppData();
-                        networkData.icon = BitmapTool.drawableToBitmap(info.applicationInfo.loadIcon(pm));
-                        networkData.label = (String) info.applicationInfo.loadLabel(pm);
-                        networkData.packageName = info.applicationInfo.packageName;
-                        networkData.versionName = info.versionName;
-                        networkData.versionCode = Long.toString(info.getLongVersionCode());
-                        mediaNetworkApps.add(networkData);
-                    }
-                } else {
-                    mediaApps.add(PackageTool.createAppData(pm, info, true));
-                }
+                mediaApps.add(PackageTool.createAppData(pm, info, true));
             }
 
             if (info.applicationInfo != null && info.applicationInfo.metaData != null) {
@@ -179,12 +150,10 @@ public final class PackageLoader {
         }
 
         sortAppData(mediaApps);
-        sortAppData(mediaNetworkApps);
         sortAppData(mediaApiApps);
         sMediaApps = List.copyOf(mediaApps);
-        sMediaNetworkApps = List.copyOf(mediaNetworkApps);
         sMediaApiApps = List.copyOf(mediaApiApps);
-        AndroidLog.logD(TAG, "!!Success loaded package list!!");
+        AndroidLog.logD(TAG, "Successfully loaded package list: media=" + sMediaApps.size() + ", api=" + sMediaApiApps.size());
     }
 
     private static void notifyPackageLoadedListeners(@NonNull List<Runnable> listeners) {
@@ -203,10 +172,6 @@ public final class PackageLoader {
 
     public static List<ApiAppData> getMediaApiApps() {
         return sMediaApiApps;
-    }
-
-    public static List<NetworkAppData> getMediaNetworkApps() {
-        return sMediaNetworkApps;
     }
 
     public static void addPackageLoadedListener(@NonNull Runnable listener) {
@@ -239,40 +204,18 @@ public final class PackageLoader {
         });
     }
 
-    private static boolean isMediaNetworkApp(String packageName) {
-        NetworkMode mode = SupportApps.sSupportNetworkApps.get(packageName);
-        if (mode == null) {
-            return false;
-        }
-        if (mode == NetworkMode.ONLY) {
-            return true;
-        }
-
-        // 远程 prefs 不可用（Xposed 服务未绑定）时按 Hook 模式处理，避免列表加载崩溃。
-        SharedPreferences preferences = Application.getRemotePreferences();
-        if (preferences == null) {
-            return false;
-        }
-
-        Set<String> networks = preferences.getStringSet(PrefsKey.NETWORK_LYRICS_MODE, new HashSet<>());
-        return networks.contains(packageName);
-    }
-
     private static boolean hasXposedModule(@NonNull String apkPath) {
         try (java.util.zip.ZipFile zipFile = new java.util.zip.ZipFile(apkPath)) {
             java.util.Enumeration<? extends java.util.zip.ZipEntry> entries = zipFile.entries();
-
             while (entries.hasMoreElements()) {
                 java.util.zip.ZipEntry entry = entries.nextElement();
                 String name = entry.getName();
-
                 if (name.startsWith("META-INF/xposed")) {
                     return true;
                 }
             }
         } catch (Exception ignore) {
         }
-
         return false;
     }
 }

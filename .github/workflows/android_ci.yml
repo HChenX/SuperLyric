@@ -11,9 +11,7 @@ on:
 
 jobs:
   build:
-
     name: Build SuperLyric - ${{ github.event_name }}
-
     runs-on: ubuntu-latest
 
     permissions:
@@ -22,13 +20,14 @@ jobs:
     steps:
       - name: Checkout Git Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '21'
           distribution: 'temurin'
-          cache: gradle
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -37,39 +36,49 @@ jobs:
 
       - name: Create Sign
         run: |
-          echo keyAlias=${{ secrets.ALIAS }} >> local.properties
-          echo keyStorePassword=${{ secrets.KEY_STORE_PASSWORD }} >> local.properties
-          echo keyAliasPassword=${{ secrets.KEY_STORE_PASSWORD }} >> local.properties
-          echo keyStoreFile=../key.jks >> local.properties
-          echo "${{ secrets.SIGNING_KEY }}" | base64 --decode > key.jks
+          if [ -n "${{ secrets.SIGNING_KEY }}" ]; then
+            echo "keyAlias=${{ secrets.ALIAS }}" >> local.properties
+            echo "keyStorePassword=${{ secrets.KEY_STORE_PASSWORD }}" >> local.properties
+            echo "keyAliasPassword=${{ secrets.KEY_STORE_PASSWORD }}" >> local.properties
+            echo "keyStoreFile=../key.jks" >> local.properties
+            echo "${{ secrets.SIGNING_KEY }}" | base64 --decode > key.jks
+          fi
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Build with Gradle
-        run: ./gradlew build
+        run: ./gradlew assembleRelease assembleDebug --stacktrace
 
       - name: Upload Release Apk
         uses: actions/upload-artifact@v4
         with:
           name: SuperLyric_release
           path: ./app/build/outputs/apk/release
+          if-no-files-found: warn
 
       - name: Upload Debug Apk
         uses: actions/upload-artifact@v4
         with:
           name: SuperLyric_debug
           path: ./app/build/outputs/apk/debug
+          if-no-files-found: warn
 
       - name: Find Apks
         run: |
-          echo "APK_RELEASE_PATH=$(find app/build/outputs/apk/release/ -name '*.apk')" >> $GITHUB_ENV
-          echo "APK_DEBUG_PATH=$(find app/build/outputs/apk/debug/ -name '*.apk')" >> $GITHUB_ENV
+          APK_RELEASE_PATH=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -n 1)
+          APK_DEBUG_PATH=$(find app/build/outputs/apk/debug -name "*.apk" -type f | head -n 1)
+          echo "APK_RELEASE_PATH=$APK_RELEASE_PATH" >> "$GITHUB_ENV"
+          echo "APK_DEBUG_PATH=$APK_DEBUG_PATH" >> "$GITHUB_ENV"
 
       - name: Calculate SHA256
         run: |
-          echo "APK_RELEASE_SHA256=$(sha256sum ${{ env.APK_RELEASE_PATH }} | awk '{print $1}')" >> $GITHUB_ENV
-          echo "APK_DEBUG_SHA256=$(sha256sum ${{ env.APK_DEBUG_PATH }} | awk '{print $1}')" >> $GITHUB_ENV
+          if [ -f "$APK_RELEASE_PATH" ]; then
+            echo "APK_RELEASE_SHA256=$(sha256sum "$APK_RELEASE_PATH" | awk '{print $1}')" >> "$GITHUB_ENV"
+          fi
+          if [ -f "$APK_DEBUG_PATH" ]; then
+            echo "APK_DEBUG_SHA256=$(sha256sum "$APK_DEBUG_PATH" | awk '{print $1}')" >> "$GITHUB_ENV"
+          fi
 
       - name: Show Apks SHA256
         run: |
@@ -90,19 +99,36 @@ jobs:
         id: check_tag
         run: |
           TAG=${{ steps.version.outputs.version }}
-          if git ls-remote --tags origin | grep -q "refs/tags/$TAG"; then
-            echo "exists=true" >> $GITHUB_OUTPUT
+          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
           else
-            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Extract Clean Changelog
         id: changelog
+        env:
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          LOG=$(echo "${{ github.event.head_commit.message }}" | tail -n +3)
-          echo "log_body<<EOF" >> $GITHUB_OUTPUT
-          echo "$LOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          python3 -c '
+          import os, subprocess
+          msg = os.environ.get("COMMIT_MESSAGE", "")
+          lines = msg.splitlines()
+          if not (lines and "feat: New Version to" in lines[0]):
+              try:
+                  git_log = subprocess.check_output(
+                      ["git", "log", "--grep=feat: New Version to", "-n", "1", "--format=%B"],
+                      encoding="utf-8"
+                  )
+                  if git_log.strip():
+                      msg = git_log
+                      lines = msg.splitlines()
+              except Exception as e:
+                  print("Failed to fallback git log:", e)
+          body = "\n".join(lines[2:]).strip() if len(lines) > 2 else msg.strip()
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write("log_body<<EOF\n" + body + "\nEOF\n")
+          '
 
       - name: Create GitHub Release
         if: steps.check_tag.outputs.exists == 'false' && github.event_name == 'push' && github.ref == 'refs/heads/master'
@@ -130,4 +156,6 @@ jobs:
 
           draft: false
           prerelease: false
-          files: ./app/build/outputs/apk/**/*.apk
+          files: |
+            ${{ env.APK_RELEASE_PATH }}
+            ${{ env.APK_DEBUG_PATH }}

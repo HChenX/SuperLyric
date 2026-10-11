@@ -72,6 +72,7 @@ import com.hchen.superlyric.R
 import com.hchen.superlyric.ui.effect.BgEffectBackground
 import com.hchen.superlyric.ui.effect.BlurredBar
 import com.hchen.superlyric.ui.effect.blend.ColorBlendToken
+import com.hchen.superlyric.ui.effect.cardBlur
 import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -86,7 +87,6 @@ import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.BlurBlendMode
 import top.yukonga.miuix.kmp.blur.BlurDefaults
-import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -99,7 +99,8 @@ import top.yukonga.miuix.kmp.window.WindowDialog
 @SuppressLint("LocalContextGetResourceValueCall")
 fun AboutLayout(
     paddingValues: PaddingValues,
-    isWideScreen: Boolean = false
+    isWideScreen: Boolean = false,
+    modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
@@ -205,6 +206,7 @@ fun AboutLayout(
     val iconProgress = ((scrollProgress - 0.35f) / 0.15f).coerceIn(0f, 1f)
 
     Scaffold(
+        modifier = modifier.fillMaxSize(),
         topBar = {
             BlurredBar(backdrop = barBackdrop, blurEnabled = blurActive) {
                 SmallTopAppBar(
@@ -486,31 +488,6 @@ fun AboutLayout(
         }
     }
 }
-
-@Composable
-private fun Modifier.cardBlur(
-    backdrop: LayerBackdrop?,
-    cardBlend: List<BlendColorEntry>
-): Modifier = this
-    .then(
-        if (backdrop != null) {
-            Modifier
-                .textureBlur(
-                    backdrop = backdrop,
-                    shape = RoundedCornerShape(16.dp),
-                    blurRadius = 60f,
-                    noiseCoefficient = BlurDefaults.NoiseCoefficient,
-                    colors = BlurDefaults.blurColors(
-                        blendColors = cardBlend,
-                        brightness = 0f,
-                        contrast = 1f,
-                        saturation = 1f,
-                    ),
-                )
-        } else {
-            Modifier
-        },
-    )
 
 private fun openUrl(context: Context, url: String) {
     try {

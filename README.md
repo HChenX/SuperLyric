@@ -25,17 +25,24 @@
 
 ## 🛠 支持的软件
 
-- APlayer (remix.myplayer) -> 魅族状态栏歌词
 - Apple Music (com.apple.android.music) -> Hook 获取
+- 波点音乐 (cn.wenyu.bodian) -> Hook 获取
+- 酷狗音乐 (com.kugou.android) -> Hook 获取
+- 网易云音乐 (com.netease.cloudmusic) -> 网络获取
+- QQ 音乐 (com.tencent.qqmusic) -> Hook 获取
+- 椒盐音乐 (com.salt.music) -> Hook 获取
+- Spotify (com.spotify.music) -> 网络获取
+- Flamingo (unknown) -> Api 原生支持
+- [光锥音乐](https://coneplayer.trantor.ink) (ink.trantor.coneplayer) -> Api 原生支持
+<!-- 暂时未适配至 4.0 统一架构的应用
+- APlayer (remix.myplayer) -> 魅族状态栏歌词
 - 音流音乐 (cn.aqzscn.stream_music) -> 魅族状态栏歌词
-- 波点音乐 (cn.wenyu.bodian) -> 状态栏歌词
 - 留声机 (org.akanework.gramophone) -> 魅族状态栏歌词
 - OPPO 音乐 (com.heytap.music) -> 蓝牙歌词
 - 海贝音乐 (com.hiby.music) -> 蓝牙歌词
 - 荣耀音乐 (com.hihonor.cloudmusic) -> 魅族状态栏歌词 / 网络获取
 - 华为音乐 (com.huawei.music) -> 蓝牙歌词
 - Kde (org.kde.kdeconnect_tp) -> 蓝牙歌词
-- 酷狗音乐 (com.kugou.android) -> Hook 获取
 - 酷狗音乐概念版 (com.kugou.android.lite) -> Hook 获取
 - 酷我音乐 (cn.kuwo.player) -> 蓝牙歌词
 - LMusic (com.lalilu.lmusic) -> 魅族状态栏歌词
@@ -45,26 +52,20 @@
 - 小米音乐 (com.miui.player) -> 蓝牙歌词
 - 咪咕音乐 (cmccwm.mobilemusic) -> 魅族状态栏歌词
 - MusicFree (fun.upup.musicfree) -> 桌面歌词
-- 网易云音乐 (com.netease.cloudmusic) -> 魅族状态栏歌词 / 网络获取
 - OPPO 音乐 (com.oppo.music) -> 蓝牙歌词
 - Poweramp (com.maxmpz.audioplayer) -> 仅处于软件歌词界面时可获取到歌词
 - 青盐音乐 (com.xuncorp.qinalt.music) -> 魅族状态栏歌词
 - 汽水音乐 (com.luna.music) -> 蓝牙歌词
-- QQ 音乐 (com.tencent.qqmusic) -> 状态栏歌词
 - RPlayer (com.r.rplayer) -> 蓝牙歌词
-- 椒盐音乐 (com.salt.music) -> Hook 获取
 - 糖醋音乐 (com.xuncorp.suvine.music) -> 魅族状态栏歌词
-- Spotify (com.spotify.music) -> 网络获取
 - Symfonium (app.symfonik.music.player) -> Hook 获取
-- Flamingo (unknown) -> Api 原生支持
-- [光锥音乐](https://coneplayer.trantor.ink) (ink.trantor.coneplayer) -> Api 原生支持
 - Tidal (com.aspiro.tidal) -> Hook 获取
+-->
 
-> 获取方式说明：
-> - **Hook 获取**：Hook 宿主应用内部歌词数据。
-> - **网络获取**：通过宿主媒体会话与网络栈拉取在线歌词，带本地缓存。
-> - **魅族状态栏歌词 / 状态栏歌词 / 蓝牙歌词 / 桌面歌词**：歌词的输出目标，视设备与宿主应用支持情况而定。
-> - **Api 原生支持**：宿主应用原生集成了 SuperLyricApi。
+> 获取方式与使用方法说明：
+> - **Hook 获取**：Hook 宿主应用内部歌词模型，无需额外设置，正常播放即可。
+> - **网络获取**：通过媒体会话与网络栈在线拉取，带本地缓存，保持网络畅通，正常播放即可。
+> - **Api 原生支持**：宿主应用原生集成 SuperLyric API，正常播放即可。
 
 ---
 

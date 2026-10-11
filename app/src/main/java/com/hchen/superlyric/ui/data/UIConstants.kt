@@ -22,8 +22,9 @@ import androidx.compose.ui.unit.dp
 
 object UIConstants {
     const val HOME_PAGE_INDEX = 0
-    const val ABOUT_PAGE_INDEX = 1
-    const val PAGE_COUNT = 2
+    const val API_PAGE_INDEX = 1
+    const val ABOUT_PAGE_INDEX = 2
+    const val PAGE_COUNT = 3
 
     val WIDE_SCREEN_THRESHOLD = 840.dp
     val MEDIUM_WIDTH_THRESHOLD = 600.dp

@@ -19,3 +19,9 @@ local.properties
 /.reasonix
 /.codegraph
 .claude
+
+# Reverse engineering & Decompiled artifacts
+/music_apks/
+/docs/
+/bugs/
+.kotlin/

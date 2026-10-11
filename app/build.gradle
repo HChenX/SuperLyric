@@ -42,8 +42,8 @@ android {
         minSdk 30
         targetSdk 37
         // noinspection HighAppVersionCode
-        versionCode 2026081900
-        versionName "3.3"
+        versionCode 2026101000
+        versionName "4.1"
 
         ndk {
             // noinspection ChromeOsAbiSupport
@@ -79,20 +79,16 @@ android {
         generateLocaleConfig = true
     }
 
-    // lint {
-    //     baseline = file("lint-baseline.xml")
-    // }
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
 
-    // packagingOptions {
-    //     resources {
-    //         excludes += "/META-INF/**"
-    //         excludes += "/kotlin/**"
-    //         excludes += "/*.txt"
-    //         excludes += "/*.bin"
-    //         excludes += "/*.json"
-    //         excludes += 'DebugProbesKt.bin'
-    //     }
-    // }
+    testOptions {
+        unitTests.all {
+            it.useJUnitPlatform()
+        }
+    }
 }
 
 androidComponents {
@@ -142,8 +138,12 @@ dependencies {
     implementation(libs.superlyricapi) {
         changing = true
     }
+    implementation project(':lyric-kernel')
 
-    compileOnly(project(':hidden-api'))
     implementation project(':processor')
     annotationProcessor project(':processor')
+
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.platform.launcher
 }

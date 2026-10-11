@@ -15,31 +15,15 @@ plugins {
     id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
 }
 
-// def token = ""
-// def infoFile = new File(rootProject.projectDir, "local.properties")
-//
-// if (token.isEmpty()) {
-//     if (infoFile.exists()) {
-//         def info = new Properties()
-//         infoFile.withInputStream { stream ->
-//             info.load(stream)
-//         }
-//
-//         token = info.getProperty("token") ?: ""
-//     }
-// }
-
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
+        mavenLocal()
         mavenCentral()
         maven { url "https://api.xposed.info/" }
         maven {
             url 'https://jitpack.io'
-            // credentials {
-            //     username = token
-            // }
         }
     }
 }
@@ -47,4 +31,4 @@ dependencyResolutionManagement {
 rootProject.name = "SuperLyric"
 include ':app'
 include ':processor'
-include ':hidden-api'
+include ':lyric-kernel'

@@ -1,0 +1,331 @@
+/*
+ * This file is part of SuperLyric.
+ *
+ * SuperLyric is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ * Copyright (C) 2025-2026 HChenX
+ */
+package com.hchen.superlyric.kernel.orchestrate
+
+import com.hchen.superlyric.kernel.identity.TrackIdentity
+import com.hchen.superlyric.kernel.model.LyricDoc
+import com.hchen.superlyric.kernel.model.LyricLine
+import com.hchen.superlyric.kernel.outcome.LyricOutcome
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Test
+
+/**
+ * 编排状态机测试。
+ *
+ * 每个用例对应一条历史缺陷或一条明确的架构约束。
+ */
+class LyricOrchestratorTest {
+
+    // ---------------------------------------------------------------- 测试替身
+
+    private class FakeScheduler : Scheduler {
+        private class Entry(val task: () -> Unit)
+        private val entries = ArrayList<Entry>()
+
+        override fun schedule(delayMs: Long, task: () -> Unit): Cancellable {
+            val entry = Entry(task)
+            entries += entry
+            return Cancellable { entries.remove(entry) }
+        }
+
+        val pending: Int get() = entries.size
+
+        /** 触发当前所有已排期任务（不含触发过程中新排的）。 */
+        fun fireAll() {
+            entries.toList().forEach { it.task() }
+        }
+    }
+
+    private class FakeSource(override val sourceName: String) : LyricSource {
+        var startCount = 0
+            private set
+        var cancelCount = 0
+            private set
+
+        /** 按创建顺序记录每一次 start 得到的回投通道，以便复现"旧会话迟到回投"。 */
+        val sessions = ArrayList<LyricSource.Session>()
+
+        override fun start(identity: TrackIdentity, session: LyricSource.Session) {
+            startCount++
+            sessions += session
+        }
+
+        override fun cancel() {
+            cancelCount++
+        }
+
+        /** 通过最近一次会话回投。 */
+        fun deliver(outcome: LyricOutcome) {
+            sessions.lastOrNull()?.deliver(outcome)
+        }
+    }
+
+    private class RecordingListener : LyricOrchestrator.Listener {
+        var resolved: LyricOutcome.Success? = null
+        var noLyricsCount = 0
+        var unavailableCount = 0
+        var idleCount = 0
+        var lastNoLyricsIdentity: TrackIdentity? = null
+        var lastUnavailableIdentity: TrackIdentity? = null
+        val transitions = ArrayList<LyricOrchestrator.State>()
+
+        override fun onLyricResolved(outcome: LyricOutcome.Success) {
+            resolved = outcome
+        }
+
+        override fun onNoLyrics(identity: TrackIdentity?) {
+            noLyricsCount++
+            lastNoLyricsIdentity = identity
+        }
+
+        override fun onUnavailable(identity: TrackIdentity?) {
+            unavailableCount++
+            lastUnavailableIdentity = identity
+        }
+
+        override fun onIdle() {
+            idleCount++
+        }
+
+        override fun onStateChanged(state: LyricOrchestrator.State) {
+            transitions += state
+        }
+    }
+
+    // ---------------------------------------------------------------- 辅助
+
+    private val doc = LyricDoc(lines = listOf(LyricLine(0L, 1_000L, "line")))
+
+    private fun success() = LyricOutcome.Success(doc)
+
+    private fun track(id: String, title: String = "Song") =
+        TrackIdentity("qq", "qq:$id", title, "Artist", 200_000L)
+
+    private class Fixture(hook: Boolean = true, api: Boolean = true) {
+        val scheduler = FakeScheduler()
+        val listener = RecordingListener()
+        val hookSource = if (hook) FakeSource("hook") else null
+        val apiSource = if (api) FakeSource("api") else null
+        val orchestrator = LyricOrchestrator(hookSource, apiSource, scheduler, listener)
+    }
+
+    // ---------------------------------------------------------------- 用例
+
+    @Test
+    fun `hook hit activates immediately and never touches the api`() {
+        val f = Fixture()
+
+        f.orchestrator.onTrackChanged(track("A"))
+        assertEquals(LyricOrchestrator.State.RESOLVING_HOOK, f.orchestrator.state)
+
+        f.hookSource!!.deliver(success())
+
+        assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
+        assertNotNull(f.listener.resolved)
+        assertEquals(0, f.apiSource!!.startCount)
+        assertEquals(0, f.scheduler.pending, "命中后必须取消 Hook 超时任务")
+    }
+
+    @Test
+    fun `hook timeout falls back to the api`() {
+        val f = Fixture()
+
+        f.orchestrator.onTrackChanged(track("A"))
+        assertEquals(1, f.scheduler.pending)
+
+        f.scheduler.fireAll()
+
+        assertEquals(LyricOrchestrator.State.FETCHING_API, f.orchestrator.state)
+        assertEquals(1, f.apiSource!!.startCount)
+    }
+
+    @Test
+    fun `late hook capture after stop is discarded`() {
+        val f = Fixture()
+
+        f.orchestrator.onTrackChanged(track("A"))
+        val staleSession = f.hookSource!!.sessions.last()
+
+        f.orchestrator.onPlaybackStopped()
+        assertEquals(LyricOrchestrator.State.IDLE, f.orchestrator.state)
+        assertEquals(1, f.listener.idleCount)
+        assertNull(f.orchestrator.activeIdentity, "停止必须清空当前音轨")
+
+        // 宿主在停止之后才异步吐出歌词
+        staleSession.deliver(success())
+
+        assertNull(f.listener.resolved, "停止后迟到的捕获不得发布歌词")
+        assertEquals(LyricOrchestrator.State.IDLE, f.orchestrator.state)
+    }
+
+    @Test
+    fun `stale api result from a previous track is discarded`() {
+        val f = Fixture()
+
+        f.orchestrator.onTrackChanged(track("A"))
+        f.hookSource!!.deliver(LyricOutcome.NoLyrics("none"))
+        val staleSession = f.apiSource!!.sessions.last()
+
+        // 切到下一首
+        f.orchestrator.onTrackChanged(track("B"))
+
+        staleSession.deliver(success())
+
+        assertNull(f.listener.resolved, "旧曲目的网络结果不得覆盖新曲目")
+    }
+
+    @Test
+    fun `repeated report of the same track does not restart resolution`() {
+        val f = Fixture()
+
+        f.orchestrator.onTrackChanged(track("A"))
+        f.hookSource!!.deliver(success())
+        assertEquals(1, f.hookSource!!.startCount)
+
+        f.orchestrator.onTrackChanged(track("A"))
+
+        assertEquals(1, f.hookSource!!.startCount, "同一首曲目不得重复取词")
+        assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
+    }
+
+    @Test
+    fun `all sources reporting no lyrics concludes with the placeholder path`() {
+        val f = Fixture()
+
+        f.orchestrator.onTrackChanged(track("A"))
+        f.hookSource!!.deliver(LyricOutcome.NoLyrics("host says none"))
+        f.apiSource!!.deliver(LyricOutcome.NoLyrics("platform says none"))
+
+        assertEquals(LyricOrchestrator.State.NO_LYRICS, f.orchestrator.state)
+        assertEquals(1, f.listener.noLyricsCount)
+        assertEquals(0, f.listener.unavailableCount)
+        // 下游需要音轨信息才能构造纯音乐占位
+        assertEquals("qq:A", f.listener.lastNoLyricsIdentity?.stableId)
+    }
+
+    @Test
+    fun `hook no lyrics with no api source concludes immediately`() {
+        val f = Fixture(api = false)
+
+        f.orchestrator.onTrackChanged(track("A"))
+        f.hookSource!!.deliver(LyricOutcome.NoLyrics("none"))
+
+        assertEquals(1, f.listener.noLyricsCount)
+        assertEquals(LyricOrchestrator.State.NO_LYRICS, f.orchestrator.state)
+    }
+
+    @Test
+    fun `transient failures never conclude as no lyrics`() {
+        val f = Fixture()
+
+        f.orchestrator.onTrackChanged(track("A"))
+        f.hookSource!!.deliver(LyricOutcome.TransientFailure())
+
+        // 三次网络尝试全部失败
+        repeat(3) {
+            f.apiSource!!.deliver(LyricOutcome.TransientFailure())
+            f.scheduler.fireAll()
+        }
+
+        assertEquals(0, f.listener.noLyricsCount, "失败绝不能被当成纯音乐")
+        assertEquals(1, f.listener.unavailableCount)
+        assertEquals(LyricOrchestrator.State.UNAVAILABLE, f.orchestrator.state)
+        assertNull(f.listener.resolved)
+    }
+
+    @Test
+    fun `api is retried with backoff before giving up`() {
+        val f = Fixture()
+
+        f.orchestrator.onTrackChanged(track("A"))
+        f.hookSource!!.deliver(LyricOutcome.TransientFailure())
+        assertEquals(1, f.apiSource!!.startCount)
+
+        f.apiSource!!.deliver(LyricOutcome.TransientFailure())
+        assertEquals(1, f.scheduler.pending, "首次失败应排期一次重试")
+
+        f.scheduler.fireAll()
+        assertEquals(2, f.apiSource!!.startCount)
+
+        f.apiSource!!.deliver(success())
+        assertNotNull(f.listener.resolved)
+        assertEquals(0, f.listener.unavailableCount, "重试成功后不得再报失败")
+        assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
+    }
+
+    @Test
+    fun `transient hook failure with no api source reports unavailable`() {
+        val f = Fixture(api = false)
+
+        f.orchestrator.onTrackChanged(track("A"))
+        f.hookSource!!.deliver(LyricOutcome.TransientFailure())
+
+        assertEquals(0, f.listener.noLyricsCount)
+        assertEquals(1, f.listener.unavailableCount)
+        assertEquals(LyricOrchestrator.State.UNAVAILABLE, f.orchestrator.state)
+    }
+
+    @Test
+    fun `hook timeout with no api source is not treated as no lyrics`() {
+        val f = Fixture(api = false)
+
+        f.orchestrator.onTrackChanged(track("A"))
+        f.scheduler.fireAll()
+
+        assertEquals(0, f.listener.noLyricsCount, "超时不等于没有歌词")
+        assertEquals(1, f.listener.unavailableCount)
+    }
+
+    @Test
+    fun `api failure before any hook outcome still allows a later api success`() {
+        val f = Fixture()
+
+        f.orchestrator.onTrackChanged(track("A"))
+        f.scheduler.fireAll()
+        assertEquals(1, f.apiSource!!.startCount)
+
+        f.apiSource!!.deliver(success())
+
+        assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
+        assertNotNull(f.listener.resolved)
+    }
+
+    @Test
+    fun `rapid track switching discards every stale delivery but accepts the current one`() {
+        val f = Fixture()
+
+        repeat(10) { index ->
+            f.orchestrator.onTrackChanged(track("TRACK$index"))
+        }
+
+        val sessions = f.hookSource!!.sessions
+        assertEquals(10, sessions.size)
+
+        // 前九首的会话此刻才回投——全部属于过期代际
+        sessions.dropLast(1).forEach { it.deliver(success()) }
+        assertNull(f.listener.resolved, "连切 10 次后，所有旧会话的结果都必须被丢弃")
+
+        // 当前这首的会话回投应当被接受
+        sessions.last().deliver(success())
+        assertNotNull(f.listener.resolved)
+        assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
+    }
+}
