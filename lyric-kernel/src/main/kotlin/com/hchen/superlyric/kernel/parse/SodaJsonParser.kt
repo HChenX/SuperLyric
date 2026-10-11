@@ -31,30 +31,25 @@ import com.hchen.superlyric.kernel.model.LyricWord
 import com.hchen.superlyric.kernel.text.LyricText
 
 /**
- * 汽水音乐（Soda / Luna）与波点 JSON 分支的原生逐字歌词解析器。
+ * 汽水音乐（Soda / Luna）与波点 JSON 分支的原生逐字歌词解析器
  *
- * <h3>结构</h3>
- * {@code sentences[]} 数组可能被包裹在多个层级下，逐层探测：
- * {@code sentences} → {@code lyrics.sentences} → {@code audioWithLyricsOption.*}
- * → {@code track_page.*} → {@code loaderData.*}。
+ * ## 结构
+ * `sentences[]` 数组可能被包裹在多个层级下，逐层探测：
+ * `sentences` → `lyrics.sentences` → `audioWithLyricsOption.*`
+ * → `track_page.*` → `loaderData.*`。
  *
- * <pre>
- *   sentence: { startMs, endMs, text, words: [ { text, startMs, endMs } ] }
- *   译文位于:  translations.cn
- * </pre>
+ * ```
+ * sentence: { startMs, endMs, text, words: [ { text, startMs, endMs } ] }
+ * 译文位于:  translations.cn
+ * ```
  *
- * <h3>比旧实现修正了什么</h3>
- * <ul>
- *   <li><b>补上了译文支持</b>：旧实现对 JSON 形态**完全没有译文路径**，双语曲目的译文
- *       从未被读取。译文来源 {@code translations.cn} 支持两种实际形态——与
- *       {@code sentences} 平行的对象数组，或 LRC 形态的字符串——两种形态都归一为
- *       [TimeText]，再统一走 [TranslationMerger] 对齐。</li>
- *   <li><b>去掉相对时间门控</b>：旧实现以 {@code lineStart > 1000} 这一**全局阈值**判断
- *       词时间戳是否为行内相对值，导致曲目开头 1 秒内的行全部误判，逐字时序坍缩到行首。
- *       本实现改为**逐句局部比较**：仅当词的 {@code startMs} 小于所属句的 {@code startMs}
- *       时才视其为行内相对偏移。</li>
- *   <li><b>句内插值</b>：词缺失时间戳时按句时长与字长比例插值，而不是一律堆到句首。</li>
- * </ul>
+ * ## 三条判据
+ * - **译文来源**：`translations.cn` 支持两种实际形态——与 `sentences` 平行的对象数组，
+ *   或 LRC 形态的字符串——两种形态都归一为 [TimeText]，再统一走 [TranslationMerger] 对齐
+ * - **相对时间判定**：以**逐句局部比较**判断词时间戳是否为行内相对值——仅当词的 `startMs`
+ *   小于所属句的 `startMs` 时才视其为行内相对偏移。若改用 `lineStart > 1000` 这类**全局阈值**，
+ *   曲目开头 1 秒内的行会全部误判，逐字时序坍缩到行首
+ * - **句内插值**：词缺失时间戳时按句时长与字长比例插值，而不是一律堆到句首
  *
  * @author 焕晨HChen
  */
@@ -63,7 +58,7 @@ object SodaJsonParser {
     private const val DEFAULT_SENTENCE_DURATION_MS = 2000L
 
     /**
-     * 判定文本是否为该 JSON 形态。
+     * 判定文本是否为该 JSON 形态
      */
     fun canParse(text: String?): Boolean {
         if (text.isNullOrEmpty()) return false
@@ -72,7 +67,7 @@ object SodaJsonParser {
     }
 
     /**
-     * 解析 JSON 歌词正文。
+     * 解析 JSON 歌词正文
      *
      * @param text 原始 JSON 字符串
      * @return 解析结果；无有效歌词行时返回 null
@@ -160,13 +155,12 @@ object SodaJsonParser {
     }
 
     /**
-     * 解析 {@code translations.cn}。
+     * 解析 `translations.cn`
      *
      * 该字段在真实载荷中有两种形态，均归一为 [TimeText]：
-     * <ul>
-     *   <li>与 {@code sentences} 平行的对象数组，逐项读取 {@code startMs} 与 {@code text}；</li>
-     *   <li>LRC 形态字符串（{@code [mm:ss.xx]译文}）。</li>
-     * </ul>
+     * - 与 `sentences` 平行的对象数组，逐项读取 `startMs` 与 `text`
+     * - LRC 形态字符串（`[mm:ss.xx]译文`）
+     *
      * 形态无法识别时返回空列表——此时只丢失译文，绝不影响主歌词。
      */
     private fun parseTranslations(root: JsonObject): List<TimeText> {

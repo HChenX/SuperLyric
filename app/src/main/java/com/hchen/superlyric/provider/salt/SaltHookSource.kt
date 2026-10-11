@@ -32,7 +32,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
 /**
- * 椒盐音乐 Hook 取词来源：解析宿主给出的原始歌词文本。
+ * 椒盐音乐 Hook 取词来源：解析宿主给出的原始歌词文本
  *
  * <p>只需一次解析、一个 Hook 点。宿主的行/词模型完全不需要触碰。
  *
@@ -58,11 +58,11 @@ class SaltHookSource : HookLyricSource {
     private var lastSourceText: String? = null
 
     /**
-     * 已解析、但尚未被任何会话消费的结果，按稳定标识暂存。
+     * 已解析、但尚未被任何会话消费的结果，按稳定标识暂存
      *
-     * <h3>为什么必须暂存</h3>
-     * 椒盐的调用顺序是**先**把歌词交给 {@code MusicController}、**再**更新
-     * {@code MediaSession} 元数据（实测相隔约 20ms）。而会话是在元数据到达、
+     * ## 为什么必须暂存
+     * 椒盐的调用顺序是**先**把歌词交给 `MusicController`、**再**更新
+     * `MediaSession` 元数据（实测相隔约 20ms）。而会话是在元数据到达、
      * 编排器判定切歌之后才建立的——于是 Hook 的成果会绑在"上一个"会话上，
      * 随代际推进被当作过期数据丢弃，表现为"歌词明明解析出来了却整轮超时转网络"。
      */
@@ -76,7 +76,7 @@ class SaltHookSource : HookLyricSource {
     data class SongInfo(val title: String, val artist: String, val durationMs: Long)
 
     /**
-     * 按 `Song.getId()` 索引的真实曲目信息。
+     * 按 `Song.getId()` 索引的真实曲目信息
      *
      * <p>椒盐会把 `MediaMetadata` 的 TITLE/ARTIST 改写成歌词行与 `"歌手 - 曲名"`，
      * 元数据不可信；而宿主自己的 `Song` 对象带着干净的曲名、歌手与时长，
@@ -99,7 +99,7 @@ class SaltHookSource : HookLyricSource {
         })
     }
 
-    /** 取回指定曲目的真实信息；未知时返回 null。 */
+    /** 取回指定曲目的真实信息；未知时返回 null */
     fun songInfo(songId: String): SongInfo? = songStore[songId]
 
     override fun currentStableId(): String? = capturedSongId
@@ -177,9 +177,9 @@ class SaltHookSource : HookLyricSource {
     }
 
     /**
-     * 用音轨身份补齐曲目信息。
+     * 用音轨身份补齐曲目信息
      *
-     * <p><b>身份优先，而不是"仅在为空时补齐"</b>：椒盐的歌词先于元数据到达，
+     * <p>**身份优先，而不是"仅在为空时补齐"**：椒盐的歌词先于元数据到达，
      * 解析时用的可能是**上一首**的身份，于是旧曲名与旧时长会被烤进文档。
      * 若只在字段为空时才覆盖，这些错误值就永远纠正不过来（实测第二首会带着第一首的曲名）。
      * 因此只要身份里有值就一律以身份为准。
@@ -197,7 +197,7 @@ class SaltHookSource : HookLyricSource {
     private companion object {
         const val NAMESPACE = "salt"
 
-        /** 真实曲目信息的缓存上限。 */
+        /** 真实曲目信息的缓存上限 */
         const val MAX_CACHED_SONGS = 32
     }
 }

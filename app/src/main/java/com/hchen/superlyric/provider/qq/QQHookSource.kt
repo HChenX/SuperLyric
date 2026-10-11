@@ -27,16 +27,14 @@ import com.hchen.superlyric.provider.base.HookLyricSource
 import java.util.concurrent.Executors
 
 /**
- * QQ 音乐 Hook 取词来源：从宿主取回官方 songMID，再自行拉取原生 QRC。
+ * QQ 音乐 Hook 取词来源：从宿主取回官方 songMID，再自行拉取原生 QRC
  *
- * <h3>取词流程</h3>
- * <ol>
- *   <li>切歌时若元数据已带 14 位 songMID，立刻拉取；</li>
- *   <li>否则等 [QQAnchors] 的 {@code LyricLoadBean} 构造信号；</li>
- *   <li>信号带来 songMID 后立即拉取——这条路径上的标识来自宿主自身，
- *       因此不会出现"同名翻唱错配"；</li>
- *   <li>信号始终不来时由编排器超时兜底转检索路径。</li>
- * </ol>
+ * ## 取词流程
+ * - 切歌时若元数据已带 14 位 songMID，立刻拉取
+ * - 否则等 [QQAnchors] 的 `LyricLoadBean` 构造信号
+ * - 信号带来 songMID 后立即拉取——这条路径上的标识来自宿主自身，
+ *   因此不会出现"同名翻唱错配"
+ * - 信号始终不来时由编排器超时兜底转检索路径
  *
  * @author 焕晨HChen
  */
@@ -54,16 +52,16 @@ class QQHookSource : HookLyricSource {
     @Volatile
     private var pendingIdentity: TrackIdentity? = null
 
-    /** 最近一次由宿主上报的 songMID，供 Provider 构建一致的音轨身份。 */
+    /** 最近一次由宿主上报的 songMID，供 Provider 构建一致的音轨身份 */
     @Volatile
     private var capturedMid: String? = null
 
-    /** 已经成功取回歌词的 songMID，避免宿主重复构造 LyricLoadBean 时反复发起网络请求。 */
+    /** 已经成功取回歌词的 songMID，避免宿主重复构造 LyricLoadBean 时反复发起网络请求 */
     @Volatile
     private var deliveredMid: String? = null
 
     /**
-     * 正在取词中的 songMID。
+     * 正在取词中的 songMID
      *
      * 必须在**派发前**登记：宿主会在几十毫秒内连续构造多次 LyricLoadBean，
      * 若只在取词完成后才登记，这几次并发请求会全部落空去重、各发一次网络请求。
@@ -118,9 +116,9 @@ class QQHookSource : HookLyricSource {
     }
 
     /**
-     * 发起一次取词。
+     * 发起一次取词
      *
-     * 去重集中在这里而不是调用点：宿主在播放期间会反复构造 {@code LyricLoadBean}，
+     * 去重集中在这里而不是调用点：宿主在播放期间会反复构造 `LyricLoadBean`，
      * 且 [start] 与锚点回调可能对同一首曲目各发一次。若只在某一个调用点去重，
      * 另一条路径仍会重复发起网络请求。
      */

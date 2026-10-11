@@ -26,20 +26,14 @@ import com.hchen.superlyricapi.SuperLyricLine
 import com.hchen.superlyricapi.SuperLyricWord
 
 /**
- * `:lyric-kernel` 的不可变模型与 `SuperLyricApi` 的可变 Parcelable 之间的**唯一**边界。
+ * `:lyric-kernel` 的不可变模型与 `SuperLyricApi` 的可变 Parcelable 之间的**唯一**边界
  *
- * <h3>为什么必须集中在这一处</h3>
- * <ol>
- *   <li><b>Parcelable 无法进入内核</b>：[SuperLyricData] 来自外部 Android 库，
- *       不可变内核模块不能依赖它。本适配器是 `:app` 侧唯一 import 它的业务代码。</li>
- *   <li><b>深拷贝是硬性要求</b>：重构前，同一份 [SuperLyricData] 既被发布到 Binder、
- *       又被服务端会话与进度追踪器同时持有，而 `LyricSanitizer` 还会**原地修改并返回同一实例**
- *       （且被重复调用两次）。跨线程、跨 Binder 共享可变对象是那一类诡异缺陷的温床。
- *       本适配器**每次都从不可变模型重新分配**全部 [SuperLyricLine] 与 [SuperLyricWord]，
- *       因此不可能出现共享可变实例。</li>
- * </ol>
+ * - **Parcelable 无法进入内核**：[SuperLyricData] 来自外部 Android 库，零依赖的不可变内核
+ *   不能依赖它。本适配器是 `:app` 侧唯一 import 它的业务代码
+ * - **深拷贝是硬性要求**：跨线程、跨 Binder 共享可变实例是诡异缺陷的温床。本适配器每次都
+ *   从不可变模型**重新分配**全部 [SuperLyricLine] 与 [SuperLyricWord]，因此不可能出现共享实例
  *
- * 内核侧一律使用 [LyricDoc]；只有在跨 Binder 收发的那一刻才经过本适配器。
+ * 内核侧一律使用 [LyricDoc]，只有在跨 Binder 收发的那一刻才经过本适配器
  *
  * @author 焕晨HChen
  */

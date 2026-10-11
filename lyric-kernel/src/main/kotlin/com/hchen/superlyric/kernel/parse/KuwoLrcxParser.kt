@@ -28,56 +28,53 @@ import com.hchen.superlyric.kernel.text.LyricText
 import kotlin.math.max
 
 /**
- * 酷我 / 波点 LRCX 明文解析器。
+ * 酷我 / 波点 LRCX 明文解析器
  *
- * <h3>格式</h3>
- * LRCX 以头部标签 {@code [kuwo:KEY]} 与普通 LRC 区分（KEY 为**八进制**整数）。其中：
- * <pre>
- *   c = KEY / 10      d = KEY % 10
- *   词起始（行内相对）= (v1 + v2) / (c * 2)
- *   词结束（行内相对）= ((v1 - v2) / (d * 2)) + 词起始
- * </pre>
- * 该算式与宿主自身解析器（{@code com.tme.push.a3.f}）逐式一致。
+ * ## 格式
+ * LRCX 以头部标签 `[kuwo:KEY]` 与普通 LRC 区分（KEY 为**八进制**整数）：
+ * ```
+ * c = KEY / 10      d = KEY % 10
+ * 词起始（行内相对）= (v1 + v2) / (c * 2)
+ * 词结束（行内相对）= ((v1 - v2) / (d * 2)) + 词起始
+ * ```
+ * 该算式与宿主自身解析器（`com.tme.push.a3.f`）逐式一致。
  * 文本归属规则也与之一致：**某个词标签之后、下一个词标签之前**的文字属于该标签。
  *
- * <h3>比旧实现修正了什么</h3>
- * <ul>
- *   <li><b>译文判定</b>：旧实现把**任何**不含 {@code <v1,v2>} 标签的时间行一律当作译文，
- *       于是没有逐字数据的**正常主行**会被挂到相邻行当译文（翻译错位），
- *       或找不到匹配时被静默丢弃（歌词丢失）。本实现改为：<b>只有当该行的时间戳与某条
- *       逐字行的时间戳完全相同</b>时，才认定它是那条主行的译文——判据是"成对出现"这一
- *       结构事实，而非"缺少标签"这一缺席事实。</li>
- *   <li><b>无密钥不再猜</b>：旧实现在缺少 {@code [kuwo:]} 头部时会走一条"看起来像明文标签"
- *       的旁路（{@code isPlainTag}），把加密的 {@code (v1,v2)} 误读成 {@code (offset,dur)}，
- *       产出完全错误的逐字时序。本实现要求必须存在头部标签；没有头部就不是 LRCX，
- *       交给通用 LRC 解析器处理。</li>
- * </ul>
+ * ## 译文判定
+ * 只有当某行的时间戳与某条逐字行的时间戳**完全相同**时，才认定它是那条主行的译文——
+ * 判据是"成对出现"这一结构事实，而非"缺少标签"这一缺席事实。若把任何不含 `<v1,v2>`
+ * 标签的时间行都当作译文，没有逐字数据的**正常主行**会被挂到相邻行当译文（翻译错位），
+ * 或找不到匹配时被静默丢弃（歌词丢失）。
+ *
+ * ## 缺密钥不猜
+ * 必须存在 `[kuwo:]` 头部标签；没有头部就不是 LRCX，交给通用 LRC 解析器处理。
+ * 加密的 `(v1,v2)` 与明文的 `(offset,dur)` 形式相近，强行误读会产出完全错误的逐字时序。
  *
  * @author 焕晨HChen
  */
 object KuwoLrcxParser {
 
-    /** LRCX 头部标签；其存在即判定为 LRCX。 */
+    /** LRCX 头部标签；其存在即判定为 LRCX */
     private val KUWO_HEADER = Regex("""\[kuwo:\s*([^]]*)]""", RegexOption.IGNORE_CASE)
 
     private val META_PATTERN = Regex("""\[(ti|ar|al):\s*(.+?)]""", RegexOption.IGNORE_CASE)
 
-    /** 行首时间戳：{@code [mm:ss]} / {@code [mm:ss.xx]} / {@code [mm:ss:xx]} */
+    /** 行首时间戳：`[mm:ss]` / `[mm:ss.xx]` / `[mm:ss:xx]` */
     private val LINE_TIME_PATTERN = Regex("""\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?]""")
 
-    /** 逐字标签：{@code <v1,v2>} 或 {@code <v1,v2,v3>} */
+    /** 逐字标签：`<v1,v2>` 或 `<v1,v2,v3>` */
     private val WORD_TAG_PATTERN = Regex("""<(-?\d+),(-?\d+)(?:,-?\d+)?>""")
 
     private const val MAX_LINE_DURATION_MS = 4000L
 
     /**
-     * 判定文本是否为 LRCX。
+     * 判定文本是否为 LRCX
      */
     fun canParse(text: String?): Boolean =
         !text.isNullOrEmpty() && KUWO_HEADER.containsMatchIn(text)
 
     /**
-     * 解析 LRCX 明文。
+     * 解析 LRCX 明文
      *
      * @param text 原始 LRCX 文本
      * @return 解析结果；非 LRCX 或无有效歌词行时返回 null
@@ -164,8 +161,8 @@ object KuwoLrcxParser {
     }
 
     /**
-     * 解出八进制密钥。非法或退化（c/d 为 0）时回退为 1，
-     * 与宿主 {@code s.a(str, 8)} 的行为保持一致。
+     * 解出八进制密钥：非法或退化（c/d 为 0）时回退为 1，
+     * 与宿主 `s.a(str, 8)` 的行为保持一致。
      */
     private fun decodeKey(rawKey: String): Pair<Int, Int> {
         var key = rawKey
@@ -226,7 +223,7 @@ object KuwoLrcxParser {
     }
 
     /**
-     * LRCX 不声明行结束时间，按下一行起始推导，并在最后一行上施加时长上限。
+     * LRCX 不声明行结束时间，按下一行起始推导，并在最后一行上施加时长上限
      */
     private fun assignEndTimes(lines: MutableList<LyricLine>) {
         for (index in lines.indices) {

@@ -45,22 +45,19 @@ import okhttp3.Request
 import okhttp3.Response
 
 /**
- * 酷狗开放接口取词来源：官方 KRC 接口的直查与检索。
+ * 酷狗开放接口取词来源：官方 KRC 接口的直查与检索
  *
- * <h3>接口</h3>
- * <ul>
- *   <li>检索：{@code mobilecdn.kugou.com/api/v3/search/song}（歌名 + 歌手 → 候选 Hash）</li>
- *   <li>取歌词 id / accesskey：{@code krcs.kugou.com/search?hash=…}</li>
- *   <li>下载：{@code krcs.kugou.com/download?id=…&accesskey=…&fmt=krc}</li>
- * </ul>
+ * ## 接口
+ * - 检索：`mobilecdn.kugou.com/api/v3/search/song`（歌名 + 歌手 → 候选 Hash）
+ * - 取歌词 id / accesskey：`krcs.kugou.com/search?hash=…`
+ * - 下载：`krcs.kugou.com/download?id=…&accesskey=…&fmt=krc`
+ *
  * 三个接口均无需鉴权，长期稳定。
  *
- * <h3>结果语义（决定是否允许下发纯音乐占位）</h3>
- * <ul>
- *   <li>拿到并解析成功 → [LyricOutcome.Success]；</li>
- *   <li>请求成功但平台明确没有这条曲目的歌词 → [LyricOutcome.NoLyrics]（终态）；</li>
- *   <li>网络异常或报文解码失败 → [LyricOutcome.TransientFailure]（可重试，<b>绝不</b>下发占位）。</li>
- * </ul>
+ * ## 结果语义（决定是否允许下发纯音乐占位）
+ * - 拿到并解析成功 → [LyricOutcome.Success]
+ * - 请求成功但平台明确没有这条曲目的歌词 → [LyricOutcome.NoLyrics]（终态）
+ * - 网络异常或报文解码失败 → [LyricOutcome.TransientFailure]（可重试，**绝不**下发占位）
  *
  * @author 焕晨HChen
  */
@@ -110,10 +107,10 @@ class KuGouApiSource : LyricSource {
     }
 
     /**
-     * 对单个哈希取词。
+     * 对单个哈希取词
      *
      * @return [LyricOutcome.Success] 或 [LyricOutcome.TransientFailure]；
-     *         返回 {@code null} 表示**这个哈希没有歌词**，调用方可继续尝试其它哈希
+     *         返回 `null` 表示**这个哈希没有歌词**，调用方可继续尝试其它哈希
      */
     private fun attempt(hash: String, identity: TrackIdentity): LyricOutcome? {
         val cached = readCachedKrc(hash)
@@ -167,9 +164,9 @@ class KuGouApiSource : LyricSource {
         TrackIdentity.normalizeStableId(identity.stableId)?.takeIf { HASH_PATTERN.matches(it) }
 
     /**
-     * 按歌名 + 歌手检索候选，返回打分最高的 Hash。
+     * 按歌名 + 歌手检索候选，返回打分最高的 Hash
      *
-     * 采纳门槛 [MIN_ACCEPT_SCORE] 已按"多源检索保留但收紧"的要求，从原先的 80 分提高到 85 分。
+     * 采纳门槛见 [MIN_ACCEPT_SCORE]
      */
     private fun searchBestHash(identity: TrackIdentity): String? {
         if (identity.title.isBlank()) return null
@@ -249,7 +246,7 @@ class KuGouApiSource : LyricSource {
     }
 
     /**
-     * 读磁盘缓存。
+     * 读磁盘缓存
      *
      * 只有**成功解析出歌词**的载荷才会被写盘（见 [attempt]），因此这里直接采信；
      * 万一文件损坏导致解密失败，[attempt] 会删除该条目，下次自然回落网络。
@@ -264,12 +261,12 @@ class KuGouApiSource : LyricSource {
         if (array == null || array.length() == 0) null else array.optJSONObject(0)
 
     /**
-     * 发起一次 GET。
+     * 发起一次 GET
      *
      * **传输层失败必须抛出**，绝不能返回 null：调用方用 null 表达"平台没有这条歌词"，
-     * 若把网络异常也压成 null，断网就会被判成「确定性无歌词」并下发纯音乐占位——
-     * 那正是本项目要根除的历史缺陷。抛出后由 [start] 的外层 `runCatching`
-     * 归类为 [LyricOutcome.TransientFailure]，只重试、不下发占位。
+     * 若把网络异常也压成 null，断网就会被判成「确定性无歌词」并下发纯音乐占位。
+     * 抛出后由 [start] 的外层 `runCatching` 归类为 [LyricOutcome.TransientFailure]，
+     * 只重试、不下发占位。
      */
     private fun get(url: String): String {
         val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).build()
@@ -280,12 +277,12 @@ class KuGouApiSource : LyricSource {
     }
 
     private companion object {
-        /** 磁盘缓存命名空间，须与 `LyricCacheStore.ONLINE_PROVIDERS` 一致。 */
+        /** 磁盘缓存命名空间，须与 `LyricCacheStore.ONLINE_PROVIDERS` 一致 */
         const val PROVIDER_NAME = "Kugou"
 
         const val USER_AGENT = "KuGou2012-7093-Android601"
 
-        /** 收紧后的采纳门槛；旧实现为 80.0。 */
+        /** 检索候选低于此分不采纳。 */
         const val MIN_ACCEPT_SCORE = 85.0
 
         val HASH_PATTERN = Regex("^[0-9a-fA-F]{32}$")

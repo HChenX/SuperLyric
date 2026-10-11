@@ -43,8 +43,8 @@ import com.hchen.superlyric.provider.kugou.KuGouApiSource;
  *
  * <h3>标识一致性</h3>
  * 覆写 [buildIdentity] 以宿主的 {@code rid} 作为稳定标识（前缀 {@code kuwo:}）。
- * <b>旧实现漏写了这个覆写</b>，导致 Hook 上报的数字 rid 与元数据上报的标题哈希永远不相等，
- * Hook 捕获被当作过期数据丢弃——这是"歌词加载事件丢失"的一个确凿根因。
+ * 不覆写就会让 Hook 上报的数字 rid 与元数据上报的标题哈希永不相等，
+ * Hook 捕获被当成过期数据丢弃，歌词加载事件整条丢失。
  *
  * @author 焕晨HChen
  */

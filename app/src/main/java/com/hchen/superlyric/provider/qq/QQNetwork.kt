@@ -43,19 +43,17 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
 /**
- * QQ 音乐官方接口访问层，供 Hook 路径与 API 路径共用。
+ * QQ 音乐官方接口访问层，供 Hook 路径与 API 路径共用
  *
- * <h3>三路载荷</h3>
- * {@code GetPlayLyricInfo} 同时返回三个**各自独立加密**的字段：
- * <ul>
- *   <li>{@code lyric}——原生 QRC 逐字报文（主歌词）</li>
- *   <li>{@code trans}——译文，解密后是 {@code [start,dur]译文} 形态</li>
- *   <li>{@code roma}——罗马音，解密后同样是 {@code [start,dur]} 形态</li>
- * </ul>
- * 三者都经 {@link QrcCipher} 解密（腾讯改造版 3DES + ZLib）。
+ * ## 三路载荷
+ * `GetPlayLyricInfo` 同时返回三个**各自独立加密**的字段：
+ * - `lyric`——原生 QRC 逐字报文（主歌词）
+ * - `trans`——译文，解密后是 `[start,dur]译文` 形态
+ * - `roma`——罗马音，解密后同样是 `[start,dur]` 形态
  *
- * <p><b>旧实现请求了 {@code roma} 却从未读取它</b>，罗马音被整条丢弃。
- * 本实现把译文与罗马音分别送入翻译通道与音译通道，两者互不覆盖。
+ * 三者都经 [QrcCipher] 解密（腾讯改造版 3DES + ZLib）。
+ *
+ * <p>译文与罗马音分别送入翻译通道与音译通道，两者互不覆盖。
  *
  * @author 焕晨HChen
  */
@@ -66,12 +64,12 @@ internal object QQNetwork {
     private const val URL_PRIMARY = "https://u.y.qq.com/cgi-bin/musicu.fcg"
     private const val URL_FALLBACK = "https://shu6.y.qq.com/cgi-bin/musicu.fcg"
 
-    /** 磁盘缓存命名空间，须与 `LyricCacheStore.ONLINE_PROVIDERS` 一致。 */
+    /** 磁盘缓存命名空间，须与 `LyricCacheStore.ONLINE_PROVIDERS` 一致 */
     private const val PROVIDER_NAME = "QQ"
 
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
-    /** 采纳门槛；旧实现为 60.0，按"多源检索收紧"的要求提高。 */
+    /** 检索候选低于此分不采纳。 */
     private const val MIN_ACCEPT_SCORE = 85.0
 
     private val client: OkHttpClient = OkHttpClient.Builder()
@@ -86,7 +84,7 @@ internal object QQNetwork {
     )
 
     /**
-     * 按 songMID / songID 精准拉取并解析。
+     * 按 songMID / songID 精准拉取并解析
      *
      * 依次尝试"移动端 + 桌面端"两套入口与两套客户端标识，任一命中即返回。
      */
@@ -134,7 +132,7 @@ internal object QQNetwork {
     }
 
     /**
-     * 读磁盘缓存并复核。
+     * 读磁盘缓存并复核
      *
      * 命中后仍重新走一遍解密 + 解析：缓存损坏、或解析器变更导致旧响应不再可解析时，
      * 删掉该条目并回落网络。**绝不**把"缓存不可用"当成"平台没有歌词"——
@@ -160,7 +158,7 @@ internal object QQNetwork {
     }
 
     /**
-     * 按歌名 + 歌手检索，返回打分最高的 {@code mid to id}。
+     * 按歌名 + 歌手检索，返回打分最高的 `mid to id`
      *
      * @return 未达到 [MIN_ACCEPT_SCORE] 时返回 null
      */
@@ -255,7 +253,7 @@ internal object QQNetwork {
         }.toString()
 
     /**
-     * 解密三路载荷并组装文档。
+     * 解密三路载荷并组装文档
      *
      * @return 成功时返回结果；当前 profile 未命中时返回 null 以便继续尝试其它入口
      */
@@ -293,7 +291,7 @@ internal object QQNetwork {
     }
 
     /**
-     * 解密单个字段。
+     * 解密单个字段
      *
      * @return 解密后的明文；字段为空时返回 null；解密失败时抛 [DecodeException]
      */
@@ -316,7 +314,7 @@ internal object QQNetwork {
     }
 
     /**
-     * 发起一次 POST。
+     * 发起一次 POST
      *
      * **传输层失败必须抛出**，不能返回 null：`null` 在本模块的含义是
      * "服务端明确没有这条歌词"，把网络异常也压成 null 会让断网被误判为无歌词

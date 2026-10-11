@@ -24,25 +24,25 @@ import com.hchen.superlyric.kernel.model.LyricWord
 import com.hchen.superlyric.kernel.text.LyricText
 
 /**
- * 「时间标签在前」的逐字 LRC 解析器。
+ * 「时间标签在前」的逐字 LRC 解析器
  *
- * <h3>输入形态</h3>
- * <pre>
- * [00:20.699] &lt;00:20.699&gt;初&lt;00:21.133&gt;め&lt;00:22.298&gt;は &lt;00:23.011&gt;
- * </pre>
- * 行首是行起始时间；其后是「{@code <时间>文字}」重复若干次。
+ * ## 输入形态
+ * ```
+ * [00:20.699] <00:20.699>初<00:21.133>め<00:22.298>は <00:23.011>
+ * ```
+ * 行首是行起始时间；其后是「`<时间>文字`」重复若干次。
  * **标签在文字之前**，且末尾常有一个**没有文字的标签**，仅作行结束标记。
  *
- * <h3>为什么要自研，而不是继续用通用解析库</h3>
+ * ## 为什么要自研，而不是继续用通用解析库
  * 该库判定「哪一行是哪一行的译文」用的是**相邻行的起始时间差**：
  * 实测两条**互相独立的主行**只要起始相差小于 200ms，后一条就会被整体吞并成
- * 前一条的 {@code translation}，且译文行本身从列表里消失。
+ * 前一条的 `translation`，且译文行本身从列表里消失。
  * 真机报文里这种紧邻的主行很常见（制作信息行、歌者标记行），于是会出现
  * 「主行被吞、头部行挂着一段莫名其妙的译文」。这是库的既定行为，
- * 无法通过喂给它的文本绕开（试过把行尾标签错开，仍然被吞）。
+ * 无法通过喂给它的文本绕开（把行尾标签错开仍然被吞）。
  * 本格式本身结构简单，自己解析可以做到完全确定。
  *
- * <h3>何时启用</h3>
+ * ## 何时启用
  * 只在 [CompanionSplitter] 判定载荷带有「同时间戳伴随行」时启用
  * （见 [LyricPipeline.parse]），因此不会影响其它 Provider 的解析路径。
  *
@@ -50,13 +50,13 @@ import com.hchen.superlyric.kernel.text.LyricText
  */
 internal object WordTagLrcParser {
 
-    /** 行首时间戳：{@code [mm:ss]} / {@code [mm:ss.xx]} */
+    /** 行首时间戳：`[mm:ss]` / `[mm:ss.xx]` */
     private val LINE_HEAD = Regex("""^\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?]""")
 
-    /** 词标签：{@code <mm:ss.mmm>} */
+    /** 词标签：`<mm:ss.mmm>` */
     private val WORD_TAG = Regex("""<(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?>""")
 
-    /** 元数据指令行：{@code [ti:xxx]} 之类。 */
+    /** 元数据指令行：`[ti:xxx]` 之类 */
     private val DIRECTIVE = Regex("""^\[[a-zA-Z]{1,8}:.*]$""")
 
     private const val FALLBACK_LINE_MS = 1_000L

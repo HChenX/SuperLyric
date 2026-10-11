@@ -32,21 +32,15 @@ import java.io.File
 import java.util.concurrent.Executors
 
 /**
- * 波点音乐 Hook 取词来源：读取宿主自己的本地原生歌词文件。
+ * 波点音乐 Hook 取词来源：读取宿主自己的本地原生歌词文件
  *
- * <h3>三种结果的语义</h3>
- * <ul>
- *   <li>宿主给了路径且解析成功 → [LyricOutcome.Success]；</li>
- *   <li>宿主**明确没有**给路径 → [LyricOutcome.NoLyrics]——这是宿主的确定性信号，
- *       表示这首曲目没有歌词，此时才允许下发纯音乐占位；</li>
- *   <li>给了路径但文件读不到 / 解不开 → [LyricOutcome.Unsupported]——不知道是不是没歌词，
- *       交给网络路径再试，绝不据此下发占位。</li>
- * </ul>
+ * ## 三种结果的语义
+ * - 宿主给了路径且解析成功 → [LyricOutcome.Success]
+ * - 宿主**明确没有**给路径 → [LyricOutcome.NoLyrics]：这是宿主的确定性信号，此时才允许下发纯音乐占位
+ * - 给了路径但文件读不到 / 解不开 → [LyricOutcome.Unsupported]：不知道是不是没歌词，交给网络路径再试
  *
- * <h3>格式识别</h3>
- * 使用 [LyricFormat.AUTO] 按载荷自身的结构特征识别（LRCX 有 {@code [kuwo:]} 头部、
- * JSON 有 {@code sentences} 根键、其余交给通用解析器）。
- * <b>旧实现只调用了 LRCX 解析器</b>，文件的 JSON 分支与纯 LRC 分支实际从未生效。
+ * 格式识别交给 [LyricFormat.AUTO]，按载荷自身的结构特征判断：LRCX 有 `[kuwo:]` 头部、
+ * JSON 有 `sentences` 根键，其余走通用解析器
  *
  * @author 焕晨HChen
  */
@@ -70,12 +64,11 @@ class BodianHookSource : HookLyricSource {
     private var lastProcessedPath: String? = null
 
     /**
-     * 已解析、但尚未被任何会话消费的结果。
+     * 已解析、尚未被会话消费的结果
      *
-     * 宿主会**分两次上报标识**：先发一个陈旧的 `MEDIA_ID`（还是上一首的），
-     * 稍后才发正确的。而歌词往往在第一次之前就已经解析完毕——那时投递会被
-     * 随后推进的 epoch 判为过期丢弃，表现为"歌词明明解析出来了却整轮超时转网络"，
-     * 甚至因检索失败而下发纯音乐占位。因此按稳定标识暂存，等它自己的会话建立后补投。
+     * 宿主分两次上报标识（先旧后新），而歌词常在第一次之前就解析完毕。那时投递会被
+     * 随后推进的 epoch 判为过期丢弃，表现为"解析成功却整轮超时转网络"。故按稳定标识暂存，
+     * 等它自己的会话建立后补投
      */
     @Volatile
     private var stashedDoc: LyricDoc? = null
@@ -140,8 +133,7 @@ class BodianHookSource : HookLyricSource {
                 stashedId = identity.stableId
             }
 
-            // 只投给确实属于当前会话的结果；身份对不上就先留着，等它自己的会话建立后补投。
-            // 绝不能投给别的曲目的会话——那会被当成新曲目的歌词发布出去。
+            // 身份对不上就先留着 —— 投给别的曲目的会话，会被当成新曲目的歌词发布出去
             if (identity.stableId == null || identity.stableId == pendingIdentity?.stableId) {
                 activeSession.deliver(outcome)
             } else {

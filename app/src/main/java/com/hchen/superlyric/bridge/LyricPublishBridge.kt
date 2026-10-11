@@ -27,40 +27,31 @@ import com.hchen.superlyric.publisher.AbsPublisher
 import com.hchen.superlyric.utils.LyricDiag
 
 /**
- * 把内核编排结果发布到系统框架。
+ * 把内核编排结果发布到系统框架
  *
- * <h3>职责边界</h3>
  * 宿主侧只发布**三种包**：
- * <ul>
- *   <li><b>切歌</b>——曲目刚切换、歌词尚未就绪时下发，令客户端立刻作废旧歌词；</li>
- *   <li><b>全量歌词</b>——曲目解析完成、或确认无歌词时下发；</li>
- *   <li><b>停止</b>——播放真正停止时下发。</li>
- * </ul>
- * 进度推进完全由系统框架侧的时钟负责，宿主**不发布任何进度包**。
+ * - **切歌** —— 曲目刚切换、歌词尚未就绪时下发，令客户端立刻作废旧歌词
+ * - **全量歌词** —— 曲目解析完成、或确认无歌词时下发
+ * - **停止** —— 播放真正停止时下发
  *
- * <h3>为什么切歌就要立即清屏</h3>
- * 切歌后到新歌词就绪之间有几十毫秒到数百毫秒的空窗期。这段空窗期该显示什么，
- * **是客户端的决定，不是本模块的**——客户端可以画"歌词加载中"、可以做过渡动画，
- * 而模块既不知道客户端的 UI 意图，也不该替它保留上一首的歌词：
- * 那会让界面显示与当前播放**无关的内容**，且服务端时钟仍在推进那份旧文档，
- * 表现为"上一首的歌词还在跑"。
+ * 进度推进完全由系统框架侧的时钟负责，宿主**不发布任何进度包**
  *
- * <p>早期设计刻意不在切歌时下发任何东西（怕"闪断"），现已废弃：
- * 保留下错误内容比短暂留白更糟，而且把判断权交还给客户端才是正确的分层。
+ * 切歌后到新歌词就绪之间有几十毫秒到数百毫秒的空窗期。这段空窗期该显示什么是
+ * **客户端的决定**，不是本模块的：模块不知道客户端的 UI 意图，也不该替它保留上一首的歌词，
+ * 那会让界面显示与当前播放**无关的内容**
  *
  * @author 焕晨HChen
  */
 class LyricPublishBridge : LyricOrchestrator.Listener {
 
     override fun onTrackChanged(identity: TrackIdentity) {
-        // 用 logI 而非 logD：这是生命周期事件，必须始终可见——
-        // 排查时曾因它被节流而误判"状态机出现了无来源的迁移"。
+        // 生命周期事件，用 logI 而非 logD：必须始终可见
         AndroidLog.logI(
             TAG,
             "Track changed: id=${identity.stableId}, title=\"${identity.title}\", " +
                 "artist=\"${identity.artist}\", duration=${identity.durationMs}ms"
         )
-        // 旧歌词立刻作废。空窗期由客户端自行呈现。
+        // 旧歌词立刻作废，空窗期由客户端自行呈现
         AndroidLog.logI(TAG, "Clearing previous lyric for the new track")
         AbsPublisher.publishStop()
     }
@@ -97,8 +88,7 @@ class LyricPublishBridge : LyricOrchestrator.Listener {
     }
 
     override fun onUnavailable(identity: TrackIdentity?) {
-        // 取词失败不等于"这首曲子没有歌词"：不下发任何内容。
-        // 若在此处下发占位，就会复现"断网即被永久钉死为纯音乐"的历史缺陷。
+        // 取词失败不等于"没有歌词"：不下发任何内容，否则断网会被钉死为纯音乐
         AndroidLog.logW(
             TAG,
             "Lyric fetch failed and retries are exhausted for id=${identity?.stableId}; " +

@@ -21,28 +21,27 @@ package com.hchen.superlyric.provider.base
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
 
 /**
- * 宿主侧取词来源。
+ * 宿主侧取词来源
  *
  * 与 [LyricSource] 的唯一区别是多了 [install]：Hook 点位只需在包加载时安装一次，
- * 而取词可以被多次发起。
+ * 而取词可以被多次发起
  *
- * <h3>安装时机</h3>
  * [install] 由 Provider 在 `onPackageReady` 中调用一次。此时 DexKit 缓存已就绪，
- * 但宿主的关键类可能尚未加载——因此定位与挂载都必须容忍失败，
- * 失败时只记录日志，绝不抛出，以免影响宿主稳定性。
+ * 但宿主的关键类可能尚未加载，因此定位与挂载都必须容忍失败 —— 失败只记日志、绝不抛出，
+ * 以免影响宿主稳定性
  *
  * @author 焕晨HChen
  */
 interface HookLyricSource : LyricSource {
 
-    /** 安装 Hook 点位。只允许调用一次；实现必须自行捕获全部异常。 */
+    /** 安装 Hook 点位；只允许调用一次，实现必须自行捕获全部异常 */
     fun install()
 
     /**
-     * 当前已知的曲目稳定标识（如哈希 / songMID）；未知时返回 null。
+     * 当前已知的曲目稳定标识（哈希 / songMID 等）；未知时返回 null
      *
      * Provider 用它构造 [com.hchen.superlyric.kernel.identity.TrackIdentity]，
-     * 使 Hook 上报的标识与 `MediaSession` 上报的标识可用同一套归一化规则比较。
+     * 使 Hook 上报的标识与 `MediaSession` 上报的标识能用同一套归一化规则比较
      */
     fun currentStableId(): String? = null
 }

@@ -30,25 +30,24 @@ import com.hchen.superlyricapi.SuperLyricData
 import com.hchen.superlyricapi.SuperLyricLine
 
 /**
- * 真机联调期的**全量诊断输出**。
+ * 真机联调期的**全量诊断输出**
  *
- * <h3>为什么需要它</h3>
- * 本项目历史上大量"看起来合理"的解析假设从未在真机上被验证过
- * （例如 QQ 的标识正则、网易云的歌词版本参数）。要判断一段解析写法究竟
- * 对不对，唯一可靠的办法是**把原始载荷与解析结果原样打出来**，与预期逐条对照。
+ * ## 为什么需要它
+ * 解析假设（例如 QQ 的标识正则、网易云的歌词版本参数）无法凭代码判别对错，
+ * 唯一可靠的办法是**把原始载荷与解析结果原样打出来**，与预期逐条对照。
  *
- * <h3>为什么落在 `:app` 而不是内核</h3>
+ * ## 为什么落在 `:app` 而不是内核
  * `:lyric-kernel` 是纯 JVM 模块，**严禁**依赖任何 `android.*` 类型，
  * 因此不能调用 `AndroidLog`。所有诊断输出集中在 `:app` 侧。
  *
- * <h3>输出量控制</h3>
+ * ## 输出量控制
  * logcat 单条消息上限约 4KB，超出会被截断。因此所有长文本一律按
  * [CHUNK] 字符**分块**并带 `[i/n]` 序号输出，可完整还原。
  *
- * <h3>过滤命令</h3>
- * <pre>
+ * ## 过滤命令
+ * ```
  * adb logcat -v time -s SLDiag
- * </pre>
+ * ```
  *
  * @author 焕晨HChen
  */
@@ -299,7 +298,7 @@ object LyricDiag {
     }
 
     /**
-     * 取某个键的文本值，非文本键返回 {@code null}。
+     * 取某个键的文本值，非文本键返回 `null`
      *
      * **不能直接调 `MediaMetadata.getText(key)`**：它内部是 `Bundle.getCharSequence`，
      * 撞上 `DURATION`（Long）或 `USER_RATING`（Rating）会抛 `ClassCastException`。

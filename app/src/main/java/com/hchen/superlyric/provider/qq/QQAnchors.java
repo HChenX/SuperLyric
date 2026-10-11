@@ -119,8 +119,8 @@ public final class QQAnchors {
             int hooked = 0;
             for (Constructor<?> constructor : beanClass.getDeclaredConstructors()) {
                 // Kotlin 会为一个 8 参主构造器额外合成一个 (…, int, DefaultConstructorMarker) 桥接。
-                // 旧实现"取第一个参数数 >= 4 的"在选择顺序上是不确定的：一旦先返回桥接，
-                // 而宿主实际走 8 参路径，Hook 就永远不会触发。此处改为**按首参类型精确筛选**。
+                // 按参数个数筛选是不可靠的：一旦选中桥接，而宿主实际走 8 参路径，
+                // Hook 就永远不会触发。此处按**首参类型**精确筛选。
                 Class<?>[] parameterTypes = constructor.getParameterTypes();
                 if (parameterTypes.length == 0) continue;
                 if (!isSongInfo(parameterTypes[0])) continue;

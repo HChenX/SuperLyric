@@ -38,7 +38,7 @@ data class LyricWord(
  * 单行歌词。
  *
  * **翻译通道约定**：译文只允许通过 [translation] 承载，罗马音只允许通过 [phonetic] 承载。
- * 解析层**严禁**把译文行输出为独立的 [LyricLine]，这正是历史上"翻译混入主歌词"缺陷的根因。
+ * 解析层**严禁**把译文行输出为独立的 [LyricLine]，否则界面会把翻译当成歌词显示
  *
  * @property text        主歌词文本
  * @property translation 翻译文本；无翻译时为 null

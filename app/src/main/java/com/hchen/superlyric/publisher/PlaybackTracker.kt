@@ -31,28 +31,24 @@ import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyricapi.SuperLyricData
 
 /**
- * 系统服务端的播放时钟与跨行推进器。
+ * 系统服务端的播放时钟与跨行推进器
  *
- * <h3>职责归属</h3>
+ * ## 职责归属
  * 按项目核心理念「音乐软件仅负责发布完整歌词，系统框架负责分发」，
  * **这是整条链路上唯一的进度来源**。宿主侧不发布任何进度包。
  *
- * <h3>比旧实现修正了什么</h3>
- * <ol>
- *   <li><b>漂移</b>：旧实现以"收到回调的时刻"为锚，进度漂移恒等于快照年龄。
- *       现在改用 [PlaybackClock]，以宿主自报的 {@code lastPositionUpdateTime} 为锚。</li>
- *   <li><b>speed == 0</b>：旧实现在 PLAYING 且速率为 0 时仍按 0 速率外推，
- *       时钟表现为"运行却停住"。现在由 [PlaybackClock] 明确视为冻结。</li>
- *   <li><b>重播与拖回开头</b>：旧实现把任何 {@code position <= 0} 且先前进度大于 500ms
- *       的上报当作"虚假 0ms"抑制、保留旧位置，导致合法的重播把时钟留在曲尾。
- *       现在**不再抑制**——位置回退是合法事件，据此重新锚定并重置行索引即可。</li>
- *   <li><b>竞态</b>：旧实现的行索引字段同时被 HandlerThread 与 Binder 线程读写。
- *       现在**所有**对行索引与时钟的修改都收敛到内部 HandlerThread 上执行。</li>
- * </ol>
+ * ## 设计要点
+ * - **漂移**：进度以宿主自报的 `lastPositionUpdateTime` 为锚（见 [PlaybackClock]）。
+ *   若改以"收到回调的时刻"为锚，漂移会恒等于快照年龄。
+ * - **速率为 0**：PLAYING 而速率为 0 时由 [PlaybackClock] 视为冻结；
+ *   否则时钟会表现为"运行却停住"。
+ * - **重播与拖回开头**：位置回退是合法事件（seek / 重播），据此重新锚定并重置行索引即可，
+ *   **不做"虚假 0ms"抑制**——抑制会让合法的重播把时钟留在曲尾。
+ * - **竞态**：**所有**对行索引与时钟的修改都收敛到内部 HandlerThread 上执行。
  *
- * <h3>时间源</h3>
+ * ## 时间源
  * 时钟必须与 `PlaybackState.getLastPositionUpdateTime()` 同基，因此显式使用
- * {@code SystemClock.elapsedRealtime()}——不能用内核的默认时间源（纳秒时钟），
+ * `SystemClock.elapsedRealtime()`——不能用内核的默认时间源（纳秒时钟），
  * 否则两者相减毫无意义。
  *
  * @author 焕晨HChen

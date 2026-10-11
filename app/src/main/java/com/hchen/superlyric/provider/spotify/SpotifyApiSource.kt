@@ -31,23 +31,19 @@ import com.hchen.superlyric.utils.LyricDiag
 import java.util.concurrent.Executors
 
 /**
- * Spotify 官方接口取词来源。
+ * Spotify 官方接口取词来源
  *
- * <h3>流程</h3>
- * <ol>
- *   <li>等 [SpotifyAnchors] 从宿主的 {@code okhttp3.Headers} 旁路捕获到会话头；</li>
- *   <li>以该会话头拉取 {@code color-lyrics/v2}（protobuf）；</li>
- *   <li>解析结果（含逐字与音译）映射为内核模型。</li>
- * </ol>
+ * ## 流程
+ * - 等 [SpotifyAnchors] 从宿主的 `okhttp3.Headers` 旁路捕获到会话头
+ * - 以该会话头拉取 `color-lyrics/v2`（protobuf）
+ * - 解析结果（含逐字与音译）映射为内核模型
  *
  * <p>本模块**不持有任何 Spotify 凭证**，只是复用宿主已经发出的请求头；
  * 会话头失效时返回可重试失败，由编排器退避重试。
  *
- * <h3>结果语义</h3>
- * <ul>
- *   <li>{@code LyricNotFoundException} → [LyricOutcome.NoLyrics]——平台明确表示无歌词；</li>
- *   <li>鉴权失败 / 网络异常 / 会话头尚未就绪 → [LyricOutcome.TransientFailure]。</li>
- * </ul>
+ * ## 结果语义
+ * - `LyricNotFoundException` → [LyricOutcome.NoLyrics]——平台明确表示无歌词
+ * - 鉴权失败 / 网络异常 / 会话头尚未就绪 → [LyricOutcome.TransientFailure]
  *
  * @author 焕晨HChen
  */
@@ -138,7 +134,7 @@ class SpotifyApiSource : LyricSource {
     }
 
     /**
-     * 读磁盘缓存并复核。
+     * 读磁盘缓存并复核
      *
      * 命中后重新解析一遍：缓存损坏、或解析器变更导致旧响应不再可用时，删掉该条目
      * 并回落网络。**绝不**把"缓存不可用"当成"平台没有歌词"——后者是终态。
@@ -192,7 +188,7 @@ class SpotifyApiSource : LyricSource {
     }
 
     private companion object {
-        /** 磁盘缓存命名空间，须与 `LyricCacheStore.ONLINE_PROVIDERS` 一致。 */
+        /** 磁盘缓存命名空间，须与 `LyricCacheStore.ONLINE_PROVIDERS` 一致 */
         const val PROVIDER_NAME = "Spotify"
 
         const val MAX_ATTEMPTS = 3

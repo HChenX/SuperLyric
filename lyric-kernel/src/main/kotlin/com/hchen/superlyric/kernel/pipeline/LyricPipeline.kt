@@ -114,23 +114,19 @@ data class LyricRequest @JvmOverloads constructor(
 }
 
 /**
- * 歌词解析管线门面。
+ * 歌词解析管线门面
  *
- * <h3>职责边界</h3>
- * <ul>
- *   <li><b>解密</b>（[KrcCipher] / [QrcCipher]）——本模块自研，稳定且需字节级精确；</li>
- *   <li><b>解析</b>——库覆盖的格式走 [AutoParser]；库不覆盖的（QRC / LRCX / Soda JSON）
- *       走本模块自研解析器，直接产出 [LyricDoc]；</li>
- *   <li><b>对齐</b>——所有译文 / 罗马音统一走 [TranslationMerger]；</li>
- *   <li><b>规范化</b>——排序、时序单调、丢弃空行，产出的 [LyricDoc] 保证可用。</li>
- * </ul>
+ * ## 职责边界
+ * - **解密**（[KrcCipher] / [QrcCipher]）—— 本模块自研，稳定且需字节级精确
+ * - **解析** —— 库覆盖的格式走 [AutoParser]；库不覆盖的（QRC / LRCX / Soda JSON）
+ *   走本模块自研解析器，直接产出 [LyricDoc]
+ * - **对齐** —— 所有译文 / 罗马音统一走 [TranslationMerger]
+ * - **规范化** —— 排序、时序单调、丢弃空行，产出的 [LyricDoc] 保证可用
  *
- * <h3>返回值语义（供上层归类为 LyricOutcome）</h3>
- * <ul>
- *   <li>返回 [LyricDoc] → 解析成功；</li>
- *   <li>返回 {@code null} → **确定性地没有歌词**（载荷为空、或解析后没有任何有效行）；</li>
- *   <li>抛出 [DecodeException] → 解码失败，属**可重试**情形，上层绝不可据此下发纯音乐占位。</li>
- * </ul>
+ * ## 返回值语义（供上层归类为 LyricOutcome）
+ * - 返回 [LyricDoc] → 解析成功
+ * - 返回 `null` → **确定性地没有歌词**（载荷为空、或解析后没有任何有效行）
+ * - 抛出 [DecodeException] → 解码失败，属**可重试**情形，上层绝不可据此下发纯音乐占位
  *
  * @author 焕晨HChen
  */
@@ -226,11 +222,11 @@ object LyricPipeline {
     }
 
     /**
-     * 网易云 YRC 行的结构特征：{@code [数字,数字]} 后跟**三元组** {@code (数字,数字,数字)} 词标签。
+     * 网易云 YRC 行的结构特征：`[数字,数字]` 后跟**三元组** `(数字,数字,数字)` 词标签。
      *
      * <h4>为什么必须与 QRC 分开识别</h4>
      * QRC 与 YRC 的词标签形态极像，词标签**分量个数**是二者唯一可靠的区分点：
-     * YRC 恒为 {@code (a,b,flag)} 三元组，QRC 为 {@code (a,b)} 二元组。
+     * YRC 恒为 `(a,b,flag)` 三元组，QRC 为 `(a,b)` 二元组。
      * 二者识别错误会让整段报文进错解析器。
      *
      * <h4>关于词起始的时间基准</h4>
@@ -242,12 +238,12 @@ object LyricPipeline {
     private val YRC_LINE_MARKER = Regex("""\[\d+,\d+][^\n]*\(\d+,\d+,\d+\)""")
 
     /**
-     * 裸 QRC 行的结构特征：{@code [数字,数字]} 后跟**二元组** {@code (数字,数字)} 词标签。
+     * 裸 QRC 行的结构特征：`[数字,数字]` 后跟**二元组** `(数字,数字)` 词标签。
      * 要求闭合括号，因此三元组不会误入此分支。
      */
     private val QRC_LINE_MARKER = Regex("""\[\d+,\d+][^\n]*\(\d+,\d+\)""")
 
-    /** KRC 明文行的结构特征：{@code [数字,数字]} 后跟 {@code <数字,数字,数字>} */
+    /** KRC 明文行的结构特征：`[数字,数字]` 后跟 `<数字,数字,数字>` */
     private val KRC_LINE_MARKER = Regex("""\[\d+,\d+][^\n]*<\d+,\d+,\d+>""")
 
     private fun parseByLibrary(content: String): LyricDoc? {
@@ -287,13 +283,11 @@ object LyricPipeline {
     }
 
     /**
-     * 解析伴随载荷为「时间戳 → 文本」。
+     * 解析伴随载荷为「时间戳 → 文本」
      *
      * 只接受两种结构性形态，二者可确定区分：
-     * <ul>
-     *   <li>毫秒对形态 {@code [start,dur]text}（QRC 系）；</li>
-     *   <li>分秒形态 {@code [mm:ss.xx]text}（LRC 系，经库解析）。</li>
-     * </ul>
+     * - 毫秒对形态 `[start,dur]text`（QRC 系）
+     * - 分秒形态 `[mm:ss.xx]text`（LRC 系，经库解析）
      */
     private fun parseSidecarText(text: String): List<TimeText> {
         if (MILLISECOND_LINE.containsMatchIn(text)) {
@@ -308,28 +302,25 @@ object LyricPipeline {
 
     private val MILLISECOND_LINE = Regex("""\[\d+,\d+]""")
 
-    /** 单行时长的合理上限；超过它即视为解析得到的结束时间不可信。 */
+    /** 单行时长的合理上限；超过它即视为解析得到的结束时间不可信 */
     private const val MAX_LINE_SPAN_MS = 300_000L
 
-    /** 结束时间不可信、且曲目时长未知时的兜底行时长。 */
+    /** 结束时间不可信、且曲目时长未知时的兜底行时长 */
     private const val FALLBACK_LINE_MS = 5_000L
 
-    /** TME 报文用这个串表示"此行没有译文"，属占位符而非内容。 */
+    /** TME 报文用这个串表示"此行没有译文"，属占位符而非内容 */
     private const val NO_TRANSLATION_MARKER = "//"
 
     /**
-     * 清掉**无意义的伴随内容**。
+     * 清掉**无意义的伴随内容**，两类：
+     * - **空白** —— 部分宿主会下发只有空格的伴随行（实测波点），挂上去等于一行空译文
+     * - **占位符 `//`** —— TME 报文用它表示"此行无译文"（实测 QQ 的制作信息行）
      *
-     * 两类：
-     * <ul>
-     *   <li><b>空白</b>——部分宿主会下发只有空格的伴随行（实测波点），挂上去等于一行空译文；</li>
-     *   <li><b>占位符 {@code //}</b>——TME 报文用它表示"此行无译文"（实测 QQ 的制作信息行）。</li>
-     * </ul>
-     * 放在 [finalize] 出口而不是某个解析器里：译文有两条来源——解析器**行内**写入
-     * （QQ 的 {@code <Lyric_2>}、椒盐的行内译文）与伴随载荷经 [TranslationMerger] 对齐。
-     * 只有公共出口能同时覆盖两者。
+     * 放在 [finalize] 出口而不是某个解析器里：译文有两条来源 —— 解析器**行内**写入
+     * （QQ 的 `<Lyric_2>`、椒盐的行内译文）与伴随载荷经 [TranslationMerger] 对齐，
+     * 只有公共出口能同时覆盖两者
      *
-     * <p><b>只作用于伴随通道</b>，主行正文一律不动。
+     * **只作用于伴随通道**，主行正文一律不动
      */
     private fun LyricLine.withoutEmptySidecars(): LyricLine {
         val cleanTranslation = translation?.takeIf { it.isMeaningfulSidecar() }
@@ -347,34 +338,29 @@ object LyricPipeline {
     private val CJK = Regex("""[㐀-䶿一-鿿぀-ゟ゠-ヿ가-힯]""")
 
     /**
-     * 折叠**起始时间完全相同**的行组。
+     * 折叠**起始时间完全相同**的行组
      *
-     * <h3>解决什么</h3>
      * 部分宿主（实测椒盐）把一首曲目的三路内容以**同一时间戳重复出现**的形态给出：
-     * <pre>
-     * [00:20.699] &lt;00:20.699&gt;初&lt;…&gt;は     ← 主歌词（带逐字标签）
-     * [00:20.699]ha ji me te no ru u bu ru wa   ← 罗马音
-     * [00:20.699]第一次参观卢浮宫                 ← 翻译
-     * </pre>
-     * 通行解析库只能为一条主行接纳**一条**伴随行，于是它把罗马音当成了译文，
-     * 而真正的译文留在列表里，**变成了独立的主歌词行**——界面于是会把翻译当作歌词显示。
+     * ```
+     * [00:20.699] <00:20.699>初<…>は                  ← 主歌词（带逐字标签）
+     * [00:20.699]ha ji me te no ru u bu ru wa      ← 罗马音
+     * [00:20.699]第一次参观卢浮宫                     ← 翻译
+     * ```
+     * 通行解析库只能为一条主行接纳**一条**伴随行，于是它把罗马音当成了译文，而真正的译文
+     * 留在列表里**变成了独立的主歌词行** —— 界面于是会把翻译当作歌词显示
      *
-     * <h3>判据是否合法</h3>
-     * 依据的是"与主行成对出现的行内语法"（同一时间戳重复出现），
-     * 属 TranslationTrack Rule 允许的判据。**不是**依据"缺少逐字标签"推断。
+     * ## 判据是否合法
+     * 依据的是"与主行成对出现的行内语法"（同一时间戳重复出现），属 Translation Track Rule
+     * 允许的判据。**不是**依据"缺少逐字标签"推断
      *
-     * <h3>分组内如何分工</h3>
-     * <ol>
-     *   <li>主行 = 组内有逐字切片的那一条；都没有则取第一条；</li>
-     *   <li>其余同伴：纯拉丁文且主行含 CJK 的判为**罗马音**（走 phonetic），
-     *       否则判为**翻译**（走 translation）；</li>
-     *   <li>两个通道都已占用的多余同伴**丢弃**——宁可少一行，也不能把伴随内容
-     *       当成歌词发出去。</li>
-     * </ol>
+     * ## 分组内如何分工
+     * 1. 主行 = 组内有逐字切片的那一条；都没有则取第一条
+     * 2. 其余同伴：纯拉丁文且主行含 CJK 的判为**罗马音**（走 phonetic），否则判为**翻译**
+     * 3. 两个通道都已占用的多余同伴**丢弃** —— 宁可少一行，也不能把伴随内容当成歌词发出去
      *
-     * <h3>已知边界</h3>
-     * 若主行为中文、同伴为英文**译文**（而非罗马音），会被判为罗马音。
-     * 二者在文本层面无法可靠区分，此处选择了对"日文歌 + 罗马音"这一更常见形态更准的一侧。
+     * ## 已知边界
+     * 若主行为中文、同伴为英文**译文**（而非罗马音），会被判为罗马音。二者在文本层面无法
+     * 可靠区分，此处选择了对"日文歌 + 罗马音"这一更常见形态更准的一侧
      */
     private fun collapseSimultaneous(lines: List<LyricLine>): List<LyricLine> {
         if (lines.size < 2) return lines
@@ -496,7 +482,7 @@ object LyricPipeline {
     /**
      * 收口不可信的结束时间。
      *
-     * 上游库对"结束时间未知"的行会填 {@code Int.MAX_VALUE} 之类的哨兵值，末行尤其常见
+     * 上游库对"结束时间未知"的行会填 `Int.MAX_VALUE` 之类的哨兵值，末行尤其常见
      * （它后面没有下一行可以兜住）。若不处理，末行的区间会一直延伸到 2038 年。
      * 曲目时长已知时收到时长，否则给一个兜底行时长。
      */

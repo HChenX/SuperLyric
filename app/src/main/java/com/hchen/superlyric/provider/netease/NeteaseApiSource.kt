@@ -42,21 +42,18 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
 /**
- * 网易云音乐官方接口取词来源。
+ * 网易云音乐官方接口取词来源
  *
- * <h3>四路载荷</h3>
- * {@code /api/song/lyric/v1} 一次返回四份歌词，都是**明文**（无需解密）：
- * <ul>
- *   <li>{@code yrc}——逐字（YRC，绝对毫秒），优先；{@code lyric} 为 LRC，兜底；</li>
- *   <li>{@code ytlrc} / {@code tlyric}——译文</li>
- *   <li>{@code yromalrc} / {@code romalrc}——罗马音</li>
- * </ul>
+ * ## 四路载荷
+ * `/api/song/lyric/v1` 一次返回四份歌词，都是**明文**（无需解密）：
+ * - `yrc`——逐字（YRC，绝对毫秒），优先；`lyric` 为 LRC，兜底
+ * - `ytlrc` / `tlyric`——译文
+ * - `yromalrc` / `romalrc`——罗马音
  *
- * <p>解析全部交给 {@code lyrics-core}：YRC 走其内置的 {@code NeteaseYrcParser}，
- * LRC 走 {@code EnhancedLrcParser}，译文与罗马音作为伴随载荷统一对齐。
- * <b>旧实现自带一套内联的 YRC/LRC 解析器</b>，属于重复实现，此处已废弃。
+ * <p>解析全部交给 `lyrics-core`：YRC 走其内置的 `NeteaseYrcParser`，
+ * LRC 走 `EnhancedLrcParser`，译文与罗马音作为伴随载荷统一对齐。
  *
- * <h3>VIP 与逐字</h3>
+ * ## VIP 与逐字
  * 从宿主 WebView 的 CookieManager 中取真实登录凭证，用于解锁 VIP 曲目的完整逐字歌词；
  * 取不到时降级为普通歌词，不影响主流程。
  *
@@ -164,10 +161,10 @@ class NeteaseApiSource : LyricSource {
     }
 
     /**
-     * 读磁盘缓存。
+     * 读磁盘缓存
      *
      * 只有**真正带了歌词通道**的响应才会被写盘（见 [cache]），因此命中后仍需复核一遍：
-     * 缓存文件损坏、或曾经写入的是空壳时，删掉该条目并回落网络，绝不把
+     * 缓存文件损坏、或写入的只是空壳时，删掉该条目并回落网络，绝不把
      * "缓存不可用"当成"平台没有歌词"——后者是终态，会把纯音乐占位钉死。
      */
     private fun readCached(songId: Long): JSONObject? {
@@ -186,17 +183,16 @@ class NeteaseApiSource : LyricSource {
         return null
     }
 
-    /** 写盘并原样返回，便于在取词路径上内联调用。 */
+    /** 写盘并原样返回，便于在取词路径上内联调用 */
     private fun cache(songId: Long, payload: JSONObject): JSONObject {
         LyricCacheStore.putAsync(null, PROVIDER_NAME, songId.toString(), payload.toString())
         return payload
     }
 
     /**
-     * 判断响应里是否真的带了任何一路歌词。
+     * 判断响应里是否真的带了任何一路歌词
      *
-     * V1 端点若版本参数全为 0，服务端会返回结构完整但**内容全空**的 JSON。
-     * 旧实现直接把这个空壳当成成功，于是"有歌词的歌"被误判为无歌词。
+     * V1 端点若版本参数全为 0，服务端会返回结构完整但**内容全空**的 JSON
      */
     private fun hasAnyLyricChannel(payload: JSONObject): Boolean =
         NET_LYRIC_KEYS.any { key -> lyricText(payload, key).isNotEmpty() }
@@ -269,14 +265,14 @@ class NeteaseApiSource : LyricSource {
     }
 
     /**
-     * 从宿主 WebView 取登录凭证以解锁 VIP 曲目的完整逐字。取不到不影响主流程。
+     * 从宿主 WebView 取登录凭证以解锁 VIP 曲目的完整逐字，取不到不影响主流程
      */
     private fun hostCookie(): String? = runCatching {
         CookieManager.getInstance().getCookie("https://music.163.com")
     }.getOrNull()?.takeIf { it.isNotEmpty() }
 
     private companion object {
-        /** 磁盘缓存命名空间，须与 `LyricCacheStore.ONLINE_PROVIDERS` 一致。 */
+        /** 磁盘缓存命名空间，须与 `LyricCacheStore.ONLINE_PROVIDERS` 一致 */
         const val PROVIDER_NAME = "Netease"
 
         const val URL_V1 = "https://interface3.music.163.com/api/song/lyric/v1"
@@ -291,7 +287,7 @@ class NeteaseApiSource : LyricSource {
 
         val NUMERIC_ID = Regex("^\\d{1,15}$")
 
-        /** 接口可能返回的全部歌词通道，用于判断响应是否为空壳。 */
+        /** 接口可能返回的全部歌词通道，用于判断响应是否为空壳 */
         val NET_LYRIC_KEYS = listOf("yrc", "lrc", "ytlrc", "tlyric", "yromalrc", "romalrc")
 
         val client: OkHttpClient = OkHttpClient.Builder()

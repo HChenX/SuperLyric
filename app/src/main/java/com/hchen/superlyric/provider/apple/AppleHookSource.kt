@@ -31,11 +31,10 @@ import com.hchen.superlyric.provider.base.HookLyricSource
 import com.hchen.superlyric.utils.LyricDiag
 
 /**
- * Apple Music Hook 取词来源。
+ * Apple Music Hook 取词来源
  *
- * <p>宿主给出的文本是**带 HTML 标记**的（{@code <i>}/{@code <br>}/实体转义），
- * 在这里统一净化：剥标签、还原实体、剥离零宽字符。
- * Apple 不使用协议报文，因此这里没有解析层——只有模型映射。
+ * 宿主给出的文本是**带 HTML 标记**的（`<i>` / `<br>` / 实体转义），在这里统一净化：
+ * 剥标签、还原实体、剥离零宽字符。Apple 不使用协议报文，因此这里没有解析层，只有模型映射
  *
  * @author 焕晨HChen
  */
@@ -150,7 +149,7 @@ class AppleHookSource : HookLyricSource {
     private companion object {
         val HTML_TAG = Regex("<[^>]*>")
 
-        /** {@code <br>} / {@code <br/>} / {@code <br />}，大小写不敏感。 */
+        /** `<br>` / `<br/>` / `<br />`，大小写不敏感 */
         val HTML_BREAK = Regex("""<br\s*/?>""", RegexOption.IGNORE_CASE)
     }
 }

@@ -44,26 +44,20 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 
 /**
- * 音乐应用 Provider 的统一骨架。
+ * 音乐应用 Provider 的统一骨架
  *
- * <h3>一个 Provider 需要写什么</h3>
- * <ol>
- *   <li>类上加 {@code @HookThis(targetPackage = "…")}；</li>
- *   <li>[createHookSource] / [createApiSource]：至少实现一个；</li>
- *   <li>[buildIdentity]：声明如何从 `MediaSession` 元数据得到稳定标识。</li>
- * </ol>
+ * 一个 Provider 只需写三处：
+ * 1. 类上加 `@HookThis(targetPackage = "…")`
+ * 2. [createHookSource] / [createApiSource]：至少实现一个
+ * 3. [buildIdentity]：声明如何从 `MediaSession` 元数据得到稳定标识
  *
- * 其余（切歌感知、双轨降级、超时、重试、包装发布）全部由基类与
- * [LyricOrchestrator] 承担。
+ * 其余（切歌感知、双轨降级、超时、重试、包装发布）全部由基类与 [LyricOrchestrator] 承担。
+ * Provider 只发布**全量歌词**与**停止**两种包，进度推进由系统框架侧的唯一时钟负责
  *
- * <h3>职责边界</h3>
- * Provider 只发布**全量歌词**与**停止**两种包；进度推进由系统框架侧的唯一时钟负责。
- *
- * <h3>为什么带 {@code @HookThis} 注解的具体 Provider 必须用 Java 写</h3>
- * `@HookThis` 是 `SOURCE` 级注解，由 `:processor` 的 Java 注解处理器消费，
- * 而本项目通过 `annotationProcessor` 接入。**Kotlin 类不会经过 Java 注解处理器**，
- * 因此用 Kotlin 写的 Provider 不会出现在生成的 `HookMaps` 中，整个模块都不会被挂载。
- * 本基类用 Kotlin 是为了简洁，具体 Provider 用 Java 是为了能被处理器看到。
+ * ## 为什么具体 Provider 必须用 Java 写
+ * `@HookThis` 是 `SOURCE` 级注解，由 `:processor` 的 Java 注解处理器消费，而本项目通过
+ * `annotationProcessor` 接入。**Kotlin 类不会经过 Java 注解处理器**，因此用 Kotlin 写的
+ * Provider 不会出现在生成的 `HookMaps` 中，整个模块都不会被挂载。本基类用 Kotlin 只为简洁
  *
  * @author 焕晨HChen
  */
@@ -85,11 +79,11 @@ abstract class MusicProvider : AbsPublisher() {
     @Volatile
     private var pendingStop: Boolean = false
 
-    /** 宿主自己的 MediaSession；仅诊断期用于模拟跳转播放位置。 */
+    /** 宿主自己的 MediaSession；仅诊断期用于模拟跳转播放位置 */
     @Volatile
     private var hostSession: MediaSession? = null
 
-    /** 宿主最近一次上报的播放状态；`MediaSession` 未提供读取接口，只能自己缓存。 */
+    /** 宿主最近一次上报的播放状态；`MediaSession` 未提供读取接口，只能自己缓存 */
     @Volatile
     private var hostPlaybackState: PlaybackState? = null
 
@@ -98,28 +92,28 @@ abstract class MusicProvider : AbsPublisher() {
             Thread(runnable, "SuperLyric-StopConfirm").apply { isDaemon = true }
         }
 
-    /** 由基类在 [onPackageReady] 中构建；Provider 的子类不应自行创建编排器。 */
+    /** 由基类在 [onPackageReady] 中构建；Provider 的子类不应自行创建编排器 */
     protected lateinit var orchestrator: LyricOrchestrator
         private set
 
-    /** 日志标签，同时作为 [TrackIdentity.source]。 */
+    /** 日志标签，同时作为 [TrackIdentity.source] */
     protected abstract val providerTag: String
 
-    /** Hook 取词来源；返回 null 表示该应用没有可用的 Hook 路径。 */
+    /** Hook 取词来源；返回 null 表示该应用没有可用的 Hook 路径 */
     protected open fun createHookSource(): HookLyricSource? = null
 
-    /** 网络 API 取词来源；返回 null 表示该应用没有可用的兜底路径。 */
+    /** 网络 API 取词来源；返回 null 表示该应用没有可用的兜底路径 */
     protected open fun createApiSource(): LyricSource? = null
 
-    /** 编排参数；需要更长的 Hook 等待窗口或更多次重试时覆写。 */
+    /** 编排参数；需要更长的 Hook 等待窗口或更多次重试时覆写 */
     protected open fun orchestratorConfig(): LyricOrchestrator.Config = LyricOrchestrator.Config()
 
     /**
-     * 从 `MediaSession` 元数据构建音轨身份。
+     * 从 `MediaSession` 元数据构建音轨身份
      *
      * 默认实现取 `MEDIA_ID` 作为稳定标识、缺失时退化为标题 + 歌手 + 时长。
      * 能拿到平台侧不可变标识（songMID / 音频 hash / rid）的 Provider **应当**覆写，
-     * 否则 Hook 上报的标识与元数据上报的标识表示法不一致，捕获会被当成过期数据丢弃。
+     * 否则 Hook 上报的标识与元数据上报的标识表示法不一致，捕获会被当成过期数据丢弃
      */
     protected open fun buildIdentity(metadata: MediaMetadata): TrackIdentity {
         val mediaId = metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)?.trim()
@@ -160,10 +154,10 @@ abstract class MusicProvider : AbsPublisher() {
     }
 
     /**
-     * 默认的切歌与播放状态感知：Hook 系统 `MediaSession`。
+     * 默认的切歌与播放状态感知：Hook 系统 `MediaSession`
      *
-     * 只挂两个点——`setMetadata` 与 `setPlaybackState`，这是能同时覆盖
-     * "切歌"与"停止"的最小点位集合。
+     * 只挂两个点 —— `setMetadata` 与 `setPlaybackState`，这是能同时覆盖"切歌"与"停止"的
+     * 最小点位集合
      */
     private fun hookMediaSession() {
         "android.media.session.MediaSession".hookMethod(
@@ -194,24 +188,19 @@ abstract class MusicProvider : AbsPublisher() {
     }
 
     /**
-     * 播放状态变化。
+     * 播放状态变化
      *
-     * <h3>为什么停止必须"确认"后才生效</h3>
-     * 宿主在过渡期会**瞬发** {@code STATE_STOPPED}：实测网易云在一次切歌前后
-     * 连发多次停止状态，随后又回到正常播放。而 `onPlaybackStopped` 是终态操作——
-     * 它清空当前音轨、推进 epoch，并向系统下发**停止**包（服务端据此清空活跃发布者
-     * 并广播停播）。瞬发停止若被当真，歌词会莫名闪空。
+     * ## 为什么停止必须"确认"后才生效
+     * 宿主在过渡期会**瞬发** `STATE_STOPPED`：实测网易云在一次切歌前后连发多次停止状态，
+     * 随后又回到正常播放。而 `onPlaybackStopped` 是终态操作 —— 它清空当前音轨、推进 epoch，
+     * 并向系统下发**停止**包。瞬发停止若被当真，歌词会莫名闪空
      *
      * 因此这里只登记一次"待确认的停止"，由**两个条件**撤销：
-     * <ol>
-     *   <li>随后到来的任何**其它播放状态**；</li>
-     *   <li>随后到来的**可用元数据**（即曲目信息，见 [onMetadataChanged]）——
-     *       宿主还在宣布曲目，就说明播放没停。</li>
-     * </ol>
-     * 第 2 条是必需的：真机上风暴里的几次 STOPPED 之间**没有别的播放状态**，
-     * 只看第 1 条挡不住。
+     * 1. 随后到来的任何**其它播放状态**
+     * 2. 随后到来的**可用元数据**（宿主还在宣布曲目，就说明播放没停）
      *
-     * <p>这**不是无差别去抖**——只有真正的终态信号才需要确认，且窗口很短。
+     * 第 2 条是必需的：真机风暴里的几次 STOPPED 之间**没有别的播放状态**，只看第 1 条挡不住。
+     * 这**不是无差别去抖** —— 只有真正的终态信号才需要确认，且窗口很短
      */
     private fun onPlaybackStateChanged(state: PlaybackState) {
         if (state.state != PlaybackState.STATE_STOPPED) {
@@ -232,10 +221,10 @@ abstract class MusicProvider : AbsPublisher() {
     }
 
     /**
-     * 撤销待确认的停止。
+     * 撤销待确认的停止
      *
      * 撤销与确认都必须留下日志：否则"从未收到 STOPPED"与"收到但每次都被撤销"
-     * 在日志上完全一样，无法判断这条防线到底有没有生效。
+     * 在日志上完全一样，无法判断这条防线到底有没有生效
      */
     private fun cancelPendingStop(reason: String) {
         val hadPending = pendingStop
@@ -288,18 +277,17 @@ abstract class MusicProvider : AbsPublisher() {
     }
 
     /**
-     * 仅诊断期：注册广播接收器，用于**模拟宿主跳转播放位置**。
+     * 仅诊断期：注册广播接收器，用于**模拟宿主跳转播放位置**
      *
-     * 验收清单里的「大幅拖动 / 拖回开头」需要改变播放位置，而 adb 层面无法 seek
-     * （媒体键只有快进快退，且并非所有宿主都声明这两位）。本模块本就持有宿主
-     * [MediaSession] 的引用，因此可以替它发布一次带新位置的 `PlaybackState`——
-     * 对下游（系统框架的时钟与行索引）而言与用户拖动完全等价。
+     * 验收清单里的「大幅拖动 / 拖回开头」需要改变播放位置，而 adb 层面无法 seek。
+     * 本模块本就持有宿主 [MediaSession] 的引用，因此可以替它发布一次带新位置的
+     * `PlaybackState` —— 对下游（系统框架的时钟与行索引）而言与用户拖动完全等价
      *
-     * <pre>
+     * ```
      * adb shell am broadcast -a com.hchen.superlyric.DEBUG.SEEK --el position 60000
-     * </pre>
+     * ```
      *
-     * 只在 debug 构建注册。
+     * 只在 debug 构建注册
      */
     private fun registerSeekSimulator(context: Context) {
         val receiver = object : BroadcastReceiver() {

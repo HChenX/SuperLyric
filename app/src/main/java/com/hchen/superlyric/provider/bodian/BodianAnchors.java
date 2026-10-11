@@ -36,7 +36,7 @@ import org.luckypray.dexkit.result.ClassDataList;
 import java.lang.reflect.Constructor;
 
 /**
- * 波点音乐 Hook 锚点：在歌词引擎的构造入口截获**本地原生歌词文件路径**。
+ * 波点音乐 Hook 锚点：在歌词引擎的构造入口截获**本地原生歌词文件路径**
  *
  * <h3>为什么锚在这里</h3>
  * {@code LyricsRunner4Flutter} 是波点把歌词交给 Flutter 渲染层的唯一咽喉，
@@ -45,7 +45,7 @@ import java.lang.reflect.Constructor;
  *
  * <p>相对地，从宿主的行/词模型里反射抠数据要走
  * {@code VerbatimLyricsParserImpl.e()}，而该实现会对相邻词元做重叠裁切，
- * 造成逐字时戳 0ms 坍缩——这正是历史上逐字动效卡死的根因。绕开它，问题不复存在。
+ * 造成逐字时戳 0ms 坍缩、动效卡死；绕开它即可。
  *
  * <h3>代价</h3>
  * 只挂一个构造器，仅此一处。
