@@ -53,7 +53,9 @@ import com.hchen.superlyric.utils.LyricDiag
 class LyricPublishBridge : LyricOrchestrator.Listener {
 
     override fun onTrackChanged(identity: TrackIdentity) {
-        AndroidLog.logD(
+        // 用 logI 而非 logD：这是生命周期事件，必须始终可见——
+        // 排查时曾因它被节流而误判"状态机出现了无来源的迁移"。
+        AndroidLog.logI(
             TAG,
             "Track changed: id=${identity.stableId}, title=\"${identity.title}\", " +
                 "artist=\"${identity.artist}\", duration=${identity.durationMs}ms"

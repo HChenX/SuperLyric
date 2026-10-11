@@ -18,11 +18,18 @@
  */
 package com.hchen.superlyric.provider.base
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.media.MediaMetadata
+import android.media.session.MediaSession
 import android.media.session.PlaybackState
+import android.os.Build
 
 import com.hchen.hooktool.hook.AbsHook
 import com.hchen.hooktool.log.AndroidLog
+import com.hchen.superlyric.BuildConfig
 import com.hchen.superlyric.bridge.LyricPublishBridge
 import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.orchestrate.LyricOrchestrator
@@ -77,6 +84,14 @@ abstract class MusicProvider : AbsPublisher() {
     /** 当前是否有一次待确认的停止（仅用于诊断输出，不参与判定）。 */
     @Volatile
     private var pendingStop: Boolean = false
+
+    /** 宿主自己的 MediaSession；仅诊断期用于模拟跳转播放位置。 */
+    @Volatile
+    private var hostSession: MediaSession? = null
+
+    /** 宿主最近一次上报的播放状态；`MediaSession` 未提供读取接口，只能自己缓存。 */
+    @Volatile
+    private var hostPlaybackState: PlaybackState? = null
 
     private val stopConfirmer: ScheduledExecutorService =
         Executors.newSingleThreadScheduledExecutor { runnable ->
@@ -168,6 +183,10 @@ abstract class MusicProvider : AbsPublisher() {
             object : AbsHook() {
                 override fun after() {
                     val state = getArg(0) as? PlaybackState ?: return
+                    // 留着宿主 MediaSession 及其最近一次状态，诊断期用它模拟"跳转播放位置"
+                    // （MediaSession 没有 getPlaybackState()，只能自己记着）
+                    hostSession = getThisObject() as? MediaSession
+                    hostPlaybackState = state
                     onPlaybackStateChanged(state)
                 }
             },
@@ -263,6 +282,63 @@ abstract class MusicProvider : AbsPublisher() {
     /** 供子类读取当前 Hook 侧已知的稳定标识。 */
     protected fun hookStableId(): String? = hookSource?.currentStableId()
 
+    override fun onApplicationCreated(context: Context) {
+        super.onApplicationCreated(context)
+        if (BuildConfig.DEBUG) registerSeekSimulator(context)
+    }
+
+    /**
+     * 仅诊断期：注册广播接收器，用于**模拟宿主跳转播放位置**。
+     *
+     * 验收清单里的「大幅拖动 / 拖回开头」需要改变播放位置，而 adb 层面无法 seek
+     * （媒体键只有快进快退，且并非所有宿主都声明这两位）。本模块本就持有宿主
+     * [MediaSession] 的引用，因此可以替它发布一次带新位置的 `PlaybackState`——
+     * 对下游（系统框架的时钟与行索引）而言与用户拖动完全等价。
+     *
+     * <pre>
+     * adb shell am broadcast -a com.hchen.superlyric.DEBUG.SEEK --el position 60000
+     * </pre>
+     *
+     * 只在 debug 构建注册。
+     */
+    private fun registerSeekSimulator(context: Context) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(receiverContext: Context?, intent: Intent?) {
+                val target = intent?.getLongExtra(EXTRA_SEEK_POSITION, -1L) ?: -1L
+                if (target >= 0L) simulateSeek(target)
+            }
+        }
+        val filter = IntentFilter(ACTION_DEBUG_SEEK)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            context.registerReceiver(receiver, filter)
+        }
+    }
+
+    private fun simulateSeek(positionMs: Long) {
+        val session = hostSession
+        val current = hostPlaybackState
+        if (session == null || current == null) {
+            // 广播确实到达了本进程，但本进程不持有宿主的会话/状态——
+            // 多进程宿主里这是常见情况，必须能看出来，否则会误判成"通道没生效"
+            AndroidLog.logW(
+                providerTag,
+                "Seek simulator reached a process without host session/state " +
+                    "(session=${session != null}, state=${current != null})",
+            )
+            return
+        }
+
+        AndroidLog.logI(providerTag, "Simulating seek to ${positionMs}ms")
+        session.setPlaybackState(
+            PlaybackState.Builder(current)
+                .setState(current.state, positionMs, current.playbackSpeed)
+                .build()
+        )
+    }
+
     private companion object {
         /**
          * 停止状态的确认窗口。
@@ -271,5 +347,10 @@ abstract class MusicProvider : AbsPublisher() {
          * 而真正的停止晚 400ms 生效对用户不可见。
          */
         const val STOP_CONFIRM_MS = 400L
+
+        /** 诊断期模拟跳转播放位置的广播 action。 */
+        const val ACTION_DEBUG_SEEK = "com.hchen.superlyric.DEBUG.SEEK"
+
+        const val EXTRA_SEEK_POSITION = "position"
     }
 }
