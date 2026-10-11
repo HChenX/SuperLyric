@@ -56,7 +56,12 @@ class QQHookSource : HookLyricSource {
     @Volatile
     private var capturedMid: String? = null
 
-    /** 已经成功取回歌词的 songMID，避免宿主重复构造 LyricLoadBean 时反复发起网络请求 */
+    /**
+     * 已经成功取回歌词的 songMID，避免宿主重复构造 LyricLoadBean 时反复发起网络请求
+     *
+     * 只对**本次取词**有效：每次 [start] 都会清空。宿主切歌不会调用 [cancel]（只有确认
+     * 停止才会），留着它会让"切走再切回"的曲目一个请求都发不出
+     */
     @Volatile
     private var deliveredMid: String? = null
 
@@ -81,10 +86,17 @@ class QQHookSource : HookLyricSource {
         this.session = session
         this.pendingIdentity = identity
 
+        // 去重状态只属于"一次取词"。Hook 来源的 start() 每个代际恰好调用一次，因此这里
+        // 清空不会误伤本次取词，只会丢掉已经死掉的旧代际的登记。反之不清则致命：
+        // 切走再切回同一首曲目时，本方法会直接命中 deliveredMid，一个请求都不发，
+        // 编排器空等 Hook 超时后转检索，检索不成便是纯音乐占位
+        deliveredMid = null
+        inFlightMid = null
+
         val mid = QQIdentity.midOf(identity)
         if (mid != null) {
             capturedMid = mid
-            fetchAsync(mid, QQIdentity.idOf(identity), identity, session)
+            fetchAsync(mid, QQIdentity.idOf(identity), identity)
         } else {
             AndroidLog.logD(sourceName, "Awaiting LyricLoadBean capture for songMID")
         }
@@ -101,7 +113,8 @@ class QQHookSource : HookLyricSource {
     private fun onSongInfoCaptured(songMid: String, songId: Long, title: String, artist: String) {
         if (songMid.isNotEmpty()) capturedMid = songMid
 
-        val activeSession = session ?: return
+        // 仅判断"当前有没有人在等结果"；真正投给谁由 fetchAsync 在投递时决定
+        if (session == null) return
         val base = pendingIdentity ?: return
 
         // 宿主上报的元数据比 MediaSession 更可靠，缺失时用它补齐
@@ -112,7 +125,7 @@ class QQHookSource : HookLyricSource {
         )
         pendingIdentity = identity
 
-        fetchAsync(songMid, songId, identity, activeSession)
+        fetchAsync(songMid, songId, identity)
     }
 
     /**
@@ -121,14 +134,26 @@ class QQHookSource : HookLyricSource {
      * 去重集中在这里而不是调用点：宿主在播放期间会反复构造 `LyricLoadBean`，
      * 且 [start] 与锚点回调可能对同一首曲目各发一次。若只在某一个调用点去重，
      * 另一条路径仍会重复发起网络请求。
+     *
+     * 登记"已交付"的时机与投递绑定：取词是一次网络往返，期间可能已经切歌。投给入口处
+     * 捕获的旧会话会被编排器按代际丢弃，而"已交付"若在投递之外提前登记，这首曲目在
+     * 本次进程里就再也走不到 Hook 路径了
      */
-    private fun fetchAsync(mid: String, songId: Long, identity: TrackIdentity, target: LyricSource.Session) {
+    private fun fetchAsync(mid: String, songId: Long, identity: TrackIdentity) {
         if (mid == deliveredMid || mid == inFlightMid) return
         inFlightMid = mid
 
         executor.execute {
             val outcome = QQNetwork.fetchByMid(mid, songId, identity)
             if (inFlightMid == mid) inFlightMid = null
+
+            val target = session
+            val current = pendingIdentity
+            if (target == null || current == null || mid != QQIdentity.midOf(current)) {
+                AndroidLog.logD(sourceName, "Discarding result for $mid: no longer the current track")
+                return@execute
+            }
+
             if (outcome is LyricOutcome.Success) deliveredMid = mid
             target.deliver(outcome)
         }
