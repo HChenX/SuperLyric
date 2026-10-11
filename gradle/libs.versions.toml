@@ -1,7 +1,7 @@
 [versions]
 # android
 agp = "9.4.1"
-kotlin = "2.4.20"
+kotlin = "2.4.21"
 appcompat = "1.8.0"
 annotation = "1.11.0"
 uiGraphics = "1.12.1"

@@ -139,9 +139,9 @@ dependencies {
     implementation libs.gson
     implementation libs.okhttp
     implementation libs.okhttp.brotli
-    implementation(libs.superlyricapi) {
-        changing = true
-    }
+    // 版本是固定 tag：不要加 changing = true。它买不到任何东西，却让构建不可复现
+    // （JitPack 会为同一个 tag 重新构建，同样的版本号不保证字节一致）
+    implementation libs.superlyricapi
     implementation project(':lyric-kernel')
 
     implementation project(':processor')
