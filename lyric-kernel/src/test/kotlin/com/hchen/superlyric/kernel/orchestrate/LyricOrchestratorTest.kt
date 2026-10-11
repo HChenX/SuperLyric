@@ -238,6 +238,34 @@ class LyricOrchestratorTest {
     }
 
     @Test
+    fun `an unsupported source is not a no lyrics verdict`() {
+        // "这个来源服务不了这一首"（无版权、拿不到必要标识）说的是**我们拿不到**，
+        // 不是"这首没有歌词"。据此下发占位就是替平台编结论
+        val f = Fixture()
+
+        f.orchestrator.onTrackChanged(track("A"))
+        f.hookSource!!.deliver(LyricOutcome.Unsupported("hook cannot serve"))
+        f.apiSource!!.deliver(LyricOutcome.Unsupported("platform cannot serve"))
+
+        assertEquals(0, f.listener.noLyricsCount, "服务不了不等于没有歌词")
+        assertEquals(1, f.listener.unavailableCount)
+        assertEquals(LyricOrchestrator.State.UNAVAILABLE, f.orchestrator.state)
+    }
+
+    @Test
+    fun `hook unsupported with no api source does not conclude no lyrics`() {
+        // "清洗后一行不剩"恰恰说明宿主**给了**歌词行 ⇒ 更不能反过来断言这首是纯音乐
+        val f = Fixture(api = false)
+
+        f.orchestrator.onTrackChanged(track("A"))
+        f.hookSource!!.deliver(LyricOutcome.Unsupported("hook cannot serve"))
+
+        assertEquals(0, f.listener.noLyricsCount)
+        assertEquals(1, f.listener.unavailableCount)
+        assertEquals(LyricOrchestrator.State.UNAVAILABLE, f.orchestrator.state)
+    }
+
+    @Test
     fun `transient failures never conclude as no lyrics`() {
         val f = Fixture()
 

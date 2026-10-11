@@ -122,7 +122,11 @@ class LyricOrchestrator(
         /** 成功取得全量歌词。 */
         fun onLyricResolved(outcome: LyricOutcome.Success)
 
-        /** 各来源一致确认该曲目无歌词——此时**才**允许下发「纯音乐」占位。 */
+        /**
+         * 平台或宿主**明确**说这首没有歌词——这是唯一允许下发「纯音乐」占位的结论。
+         *
+         * 与 [onUnavailable] 的区别在于归因：这里对方表了态，那里是我们没拿到
+         */
         fun onNoLyrics(identity: TrackIdentity?)
 
         /** 取词失败且重试耗尽——**不得**下发占位，应保持等待或留空。 */
@@ -327,11 +331,11 @@ class LyricOrchestrator(
     private fun planHookCaptured(capturedEpoch: Long, outcome: LyricOutcome): Dispatch? {
         // 丢弃必须留痕：静默丢弃过一次真实的取词成果，排查时完全看不出它到过这里
         if (capturedEpoch != epoch) {
-            diagnostics("dropping hook outcome ${outcome::class.simpleName}: epoch $capturedEpoch != $epoch")
+            diagnostics("dropping hook outcome ${outcome.label}: epoch $capturedEpoch != $epoch")
             return null
         }
         if (hookDelivered) {
-            diagnostics("dropping hook outcome ${outcome::class.simpleName}: hook already delivered")
+            diagnostics("dropping hook outcome ${outcome.label}: hook already delivered")
             return null
         }
         hookDelivered = true
@@ -359,15 +363,26 @@ class LyricOrchestrator(
     ): Dispatch {
         if (apiDelivered) return dispatch
 
+        // 两个来源都不存在 = Provider 配置错误。绝不能与"平台明确说没有歌词"走同一条路：
+        // 那会给每一首歌都下发纯音乐占位，而且毫无痕迹
+        if (apiSource == null && hookSource == null) {
+            diagnostics("no lyric source configured; refusing to conclude 'no lyrics'")
+            transitionLocked(State.UNAVAILABLE, dispatch)
+            dispatch.unavailable = true
+            return dispatch
+        }
+
         if (apiSource == null) {
             // 没有可用的网络来源，只能就 Hook 的结论收尾。
-            // 注意：Hook 的"暂时失败"绝不等于"没有歌词"。
-            if (hookOutcome is LyricOutcome.TransientFailure) {
-                transitionLocked(State.UNAVAILABLE, dispatch)
-                dispatch.unavailable = true
-            } else {
+            // **只有宿主明确说"没有歌词"才允许下发占位**：`Unsupported`（读不到文件、清洗后
+            // 一行不剩）与"暂时失败"一样都是**我们没拿到**，判成纯音乐等于替宿主断言——
+            // 而且"清洗后一行不剩"这种情形恰恰说明宿主**给了**歌词行
+            if (hookOutcome is LyricOutcome.NoLyrics) {
                 transitionLocked(State.NO_LYRICS, dispatch)
                 dispatch.noLyrics = true
+            } else {
+                transitionLocked(State.UNAVAILABLE, dispatch)
+                dispatch.unavailable = true
             }
             return dispatch
         }
@@ -398,7 +413,7 @@ class LyricOrchestrator(
 
     private fun planApiCaptured(capturedEpoch: Long, outcome: LyricOutcome): Dispatch? {
         if (capturedEpoch != epoch) {
-            diagnostics("dropping api outcome ${outcome::class.simpleName}: epoch $capturedEpoch != $epoch")
+            diagnostics("dropping api outcome ${outcome.label}: epoch $capturedEpoch != $epoch")
             return null
         }
 
@@ -411,9 +426,17 @@ class LyricOrchestrator(
                 dispatch.resolved = outcome
             }
 
-            is LyricOutcome.NoLyrics, is LyricOutcome.Unsupported -> {
+            is LyricOutcome.NoLyrics -> {
+                // 平台明确说"这首没有歌词"——**这是允许下发纯音乐占位的唯一来源**
                 transitionLocked(State.NO_LYRICS, dispatch)
                 dispatch.noLyrics = true
+            }
+
+            is LyricOutcome.Unsupported -> {
+                // "这个来源服务不了这一首"（平台无版权、拿不到必要的标识）**不是**"平台说没有歌词"：
+                // 请求要么根本没发出去，要么服务端没说这句话。据此下发占位等于替平台编结论
+                transitionLocked(State.UNAVAILABLE, dispatch)
+                dispatch.unavailable = true
             }
 
             is LyricOutcome.TransientFailure -> {
@@ -497,4 +520,18 @@ class LyricOrchestrator(
         state = next
         dispatch.stateChanged = next
     }
+
+    /**
+     * 诊断用的稳定标签
+     *
+     * **不要用 `::class.simpleName`**：release 构建下 R8 会把子类名混淆成 `bw0` 之类，
+     * 于是这行诊断恰好只在最需要它的场景里不可读（真机日志实证）
+     */
+    private val LyricOutcome.label: String
+        get() = when (this) {
+            is LyricOutcome.Success -> "Success"
+            is LyricOutcome.NoLyrics -> "NoLyrics"
+            is LyricOutcome.Unsupported -> "Unsupported"
+            is LyricOutcome.TransientFailure -> "TransientFailure"
+        }
 }
