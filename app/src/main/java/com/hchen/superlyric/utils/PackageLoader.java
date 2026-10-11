@@ -214,7 +214,10 @@ public final class PackageLoader {
                     return true;
                 }
             }
-        } catch (Exception ignore) {
+        } catch (Exception e) {
+            // 静默返回 false 会让"APK 打不开"与"确实没有 Xposed 模块"在日志里一模一样，
+            // 而两者对这一层的含义完全不同：前者是我们没读到，后者是宿主确实没模块
+            AndroidLog.logW(TAG, "Cannot inspect " + apkPath + "; treating it as a non-Xposed app", e);
         }
         return false;
     }

@@ -113,7 +113,13 @@ public final class HookEntrance extends ModuleEntrance {
                 ClassLoader previousLoader = moduleClassLoaders.get(param.getPackageName());
                 if (modules.containsKey(param.getPackageName()) && previousLoader == param.getClassLoader()) {
                     for (AbsModule module : Objects.requireNonNull(modules.get(param.getPackageName()))) {
-                        module.handlePackageReady(param);
+                        try {
+                            module.handlePackageReady(param);
+                        } catch (Throwable t) {
+                            // 同上：单个模块重新注册失败不得中断其余模块，也不得抛回框架
+                            AndroidLog.logE(TAG, "Module " + module.getClass().getName()
+                                + " failed during re-registration; skipping it", t);
+                        }
                     }
                     return;
                 }
@@ -124,18 +130,29 @@ public final class HookEntrance extends ModuleEntrance {
 
                 List<AbsModule> packageModules = new ArrayList<>();
                 for (String path : Objects.requireNonNull(HookMaps.ON_PACKAGE_LOADED.get(param.getPackageName()))) {
+                    AbsModule module;
                     try {
-                        AbsModule module = (AbsModule) HookEntrance.class.getClassLoader()
+                        module = (AbsModule) HookEntrance.class.getClassLoader()
                             .loadClass(path)
                             .getDeclaredConstructor()
                             .newInstance();
-
-                        module.handlePackageReady(param);
-                        packageModules.add(module);
                     } catch (IllegalAccessException | InstantiationException |
                              InvocationTargetException | NoSuchMethodException |
                              ClassNotFoundException e) {
-                        throw new RuntimeException(e);
+                        // 常见成因：增量构建残留的 HookMaps 引用了已删除的类
+                        AndroidLog.logE(TAG, "Failed to load module " + path + "; skipping it", e);
+                        continue;
+                    }
+
+                    try {
+                        module.handlePackageReady(param);
+                        packageModules.add(module);
+                    } catch (Throwable t) {
+                        // 模块自己的代码（装钩子、建编排器、DexKit 查找）抛什么都不能中断
+                        // 其余模块的注册，更不能把异常抛回 Xposed 的加载路径——宿主稳定性优先。
+                        // 必须用 Throwable 而不是 Exception：残留的 HookMaps 会抛
+                        // NoClassDefFoundError（Error 而非 Exception），而它正是最常见的成因
+                        AndroidLog.logE(TAG, "Module " + path + " failed during package ready; skipping it", t);
                     }
                 }
                 modules.put(param.getPackageName(), packageModules);
@@ -192,16 +209,24 @@ public final class HookEntrance extends ModuleEntrance {
         ModuleData.setClassLoader(param.getClassLoader());
         for (List<String> value : HookMaps.ON_SYSTEM_STARTING.values()) {
             for (String path : value) {
+                AbsModule module;
                 try {
-                    AbsModule module = (AbsModule) HookEntrance.class.getClassLoader()
+                    module = (AbsModule) HookEntrance.class.getClassLoader()
                         .loadClass(path)
                         .getDeclaredConstructor()
                         .newInstance();
-                    module.handleSystemServerStarting(param);
                 } catch (IllegalAccessException | InstantiationException |
                          InvocationTargetException | NoSuchMethodException |
                          ClassNotFoundException e) {
-                    throw new RuntimeException(e);
+                    AndroidLog.logE(TAG, "Failed to load module " + path + "; skipping it", e);
+                    continue;
+                }
+
+                try {
+                    module.handleSystemServerStarting(param);
+                } catch (Throwable t) {
+                    // 同 packageReady：模块自己的代码抛什么都不能把异常抛回框架
+                    AndroidLog.logE(TAG, "Module " + path + " failed during system start; skipping it", t);
                 }
             }
         }

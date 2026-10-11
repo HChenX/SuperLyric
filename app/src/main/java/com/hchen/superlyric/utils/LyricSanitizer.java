@@ -22,6 +22,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.superlyric.kernel.text.LyricText;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.SuperLyricLine;
 import com.hchen.superlyricapi.SuperLyricWord;
@@ -47,19 +48,15 @@ public final class LyricSanitizer {
     /**
      * 清理破坏字符长度对齐或导致系统文本测量异常的特殊控制字符。
      * <p>
-     * 剥离零宽空格 (U+200B)、零宽不连字 (U+200C)、零宽连字 (U+200D)、BOM (U+FEFF) 及未折行的换行符。
+     * 剥离零宽空格 (U+200B)、零宽不连字 (U+200C)、零宽连字 (U+200D)、BOM (U+FEFF)、
+     * 未折行的换行符 (U+000D / U+000A) 与 NUL (U+0000，可由 {@code &#0;} 实体解码得到)。
+     * <p>
+     * 表只有一份，在内核的 {@code LyricText}：此处曾另抄一份（且不含 NUL），于是往表里
+     * 补一个字符会落在没生效的那一份上——发布路径上真正把关的正是本方法。
      */
     @NonNull
     public static String cleanInvisibleChars(@Nullable String text) {
-        if (text == null || text.isEmpty()) {
-            return "";
-        }
-        return text.replace("\u200B", "")
-            .replace("\u200C", "")
-            .replace("\u200D", "")
-            .replace("\uFEFF", "")
-            .replace("\r", "")
-            .replace("\n", "");
+        return LyricText.INSTANCE.cleanInvisibleChars(text);
     }
 
     /**
@@ -172,8 +169,10 @@ public final class LyricSanitizer {
         // 允许词文本去除空格后与行文本去除空格后一致（兼容不切空格的逐字约定）
         boolean exactMatch = combinedWordsText.equals(cleanLineText);
         if (!exactMatch) {
-            String combinedNoSpace = combinedWordsText.replaceAll("\\s+", "");
-            String lineNoSpace = cleanLineText.replaceAll("\\s+", "");
+            // 全角空格 U+3000 不属于 \s，必须显式列出：否则"含全角空格"与"不含"的两种
+            // 写法会被判为不等，合法的逐字数据因此被丢弃
+            String combinedNoSpace = combinedWordsText.replaceAll("[\\s\\u3000]+", "");
+            String lineNoSpace = cleanLineText.replaceAll("[\\s\\u3000]+", "");
             if (!combinedNoSpace.equals(lineNoSpace)) {
                 AndroidLog.logW(TAG, "Sanitizer: DROPPING MISMATCHED WORDS! Combined words mismatch line text"
                     + " | line=\"" + cleanLineText + "\" | combined=\"" + combinedWordsText + "\"");
@@ -250,8 +249,9 @@ public final class LyricSanitizer {
             long start = cur.getStartTime();
             long end = cur.getEndTime();
             String text = cur.getWord();
-            int charCount = Math.max(1, text != null ? text.trim().length() : 1);
-            long fallbackDur = Math.max(120L, (long) charCount * 150L);
+            // 兜底时长**只有一份实现**（内核 LyricText）。此处曾另写一遍，且与内核不等价
+            // （这里算的是 trim 后的长度），改一处漏一处
+            long fallbackDur = LyricText.INSTANCE.fallbackWordDuration(text != null ? text : "");
 
             // 若词起偏早于当前运行水位（发生时间倒流），纠正至当前运行水位
             if (start < runningStart) {

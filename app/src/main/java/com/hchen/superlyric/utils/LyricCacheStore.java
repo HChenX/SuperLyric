@@ -48,7 +48,7 @@ import java.util.regex.Pattern;
  * <p>
  * 按提供者命名空间独立存储接口原始响应（JSON 或 protobuf 字节），
  * 直接写入宿主 cache 目录：{@code cacheDir/superlyric/lyric/{provider}/{key}.json}。
- * 文件带版本字段（{@code {"v":1,"d":<原始响应>}}），版本不符视为未命中并删除。
+ * 文件带版本与长度字段（{@code {"v":2,"n":<len>,"d":<原始响应>}}），版本不符视为未命中并删除。
  * key 仅允许 {@code [A-Za-z0-9._-]} 与 {@code '/'} 分隔，杜绝路径穿越。
  *
  * @author 彼岸喵Higanoneko & 焕晨HChen
@@ -56,7 +56,7 @@ import java.util.regex.Pattern;
 public final class LyricCacheStore {
     private static final String TAG = "LyricCacheStore";
     private static final String CACHE_ROOT = "superlyric" + File.separator + "lyric";
-    private static final int CACHE_VERSION = 1;
+    private static final int CACHE_VERSION = 2;
     private static final long MAX_PROVIDER_BYTES = 32L * 1024L * 1024L;
     private static final int MAX_PROVIDER_FILES = 1000;
     private static final int PRUNE_INTERVAL = 30;
@@ -66,8 +66,31 @@ public final class LyricCacheStore {
      * 单个歌词原始响应上限；正常歌词响应远低于此值。
      */
     public static final int MAX_PAYLOAD_BYTES = 2 * 1024 * 1024;
-    private static final byte[] VERSION_PREFIX = ("{\"v\":" + CACHE_VERSION + ",\"d\":")
-        .getBytes(StandardCharsets.UTF_8);
+    /**
+     * 帧头：{@code {"v":<版本>,"n":<载荷字节数>,"d":}。
+     * <p>
+     * 长度字段是**校验**用的：只靠"末尾一个 {@code }}"无法发现截断——载荷本身
+     * （JSON、protobuf）里到处是 {@code }}，断在哪都可能恰好以它收尾。声明长度与
+     * 帧内剩余空间必须精确吻合，见 {@link #unpack}
+     */
+    private static final String FRAME_HEAD = "{\"v\":" + CACHE_VERSION + ",\"n\":";
+    private static final String FRAME_SEPARATOR = ",\"d\":";
+    private static final byte[] FRAME_HEAD_BYTES = FRAME_HEAD.getBytes(StandardCharsets.UTF_8);
+    private static final byte[] FRAME_SEPARATOR_BYTES = FRAME_SEPARATOR.getBytes(StandardCharsets.UTF_8);
+    /** 帧的最小可能字节数：帧头 + 至少一位长度 + 分隔符 + 一个载荷字节 + 收尾 '}' */
+    private static final long FRAME_MIN_BYTES =
+        FRAME_HEAD_BYTES.length + 1L + FRAME_SEPARATOR_BYTES.length + 1L + 1L;
+    /** {@link #MAX_PAYLOAD_BYTES} 的十进制位数 */
+    private static final int MAX_LENGTH_DIGITS = String.valueOf(MAX_PAYLOAD_BYTES).length();
+    /**
+     * 帧的最大可能字节数：帧头 + 长度字段的最大位数 + 分隔符 + 上限载荷 + 收尾 '}'
+     * <p>
+     * 不能拿 {@link #FRAME_MIN_BYTES} 当基数再加大载荷：那是按**一位**长度字段算的，
+     * 而接近上限的帧其长度字段有 7 位，于是合法的满额条目会被当成损坏文件删掉
+     */
+    private static final long FRAME_MAX_BYTES =
+        FRAME_HEAD_BYTES.length + MAX_LENGTH_DIGITS + FRAME_SEPARATOR_BYTES.length
+            + MAX_PAYLOAD_BYTES + 1L;
     private static final String[] ONLINE_PROVIDERS = {"Netease", "Kugou", "QQ", "Spotify"};
     private static final Pattern SAFE_SEGMENT = Pattern.compile("[A-Za-z0-9._-]+");
     private static final Pattern SAFE_KEY = Pattern.compile("[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*");
@@ -170,7 +193,9 @@ public final class LyricCacheStore {
     /**
      * 将接口返回的原始响应字节（JSON 或 protobuf）写入磁盘缓存。
      * <p>
-     * 写入前若既有文件为无版本字段的旧格式缓存，先删除再写新格式（迁移）。
+     * 写入只做"临时文件 + 原子改名（{@code REPLACE_EXISTING}）"，**不检查既有文件**：
+     * 旧格式的迁移发生在读取侧——{@link #get} 发现版本不符就删掉并报未命中，
+     * 下一次取词自然按新格式重写。
      *
      * @param provider 提供者命名空间（如 Spotify / Netease），须为纯名称
      * @param key      缓存键（可为 {locale}/{id} 或纯 id）
@@ -226,37 +251,59 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 封装原始响应为带版本字段的格式：{@code {"v":1,"d":<原始响应>}}。
+     * 封装原始响应为带版本与长度字段的帧：{@code {"v":<版本>,"n":<载荷字节数>,"d":<原始响应>}}。
+     * <p>
+     * 帧头由 {@link #CACHE_VERSION} 拼出来，文档里不写死版本号：写死过一次（v1），
+     * 于是版本升到 2 之后这里就成了假话
      */
     @NonNull
     private static byte[] wrap(@NonNull byte[] data) {
-        byte[] suffix = new byte[]{'}'};
-        byte[] framed = new byte[VERSION_PREFIX.length + data.length + suffix.length];
-        System.arraycopy(VERSION_PREFIX, 0, framed, 0, VERSION_PREFIX.length);
-        System.arraycopy(data, 0, framed, VERSION_PREFIX.length, data.length);
-        System.arraycopy(suffix, 0, framed, VERSION_PREFIX.length + data.length, suffix.length);
+        byte[] head = (FRAME_HEAD + data.length + FRAME_SEPARATOR).getBytes(StandardCharsets.UTF_8);
+        byte[] framed = new byte[head.length + data.length + 1];
+        System.arraycopy(head, 0, framed, 0, head.length);
+        System.arraycopy(data, 0, framed, head.length, data.length);
+        framed[framed.length - 1] = '}';
         return framed;
     }
 
     /**
-     * 从带版本字段的文件字节中解出原始响应；格式不符返回 {@code null}。
+     * 从帧字节中解出原始响应；帧不完整、版本不符或声明长度与实长不符时返回 {@code null}。
      */
     @Nullable
     private static byte[] unpack(@NonNull byte[] data) {
-        int len = data.length;
-        int head = VERSION_PREFIX.length;
-        if (len <= head + 1 || len > head + MAX_PAYLOAD_BYTES + 1) return null;
-        for (int i = 0; i < head; i++) {
-            if (data[i] != VERSION_PREFIX[i]) return null;
+        int cursor = FRAME_HEAD_BYTES.length;
+        if (data.length <= cursor) return null;
+        for (int i = 0; i < FRAME_HEAD_BYTES.length; i++) {
+            if (data[i] != FRAME_HEAD_BYTES[i]) return null;
         }
-        if (data[len - 1] != '}') return null;
-        return Arrays.copyOfRange(data, head, len - 1);
+
+        long declared = 0L;
+        int digits = 0;
+        while (cursor < data.length && data[cursor] >= '0' && data[cursor] <= '9') {
+            declared = declared * 10 + (data[cursor] - '0');
+            // 边解析边设界：定长读取，绝不会因为长度字段本身很长而溢出
+            if (declared > MAX_PAYLOAD_BYTES) return null;
+            cursor++;
+            digits++;
+        }
+        if (digits == 0) return null;
+
+        if (data.length - cursor < FRAME_SEPARATOR_BYTES.length) return null;
+        for (int i = 0; i < FRAME_SEPARATOR_BYTES.length; i++) {
+            if (data[cursor + i] != FRAME_SEPARATOR_BYTES[i]) return null;
+        }
+        cursor += FRAME_SEPARATOR_BYTES.length;
+
+        // 声明长度必须与帧内剩余空间**精确**吻合，且结尾就是那一个 '}'。
+        // 这一步才是"校验"：截断的帧剩余空间与声明长度对不上，直接判废
+        if (declared <= 0 || data.length - cursor - 1 != declared) return null;
+        if (data[data.length - 1] != '}') return null;
+        return Arrays.copyOfRange(data, cursor, cursor + (int) declared);
     }
 
     private static boolean isReadableCacheSize(@NonNull File file) {
         long length = file.length();
-        return length > VERSION_PREFIX.length + 1L
-            && length <= VERSION_PREFIX.length + MAX_PAYLOAD_BYTES + 1L;
+        return length >= FRAME_MIN_BYTES && length <= FRAME_MAX_BYTES;
     }
 
     /**
@@ -288,25 +335,27 @@ public final class LyricCacheStore {
             AndroidLog.logD(TAG, "get: Disk cache MISS (file not found): " + file.getAbsolutePath());
             return null;
         }
-        synchronized (WRITE_LOCK) {
-            try {
-                if (!isReadableCacheSize(file)) {
-                    AndroidLog.logW(TAG, "get: Corrupted file size (" + file.length() + "), deleting: " + file.getAbsolutePath());
-                    Files.deleteIfExists(file.toPath());
-                    return null;
-                }
-                byte[] payload = unpack(Files.readAllBytes(file.toPath()));
-                if (payload == null) {
-                    AndroidLog.logW(TAG, "get: Unpack version mismatch, deleting: " + file.getAbsolutePath());
-                    Files.deleteIfExists(file.toPath());
-                    return null;
-                }
-                AndroidLog.logI(TAG, "get: Disk cache HIT: " + file.getAbsolutePath() + " (" + payload.length + " bytes)");
-                return payload;
-            } catch (IOException | SecurityException e) {
-                AndroidLog.logW(TAG, "Failed to read lyric cache from " + file.getAbsolutePath(), e);
+        // **不加写锁**：写入走 `tmp + 原子改名`，读到的要么是旧文件、要么是新文件，
+        // 不存在读到写了一半的中间态；而与全局写锁共享会让本方法被别的 provider 的慢写
+        // 或清理扫描堵住，直接拖慢取词热路径。与删除并发也安全：删掉后读会抛 IOException，
+        // 由下面的 catch 兜住并返回未命中
+        try {
+            if (!isReadableCacheSize(file)) {
+                AndroidLog.logW(TAG, "get: Corrupted file size (" + file.length() + "), deleting: " + file.getAbsolutePath());
+                Files.deleteIfExists(file.toPath());
                 return null;
             }
+            byte[] payload = unpack(Files.readAllBytes(file.toPath()));
+            if (payload == null) {
+                AndroidLog.logW(TAG, "get: Unpack version mismatch, deleting: " + file.getAbsolutePath());
+                Files.deleteIfExists(file.toPath());
+                return null;
+            }
+            AndroidLog.logI(TAG, "get: Disk cache HIT: " + file.getAbsolutePath() + " (" + payload.length + " bytes)");
+            return payload;
+        } catch (IOException | SecurityException e) {
+            AndroidLog.logW(TAG, "Failed to read lyric cache from " + file.getAbsolutePath(), e);
+            return null;
         }
     }
 
