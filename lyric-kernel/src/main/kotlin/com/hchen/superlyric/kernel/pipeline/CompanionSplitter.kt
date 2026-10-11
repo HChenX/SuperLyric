@@ -85,12 +85,15 @@ internal object CompanionSplitter {
         val mainLines = ArrayList<Row>(rows.size)
         val phonetic = ArrayList<String>()
         val translation = ArrayList<String>()
-        val mainBodyByStart = HashMap<Long, String>()
+
+        // 先把**全部**主行登记完，再回头分类伴随行。必须与遍历顺序无关：伴随行可能写在
+        // 它的主行**之前**，边走边登记的话那种排布下所有伴随行都找不到主人，
+        // 于是没有任何行被拆出去，本方法返回 null，整份载荷退回通用解析库
+        val mainBodyByStart = rows.filter { it.tagged }.associate { it.startMs to it.body }
 
         for (row in rows) {
             if (row.tagged) {
                 mainLines += row
-                mainBodyByStart[row.startMs] = row.body
                 continue
             }
 

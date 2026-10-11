@@ -18,6 +18,7 @@
  */
 package com.hchen.superlyric.kernel.parse
 
+import com.hchen.superlyric.kernel.pipeline.CompanionSplitter
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -348,5 +349,28 @@ class ParserTest {
     fun `non json input is rejected`() {
         assertFalse(SodaJsonParser.canParse("[00:01.00]Hello"))
         assertNull(SodaJsonParser.parse("[00:01.00]Hello"))
+    }
+
+    // =========================================================================
+    // CompanionSplitter（同时间戳伴随行的拆分）
+    // =========================================================================
+
+    @Test
+    fun `a companion row written before its main row is still split out`() {
+        // 伴随行写在主行**之前**的排布。判据必须与遍历顺序无关：若以"遍历到该行时
+        // 是否已经见过它的主行"为准，这种排布下所有伴随行都找不到主人，于是没有任何行
+        // 被拆出去，split() 直接返回 null —— 整份载荷退回通用解析库，
+        // 而库正是会把译文留成独立歌词行的那个（见 CompanionSplitter 的类注释）。
+        val text = "[00:20.699]第一次参观卢浮宫\n" +
+            "[00:20.699]<00:20.699>初<00:21.133>め<00:22.298>は <00:23.011>"
+
+        val split = CompanionSplitter.split(text)
+
+        assertNotNull(split, "伴随行在前时仍必须识别出这一形态")
+        assertFalse(split!!.main.contains("第一次参观卢浮宫"), "译文不得留在主载荷里")
+        assertTrue(
+            split.translation?.contains("第一次参观卢浮宫") == true,
+            "译文必须**带着时间戳**进入伴随通道，TranslationMerger 靠它对齐",
+        )
     }
 }
