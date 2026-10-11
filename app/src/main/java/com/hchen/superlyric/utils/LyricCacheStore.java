@@ -39,6 +39,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
@@ -67,7 +68,7 @@ public final class LyricCacheStore {
     public static final int MAX_PAYLOAD_BYTES = 2 * 1024 * 1024;
     private static final byte[] VERSION_PREFIX = ("{\"v\":" + CACHE_VERSION + ",\"d\":")
         .getBytes(StandardCharsets.UTF_8);
-    private static final String[] ONLINE_PROVIDERS = {"Netease", "Hihonor", "Spotify"};
+    private static final String[] ONLINE_PROVIDERS = {"Netease", "Kugou", "QQ", "Spotify"};
     private static final Pattern SAFE_SEGMENT = Pattern.compile("[A-Za-z0-9._-]+");
     private static final Pattern SAFE_KEY = Pattern.compile("[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*");
     private static final AtomicInteger sWriteCounter = new AtomicInteger(0);
@@ -75,6 +76,14 @@ public final class LyricCacheStore {
      * 写锁：同 key 并发 put 时串行化"写 tmp + 原子替换"，避免内容交错损坏。
      */
     private static final Object WRITE_LOCK = new Object();
+    /**
+     * 存储自有的异步写线程：调用方无需自带执行器，且所有落盘串行执行。
+     */
+    private static final Executor WRITE_EXECUTOR = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "SuperLyric-LyricCache");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private LyricCacheStore() {
     }
@@ -95,6 +104,30 @@ public final class LyricCacheStore {
      */
     public static void put(@Nullable Context context, @NonNull String provider, @NonNull String key, @NonNull String json) {
         put(context, provider, key, json.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * 异步将接口返回的 JSON 文本写入磁盘缓存，使用存储自有的串行写线程。
+     *
+     * @param context  宿主 Context；为 {@code null} 时自动解析
+     * @param provider 提供者命名空间（如 Netease / Spotify）
+     * @param key      缓存键
+     * @param json     接口返回的原始 JSON 字符串
+     */
+    public static void putAsync(@Nullable Context context, @NonNull String provider, @NonNull String key, @NonNull String json) {
+        putAsync(WRITE_EXECUTOR, context, provider, key, json);
+    }
+
+    /**
+     * 异步将接口返回的原始响应字节写入磁盘缓存，使用存储自有的串行写线程。
+     *
+     * @param context  宿主 Context；为 {@code null} 时自动解析
+     * @param provider 提供者命名空间（如 Netease / Spotify）
+     * @param key      缓存键
+     * @param data     接口返回的原始响应字节
+     */
+    public static void putAsync(@Nullable Context context, @NonNull String provider, @NonNull String key, @NonNull byte[] data) {
+        putAsync(WRITE_EXECUTOR, context, provider, key, data);
     }
 
     /**
@@ -350,12 +383,17 @@ public final class LyricCacheStore {
      */
     public static boolean clearOnlineProviderCaches(@Nullable Context context) {
         Context ctx = resolveContext(context);
-        if (ctx == null) return false;
+        if (ctx == null) {
+            AndroidLog.logW(TAG, "clearOnlineProviderCaches: Context unresolved");
+            return false;
+        }
 
         boolean success = true;
         synchronized (WRITE_LOCK) {
             for (String provider : ONLINE_PROVIDERS) {
                 if (!clearProviderCacheLocked(ctx, provider)) {
+                    AndroidLog.logW(TAG, "Failed to clear cache namespace: provider=" + provider
+                        + ", cacheDir=" + ctx.getCacheDir());
                     success = false;
                 }
             }
@@ -382,11 +420,18 @@ public final class LyricCacheStore {
 
     private static boolean clearProviderCacheLocked(@NonNull Context context, @NonNull String provider) {
         String providerDir = sanitizeSegment(provider);
-        if (providerDir == null) return false;
+        if (providerDir == null) {
+            AndroidLog.logW(TAG, "clearProviderCache rejected: illegal provider name=" + provider);
+            return false;
+        }
 
         File cacheDir = context.getCacheDir();
         File root = new File(cacheDir, CACHE_ROOT);
-        if (hasSymbolicLinkBetween(root, cacheDir)) return false;
+        if (hasSymbolicLinkBetween(root, cacheDir)) {
+            AndroidLog.logW(TAG, "clearProviderCache rejected: symlink between cacheDir=" + cacheDir
+                + " and cacheRoot=" + root);
+            return false;
+        }
         File dir = new File(root, providerDir);
         if (!dir.exists()) return true;
         if (hasSymbolicLinkBetween(dir, cacheDir)) {
@@ -483,13 +528,21 @@ public final class LyricCacheStore {
     /**
      * 解析宿主 Context：优先使用传入的宿主 Application Context，
      * 缺失时（onApplicationCreated 未触发的兜底场景）反射获取当前 Application。
+     * <p>
+     * 注意 {@code getApplicationContext()} **可能返回 null**：模块在 Hook
+     * {@code Application.attach(Context)} 的时点就会调用 {@code onApplicationCreated}，
+     * 那一刻 Application 尚未挂上，取不到 Application Context。此时必须退回使用
+     * **传入的这个 Context 本身**（它同样是可用的宿主 Context，能正常取 cacheDir），
+     * 否则整条缓存迁移链路每次启动都会静默失败。
      */
     @Nullable
     private static Context resolveContext(@Nullable Context context) {
-        if (context != null) return context.getApplicationContext();
+        Context direct = applicationOf(context);
+        if (direct != null) return direct;
+
         try {
-            Context pubCtx = AbsPublisher.getAppContext();
-            if (pubCtx != null) return pubCtx.getApplicationContext();
+            Context published = applicationOf(AbsPublisher.getAppContext());
+            if (published != null) return published;
         } catch (Throwable ignored) {
         }
         try {
@@ -501,6 +554,16 @@ public final class LyricCacheStore {
         } catch (Throwable t) {
             return null;
         }
+    }
+
+    /**
+     * 取 Application Context；取不到时退回该 Context 本身，仍然取不到返回 {@code null}。
+     */
+    @Nullable
+    private static Context applicationOf(@Nullable Context context) {
+        if (context == null) return null;
+        Context application = context.getApplicationContext();
+        return application != null ? application : context;
     }
 
     /**

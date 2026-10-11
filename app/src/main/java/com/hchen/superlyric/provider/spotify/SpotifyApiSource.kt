@@ -25,6 +25,7 @@ import com.hchen.superlyric.kernel.model.LyricLine
 import com.hchen.superlyric.kernel.model.LyricWord
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
+import com.hchen.superlyric.utils.LyricCacheStore
 import com.hchen.superlyric.utils.LyricDiag
 
 import java.util.concurrent.Executors
@@ -82,6 +83,9 @@ class SpotifyApiSource : LyricSource {
         val trackId = TrackIdentity.normalizeStableId(identity.stableId)
             ?: return LyricOutcome.Unsupported("spotify: no track id")
 
+        val cacheKey = "${LyricCacheStore.currentLocaleTag()}/$trackId"
+        readCached(cacheKey, identity)?.let { return it }
+
         var lastError: Throwable? = null
         repeat(MAX_ATTEMPTS) { attempt ->
             if (cancelled) return@repeat
@@ -99,6 +103,9 @@ class SpotifyApiSource : LyricSource {
                     return LyricOutcome.NoLyrics("spotify: empty lyric")
                 }
                 SpotifyLyricAnalysis.invalidate(headers)
+                // 只缓存**已成功解析**的 protobuf 原始响应；命中后连会话头都不再需要，
+                // 于是 VIP 过期 / 断网时仍能拿到已缓存曲目的歌词
+                LyricCacheStore.putAsync(null, PROVIDER_NAME, cacheKey, data)
 
                 val doc = toDoc(lines, identity)
                 LyricDiag.dumpDoc(sourceName, doc)
@@ -128,6 +135,31 @@ class SpotifyApiSource : LyricSource {
         } else {
             LyricOutcome.TransientFailure(lastError)
         }
+    }
+
+    /**
+     * 读磁盘缓存并复核。
+     *
+     * 命中后重新解析一遍：缓存损坏、或解析器变更导致旧响应不再可用时，删掉该条目
+     * 并回落网络。**绝不**把"缓存不可用"当成"平台没有歌词"——后者是终态。
+     *
+     * 缓存键带语言标签：`color-lyrics/v2` 的译文随 `clientLanguage` 变化，
+     * 不带语言会在用户切换应用语言后拿到旧语言的歌词。
+     */
+    private fun readCached(key: String, identity: TrackIdentity): LyricOutcome? {
+        val bytes = LyricCacheStore.getBytes(null, PROVIDER_NAME, key) ?: return null
+
+        val lines = runCatching { SpotifyLyricAnalysis.parseLyrics(bytes) }.getOrNull().orEmpty()
+        if (lines.isNotEmpty()) {
+            AndroidLog.logI(sourceName, "Lyric disk cache hit for $key")
+            val doc = toDoc(lines, identity)
+            LyricDiag.dumpDoc(sourceName, doc)
+            return LyricOutcome.Success(doc)
+        }
+
+        AndroidLog.logW(sourceName, "Discarding unusable cache entry for $key")
+        LyricCacheStore.delete(null, PROVIDER_NAME, key)
+        return null
     }
 
     private fun toDoc(lines: List<SpotifyLine>, identity: TrackIdentity): LyricDoc {
@@ -160,6 +192,9 @@ class SpotifyApiSource : LyricSource {
     }
 
     private companion object {
+        /** 磁盘缓存命名空间，须与 `LyricCacheStore.ONLINE_PROVIDERS` 一致。 */
+        const val PROVIDER_NAME = "Spotify"
+
         const val MAX_ATTEMPTS = 3
         const val HEADER_WAIT_MS = 400L
     }

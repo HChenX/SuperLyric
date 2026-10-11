@@ -26,6 +26,7 @@ import com.hchen.superlyric.kernel.orchestrate.LyricSource
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
+import com.hchen.superlyric.utils.LyricCacheStore
 import com.hchen.superlyric.utils.LyricDiag
 
 import org.json.JSONObject
@@ -135,6 +136,8 @@ class NeteaseApiSource : LyricSource {
     // ------------------------------------------------------------------ 接口
 
     private fun fetchLyricPayload(songId: Long): JSONObject? {
+        readCached(songId)?.let { return it }
+
         // 首选 EAPI 端点：字段最全（含 yrc / yromalrc）
         //
         // ⚠️ 这里的 lv/tv/rv/yv/ytv/yrv 取 **0 表示"要这一路"**，不是"关掉"。
@@ -148,13 +151,45 @@ class NeteaseApiSource : LyricSource {
         )
         primary?.let {
             LyricDiag.dumpNeteaseChannels("NeteaseApi/V1", URL_V1, it)
-            if (hasAnyLyricChannel(it)) return it
+            if (hasAnyLyricChannel(it)) return cache(songId, it)
         }
 
         // 退回老端点
         val legacy = get("$URL_LEGACY?id=$songId&lv=1&kv=1&tv=-1&rv=1")
-        legacy?.let { LyricDiag.dumpNeteaseChannels("NeteaseApi/Legacy", URL_LEGACY, it) }
+        legacy?.let {
+            LyricDiag.dumpNeteaseChannels("NeteaseApi/Legacy", URL_LEGACY, it)
+            if (hasAnyLyricChannel(it)) return cache(songId, it)
+        }
         return legacy ?: primary
+    }
+
+    /**
+     * 读磁盘缓存。
+     *
+     * 只有**真正带了歌词通道**的响应才会被写盘（见 [cache]），因此命中后仍需复核一遍：
+     * 缓存文件损坏、或曾经写入的是空壳时，删掉该条目并回落网络，绝不把
+     * "缓存不可用"当成"平台没有歌词"——后者是终态，会把纯音乐占位钉死。
+     */
+    private fun readCached(songId: Long): JSONObject? {
+        val key = songId.toString()
+        val bytes = LyricCacheStore.getBytes(null, PROVIDER_NAME, key) ?: return null
+
+        val payload = runCatching { JSONObject(String(bytes, StandardCharsets.UTF_8)) }.getOrNull()
+        if (payload != null && hasAnyLyricChannel(payload)) {
+            AndroidLog.logI(sourceName, "Lyric disk cache hit for id=$key")
+            LyricDiag.dumpNeteaseChannels("NeteaseApi/Disk", key, payload)
+            return payload
+        }
+
+        AndroidLog.logW(sourceName, "Discarding unusable cached payload for id=$key")
+        LyricCacheStore.delete(null, PROVIDER_NAME, key)
+        return null
+    }
+
+    /** 写盘并原样返回，便于在取词路径上内联调用。 */
+    private fun cache(songId: Long, payload: JSONObject): JSONObject {
+        LyricCacheStore.putAsync(null, PROVIDER_NAME, songId.toString(), payload.toString())
+        return payload
     }
 
     /**
@@ -241,6 +276,9 @@ class NeteaseApiSource : LyricSource {
     }.getOrNull()?.takeIf { it.isNotEmpty() }
 
     private companion object {
+        /** 磁盘缓存命名空间，须与 `LyricCacheStore.ONLINE_PROVIDERS` 一致。 */
+        const val PROVIDER_NAME = "Netease"
+
         const val URL_V1 = "https://interface3.music.163.com/api/song/lyric/v1"
         const val URL_LEGACY = "https://music.163.com/api/song/lyric"
         const val URL_SEARCH = "https://music.163.com/api/search/get"

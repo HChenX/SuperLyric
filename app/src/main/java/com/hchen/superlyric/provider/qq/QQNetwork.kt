@@ -27,12 +27,14 @@ import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
+import com.hchen.superlyric.utils.LyricCacheStore
 import com.hchen.superlyric.utils.LyricDiag
 
 import org.json.JSONArray
 import org.json.JSONObject
 
 import java.io.IOException
+import java.nio.charset.StandardCharsets
 import java.util.concurrent.TimeUnit
 
 import okhttp3.MediaType.Companion.toMediaType
@@ -64,6 +66,9 @@ internal object QQNetwork {
     private const val URL_PRIMARY = "https://u.y.qq.com/cgi-bin/musicu.fcg"
     private const val URL_FALLBACK = "https://shu6.y.qq.com/cgi-bin/musicu.fcg"
 
+    /** 磁盘缓存命名空间，须与 `LyricCacheStore.ONLINE_PROVIDERS` 一致。 */
+    private const val PROVIDER_NAME = "QQ"
+
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
     /** 采纳门槛；旧实现为 60.0，按"多源检索收紧"的要求提高。 */
@@ -88,6 +93,9 @@ internal object QQNetwork {
     fun fetchByMid(songMid: String, songId: Long, identity: TrackIdentity): LyricOutcome {
         if (songMid.isBlank() && songId <= 0L) return LyricOutcome.NoLyrics("qq: no identifier")
 
+        val cacheKey = songMid.trim().ifBlank { songId.toString() }
+        readCached(cacheKey, identity)?.let { return it }
+
         var lastFailure: Throwable? = null
         var reachedServer = false
 
@@ -105,7 +113,12 @@ internal object QQNetwork {
                     if (lyricRaw.isEmpty()) continue
 
                     val outcome = parsePayloads(lyricRaw, data, identity)
-                    if (outcome != null) return outcome
+                    if (outcome != null) {
+                        // 只缓存**已成功解析**的响应（含 lyric / trans / roma 三路密文），
+                        // 命中后连鉴权与两次端点尝试都省掉
+                        LyricCacheStore.putAsync(null, PROVIDER_NAME, cacheKey, data.toString())
+                        return outcome
+                    }
                 } catch (t: Throwable) {
                     lastFailure = t
                     AndroidLog.logW(TAG, "fetchByMid ($url) failed: ${t.message}")
@@ -118,6 +131,32 @@ internal object QQNetwork {
             reachedServer -> LyricOutcome.NoLyrics("qq: platform returned no lyric")
             else -> LyricOutcome.TransientFailure(null)
         }
+    }
+
+    /**
+     * 读磁盘缓存并复核。
+     *
+     * 命中后仍重新走一遍解密 + 解析：缓存损坏、或解析器变更导致旧响应不再可解析时，
+     * 删掉该条目并回落网络。**绝不**把"缓存不可用"当成"平台没有歌词"——
+     * 后者是终态，会把无歌词占位钉死。
+     */
+    private fun readCached(key: String, identity: TrackIdentity): LyricOutcome? {
+        val bytes = LyricCacheStore.getBytes(null, PROVIDER_NAME, key) ?: return null
+
+        val data = runCatching { JSONObject(String(bytes, StandardCharsets.UTF_8)) }.getOrNull()
+        val outcome = data?.let {
+            runCatching { parsePayloads(it.optString("lyric", ""), it, identity) }
+                .onFailure { error -> AndroidLog.logW(TAG, "Cached payload unusable: ${error.message}") }
+                .getOrNull()
+        }
+        if (outcome != null) {
+            AndroidLog.logI(TAG, "Lyric disk cache hit for mid=$key")
+            return outcome
+        }
+
+        AndroidLog.logW(TAG, "Discarding unusable cache entry for mid=$key")
+        LyricCacheStore.delete(null, PROVIDER_NAME, key)
+        return null
     }
 
     /**

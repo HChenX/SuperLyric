@@ -27,6 +27,7 @@ import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
 import com.hchen.superlyric.kernel.decode.DecodeException
 import com.hchen.superlyric.kernel.decode.PayloadBytes
+import com.hchen.superlyric.utils.LyricCacheStore
 import com.hchen.superlyric.utils.LyricDiag
 
 import org.json.JSONArray
@@ -114,7 +115,8 @@ class KuGouApiSource : LyricSource {
      *         返回 {@code null} 表示**这个哈希没有歌词**，调用方可继续尝试其它哈希
      */
     private fun attempt(hash: String, identity: TrackIdentity): LyricOutcome? {
-        val krcPayload = downloadKrc(hash, identity.durationMs)
+        val cached = readCachedKrc(hash)
+        val krcPayload = cached ?: downloadKrc(hash, identity.durationMs)
         if (krcPayload == null) {
             AndroidLog.logD(sourceName, "No KRC payload for hash=$hash")
             return null
@@ -141,6 +143,8 @@ class KuGouApiSource : LyricSource {
         } catch (e: DecodeException) {
             // 解不开是"这次没拿到"，不是"没有歌词"
             AndroidLog.logW(sourceName, "KRC decode failed: ${e.message}")
+            // 失败也可能来自损坏的缓存条目；删掉它，下次自然回落网络重取
+            LyricCacheStore.delete(null, PROVIDER_NAME, hash)
             return LyricOutcome.TransientFailure(e)
         }
 
@@ -149,6 +153,11 @@ class KuGouApiSource : LyricSource {
             return null
         }
 
+        // 只缓存**本次从网络取回且已验证可解析**的载荷。
+        // 命中缓存时不再回写——否则日志会先报 HIT 再报"已缓存"，自相矛盾。
+        if (cached == null) {
+            LyricCacheStore.putAsync(null, PROVIDER_NAME, hash, krcPayload)
+        }
         AndroidLog.logI(sourceName, "Fetched KRC for hash=$hash, lines=${doc.lines.size}")
         return LyricOutcome.Success(doc)
     }
@@ -217,6 +226,18 @@ class KuGouApiSource : LyricSource {
         return JSONObject(downloadJson).optString("content", "").ifEmpty { null }
     }
 
+    /**
+     * 读磁盘缓存。
+     *
+     * 只有**成功解析出歌词**的载荷才会被写盘（见 [attempt]），因此这里直接采信；
+     * 万一文件损坏导致解密失败，[attempt] 会删除该条目，下次自然回落网络。
+     */
+    private fun readCachedKrc(hash: String): String? {
+        val bytes = LyricCacheStore.getBytes(null, PROVIDER_NAME, hash) ?: return null
+        AndroidLog.logI(sourceName, "Lyric disk cache hit for hash=$hash")
+        return String(bytes, StandardCharsets.UTF_8)
+    }
+
     private fun firstObject(array: JSONArray?): JSONObject? =
         if (array == null || array.length() == 0) null else array.optJSONObject(0)
 
@@ -237,6 +258,9 @@ class KuGouApiSource : LyricSource {
     }
 
     private companion object {
+        /** 磁盘缓存命名空间，须与 `LyricCacheStore.ONLINE_PROVIDERS` 一致。 */
+        const val PROVIDER_NAME = "Kugou"
+
         const val USER_AGENT = "KuGou2012-7093-Android601"
 
         /** 收紧后的采纳门槛；旧实现为 80.0。 */
