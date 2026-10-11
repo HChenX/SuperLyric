@@ -70,6 +70,17 @@ public class BodianProvider extends MusicProvider {
         return new KuGouApiSource();
     }
 
+    /**
+     * 从元数据构建音轨身份
+     *
+     * <p>标识取 {@code MEDIA_ID} 而不是 Hook 的 rid：Hook 回调与元数据是**两个独立更新**
+     * 的来源，宿主预加载下一首时 rid 会先翻，而元数据还停在本首。混用二者会产出
+     * 「上一首的 rid + 本首的曲名」这类交叉组合，于是本首元数据到达时被 {@code matches}
+     * 判为同一首歌、整首都不再重新解析，表现为**上一首的歌词一直跑**。
+     * 同一次 {@code setMetadata} 里的标识与曲名则永远不会互相错位。
+     *
+     * <p>Hook 的 rid 仍作为兜底，且它描述的是**歌词文件所属的曲目**，用于校验投递对象。
+     */
     @NonNull
     @Override
     protected TrackIdentity buildIdentity(@NonNull MediaMetadata metadata) {
@@ -77,10 +88,14 @@ public class BodianProvider extends MusicProvider {
         String artist = readString(metadata, MediaMetadata.METADATA_KEY_ARTIST);
         long duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION);
 
-        String rid = hookStableId();
-        if (rid != null && !rid.isEmpty()) {
+        String id = readString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID);
+        if (id.isEmpty()) {
+            String rid = hookStableId();
+            id = rid != null ? rid : "";
+        }
+        if (!id.isEmpty()) {
             return new TrackIdentity(
-                TAG, TrackIdentity.stableId(NAMESPACE, rid), title, artist, duration);
+                TAG, TrackIdentity.stableId(NAMESPACE, id), title, artist, duration);
         }
         return super.buildIdentity(metadata);
     }
