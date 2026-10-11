@@ -117,6 +117,16 @@ class BodianHookSource : HookLyricSource {
         )
 
         if (filePath.isEmpty()) {
+            // 否定结论同样要认身份：这可能是**上一首**迟到的"没有歌词文件"。算到当前曲目
+            // 头上会占掉本代际的 Hook 名额（编排器只收第一次投递），把随后到达的真实
+            // 结果当成重复投递丢弃，最终给一首有歌词的曲目下发纯音乐占位
+            if (identity.stableId != null && identity.stableId != pendingIdentity?.stableId) {
+                AndroidLog.logD(
+                    sourceName,
+                    "Discarding stale no-lyric verdict for ${identity.stableId}",
+                )
+                return
+            }
             AndroidLog.logD(sourceName, "Host reported no lyric file for this track")
             session?.deliver(LyricOutcome.NoLyrics("bodian: host has no lyric"))
             return
