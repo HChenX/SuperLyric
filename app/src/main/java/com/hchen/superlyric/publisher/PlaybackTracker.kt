@@ -142,11 +142,6 @@ class PlaybackTracker(threadName: String) {
         }
     }
 
-    /** 当前推演位置。 */
-    fun getPosition(): Long = clock.positionAt(SystemClock.elapsedRealtime())
-
-    fun hasLyrics(): Boolean = doc?.let { !it.isEmpty } == true
-
     /** 停止追踪并清空全部状态。 */
     fun stop() {
         handler.post {
@@ -183,8 +178,25 @@ class PlaybackTracker(threadName: String) {
         dispatchIfNeeded(clock.positionAt(SystemClock.elapsedRealtime()))
 
         if (running && token == loopToken) {
-            handler.postDelayed({ runLoop(token) }, LOOP_INTERVAL_MS)
+            handler.postDelayed({ runLoop(token) }, delayUntilNextLine())
         }
+    }
+
+    /**
+     * 睡到下一行的起点，而不是固定间隔空转
+     *
+     * 行边界是**已知的**，按它排程既准又省：一首 4 分钟的歌由约 4800 次唤醒降到与行数同量级。
+     * 到末行后退化为固定间隔——此时还可能变的只剩位置跳转，而跳转有自己的入口
+     * （[onPositionSynced] / [onPlaybackStateChanged] 都会立即重推）。
+     *
+     * 只能在追踪线程上调用。
+     */
+    private fun delayUntilNextLine(): Long {
+        val lines = doc?.lines ?: return LOOP_INTERVAL_MS
+        val position = clock.positionAt(SystemClock.elapsedRealtime())
+        val index = PlaybackClock.lineIndexAt(lines, position)
+        val nextStart = lines.getOrNull(index + 1)?.startMs ?: return LOOP_INTERVAL_MS
+        return (nextStart - position).coerceIn(LOOP_INTERVAL_MS, MAX_LOOP_SLEEP_MS)
     }
 
     /**
@@ -210,16 +222,38 @@ class PlaybackTracker(threadName: String) {
         listener?.onProgressAdvance(index, payload)
     }
 
+    /**
+     * `FAST_FORWARDING` / `REWINDING` / `SKIPPING_*` 属于"仍在播放、只是位置在动"，
+     * 归为 PLAYING。把它们并进 `else` 会让时钟在快进/跳转期间冻结
+     *
+     * ## 这里把 `NONE` 归为 STOPPED，与 `PlaybackSignals` 把它判为 `UNKNOWN` 并不冲突
+     * 两处回答的是不同的问题：这里决定"时钟要不要继续走"，那里决定"要不要清空并下发停止"。
+     * 冻结是**可逆**的（宿主随后报任何状态都会重新锚定），而清空不可逆——所以同一个
+     * "不知道"，在本层可以按停止处理，在停止判定里必须保持中性。**不要**为了"统一"把
+     * 这里也改成中性：那会让时钟在宿主不再上报时一直往前爬
+     */
     private fun toStatus(state: Int): PlaybackStatus = when (state) {
-        PlaybackState.STATE_PLAYING -> PlaybackStatus.PLAYING
+        PlaybackState.STATE_PLAYING,
+        PlaybackState.STATE_FAST_FORWARDING,
+        PlaybackState.STATE_REWINDING,
+        PlaybackState.STATE_SKIPPING_TO_NEXT,
+        PlaybackState.STATE_SKIPPING_TO_PREVIOUS -> PlaybackStatus.PLAYING
+
         PlaybackState.STATE_PAUSED -> PlaybackStatus.PAUSED
+
         PlaybackState.STATE_BUFFERING, PlaybackState.STATE_CONNECTING -> PlaybackStatus.BUFFERING
+
         else -> PlaybackStatus.STOPPED
     }
 
     private companion object {
         const val TAG = "PlaybackTracker"
+
+        /** 按行边界排程时的最小时延；也用于"没有下一行"时的退化间隔 */
         const val LOOP_INTERVAL_MS = 50L
+
+        /** 按行边界排程时的最大时延：行间隔再长也要定期醒来看一眼 */
+        const val MAX_LOOP_SLEEP_MS = 1_000L
 
         /** 超过该幅度的位置回退才判定为 seek / 重播，避免抖动误判。 */
         const val JUMP_BACK_TOLERANCE_MS = 1_000L
