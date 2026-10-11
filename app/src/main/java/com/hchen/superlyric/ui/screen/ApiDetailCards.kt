@@ -330,7 +330,7 @@ internal fun ApiCurrentLineCard(
     backdrop: LayerBackdrop?,
     cardBlend: List<BlendColorEntry>
 ) {
-    val currentLine = data?.currentLyric
+    val currentLine = data?.lyric
 
     Card(
         modifier = Modifier

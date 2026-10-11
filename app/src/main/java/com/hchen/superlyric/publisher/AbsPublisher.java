@@ -36,7 +36,7 @@ import com.hchen.superlyricapi.SuperLyricHelper;
 import io.github.libxposed.api.XposedModuleInterface;
 
 /**
- * 宿主进程中的底层发布基类。
+ * 宿主进程中的底层发布基类
  * <p>
  * 统一管理与系统 SuperLyricService 的发布者注册、死亡处理。
  *
@@ -46,9 +46,8 @@ import io.github.libxposed.api.XposedModuleInterface;
  *   <li><b>全量歌词</b>——{@link #publishFullLyric}；</li>
  *   <li><b>停止</b>——{@link #publishStop}。</li>
  * </ul>
- * 进度推进由系统服务端的唯一时钟负责。让宿主发布进度的那条通道
- * （历史上的 {@code publishLyricProgress}）已被**删除**——不是弃用，
- * 而是让"宿主插足进度"在类型层面不可表达。
+ * 进度推进由系统服务端的唯一时钟负责：宿主**没有任何**发布进度的通道，
+ * "宿主插足进度"在类型层面就不可表达。
  *
  * @author 焕晨HChen
  */
@@ -113,25 +112,25 @@ public abstract class AbsPublisher extends AbsModule {
     }
 
     /**
-     * 发送全量歌词数据包（切歌或歌词初次解析完毕时调用）。
+     * 发送全量歌词数据包（切歌或歌词初次解析完毕时调用）
      */
     public static void publishFullLyric(@NonNull SuperLyricData fullData) {
         SuperLyricData clean = LyricSanitizer.sanitizeData(fullData);
         if (clean == null) return;
         synchronized (sPublishLock) {
-            SuperLyricHelper.sendFullLyric(clean);
+            SuperLyricHelper.sendLyric(clean);
         }
     }
 
     /**
-     * 发送停止/暂停事件。
+     * 发送停止/暂停事件
      */
     public static void publishStop() {
         publishStop(new SuperLyricData());
     }
 
     /**
-     * 发送停止/暂停事件（带上下文）。
+     * 发送停止/暂停事件（带上下文）
      */
     public static void publishStop(@NonNull SuperLyricData stopData) {
         synchronized (sPublishLock) {

@@ -140,7 +140,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
                     .setAllLyrics(base.getAllLyrics())
                     .setCurrentLyricIndex(newIndex)
                     .setPosition(cleanProgress.getPosition())
-                    .setLyric(cleanProgress.getCurrentLyric())
+                    .setLyric(cleanProgress.getLyric())
                     .setExtra(base.getExtra());
                 if (cleanProgress.hasTranslation()) {
                     merged.setTranslation(cleanProgress.getTranslation());
@@ -154,7 +154,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
             XposedLog.logD(TAG, "[SysTracker] Advance line [" + newIndex + "] for " + activePkg + ": "
                 + "pos=" + cleanProgress.getPosition() + "ms, "
-                + "text=\"" + (cleanProgress.getCurrentLyric() != null ? cleanProgress.getCurrentLyric().getText() : "null") + "\""
+                + "text=\"" + (cleanProgress.getLyric() != null ? cleanProgress.getLyric().getText() : "null") + "\""
                 + (cleanProgress.hasTranslation() && cleanProgress.getTranslation() != null ? (", trans=\"" + cleanProgress.getTranslation().getText() + "\"") : "")
                 + (cleanProgress.hasSecondary() && cleanProgress.getSecondary() != null ? (", sec=\"" + cleanProgress.getSecondary().getText() + "\"") : ""));
 
@@ -254,7 +254,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
                 if (isSameTrack) {
                     if (data.getCurrentLyricIndex() == session.latestLyric.getCurrentLyricIndex()
                         && data.hasLyric() && session.latestLyric.hasLyric()
-                        && TextUtils.equals(data.getCurrentLyric().getText(), session.latestLyric.getCurrentLyric().getText())) {
+                        && TextUtils.equals(data.getLyric().getText(), session.latestLyric.getLyric().getText())) {
                         isDuplicateLine = true;
                     }
 
@@ -267,7 +267,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
                         .setAllLyrics(session.latestLyric.getAllLyrics())
                         .setCurrentLyricIndex(data.getCurrentLyricIndex())
                         .setPosition(data.getPosition())
-                        .setLyric(data.getCurrentLyric() != null ? data.getCurrentLyric() : session.latestLyric.getCurrentLyric())
+                        .setLyric(data.getLyric() != null ? data.getLyric() : session.latestLyric.getLyric())
                         .setExtra(data.hasExtra() ? data.getExtra() : session.latestLyric.getExtra());
                     if (data.hasTranslation()) {
                         merged.setTranslation(data.getTranslation());
@@ -343,7 +343,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
             + "trackId=" + data.getLyricId()
             + ", idx=" + data.getCurrentLyricIndex()
             + ", pos=" + data.getPosition() + "/" + data.getDuration() + "ms"
-            + ", text=\"" + (data.getCurrentLyric() != null ? data.getCurrentLyric().getText() : "null") + "\""
+            + ", text=\"" + (data.getLyric() != null ? data.getLyric().getText() : "null") + "\""
             + (data.hasTranslation() && data.getTranslation() != null ? (", trans=\"" + data.getTranslation().getText() + "\"") : "")
             + (data.hasSecondary() && data.getSecondary() != null ? (", sec=\"" + data.getSecondary().getText() + "\"") : ""));
 
@@ -362,7 +362,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
                             .setDuration(data.hasDuration() && data.getDuration() > 0 ? data.getDuration() : base.getDuration())
                             .setCurrentLyricIndex(data.getCurrentLyricIndex())
                             .setPosition(data.getPosition())
-                            .setLyric(data.getCurrentLyric())
+                            .setLyric(data.getLyric())
                             .setExtra(data.hasExtra() ? data.getExtra() : base.getExtra());
                         if (data.hasTranslation()) {
                             enriched.setTranslation(data.getTranslation());
@@ -468,6 +468,14 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
             }
             return null;
         }
+    }
+
+    /**
+     * 本服务实现的 API 版本号，供客户端做版本协商
+     */
+    @Override
+    public int getServerApiVersion() throws RemoteException {
+        return com.hchen.superlyricapi.BuildConfig.API_VERSION;
     }
 
     public void onProcessDied(@NonNull String packageName, int pid) {

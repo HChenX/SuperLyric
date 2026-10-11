@@ -145,7 +145,7 @@ internal fun ApiLyricPlayerView(
         val currentLine = if (!allLyrics.isNullOrEmpty() && currentIndex in allLyrics.indices) {
             allLyrics[currentIndex]
         } else {
-            data.currentLyric
+            data.lyric
         }
         val lineEnd = currentLine?.endTime?.takeIf { it > basePos } ?: Long.MAX_VALUE
 
