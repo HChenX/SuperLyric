@@ -32,6 +32,7 @@ import com.hchen.superlyric.utils.LyricDiag
 import org.json.JSONArray
 import org.json.JSONObject
 
+import java.io.IOException
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.Executors
@@ -167,7 +168,7 @@ class KuGouApiSource : LyricSource {
         val url = "http://mobilecdn.kugou.com/api/v3/search/song?format=json&page=1&pagesize=5&keyword=" +
             URLEncoder.encode(keyword, StandardCharsets.UTF_8.name())
 
-        val json = get(url) ?: return null
+        val json = get(url)
         val info = JSONObject(json).optJSONObject("data")?.optJSONArray("info") ?: return null
 
         var bestHash: String? = null
@@ -201,7 +202,7 @@ class KuGouApiSource : LyricSource {
 
     private fun downloadKrc(hash: String, durationMs: Long): String? {
         val searchUrl = "http://krcs.kugou.com/search?ver=1&man=yes&client=mobi&keyword=&duration=$durationMs&hash=$hash"
-        val searchJson = get(searchUrl) ?: return null
+        val searchJson = get(searchUrl)
         val candidates = JSONObject(searchJson).optJSONArray("candidates")
         val first = firstObject(candidates) ?: return null
 
@@ -211,7 +212,7 @@ class KuGouApiSource : LyricSource {
 
         val downloadUrl = "http://krcs.kugou.com/download?ver=1&client=mobi" +
             "&id=$id&accesskey=$accessKey&fmt=krc&charset=utf8"
-        val downloadJson = get(downloadUrl) ?: return null
+        val downloadJson = get(downloadUrl)
 
         return JSONObject(downloadJson).optString("content", "").ifEmpty { null }
     }
@@ -219,14 +220,20 @@ class KuGouApiSource : LyricSource {
     private fun firstObject(array: JSONArray?): JSONObject? =
         if (array == null || array.length() == 0) null else array.optJSONObject(0)
 
-    private fun get(url: String): String? = try {
+    /**
+     * 发起一次 GET。
+     *
+     * **传输层失败必须抛出**，绝不能返回 null：调用方用 null 表达"平台没有这条歌词"，
+     * 若把网络异常也压成 null，断网就会被判成「确定性无歌词」并下发纯音乐占位——
+     * 那正是本项目要根除的历史缺陷。抛出后由 [start] 的外层 `runCatching`
+     * 归类为 [LyricOutcome.TransientFailure]，只重试、不下发占位。
+     */
+    private fun get(url: String): String {
         val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).build()
         httpClient.newCall(request).execute().use { response: Response ->
-            if (!response.isSuccessful) null else response.body?.string()
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code} from $url")
+            return response.body?.string() ?: throw IOException("empty body from $url")
         }
-    } catch (t: Throwable) {
-        AndroidLog.logW(sourceName, "HTTP failed: ${t.message}")
-        null
     }
 
     private companion object {

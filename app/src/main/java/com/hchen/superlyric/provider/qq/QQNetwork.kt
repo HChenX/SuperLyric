@@ -32,6 +32,7 @@ import com.hchen.superlyric.utils.LyricDiag
 import org.json.JSONArray
 import org.json.JSONObject
 
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 import okhttp3.MediaType.Companion.toMediaType
@@ -94,7 +95,7 @@ internal object QQNetwork {
             for ((ct, cv, userAgent) in clientProfiles) {
                 try {
                     val body = buildLyricRequest(ct, cv, songMid, songId)
-                    val json = post(url, body, userAgent) ?: continue
+                    val json = post(url, body, userAgent)
                     reachedServer = true
 
                     val data = JSONObject(json).optJSONObject("req_0")?.optJSONObject("data")
@@ -150,7 +151,7 @@ internal object QQNetwork {
             })
         }
 
-        val json = post(URL_PRIMARY, payload.toString(), ANDROID_UA) ?: return null
+        val json = post(URL_PRIMARY, payload.toString(), ANDROID_UA)
         val body = JSONObject(json).optJSONObject("req_0")?.optJSONObject("data")
             ?.optJSONObject("body") ?: return null
 
@@ -272,18 +273,23 @@ internal object QQNetwork {
         return names.joinToString("/")
     }
 
-    private fun post(url: String, body: String, userAgent: String): String? = try {
+    /**
+     * 发起一次 POST。
+     *
+     * **传输层失败必须抛出**，不能返回 null：`null` 在本模块的含义是
+     * "服务端明确没有这条歌词"，把网络异常也压成 null 会让断网被误判为无歌词
+     * 并下发纯音乐占位。抛出后由调用方归类为可重试失败。
+     */
+    private fun post(url: String, body: String, userAgent: String): String {
         val request = Request.Builder()
             .url(url)
             .post(body.toRequestBody(JSON_MEDIA_TYPE))
             .header("User-Agent", userAgent)
             .build()
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) null else response.body?.string()
+            if (!response.isSuccessful) throw IOException("HTTP ${response.code} from $url")
+            return response.body?.string() ?: throw IOException("empty body from $url")
         }
-    } catch (t: Throwable) {
-        AndroidLog.logW(TAG, "HTTP failed: ${t.message}")
-        null
     }
 
     private const val ANDROID_UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36"
