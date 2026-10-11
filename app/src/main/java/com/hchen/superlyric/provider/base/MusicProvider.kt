@@ -34,8 +34,12 @@ import com.hchen.superlyric.bridge.LyricPublishBridge
 import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.orchestrate.LyricOrchestrator
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
+import com.hchen.superlyric.kernel.orchestrate.PlaybackSignal
+import com.hchen.superlyric.kernel.orchestrate.StopEvidence
+import com.hchen.superlyric.kernel.orchestrate.StopGate
 import com.hchen.superlyric.publisher.AbsPublisher
 import com.hchen.superlyric.utils.LyricDiag
+import com.hchen.superlyric.utils.PlaybackSignals
 
 import io.github.libxposed.api.XposedModuleInterface
 
@@ -63,6 +67,14 @@ import java.util.concurrent.TimeUnit
  */
 abstract class MusicProvider : AbsPublisher() {
 
+    /**
+     * Hook 取词来源
+     *
+     * 必须 volatile：在 `onPackageReady` 的线程上写，在宿主 `MediaSession` 回调线程上读
+     * （子类经 [hookStableId] 或自己的旁路字段读同一份状态）。可见性失败时读到 null，
+     * 会静默退化为"直接用宿主元数据"——而宿主元数据是不可信的
+     */
+    @Volatile
     private var hookSource: HookLyricSource? = null
 
     /** 上一次已输出日志的元数据；宿主会高频重发同一份，用它降噪。 */
@@ -70,14 +82,6 @@ abstract class MusicProvider : AbsPublisher() {
 
     /** 上一次已转储全部元数据键的稳定标识。 */
     private var lastDumpedStableId: String? = null
-
-    /** 待确认停止的令牌；任何撤销都会让它自增，从而使已排期的确认失效。 */
-    @Volatile
-    private var stopToken: Long = 0L
-
-    /** 当前是否有一次待确认的停止（仅用于诊断输出，不参与判定）。 */
-    @Volatile
-    private var pendingStop: Boolean = false
 
     /** 宿主自己的 MediaSession；仅诊断期用于模拟跳转播放位置 */
     @Volatile
@@ -92,7 +96,46 @@ abstract class MusicProvider : AbsPublisher() {
             Thread(runnable, "SuperLyric-StopConfirm").apply { isDaemon = true }
         }
 
-    /** 由基类在 [onPackageReady] 中构建；Provider 的子类不应自行创建编排器 */
+    /**
+     * "播放仍在继续"的证据计数（见 [StopEvidence]）
+     *
+     * ## 为什么 StopGate 自己不够
+     * 确认跑在 [stopConfirmer] 线程上，撤销跑在宿主 `MediaSession` 回调线程上。StopGate 只能
+     * 保证"**排期时**没有人撤销"，保证不了"此后也没人发布"：撤销若落在"令牌已被确认消费、
+     * 回调还没执行"这段里，它会读到 `armed == false` 而放行，随后 [LyricOrchestrator.onPlaybackStopped]
+     * 就把**刚切过去的新曲目**连人带取词一起清掉——它是无条件的：推进 epoch、清空、取消两个来源。
+     *
+     * 因此排期时 [StopEvidence.snapshot]、确认前 [StopEvidence.isStillValid]。
+     * system_server 一侧同理，见 `SuperLyricService#mStopEvidence`
+     */
+    private val stopEvidence = StopEvidence()
+
+    /**
+     * 停止判定
+     *
+     * 与 system_server 侧**共用同一套判定**（[StopGate]），只有观察点是各自的：
+     * 本侧看的是宿主进程内 `MediaSession.setPlaybackState` 的调用。
+     * 两侧不合并观察点——覆盖面不同，合并会丢掉其中一侧独有的信号
+     */
+    private val stopGate = StopGate(
+        scheduler = StopGate.Scheduler { delayMs, task ->
+            stopConfirmer.schedule(task, delayMs, TimeUnit.MILLISECONDS)
+        },
+        onConfirmed = Runnable {
+            // 与证据的记账互斥地判定：StopGate 的令牌那一关证明不了"确认成立之后没人发布"
+            if (!stopEvidence.isStillValid()) return@Runnable
+            AndroidLog.logD(providerTag, "Playback stopped (confirmed)")
+            orchestrator.onPlaybackStopped()
+        },
+    )
+
+    /**
+     * 由基类在 [onPackageReady] 中构建；Provider 的子类不应自行创建编排器
+     *
+     * `@Volatile`：在注入线程上写，在宿主 `MediaSession` 回调线程上读。同文件的
+     * [hookSource] / [hostSession] / [hostPlaybackState] 出于同一原因也是 volatile
+     */
+    @Volatile
     protected lateinit var orchestrator: LyricOrchestrator
         private set
 
@@ -196,29 +239,51 @@ abstract class MusicProvider : AbsPublisher() {
      * 随后又回到正常播放。而 `onPlaybackStopped` 是终态操作 —— 它清空当前音轨、推进 epoch，
      * 并向系统下发**停止**包。瞬发停止若被当真，歌词会莫名闪空
      *
-     * 因此这里只登记一次"待确认的停止"，由**两个条件**撤销：
-     * 1. 随后到来的任何**其它播放状态**
-     * 2. 随后到来的**可用元数据**（宿主还在宣布曲目，就说明播放没停）
-     *
-     * 第 2 条是必需的：真机风暴里的几次 STOPPED 之间**没有别的播放状态**，只看第 1 条挡不住。
-     * 这**不是无差别去抖** —— 只有真正的终态信号才需要确认，且窗口很短
+     * 判定规则与 system_server 侧**完全一致**，见 [StopGate]：终态排期、旁证撤销、`NONE` 中性。
+     * 本侧的旁证有两条：随后到来的**其它播放状态**，以及随后到来的**可用元数据**。
+     * 后者是必需的——实测网易云风暴里的几次 STOPPED 之间**没有别的播放状态**，
+     * 只看播放状态挡不住
      */
     private fun onPlaybackStateChanged(state: PlaybackState) {
-        if (state.state != PlaybackState.STATE_STOPPED) {
-            cancelPendingStop("playback state ${state.state}")
-            return
+        val signal = PlaybackSignals.of(state.state)
+
+        // 非终态信号一律记一笔证据，且必须在判定**之前**记：判定为 `IGNORED` 的那一半
+        // （令牌已被确认消费）正是要拦的情形——此时 StopGate 已经放行，只有这笔账拦得住。
+        // 这里与 StopGate 的分类**有意重复**：那里决定"要不要排期"，这里回答"算不算证据"，
+        // 而 `UNKNOWN` 在两处都是"不算"（见 [PlaybackSignals]）
+        when (signal) {
+            PlaybackSignal.PLAYING, PlaybackSignal.PAUSED, PlaybackSignal.ACTIVE ->
+                recordStopEvidence()
+
+            PlaybackSignal.STOPPED, PlaybackSignal.ERROR, PlaybackSignal.SESSION_GONE,
+            PlaybackSignal.UNKNOWN -> Unit
         }
 
-        AndroidLog.logD(providerTag, "STATE_STOPPED received; awaiting confirmation")
-        pendingStop = true
-        val token = ++stopToken
-        stopConfirmer.schedule({
-            if (token == stopToken) {
-                pendingStop = false
-                AndroidLog.logD(providerTag, "Playback stopped (confirmed)")
-                orchestrator.onPlaybackStopped()
+        when (stopGate.onSignal(signal)) {
+            StopGate.Decision.ARMED -> {
+                stopEvidence.snapshot()
+                AndroidLog.logD(providerTag, "$signal received; awaiting confirmation")
             }
-        }, STOP_CONFIRM_MS, TimeUnit.MILLISECONDS)
+
+            StopGate.Decision.CANCELLED ->
+                AndroidLog.logD(providerTag, "Pending stop cancelled by $signal")
+
+            // `UNKNOWN` 与"已排期在案"都落在这里。前者在过渡期会成串出现，无差别输出会刷屏，
+            // 因此只在**确实有停止悬着**这个需要判断的时刻留痕
+            StopGate.Decision.IGNORED ->
+                if (stopGate.isPending) {
+                    AndroidLog.logD(providerTag, "$signal ignored while a stop is pending")
+                }
+        }
+    }
+
+    /**
+     * 记一笔"播放仍在继续"的证据
+     *
+     * 与确认的读取互斥，见 [stopEvidence]
+     */
+    private fun recordStopEvidence() {
+        stopEvidence.record()
     }
 
     /**
@@ -228,10 +293,9 @@ abstract class MusicProvider : AbsPublisher() {
      * 在日志上完全一样，无法判断这条防线到底有没有生效
      */
     private fun cancelPendingStop(reason: String) {
-        val hadPending = pendingStop
-        pendingStop = false
-        stopToken++
-        if (hadPending) {
+        // 元数据到达同样是"播放仍在继续"的证据，先记账再看 StopGate 的判定
+        recordStopEvidence()
+        if (stopGate.onEvidence() == StopGate.Decision.CANCELLED) {
             AndroidLog.logD(providerTag, "Pending stop cancelled by $reason")
         }
     }
@@ -240,7 +304,7 @@ abstract class MusicProvider : AbsPublisher() {
         val identity = buildIdentity(metadata)
 
         // 空元数据在过渡期很常见。它既不是"切歌"也不是"停止"，只是宿主还没填好，
-        // 因此这里直接忽略：切歌由带标识的元数据触发，停止由 STATE_STOPPED 判定。
+        // 因此这里直接忽略：切歌由带标识的元数据触发，停止由 [StopGate] 按播放信号判定。
         if (identity.title.isEmpty() && !identity.hasStableId) {
             AndroidLog.logD(providerTag, "Ignoring metadata without title or stable id")
             return
@@ -288,7 +352,9 @@ abstract class MusicProvider : AbsPublisher() {
      * adb shell am broadcast -a com.hchen.superlyric.DEBUG.SEEK --el position 60000
      * ```
      *
-     * 只在 debug 构建注册
+     * 只在 debug 构建注册。**刻意未加权限**：`adb shell am broadcast` 以 shell uid 发出，
+     * 加了权限或改为不导出都会让这条诊断失效。代价是 debug 构建下任意应用也能触发一次
+     * 位置跳转——发布构建不注册本接收器，故实机用户不受影响
      */
     private fun registerSeekSimulator(context: Context) {
         val receiver = object : BroadcastReceiver() {
@@ -329,14 +395,6 @@ abstract class MusicProvider : AbsPublisher() {
     }
 
     private companion object {
-        /**
-         * 停止状态的确认窗口。
-         *
-         * 宿主过渡期的瞬发 STOPPED 通常几十毫秒内就被后续状态取代；
-         * 而真正的停止晚 400ms 生效对用户不可见。
-         */
-        const val STOP_CONFIRM_MS = 400L
-
         /** 诊断期模拟跳转播放位置的广播 action。 */
         const val ACTION_DEBUG_SEEK = "com.hchen.superlyric.DEBUG.SEEK"
 

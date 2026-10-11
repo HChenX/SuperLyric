@@ -33,6 +33,7 @@ import androidx.annotation.Nullable;
 
 import com.hchen.hooktool.log.XposedLog;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -65,14 +66,19 @@ public final class SystemPlayStateListener {
 
             long token = Binder.clearCallingIdentity();
             try {
-                // 与 registerMediaControllerCallback 共用同一把锁：
-                // 前者由主线程回调，后者可由 Binder 线程触发，不加锁会重复注册或泄漏回调
+                // 锁内**只**做 map 维护，注册与初始状态同步一律放到锁外：
+                // registerMediaControllerCallback 会回调进 SuperLyricService，后者要取
+                // mSnapshotLock —— 而 sendLyric 是「先取 mSnapshotLock、再进本类的 mCallbacks」，
+                // 锁内回调就构成 AB-BA 死锁（主线程会被卡死到 watchdog）。
+                // 重复注册与泄漏由 registerMediaControllerCallback 内部的锁 + 去重负责
+                List<MediaController> toRegister;
                 synchronized (mCallbacks) {
                     mCallbacks.forEach(MediaController::unregisterCallback);
                     mCallbacks.clear();
-                    for (MediaController controller : controllers) {
-                        registerMediaControllerCallback(controller);
-                    }
+                    toRegister = new ArrayList<>(controllers);
+                }
+                for (MediaController controller : toRegister) {
+                    registerMediaControllerCallback(controller);
                 }
             } finally {
                 Binder.restoreCallingIdentity(token);
@@ -198,6 +204,26 @@ public final class SystemPlayStateListener {
 
             if (SuperLyricService.isPublisher(pkg)) {
                 mService.onSystemMetadataChanged(pkg, metadata);
+            }
+        }
+
+        /**
+         * 会话被销毁
+         *
+         * <p>宿主**释放会话而进程仍在**时，这是唯一能到达本模块的通知：播放状态不会再变
+         * （已经没有会话了），而 `onActiveSessionsChanged` 只会把回调摘掉，不会告诉服务
+         * "这个包停了"。少了这条路，界面会一直停在最后一句上。
+         */
+        @Override
+        public void onSessionDestroyed() {
+            super.onSessionDestroyed();
+            String pkg = mController.getPackageName();
+            if (SuperLyricService.isSystemPlayStateListenerDisabled(pkg)) {
+                return;
+            }
+
+            if (SuperLyricService.isPublisher(pkg)) {
+                mService.onSystemSessionDestroyed(pkg);
             }
         }
     }
