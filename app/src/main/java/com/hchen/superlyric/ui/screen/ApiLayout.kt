@@ -91,6 +91,7 @@ import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.hchen.superlyric.BuildConfig
 import com.hchen.superlyric.R
 import com.hchen.superlyric.ui.data.LocalPagerState
 import com.hchen.superlyric.ui.data.UIConstants
@@ -248,17 +249,21 @@ fun ApiLayout(
                     titleColor = titleColor,
                     defaultWindowInsetsPadding = false,
                     actions = {
-                        IconButton(
-                            onClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
-                                isDebugSheetShowing = true
+                        // 调试面板只进 debug 包：它能注入模拟歌词、暂停时钟、清零计数，
+                        // 全是面向开发的操作，不该出现在发布版界面上
+                        if (BuildConfig.DEBUG) {
+                            IconButton(
+                                onClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                    isDebugSheetShowing = true
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = MiuixIcons.Tune,
+                                    contentDescription = stringResource(R.string.api_debug),
+                                    tint = colorScheme.onSurface
+                                )
                             }
-                        ) {
-                            Icon(
-                                imageVector = MiuixIcons.Tune,
-                                contentDescription = stringResource(R.string.api_debug),
-                                tint = colorScheme.onSurface
-                            )
                         }
                     }
                 )

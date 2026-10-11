@@ -43,14 +43,12 @@ internal class BgEffectPainter(
     private val pointsAnimBuffer = FloatArray(8)
 
     private var animTime = Float.NaN
-    private var isDarkCached: Boolean? = null
-    private var deviceTypeCached: DeviceType? = null
-
-    private var presetApplied = false
 
     private var cachedLogoHeight = Float.NaN
     private var cachedTotalHeight = Float.NaN
     private var cachedTotalWidth = Float.NaN
+
+    private var cachedPreset: BgEffectConfig.Config? = null
 
     private var cachedColorStage = Float.NaN
     private var cachedColorsPreset: BgEffectConfig.Config? = null
@@ -148,22 +146,21 @@ internal class BgEffectPainter(
         cachedTotalWidth = totalWidth
     }
 
-    fun updatePresetIfNeeded(deviceType: DeviceType, isDark: Boolean) {
-        if (presetApplied && isDarkCached == isDark && deviceTypeCached == deviceType) return
-
-        applyPreset(deviceType, isDark)
-
-        isDarkCached = isDark
-        deviceTypeCached = deviceType
-        presetApplied = true
-    }
-
-    private fun applyPreset(deviceType: DeviceType, isDark: Boolean) {
-        val preset = BgEffectConfig.get(deviceType, isDark, isOs3)
+    /**
+     * 应用主题预设
+     *
+     * 收的是调用方**已经定好的** [BgEffectConfig.Config]，不在这里按 deviceType/isDark 重算：
+     * 那套重算漏了 theme，SUNSET 主题下 uPoints/uLightOffset/uSaturateOffset 会静默退回
+     * DEFAULT，而颜色却仍来自 SUNSET——同一帧里两套预设打架
+     */
+    fun updatePresetIfNeeded(preset: BgEffectConfig.Config) {
+        if (cachedPreset === preset) return
 
         runtimeShader.setFloatUniform("uPoints", preset.points)
         runtimeShader.setFloatUniform("uLightOffset", preset.lightOffset)
         runtimeShader.setFloatUniform("uSaturateOffset", preset.saturateOffset)
+
+        cachedPreset = preset
     }
 
     private fun updateBound(

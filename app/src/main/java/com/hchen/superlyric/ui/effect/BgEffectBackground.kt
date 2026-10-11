@@ -105,8 +105,6 @@ fun BgEffectBackground(
                 .bgEffectDraw(
                     painter = painter,
                     preset = preset,
-                    deviceType = deviceType,
-                    isDarkTheme = isDarkTheme,
                     surface = surface,
                     effectBackground = effectBackground,
                     isFullSize = isFullSize,

@@ -157,6 +157,8 @@ internal fun ApiLyricPlayerView(
                 break
             }
             currentPlayPos = calculated
+            // 这个节拍只决定**刷新密度**，不影响正确性——位置按墙上时钟算，与循环频率无关。
+            // 20ms ≈ 50Hz：比逐字高亮需要的密度高，又明显低于"每帧一次"的代价
             delay(20)
         }
     }

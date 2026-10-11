@@ -19,6 +19,7 @@
 package com.hchen.superlyric.ui
 
 import android.os.Bundle
+import android.content.SharedPreferences
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -92,7 +93,17 @@ import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import top.yukonga.miuix.kmp.window.WindowDialog
 
+import java.util.function.Consumer
+
 class MainActivity : ComponentActivity() {
+
+    /**
+     * 本次注册到 `Application` 静态表的 prefs 监听器，供 [onDestroy] 精确摘除
+     *
+     * 可空：`onCreate` 若在赋值之前抛异常，`onDestroy` 照样会被调用，
+     * 那时读 `lateinit` 字段会以"属性未初始化"再抛一次，把一个启动失败变成崩溃
+     */
+    private var prefsReadyListener: Consumer<SharedPreferences>? = null
     private val viewModel: MainViewModel by viewModels {
         MainViewModelFactory(
             addPrefsReadyListener = Application::addPrefsReadyListener,
@@ -107,14 +118,28 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         window.isNavigationBarContrastEnforced = false
-        Application.addPrefsReadyListener {
-            PackageLoader.loadPackages(this)
+        // 用 applicationContext 而不是 Activity：这个匿名监听器注册在静态表上、不会随
+        // Activity 销毁而注销，捕获 Activity 会让每次重建都泄漏一个已销毁实例，
+        // 还会对着它调 loadPackages
+        val appContext = applicationContext
+        // 但仍要在 onDestroy 里摘掉自己：静态表只加不减的话，每次重建都会多留一个，
+        // prefs 就绪时 loadPackages 就跑 N 遍
+        val listener = Consumer<SharedPreferences> {
+            PackageLoader.loadPackages(appContext)
         }
+        prefsReadyListener = listener
+        Application.addPrefsReadyListener(listener)
         PackageLoader.loadPackages(this)
 
         setContent {
             App()
         }
+    }
+
+    override fun onDestroy() {
+        // 摘掉的必须是**本次注册的那个实例**：静态表是按实例移除的
+        prefsReadyListener?.let(Application::removePrefsReadyListener)
+        super.onDestroy()
     }
 
     @Composable

@@ -35,6 +35,7 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * API 接收器与状态管理单例
@@ -44,9 +45,16 @@ internal object ApiReceiverManager {
     val pausedFlow = MutableStateFlow(false)
 
     private var isRegistered = false
-    private var totalPackets = 0
-    private var fullPackets = 0
-    private var progressPackets = 0
+
+    /**
+     * 收包计数
+     *
+     * 必须原子：[mReceiver] 的回调由 Binder 线程池并发进入，`++` 会丢更新，
+     * 让"全量/增量"的统计与展示用的 `packetSeq` 一起失真
+     */
+    private val totalPackets = AtomicInteger(0)
+    private val fullPackets = AtomicInteger(0)
+    private val progressPackets = AtomicInteger(0)
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
@@ -92,12 +100,12 @@ internal object ApiReceiverManager {
     }
 
     private fun handleIncomingLyric(publisher: String?, data: SuperLyricData?) {
-        totalPackets++
+        val seq = totalPackets.incrementAndGet()
         val isFull = data != null && data.hasAllLyrics()
         if (isFull) {
-            fullPackets++
+            fullPackets.incrementAndGet()
         } else {
-            progressPackets++
+            progressPackets.incrementAndGet()
         }
 
         // 使用官方 SuperLyricCache 统一解析增量与全量歌词
@@ -108,15 +116,15 @@ internal object ApiReceiverManager {
             data = effectiveData,
             eventType = "ON_LYRIC",
             receiveTime = time,
-            packetSeq = totalPackets,
-            fullCount = fullPackets,
-            progressCount = progressPackets,
+            packetSeq = seq,
+            fullCount = fullPackets.get(),
+            progressCount = progressPackets.get(),
             allLyricsCache = effectiveData?.allLyrics
         )
     }
 
     private fun handleIncomingStop(publisher: String?, data: SuperLyricData?) {
-        totalPackets++
+        val seq = totalPackets.incrementAndGet()
         val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
         val effectiveData = SuperLyricCache.resolve(data) ?: data
         receiverFlow.value = ApiReceiverState(
@@ -124,9 +132,9 @@ internal object ApiReceiverManager {
             data = effectiveData,
             eventType = "ON_STOP",
             receiveTime = time,
-            packetSeq = totalPackets,
-            fullCount = fullPackets,
-            progressCount = progressPackets,
+            packetSeq = seq,
+            fullCount = fullPackets.get(),
+            progressCount = progressPackets.get(),
             allLyricsCache = effectiveData?.allLyrics
         )
     }
@@ -137,17 +145,17 @@ internal object ApiReceiverManager {
                 val latest = SuperLyricHelper.getLatestLyric()
                 if (latest != null) {
                     val effectiveData = SuperLyricCache.resolve(latest) ?: latest
-                    totalPackets++
-                    if (latest.hasAllLyrics()) fullPackets++ else progressPackets++
+                    val seq = totalPackets.incrementAndGet()
+                    if (latest.hasAllLyrics()) fullPackets.incrementAndGet() else progressPackets.incrementAndGet()
                     val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
                     receiverFlow.value = ApiReceiverState(
                         publisher = "SuperLyricService",
                         data = effectiveData,
                         eventType = "PULL_LATEST",
                         receiveTime = time,
-                        packetSeq = totalPackets,
-                        fullCount = fullPackets,
-                        progressCount = progressPackets,
+                        packetSeq = seq,
+                        fullCount = fullPackets.get(),
+                        progressCount = progressPackets.get(),
                         allLyricsCache = effectiveData.allLyrics
                     )
                     withContext(Dispatchers.Main) {
@@ -295,9 +303,9 @@ internal object ApiReceiverManager {
     }
 
     fun reset() {
-        totalPackets = 0
-        fullPackets = 0
-        progressPackets = 0
+        totalPackets.set(0)
+        fullPackets.set(0)
+        progressPackets.set(0)
         SuperLyricCache.clear()
         receiverFlow.value = ApiReceiverState()
     }

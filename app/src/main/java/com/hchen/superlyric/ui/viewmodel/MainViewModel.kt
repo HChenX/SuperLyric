@@ -93,6 +93,9 @@ class MainViewModel(
             runCatching {
                 val level = sharedPreferences.getInt(PrefsKey.LOG_LEVEL, 0)
                 _logLevel.value = level
+            }.onFailure {
+                // 读失败要留痕：否则"日志级别一直是默认值"与"读挂了"看起来一样
+                android.util.Log.w("MainViewModel", "Failed to read the log level", it)
             }
         }
     }
@@ -102,8 +105,13 @@ class MainViewModel(
             is MainUiAction.UpdateLogLevel -> {
                 val currentPrefs = Application.getRemotePreferences() ?: prefs
                 if (currentPrefs != null) {
+                    // `edit {}` 这个 KTX 重载不返回成败，所以这里无法在失败时回退状态；
+                    // 但 currentPrefs 可能来自 getRemotePreferences()（跨进程），那里是会抛的，
+                    // 抛了就必须留痕——否则界面显示"已生效"而实际没写进去
                     runCatching {
                         currentPrefs.edit { putInt(PrefsKey.LOG_LEVEL, action.value) }
+                    }.onFailure {
+                        android.util.Log.w("MainViewModel", "Failed to persist the log level", it)
                     }
                     _logLevel.value = action.value
                 }

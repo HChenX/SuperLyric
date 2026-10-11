@@ -32,8 +32,6 @@ import kotlinx.coroutines.launch
 internal fun Modifier.bgEffectDraw(
     painter: BgEffectPainter,
     preset: BgEffectConfig.Config,
-    deviceType: DeviceType,
-    isDarkTheme: Boolean,
     surface: Color,
     effectBackground: Boolean,
     isFullSize: Boolean,
@@ -43,8 +41,6 @@ internal fun Modifier.bgEffectDraw(
 ): Modifier = this then BgEffectElement(
     painter = painter,
     preset = preset,
-    deviceType = deviceType,
-    isDarkTheme = isDarkTheme,
     surface = surface,
     effectBackground = effectBackground,
     isFullSize = isFullSize,
@@ -56,8 +52,6 @@ internal fun Modifier.bgEffectDraw(
 private data class BgEffectElement(
     val painter: BgEffectPainter,
     val preset: BgEffectConfig.Config,
-    val deviceType: DeviceType,
-    val isDarkTheme: Boolean,
     val surface: Color,
     val effectBackground: Boolean,
     val isFullSize: Boolean,
@@ -69,8 +63,6 @@ private data class BgEffectElement(
     override fun create(): BgEffectNode = BgEffectNode(
         painter = painter,
         preset = preset,
-        deviceType = deviceType,
-        isDarkTheme = isDarkTheme,
         surface = surface,
         effectBackground = effectBackground,
         isFullSize = isFullSize,
@@ -83,8 +75,6 @@ private data class BgEffectElement(
         node.update(
             painter = painter,
             preset = preset,
-            deviceType = deviceType,
-            isDarkTheme = isDarkTheme,
             surface = surface,
             effectBackground = effectBackground,
             isFullSize = isFullSize,
@@ -98,8 +88,6 @@ private data class BgEffectElement(
 private class BgEffectNode(
     private var painter: BgEffectPainter,
     private var preset: BgEffectConfig.Config,
-    private var deviceType: DeviceType,
-    private var isDarkTheme: Boolean,
     private var surface: Color,
     private var effectBackground: Boolean,
     private var isFullSize: Boolean,
@@ -125,8 +113,6 @@ private class BgEffectNode(
     fun update(
         painter: BgEffectPainter,
         preset: BgEffectConfig.Config,
-        deviceType: DeviceType,
-        isDarkTheme: Boolean,
         surface: Color,
         effectBackground: Boolean,
         isFullSize: Boolean,
@@ -136,8 +122,6 @@ private class BgEffectNode(
     ) {
         this.painter = painter
         this.preset = preset
-        this.deviceType = deviceType
-        this.isDarkTheme = isDarkTheme
         this.surface = surface
         this.effectBackground = effectBackground
         this.isFullSize = isFullSize
@@ -188,7 +172,7 @@ private class BgEffectNode(
 
                 painter.updateResolution(size.width, size.height)
                 painter.updateBoundIfNeeded(drawHeight, size.height, size.width)
-                painter.updatePresetIfNeeded(deviceType, isDarkTheme)
+                painter.updatePresetIfNeeded(preset)
                 painter.updateColors(preset, colorStage())
                 painter.updateAnimTime(animTime)
                 painter.updatePointsAnim(animTime, preset)
