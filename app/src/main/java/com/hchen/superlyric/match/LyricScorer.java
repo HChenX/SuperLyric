@@ -36,9 +36,14 @@ import java.util.regex.Pattern;
  *   <li><b>元数据清洗：</b>去除音轨编号 (01. 02-)、副标题括号、伴奏/Live/Remix 标记、feat 伴唱及文件后缀。</li>
  *   <li><b>归一化编辑距离：</b>计算目标歌名与候选歌名的 Levenshtein 相似度。</li>
  *   <li><b>歌手集合 Jaccard 相似度：</b>切分多位歌手计算集合重合度，防止单曲翻唱混淆。</li>
- *   <li><b>高斯时长容差门限：</b>时长偏差在 1 秒内满分，超 5 秒直接一票否决 (Score=0)。</li>
- *   <li><b>逐字特征增益：</b>含逐字（KRC/QRC/字词 JSON）乘以 1.2 系数，普通 LRC 仅打 0.8 系数。</li>
+ *   <li><b>时长偏差分档：</b>1 秒内满分、3 秒内 80、5 秒内 50、更远 0 分。它只影响时长那一栏
+ *       （20 分），不会归零整条结果。</li>
+ *   <li><b>缺失字段按"哪一侧缺"分别处理：</b>目标侧缺则该维度不可用并从分母中去掉，
+ *       候选侧缺则该维度给 0 分但保留在分母里。详见 [scoreCandidate]。</li>
  * </ul>
+ *
+ * <p>三档权重与采纳线的定法、以及它们各自守住的样本，都写在 [scoreCandidate] 与
+ * [MIN_ACCEPT_SCORE] 上，并已固化成单测。
  *
  * @author 焕晨HChen
  */
@@ -206,12 +211,18 @@ public final class LyricScorer {
 
     /**
      * 计算歌手相似度 [0.0, 1.0]。
+     *
+     * <p>任一侧歌手缺失时返回 0.0——"缺失"与"不匹配"在这里**必须同值**。
+     * 原实现在缺失时给 0.5 的"中性分"，于是"两个歌手里只对一个"（1/3 ≈ 0.33）
+     * 反而比如实缺失得分更低：缺字段成了加分项。
+     *
+     * <p>缺失该不该扣分、按哪一侧算，由 {@link #scoreCandidate} 决定——它才同时看得见两侧。
      */
     public static double calculateArtistSimilarity(@Nullable String target, @Nullable String candidate) {
         Set<String> set1 = splitArtists(target);
         Set<String> set2 = splitArtists(candidate);
         if (set1.isEmpty() || set2.isEmpty()) {
-            return 0.5; // 歌手信息缺失时给予中性分
+            return 0.0;
         }
 
         int intersection = 0;
@@ -231,16 +242,22 @@ public final class LyricScorer {
 
     /**
      * 计算音频时长偏差匹配分 [0, 100]。
-     * <p>
-     * 误差 <= 1000ms: 100分
-     * 误差 <= 3000ms: 80分
-     * 误差 <= 5000ms: 50分
-     * 误差 > 5000ms: 0分（硬性排除）
+     *
+     * <p>只接受**两侧都是真实时长**的输入；任一侧缺失返回 0。缺失该怎么算由
+     * {@link #scoreCandidate} 定，本函数不该有自己的"缺失分"——那正是历史上
+     * "不知道时长"（70）反而比"差了 4 秒"（50）得分更高的来源。
+     *
+     * <p>误差 &lt;= 1000ms: 100分
+     * 误差 &lt;= 3000ms: 80分
+     * 误差 &lt;= 5000ms: 50分
+     * 误差 &gt; 5000ms: 0分
+     *
+     * <p>另一条是 VIP 试听 / 伴奏片段：目标短于 65 秒而候选是完整曲目时给 80 分
+     * （片段时长与完整曲目必然对不上，但歌名歌手一致时它就是同一首歌）。
      */
     public static double calculateDurationScore(long targetDurationMs, long candidateDurationMs) {
         if (targetDurationMs <= 0 || candidateDurationMs <= 0) {
-            // 目标或候选无时长信息，给予中等保守分
-            return 70.0;
+            return 0.0;
         }
 
         // 关键增强：支持 VIP 试听 / 伴奏片段剪辑 (通常 target 时长在 15s ~ 65s 之间，而完整候选曲目时长 > 65s)
@@ -261,7 +278,77 @@ public final class LyricScorer {
     }
 
     /**
+     * 歌名维度权重
+     *
+     * 最高的一档：它是最强的判据，也是**版本判别的唯一依据**（见 {@link #stripTranslatedSuffix}）。
+     */
+    private static final double TITLE_WEIGHT = 50.0;
+
+    /**
+     * 歌手维度权重
+     *
+     * 低于歌名：宿主上报的歌手字段既可能为空、也可能被写进歌词行之类的内容，
+     * 真正可用的机会本就更少。
+     */
+    private static final double ARTIST_WEIGHT = 30.0;
+
+    /**
+     * 时长维度权重
+     *
+     * 最低的一档：它最客观，但也最容易被"试听片段 / 流的长度"带偏，
+     * 因此只该作为旁证，不该能否决另一侧的证据。
+     */
+    private static final double DURATION_WEIGHT = 20.0;
+
+    /** 歌名相似度下限；低于它直接判 0，不再看其它维度 */
+    private static final double MIN_TITLE_SIMILARITY = 0.3;
+
+    /**
+     * 目标侧可用维度不足两个时的得分上限
+     *
+     * 刻意压在采纳线之下：一个维度定不了身份（`Intro`、`Interlude` 这类同名曲目遍地都是），
+     * 这正是 §3.5「不得只凭歌名推断曲目身份」在打分器里的落点。
+     */
+    private static final double THIN_TARGET_CAP = 60.0;
+
+    /**
+     * 采纳线：检索阶段的得分必须**严格大于**本值才会被采纳
+     *
+     * <p>定在 75 的依据是两侧样本的实测得分（均已固化成单测）：
+     * <ul>
+     *   <li>必须被**采纳**的最低档：歌名相似度 0.8 + 歌手完全一致 + 时长差 4 秒 = <b>80</b></li>
+     *   <li>必须被**拒绝**的最高档：歌名完全一致但歌手完全不同 = <b>70</b></li>
+     * </ul>
+     * 采纳线落在 70 与 80 之间，两侧各余 5 分。改动权重或时长分档时必须重跑那组单测——
+     * 它们就是这条线的定义。
+     *
+     * <p>同一首歌的不同版本可能登记成完全相同的歌名/歌手/时长，打分器无从区分，
+     * 平局只能由检索顺序决定（见调用处注释）。
+     */
+    public static final double MIN_ACCEPT_SCORE = 75.0;
+
+    /**
      * 综合评定候选歌曲得分 [0, 100]。
+     *
+     * <p>三个维度按权重加权平均，分母只算**可用**的维度。
+     *
+     * <h3>缺失字段按"哪一侧缺"分别处理</h3>
+     * 目标侧（宿主上报）与候选侧（平台检索结果）的可信度**不对称**：
+     * <ul>
+     *   <li><b>目标侧缺失 ⇒ 该维度不可用</b>，直接从分母里去掉（重新归一）。绝不补一个常数分——
+     *       常数分对所有候选一视同仁，等于把采纳线悄悄往下挪一截，而"缺失"看起来就像"匹配上了"</li>
+     *   <li><b>候选侧缺失 ⇒ 该维度给 0 分，但保留在分母里</b>。平台检索回来的记录不该缺字段，
+     *       缺了就无法核验；宽容它就是重新把"缺字段"变成奖励</li>
+     * </ul>
+     *
+     * <h3>时长不再一票否决</h3>
+     * 原实现"双方时长都 &gt; 0 且差 &gt; 5 秒"直接判 0，于是弱信号能抹掉强信号：
+     * 歌名歌手完全一致、只差 6 秒的候选被判 0，而"只有歌名对、其余全缺"的候选反而过线。
+     * 现在时长超差只把时长那一栏打成 0（丢 20 分），不归零整条结果——宿主上报的时长常常是
+     * **流的长度**而非录音长度，"差 6 秒"未必是另一首歌。版本判别由歌名一栏负责。
+     *
+     * <h3>目标侧只剩歌名时不给结论</h3>
+     * 只用歌名无法确定身份，得分被压在 {@link #THIN_TARGET_CAP}——采纳线之下。
      *
      * @param targetTitle         目标歌名
      * @param targetArtist        目标歌手
@@ -269,40 +356,42 @@ public final class LyricScorer {
      * @param candidateTitle      候选歌名
      * @param candidateArtist     候选歌手
      * @param candidateDurationMs 候选时长 (毫秒)
-     * @param hasVerbatim         候选是否具备逐字时序
-     * @return 最终综合得分 (>= 80 判定为可采纳)
+     * @return 最终综合得分 [0, 100]；调用方应与 {@link #MIN_ACCEPT_SCORE} 比较
      */
     public static double scoreCandidate(@Nullable String targetTitle,
                                         @Nullable String targetArtist,
                                         long targetDurationMs,
                                         @Nullable String candidateTitle,
                                         @Nullable String candidateArtist,
-                                        long candidateDurationMs,
-                                        boolean hasVerbatim) {
+                                        long candidateDurationMs) {
         double titleSim = calculateTitleSimilarity(targetTitle, candidateTitle);
-        if (titleSim < 0.3) {
+        if (titleSim < MIN_TITLE_SIMILARITY) {
             // 歌名严重不符，直接一票否决
             return 0.0;
         }
 
-        double durationScore = calculateDurationScore(targetDurationMs, candidateDurationMs);
-        if (targetDurationMs > 0 && candidateDurationMs > 0 && durationScore <= 0.0) {
-            // 时长差异过大，一票否决
-            return 0.0;
+        boolean targetHasArtist = !splitArtists(targetArtist).isEmpty();
+        boolean targetHasDuration = targetDurationMs > 0;
+
+        double artistSim = targetHasArtist && !splitArtists(candidateArtist).isEmpty()
+            ? calculateArtistSimilarity(targetArtist, candidateArtist)
+            : 0.0;
+        double durationFraction = targetHasDuration && candidateDurationMs > 0
+            ? calculateDurationScore(targetDurationMs, candidateDurationMs) / 100.0
+            : 0.0;
+
+        double earned = titleSim * TITLE_WEIGHT
+            + artistSim * ARTIST_WEIGHT
+            + durationFraction * DURATION_WEIGHT;
+        double total = TITLE_WEIGHT
+            + (targetHasArtist ? ARTIST_WEIGHT : 0.0)
+            + (targetHasDuration ? DURATION_WEIGHT : 0.0);
+
+        double score = earned / total * 100.0;
+        if (!targetHasArtist && !targetHasDuration) {
+            return Math.min(score, THIN_TARGET_CAP);
         }
-
-        double artistSim = calculateArtistSimilarity(targetArtist, candidateArtist);
-
-        // 基础得分权重：歌名 45%，歌手 35%，时长 20%
-        double baseScore = (titleSim * 100.0 * 0.45)
-            + (artistSim * 100.0 * 0.35)
-            + (durationScore * 0.20);
-
-        // 逐字特征乘数加成
-        double multiplier = hasVerbatim ? 1.20 : 0.80;
-        double finalScore = baseScore * multiplier;
-
-        return Math.min(100.0, Math.max(0.0, finalScore));
+        return score;
     }
 
     private static int levenshteinDistance(@NonNull String s1, @NonNull String s2) {
