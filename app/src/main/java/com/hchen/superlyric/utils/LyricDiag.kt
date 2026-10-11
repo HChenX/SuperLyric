@@ -57,14 +57,17 @@ object LyricDiag {
     const val TAG = "SLDiag"
 
     /**
-     * 总开关。
+     * 总开关
      *
-     * 默认**只在 debug 构建、或用户把模块日志级别调到 DEBUG 时**输出。
-     * 诊断输出会打印完整歌词原文、原始报文与全部元数据，发布版绝不能默认开启。
+     * debug 构建恒开；发布构建下只有模块日志级别被设为 DEBUG 时才输出。
+     * 诊断会打印完整歌词原文、原始报文与全部元数据，发布版绝不能默认开启
+     *
+     * 每次读取都重新判定，不做一次性缓存：本对象可能在宿主进程早期就被首次触碰，
+     * 那时偏好设置尚不可读，一次性求值会把开关永久钉死在 false，且没有任何迹象
      */
-    @JvmField
-    var enabled: Boolean = BuildConfig.DEBUG ||
-        LocalConfig.getLogLevelForXposed() == ModuleConfig.LOG_D
+    val enabled: Boolean
+        get() = BuildConfig.DEBUG ||
+            LocalConfig.getLogLevelForXposed() == ModuleConfig.LOG_D
 
     /**
      * `MediaMetadata` 内部的原始 `Bundle`。
