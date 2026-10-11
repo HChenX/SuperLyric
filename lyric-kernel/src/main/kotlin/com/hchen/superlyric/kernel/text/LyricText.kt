@@ -45,10 +45,10 @@ object LyricText {
      * 以码点而非字面量声明，是为了避免源码中混入不可见字符本身。
      *
      * 覆盖：零宽空格 U+200B、零宽不连字 U+200C、零宽连字 U+200D、BOM U+FEFF、
-     * 回车 U+000D、换行 U+000A。
+     * 回车 U+000D、换行 U+000A、NUL U+0000（可由 `&#0;` 实体解码得到，排版引擎同样不适）
      */
     private val INVISIBLE_CODE_POINTS = intArrayOf(
-        0x200B, 0x200C, 0x200D, 0xFEFF, 0x000D, 0x000A,
+        0x200B, 0x200C, 0x200D, 0xFEFF, 0x000D, 0x000A, 0x0000,
     )
 
     private fun isInvisible(ch: Char): Boolean {
@@ -111,10 +111,16 @@ object LyricText {
         }
     }
 
-    private fun codePointToString(codePoint: Int): String =
+    /**
+     * 非法码点返回 `null`，由调用方**原样保留实体文本**
+     *
+     * 若返回空串，那个实体连同它的字会一起消失且不留痕迹——用户看到的是"莫名少了一个字"，
+     * 而我们连查都无从查起
+     */
+    private fun codePointToString(codePoint: Int): String? =
         if (codePoint in 0..0x10FFFF && codePoint !in 0xD800..0xDFFF) {
             String(Character.toChars(codePoint))
         } else {
-            ""
+            null
         }
 }

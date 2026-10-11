@@ -86,7 +86,9 @@ object TranslationMerger {
                 if (!needsChannel(line, channel)) continue
 
                 val delta = abs(line.startMs - entry.startMs)
-                if (delta > TOLERANCE_MS) continue
+                // 负数只可能来自溢出：abs(Long.MIN_VALUE) 仍是负数。若不拦住，
+                // 这条伴随记录既躲过容差判定、又必然成为"最近"的那条，被错挂上去
+                if (delta < 0L || delta > TOLERANCE_MS) continue
                 if (delta < bestDelta) {
                     bestDelta = delta
                     bestLineIndex = lineIndex

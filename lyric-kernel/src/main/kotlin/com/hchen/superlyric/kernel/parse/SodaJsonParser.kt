@@ -58,6 +58,18 @@ object SodaJsonParser {
     private const val DEFAULT_SENTENCE_DURATION_MS = 2000L
 
     /**
+     * 句数上限
+     *
+     * 守的是**本层**的分配与逐句处理：`sentences` 的规模决定 `ArrayList` 的预分配，
+     * 也决定下面这一轮要跑多少次解析。报文的 JSON 早已被上游物化成对象树，这个上限拦不住
+     * 那一次分配——要防它得在**读取侧**设界（`ResponseBodies.readTextBounded`）。
+     *
+     * 正常曲目连千行都到不了，超限只可能是畸形载荷；代价是超过上限的**合法**载荷会被
+     * 静默截断（内核没有日志出口，只能静默）
+     */
+    private const val MAX_SENTENCES = 4096
+
+    /**
      * 判定文本是否为该 JSON 形态
      */
     fun canParse(text: String?): Boolean {
@@ -75,13 +87,21 @@ object SodaJsonParser {
     fun parse(text: String?): LyricDoc? {
         if (!canParse(text)) return null
 
-        val root = runCatching { JsonParser.parseString(text).asJsonObject }.getOrNull() ?: return null
-        val sentences = findSentencesArray(root) ?: return null
+        // 只接**解析失败**这一类（JSON 语法错、形状不是对象），不接 Error：
+        // 把 StackOverflowError / OutOfMemoryError 一起吞成 null，等于把"读不出来"
+        // 伪装成"解析结果为空"，而下层把它当终态结论用
+        val root = try {
+            JsonParser.parseString(text).asJsonObject
+        } catch (e: RuntimeException) {
+            null
+        } ?: return null
+        val sentences = findSentencesArray(root, 0) ?: return null
         if (sentences.size() == 0) return null
 
-        val lines = ArrayList<LyricLine>(sentences.size())
-        for (element in sentences) {
-            val sentence = element as? JsonObject ?: continue
+        val limit = sentences.size().coerceAtMost(MAX_SENTENCES)
+        val lines = ArrayList<LyricLine>(limit)
+        for (index in 0 until limit) {
+            val sentence = sentences.get(index) as? JsonObject ?: continue
             val line = parseSentence(sentence) ?: continue
             lines += line
         }
@@ -208,11 +228,20 @@ object SodaJsonParser {
         return entries
     }
 
-    private fun findSentencesArray(root: JsonObject): JsonArray? {
+    /**
+     * 容器嵌套深度上限
+     *
+     * 递归只沿固定几个键下降，但同一个键可以层层套（`{"lyrics":{"lyrics":{…}}}`），
+     * 因此深度并不天然有界。真实载荷最多两层，超限即判形态不符
+     */
+    private const val MAX_CONTAINER_DEPTH = 4
+
+    private fun findSentencesArray(root: JsonObject, depth: Int): JsonArray? {
         root.array("sentences")?.let { return it }
+        if (depth >= MAX_CONTAINER_DEPTH) return null
         for (key in NESTED_CONTAINERS) {
             val nested = root.get(key) as? JsonObject ?: continue
-            findSentencesArray(nested)?.let { return it }
+            findSentencesArray(nested, depth + 1)?.let { return it }
         }
         return null
     }

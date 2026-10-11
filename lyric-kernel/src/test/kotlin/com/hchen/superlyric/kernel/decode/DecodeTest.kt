@@ -154,4 +154,14 @@ class DecodeTest {
 
         assertArrayEquals(text.toByteArray(StandardCharsets.UTF_8), PayloadBytes.decode(text))
     }
+
+    @Test
+    fun `a decompression bomb is rejected instead of exhausting the host`() {
+        // 炸弹的可怕之处在于体积不对称：压缩后只有几 KB，解出来是数 MB 乃至数 GB。
+        // 若不设界，宿主进程会被 OOM 杀掉——这是本模块绝不能发生的事
+        val compressed = deflate("A".repeat(4 * 1024 * 1024))
+
+        assertTrue(compressed.size < 64 * 1024, "压缩后应当很小，实际 ${compressed.size} 字节")
+        assertThrows(DecodeException::class.java) { Zlib.inflateToString(compressed) }
+    }
 }

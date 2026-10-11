@@ -92,6 +92,9 @@ object QrcParser {
 
     private const val DEFAULT_LINE_DURATION_MS = 1000L
 
+    /** 单行长度上限：超过它只可能是畸形载荷，而超长行会让词标签正则退化成 O(n²) */
+    private const val MAX_LINE_CHARS = 4 * 1024
+
     /**
      * 解析 QRC 明文
      *
@@ -199,12 +202,17 @@ object QrcParser {
             if (line.isEmpty()) continue
             if (TAG_PATTERN.matches(line)) continue
 
+            // 词标签正则以 `([^(]*)` 开头，在没有 `(` 的**超长行**上会逐位置回溯成 O(n²)，
+            // 把解析线程整个卡住。正常歌词行远小于此上限，超限只可能是畸形载荷。
+            // 内核不能打日志（零 Android 依赖），这里只能静默跳过
+            if (line.length > MAX_LINE_CHARS) continue
+
             val lineMatch = LINE_PATTERN.find(line) ?: continue
             val lineStart = lineMatch.groupValues[1].toLongOrNull() ?: continue
             val lineDuration = lineMatch.groupValues[2].toLongOrNull() ?: 0L
             val body = lineMatch.groupValues[3]
 
-            val startMs = lineStart + offset
+            val startMs = (lineStart + offset).coerceAtLeast(0L)
             val durationMs = if (lineDuration > 0) lineDuration else DEFAULT_LINE_DURATION_MS
             val endMs = startMs + durationMs
 
@@ -239,7 +247,7 @@ object QrcParser {
             ?: true
 
         for (match in matches) {
-            val wordText = LyricText.decodeEntities(LyricText.cleanInvisibleChars(match.groupValues[1]))
+            val wordText = LyricText.cleanInvisibleChars(LyricText.decodeEntities(match.groupValues[1]))
             val rawStart = match.groupValues[2].toLongOrNull()
             val rawDuration = match.groupValues[3].toLongOrNull() ?: 0L
             consumed = match.range.last + 1
@@ -256,7 +264,7 @@ object QrcParser {
         // 末尾没有任何时间标签的残余文字（畸形载荷）同样属于本行，不能丢
         if (consumed < body.length) {
             textBuilder.append(
-                LyricText.decodeEntities(LyricText.cleanInvisibleChars(body.substring(consumed)))
+                LyricText.cleanInvisibleChars(LyricText.decodeEntities(body.substring(consumed)))
             )
         }
 

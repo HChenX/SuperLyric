@@ -140,7 +140,10 @@ internal object WordTagLrcParser {
      *
      * 切片之间靠空白分隔（英文歌词尤其明显），trim 掉会把 `We don't talk` 拼成
      * `Wedon'ttalk`。行级文本在最后统一 trim 一次即可。
+     *
+     * 顺序是**先解实体、后剥不可见字符**：反过来的话，`&#x200b;` / `&#10;` 这类实体编码的
+     * 不可见字符会在剥离之后才被解出来，等于没剥
      */
     private fun decodeInline(raw: String): String =
-        LyricText.decodeEntities(LyricText.cleanInvisibleChars(raw))
+        LyricText.cleanInvisibleChars(LyricText.decodeEntities(raw))
 }

@@ -351,6 +351,26 @@ class ParserTest {
         assertNull(SodaJsonParser.parse("[00:01.00]Hello"))
     }
 
+    @Test
+    fun `an oversized sentence array is capped instead of allocated whole`() {
+        // 载荷由宿主给出，规模不受本层控制：预分配跟着 sentences.size() 走的话，
+        // 一份构造出来的巨型 JSON 能在解析出任何一行之前就把堆吃掉
+        val cap = 4096
+        val builder = StringBuilder("""{"sentences":[""")
+        for (i in 0 until cap + 500) {
+            if (i > 0) builder.append(',')
+            builder.append("""{"startMs":""").append(i * 1_000L)
+                .append(""","endMs":""").append(i * 1_000L + 900L)
+                .append(""","text":"line""").append(i).append("\"}")
+        }
+        builder.append("]}")
+
+        val doc = SodaJsonParser.parse(builder.toString())
+
+        assertNotNull(doc)
+        assertEquals(cap, doc!!.lines.size, "超过上限的句必须被截断，上限值改动时同步改本断言")
+    }
+
     // =========================================================================
     // CompanionSplitter（同时间戳伴随行的拆分）
     // =========================================================================

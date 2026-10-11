@@ -31,8 +31,13 @@ package com.hchen.superlyric.kernel.model
  */
 object PureMusicDoc {
 
-    /** 曲目时长未知时的占位时长 */
-    const val DEFAULT_DURATION_MS = 300_000L
+    /**
+     * 曲目时长未知时**保持 0**（表示未知）
+     *
+     * 不要填一个具体值：那是在伪造事实，消费方无法区分"不知道"与"就是 5 分钟"，
+     * 进度与百分比会跟着错到曲末。系统侧会用宿主元数据补齐真实时长
+     */
+    const val DEFAULT_DURATION_MS = 0L
 
     /** 占位文案 */
     const val TEXT = "纯音乐，请欣赏"
@@ -53,7 +58,7 @@ object PureMusicDoc {
         durationMs: Long = 0L,
         lyricId: String? = null,
     ): LyricDoc {
-        val duration = if (durationMs > 0L) durationMs else DEFAULT_DURATION_MS
+        val duration = maxOf(0L, durationMs)
         return LyricDoc(
             lines = listOf(
                 LyricLine(startMs = 0L, endMs = duration, text = TEXT)
