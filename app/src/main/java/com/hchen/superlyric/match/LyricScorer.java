@@ -25,6 +25,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -61,6 +62,39 @@ public final class LyricScorer {
     private static final Pattern CLEAN_EXT_PATTERN = Pattern.compile(
         "\\.(mp3|flac|wav|m4a|aac|ogg|ape)$",
         Pattern.CASE_INSENSITIVE
+    );
+    /**
+     * 标题**末尾**的括号段（中英文四种括号），捕获组为括号内容。
+     *
+     * 白名单式的 {@link #CLEAN_BRACKETS_PATTERN} 只认得「这不是你要的那首歌」的标记
+     * （伴奏 / Live / remix …），而中文曲库里更常见的是**译名**：
+     * 宿主上报 {@code 未来へ (向着未来)}，平台曲库却是 {@code 未来へ}。
+     * 这类括号必须另做一次「去掉后再比」的比较，详见 [calculateTitleSimilarity]。
+     */
+    private static final Pattern TRAILING_BRACKET_PATTERN = Pattern.compile(
+        "\\s*[\\(（\\[【]([^\\)）\\]】]*)[\\)）\\]】]\\s*$"
+    );
+    /**
+     * 版本 / 语言 / 演出标记。
+     * <p>
+     * 末尾括号里出现这些，说明它标的是「**这是同一首歌的另一版**」而不是译名：
+     * {@code (Korean Ver.)}、{@code (DJ豪大大版)}、{@code (2025 巡回演唱会合肥站)}、
+     * {@code (双语版)}。带这类标记的括号**绝不能**被剥离——一剥，韩语版、演唱会版
+     * 就会和原版同分，然后靠候选顺序随机胜出。
+     * <p>
+     * 含**数字**也一并视为标记：日期、{@code 1.1x版}、{@code 32秒片段} 都落在这一类。
+     */
+    private static final Pattern VARIANT_MARKER_PATTERN = Pattern.compile(
+        "\\d|ver\\.?|version|remaster|original|remix|live|acoustic|demo|"
+            + "chin(a|ese)|japan(ese)?|korean?|english|"
+            + "版|伴奏|纯音乐|现场|巡回|演唱会|片段|试听|铃声|双语|原版|重制|翻唱",
+        Pattern.CASE_INSENSITIVE
+    );
+    /**
+     * 中日韩文字（含假名、谚文）。见 [stripTranslatedSuffix]：只有它们才会带「原名 (译名)」括号。
+     */
+    private static final Pattern CJK_PATTERN = Pattern.compile(
+        "[\\u3040-\\u30ff\\u3400-\\u4dbf\\u4e00-\\u9fff\\uac00-\\ud7af\\uf900-\\ufaff]"
     );
 
     private LyricScorer() {
@@ -103,10 +137,32 @@ public final class LyricScorer {
 
     /**
      * 计算歌名相似度 [0.0, 1.0]。
+     *
+     * <p>取「原样比较」与「去掉末尾**译名**括号后比较」两者中的**较高值**。
+     * 中文曲库里 {@code 原名 (译名)} 是常态，而平台曲库的标题往往只有原名；
+     * 若把译名一并计入长度，同一首歌的相似度会被稀释到门槛之下
+     * （实测 {@code 未来へ (向着未来)} vs {@code 未来へ} 只得 0.3，综合 82.2 分而落选）。
+     *
+     * <p>取 max 是刻意的：它**只会抬高**相似度，不会让原本可采纳的候选反被拒。
+     *
+     * <p><b>但括号不能无条件剥离</b>：实测把 {@code (Korean Ver.)}、{@code (DJ豪大大版)}、
+     * {@code (2025 巡回演唱会合肥站)} 这类**版本标记**一并剥掉后，它们会从"勉强过线或被否决"
+     * 直接顶到满分，与原版同分后靠候选顺序随机胜出——日语歌会配上韩语歌词。
+     * 因此只在括号内容**不像版本标记**时才剥离，见 {@link #stripTranslatedSuffix}。
      */
     public static double calculateTitleSimilarity(@Nullable String target, @Nullable String candidate) {
         String t1 = cleanTitle(target);
         String t2 = cleanTitle(candidate);
+        if (t1.isEmpty() || t2.isEmpty()) return 0.0;
+
+        return Math.max(similarityOf(t1, t2),
+            similarityOf(stripTranslatedSuffix(t1), stripTranslatedSuffix(t2)));
+    }
+
+    /**
+     * 两份**已清洗**标题之间的相似度 [0.0, 1.0]。
+     */
+    private static double similarityOf(@NonNull String t1, @NonNull String t2) {
         if (t1.isEmpty() || t2.isEmpty()) return 0.0;
         if (t1.equals(t2)) return 1.0;
         if (t1.contains(t2) || t2.contains(t1)) {
@@ -117,6 +173,35 @@ public final class LyricScorer {
         int maxLen = Math.max(t1.length(), t2.length());
         if (maxLen == 0) return 1.0;
         return Math.max(0.0, 1.0 - ((double) dist / maxLen));
+    }
+
+    /**
+     * 剥离末尾**译名**括号，可连续剥多段。
+     *
+     * <p>只有**中日韩文字的标题**才会带「原名 (译名)」这种括号——这是中文曲库的编排惯例。
+     * 纯拉丁标题里的括号（{@code (From THE FIRST TAKE)}、{@code (BIG Naughty Remix)}、
+     * {@code (English Ver.)}）标的是"另一版"，一律不剥。实测若不设这道判据，
+     * {@code NIGHT DANCER (From THE FIRST TAKE)} 会从"被否决"直接顶到 100 分。
+     *
+     * <p>此外，括号内容带 {@link #VARIANT_MARKER_PATTERN} 标记时也立即停止——
+     * 那之后的括号同样标的是"另一版"。
+     *
+     * @return 剥离后的标题；没有可剥离的括号时原样返回
+     */
+    @NonNull
+    private static String stripTranslatedSuffix(@NonNull String cleaned) {
+        String current = cleaned;
+        while (true) {
+            if (!CJK_PATTERN.matcher(current).find()) return current;
+
+            Matcher matcher = TRAILING_BRACKET_PATTERN.matcher(current);
+            if (!matcher.find()) return current;
+            if (VARIANT_MARKER_PATTERN.matcher(matcher.group(1)).find()) return current;
+
+            String stripped = matcher.replaceAll("");
+            if (stripped.isEmpty() || stripped.equals(current)) return current;
+            current = stripped;
+        }
     }
 
     /**
