@@ -88,6 +88,10 @@ android {
         unitTests.all {
             it.useJUnitPlatform()
         }
+        // 部分待测逻辑（如 Spotify 解析层）在**错误分支**会经 AndroidLog 调到
+        // android.util.Log；JVM 单测里这些方法默认抛 "not mocked"。
+        // 返回默认值即可让这些分支按"日志静默"跑通，不影响被测逻辑。
+        unitTests.returnDefaultValues = true
     }
 }
 
