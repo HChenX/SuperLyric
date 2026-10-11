@@ -94,7 +94,7 @@ class BodianHookSource : HookLyricSource {
             stashedDoc = null
             stashedId = null
             AndroidLog.logD(sourceName, "Replaying stashed lyric for id=${identity.stableId}")
-            session.deliver(LyricOutcome.Success(stashed))
+            session.deliver(LyricOutcome.Success(stashed.withMetadata(identity)))
         }
     }
 
@@ -111,12 +111,11 @@ class BodianHookSource : HookLyricSource {
         val activeSession = session ?: return
         val base = pendingIdentity ?: return
 
+        // 只取稳定标识。曲名/歌手/时长一律不在解析时确定 —— 这个回调可能早于元数据更新到达，
+        // 那时 pendingIdentity 还停在上一首，烤进文档就再也纠不回来了（见 withMetadata）
         val identity = base.copy(
             stableId = TrackIdentity.stableId(NAMESPACE, rid) ?: base.stableId,
-            title = base.title.ifBlank { title },
-            artist = base.artist.ifBlank { artist },
         )
-        pendingIdentity = identity
 
         if (filePath.isEmpty()) {
             AndroidLog.logD(sourceName, "Host reported no lyric file for this track")
@@ -127,15 +126,16 @@ class BodianHookSource : HookLyricSource {
         lastProcessedPath = filePath
 
         executor.execute {
-            val outcome = parseFile(filePath, identity, album)
+            val outcome = parseFile(filePath, album, identity.stableId, title, artist)
             if (outcome is LyricOutcome.Success) {
                 stashedDoc = outcome.doc
                 stashedId = identity.stableId
             }
 
             // 身份对不上就先留着 —— 投给别的曲目的会话，会被当成新曲目的歌词发布出去
-            if (identity.stableId == null || identity.stableId == pendingIdentity?.stableId) {
-                activeSession.deliver(outcome)
+            val current = pendingIdentity
+            if (identity.stableId == null || identity.stableId == current?.stableId) {
+                activeSession.deliver(outcome.withMetadata(current, title, artist))
             } else {
                 AndroidLog.logD(
                     sourceName,
@@ -145,7 +145,13 @@ class BodianHookSource : HookLyricSource {
         }
     }
 
-    private fun parseFile(filePath: String, identity: TrackIdentity, album: String): LyricOutcome {
+    private fun parseFile(
+        filePath: String,
+        album: String,
+        stableId: String?,
+        hostTitle: String,
+        hostArtist: String,
+    ): LyricOutcome {
         val file = File(filePath)
         if (!file.isFile || file.length() == 0L) {
             AndroidLog.logW(sourceName, "Lyric file is missing or empty: $filePath")
@@ -165,11 +171,9 @@ class BodianHookSource : HookLyricSource {
                 LyricRequest(
                     format = LyricFormat.AUTO,
                     text = text,
-                    title = identity.title,
-                    artist = identity.artist,
+                    // album 是宿主为**这一份文件**给出的，不属于身份，因此在这里带上
                     album = album,
-                    durationMs = identity.durationMs,
-                    lyricId = identity.stableId,
+                    lyricId = stableId,
                 )
             )
         } catch (t: Throwable) {
@@ -184,6 +188,39 @@ class BodianHookSource : HookLyricSource {
 
         AndroidLog.logI(sourceName, "Parsed local lyric file, lines=${doc.lines.size}")
         return LyricOutcome.Success(doc)
+    }
+
+    /**
+     * 用音轨身份补齐曲目信息
+     *
+     * **身份优先，而不是"仅在为空时补齐"**：波点的歌词文件回调会早于元数据更新到达，
+     * 解析时若带上身份，烤进去的会是**上一首**的曲名与时长。只在字段为空时才覆盖，
+     * 那些错误值就永远纠不过来
+     *
+     * @param hostTitle  宿主为这份歌词文件给出的曲名；身份里没有时用它兜底
+     * @param hostArtist 同上，歌手
+     */
+    private fun LyricDoc.withMetadata(
+        identity: TrackIdentity?,
+        hostTitle: String = "",
+        hostArtist: String = "",
+    ): LyricDoc {
+        if (identity == null) return this
+        return copy(
+            title = identity.title.ifBlank { hostTitle }.ifBlank { title },
+            artist = identity.artist.ifBlank { hostArtist }.ifBlank { artist },
+            durationMs = if (identity.durationMs > 0L) identity.durationMs else durationMs,
+            lyricId = identity.stableId ?: lyricId,
+        )
+    }
+
+    private fun LyricOutcome.withMetadata(
+        identity: TrackIdentity?,
+        hostTitle: String = "",
+        hostArtist: String = "",
+    ): LyricOutcome = when (this) {
+        is LyricOutcome.Success -> LyricOutcome.Success(doc.withMetadata(identity, hostTitle, hostArtist))
+        else -> this
     }
 
     private companion object {
