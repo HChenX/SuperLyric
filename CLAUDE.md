@@ -99,13 +99,19 @@ parsing layer unit-testable — the whole point of the module. Anything needing 
 | Outcome | Meaning | May publish "instrumental"? |
 | :--- | :--- | :--- |
 | `Success` | parsed lyric lines | — |
-| `NoLyrics` | the platform/host **deterministically** says there is no lyric | yes |
-| `Unsupported` | this source cannot serve this track | yes, but only once every source agrees |
+| `NoLyrics` | the platform/host **deterministically** says there is no lyric | yes — the only outcome that may |
+| `Unsupported` | this source cannot serve this track | **never** |
 | `TransientFailure` | the fetch failed — we do not know anything | **never** |
 
 A failed fetch is not evidence of anything. Publishing a placeholder from a `TransientFailure` pins
 a track that has lyrics to "instrumental" forever after a single network hiccup. This is the most
 persistent bug class in this project's history; do not reintroduce it.
+
+`Unsupported` is not evidence either: "this source cannot serve it" (no copyright, no usable id)
+and "we could not read what the host handed us" are both statements about **us**, not about the
+track. Only `NoLyrics` — the platform or the host's own parser saying "there is no lyric here" —
+may produce the placeholder. Note that "the payload parsed to zero lines" is *not* `NoLyrics`:
+that is our failure to read it.
 
 ### 3.5 Never infer track identity from the title alone
 
@@ -122,6 +128,19 @@ and the hook capture will be discarded as stale.
 Hosts write unrelated content into metadata keys — one writes the currently playing lyric line into
 `METADATA_KEY_TITLE`, another rewrites the artist field. Never use metadata as the primary source
 for anything that matters; prefer the host's own object model, or your hook-captured identity.
+
+### 3.7 The stop decision is one component, shared by both sides
+
+`StopGate` (terminal signals arm, "still playing" cancels, `STATE_NONE` is neutral) and `StopEvidence`
+(the counter that voids a confirmation once new evidence has arrived) live in `:lyric-kernel`.
+The provider inside the host process and the service inside system_server each hold their own
+instance and feed it their own observations — the *observations* are not merged, the *decision* is
+shared.
+
+Two implementations of this decision already existed once, and they disagreed on the single most
+important cell: one side read `STATE_NONE` as "not stopped", the other as "stopped". Never re-derive
+it per side, and never treat "we don't know" as a terminal signal — an unconfirmed stop clears
+published content, and clearing is not reversible.
 
 ---
 
@@ -271,15 +290,18 @@ refactor could plausibly break.
 
 ---
 
-## 9. Deeper documentation
+## 9. Where the reasoning lives
 
-| Document | Contents |
+Only two places are visible to everyone who has the repository:
+
+| Where | Contents |
 | :--- | :--- |
-| `docs/ARCHITECTURE_AND_SOP.md` | layer boundaries, data flow, the standard operating procedure |
-| `docs/PRACTICAL_LESSONS_AND_PITFALLS.md` | the full post-mortems behind the rules above |
-| `README.md` | supported apps and how to use the module |
+| `README.md` / `README-en.md` | supported apps and how to use the module |
+| The code itself | every rule above is argued in the KDoc / Javadoc of the thing that enforces it — `StopGate`, `StopEvidence`, `LyricOutcome`, `LyricScorer`, `Zlib`, `FetchSlot`, `LyricCacheStore`, `MusicProvider`. When a rule here feels arbitrary, that comment is the argument |
+| `git log` | the body of each commit states why the change was made and what evidence supports it |
 
-When a rule here feels arbitrary, the reasoning is in `PRACTICAL_LESSONS_AND_PITFALLS.md`.
+There is no separate design document on purpose: it would drift, and a stale rule is worse than no
+rule. If a rule needs a longer argument than a comment can hold, write it in the commit message.
 
 ---
 
@@ -292,6 +314,7 @@ Each of these has caused a real defect in this project.
 | Writing a concrete provider in Kotlin | it never reaches `HookMaps`; the module silently does nothing |
 | Adding a provider without editing `scope.list` | the module is never loaded into the host; no log, no error |
 | Publishing a placeholder after a failed fetch | one network hiccup pins a track with lyrics to "instrumental" forever |
+| Reading a lookup or search miss as "the platform says there is no lyric" | "we could not find it" is not a statement about the track; same permanent pin as above (only `NoLyrics` may produce the placeholder) |
 | Comparing tracks by title | same-named tracks are merged permanently |
 | Treating `MediaMetadata` as authoritative | hosts write lyric lines and made-up artists into it |
 | Doing I/O inside `start()` | blocks the orchestrator's caller and delays every later track change |
@@ -299,3 +322,5 @@ Each of these has caused a real defect in this project.
 | A getter that mutates state | `equals`/`hashCode` change between calls; object identity stops being stable |
 | Writing HTML into KDoc | renders as literal text; use Markdown |
 | Restating implementation history in a comment | becomes false after the next refactor |
+| Re-implementing the stop decision on one side | the two copies will disagree on `STATE_NONE`, and a wrong stop clears content irreversibly — use `StopGate` / `StopEvidence` |
+| Asserting a property in a comment that the code does not enforce | e.g. "cannot abort the other modules" above a `catch` that does not cover that path; the next reader trusts it and the defect survives the audit |
