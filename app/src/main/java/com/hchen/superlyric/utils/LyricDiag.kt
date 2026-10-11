@@ -21,7 +21,6 @@ package com.hchen.superlyric.utils
 import com.hchen.hooktool.ModuleConfig
 import com.hchen.hooktool.log.AndroidLog
 import com.hchen.superlyric.BuildConfig
-import com.hchen.superlyric.data.LocalConfig
 import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.model.LyricLine
 import com.hchen.superlyric.kernel.pipeline.LyricPipeline
@@ -59,15 +58,18 @@ object LyricDiag {
     /**
      * 总开关
      *
-     * debug 构建恒开；发布构建下只有模块日志级别被设为 DEBUG 时才输出。
-     * 诊断会打印完整歌词原文、原始报文与全部元数据，发布版绝不能默认开启
+     * 判据取自 HookTool 自己的日志等级，而不是重新去读一遍偏好设置：宿主进程里
+     * `AndroidLog.logD` 能否打出，只由 [ModuleConfig.getLogLevel] 决定，本开关跟着
+     * 同一个值走，就不可能出现"日志等级明明是调试、诊断却一行不出"的分歧。
+     * 真机实测过这种分歧：宿主进程的 `[Provider][D]` 在打，`SLDiag` 一条都没有
      *
-     * 每次读取都重新判定，不做一次性缓存：本对象可能在宿主进程早期就被首次触碰，
-     * 那时偏好设置尚不可读，一次性求值会把开关永久钉死在 false，且没有任何迹象
+     * 之所以是 getter 而不是字段：等级由模块入口在加载时写入，可能晚于本对象的首次触碰，
+     * 一次性求值会把结果钉死
+     *
+     * 诊断会打印完整歌词原文、原始报文与全部元数据，发布版绝不能默认开启
      */
     val enabled: Boolean
-        get() = BuildConfig.DEBUG ||
-            LocalConfig.getLogLevelForXposed() == ModuleConfig.LOG_D
+        get() = BuildConfig.DEBUG || ModuleConfig.getLogLevel() == ModuleConfig.LOG_D
 
     /**
      * `MediaMetadata` 内部的原始 `Bundle`。
