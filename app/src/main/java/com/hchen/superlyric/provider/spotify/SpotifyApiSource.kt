@@ -25,7 +25,6 @@ import com.hchen.superlyric.kernel.model.LyricLine
 import com.hchen.superlyric.kernel.model.LyricWord
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
-import com.hchen.superlyric.provider.spotify.SpotifyLyricAnalysis.SpotifyLine
 import com.hchen.superlyric.utils.LyricDiag
 
 import java.util.concurrent.Executors
@@ -110,9 +109,9 @@ class SpotifyApiSource : LyricSource {
                         "phonetic=${doc.lines.any { it.hasPhonetic }}"
                 )
                 return LyricOutcome.Success(doc)
-            } catch (e: SpotifyLyricAnalysis.LyricNotFoundException) {
+            } catch (e: LyricNotFoundException) {
                 return LyricOutcome.NoLyrics("spotify: platform reports no lyric")
-            } catch (e: SpotifyLyricAnalysis.AuthenticationException) {
+            } catch (e: AuthenticationException) {
                 // 会话头可能尚未捕获到；短暂等待后重试
                 lastError = e
                 sleep(HEADER_WAIT_MS)
@@ -123,7 +122,7 @@ class SpotifyApiSource : LyricSource {
             }
         }
 
-        return if (lastError is SpotifyLyricAnalysis.AuthenticationException) {
+        return if (lastError is AuthenticationException) {
             AndroidLog.logW(sourceName, "Session headers were never captured; retry later")
             LyricOutcome.TransientFailure(lastError)
         } else {
