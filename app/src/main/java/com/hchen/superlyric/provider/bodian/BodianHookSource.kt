@@ -108,7 +108,6 @@ class BodianHookSource : HookLyricSource {
     private fun onLyricFile(filePath: String, title: String, artist: String, album: String, rid: String) {
         if (rid.isNotEmpty()) capturedRid = rid
 
-        val activeSession = session ?: return
         val base = pendingIdentity ?: return
 
         // 只取稳定标识。曲名/歌手/时长一律不在解析时确定 —— 这个回调可能早于元数据更新到达，
@@ -119,7 +118,7 @@ class BodianHookSource : HookLyricSource {
 
         if (filePath.isEmpty()) {
             AndroidLog.logD(sourceName, "Host reported no lyric file for this track")
-            activeSession.deliver(LyricOutcome.NoLyrics("bodian: host has no lyric"))
+            session?.deliver(LyricOutcome.NoLyrics("bodian: host has no lyric"))
             return
         }
         if (filePath == lastProcessedPath) return
@@ -132,16 +131,21 @@ class BodianHookSource : HookLyricSource {
                 stashedId = identity.stableId
             }
 
-            // 身份对不上就先留着 —— 投给别的曲目的会话，会被当成新曲目的歌词发布出去
+            // 会话与身份都必须在**投递时**重读，不能在回调入口处捕获：
+            // 解析在后台线程进行，期间可能已经切歌换掉了 session，
+            // 投给入口处捕获的那个旧会话会被 epoch 判为过期而丢弃 —— 表现为
+            // "Hook 明明解析成功却整轮超时转网络"，网络再匹配不上就成了纯音乐占位。
+            // 身份对不上也先留着，投给别的曲目的会话会被当成新曲目的歌词发布出去
+            val target = session
             val current = pendingIdentity
-            if (identity.stableId == null || identity.stableId == current?.stableId) {
-                activeSession.deliver(outcome.withMetadata(current, title, artist))
-            } else {
+            if (target == null || !(identity.stableId == null || identity.stableId == current?.stableId)) {
                 AndroidLog.logD(
                     sourceName,
                     "Stashed lyric for ${identity.stableId}; will replay once its session is up",
                 )
+                return@execute
             }
+            target.deliver(outcome.withMetadata(current, title, artist))
         }
     }
 
