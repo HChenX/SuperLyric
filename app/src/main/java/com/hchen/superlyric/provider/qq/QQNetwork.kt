@@ -288,7 +288,7 @@ internal object QQNetwork {
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("HTTP ${response.code} from $url")
-            return response.body?.string() ?: throw IOException("empty body from $url")
+            return response.body.string()
         }
     }
 

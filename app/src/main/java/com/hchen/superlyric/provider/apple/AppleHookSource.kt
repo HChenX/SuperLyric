@@ -83,8 +83,8 @@ class AppleHookSource : HookLyricSource {
             if (text.isEmpty()) return@mapNotNull null
 
             LyricLine(
-                startMs = line.startMs.toLong(),
-                endMs = line.endMs.toLong(),
+                startMs = line.startMs,
+                endMs = line.endMs,
                 text = text,
                 translation = cleanHtml(line.translation).takeIf { it.isNotEmpty() },
                 words = line.words.mapNotNull { word ->

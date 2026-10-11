@@ -210,7 +210,7 @@ class NeteaseApiSource : LyricSource {
             .build()
 
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) null else response.body?.string()?.let(::JSONObject)
+            if (!response.isSuccessful) null else response.body.string().let(::JSONObject)
         }
     } catch (t: Throwable) {
         AndroidLog.logW(sourceName, "POST failed: ${t.message}")
@@ -226,7 +226,7 @@ class NeteaseApiSource : LyricSource {
             .build()
 
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) null else response.body?.string()?.let(::JSONObject)
+            if (!response.isSuccessful) null else response.body.string().let(::JSONObject)
         }
     } catch (t: Throwable) {
         AndroidLog.logW(sourceName, "GET failed: ${t.message}")

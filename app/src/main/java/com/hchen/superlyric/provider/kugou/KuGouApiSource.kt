@@ -232,7 +232,7 @@ class KuGouApiSource : LyricSource {
         val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).build()
         httpClient.newCall(request).execute().use { response: Response ->
             if (!response.isSuccessful) throw IOException("HTTP ${response.code} from $url")
-            return response.body?.string() ?: throw IOException("empty body from $url")
+            return response.body.string()
         }
     }
 
