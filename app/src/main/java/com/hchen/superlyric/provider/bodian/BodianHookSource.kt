@@ -90,7 +90,9 @@ class BodianHookSource : HookLyricSource {
         lastProcessedPath = null
 
         val stashed = stashedDoc
-        if (stashed != null && stashedId == identity.stableId) {
+        // 必须要求暂存标识**非空**：两边都是 null 时相等，会把上一首的歌词当成本曲目的
+        // 结果发布出去（直接投递那条路径本来就要求非空，这里不能更松）
+        if (stashed != null && stashedId != null && stashedId == identity.stableId) {
             stashedDoc = null
             stashedId = null
             AndroidLog.logD(sourceName, "Replaying stashed lyric for id=${identity.stableId}")
