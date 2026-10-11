@@ -203,11 +203,11 @@ class LyricOrchestratorTest {
 
         f.orchestrator.onTrackChanged(track("A"))
         f.hookSource!!.deliver(success())
-        assertEquals(1, f.hookSource!!.startCount)
+        assertEquals(1, f.hookSource.startCount)
 
         f.orchestrator.onTrackChanged(track("A"))
 
-        assertEquals(1, f.hookSource!!.startCount, "同一首曲目不得重复取词")
+        assertEquals(1, f.hookSource.startCount, "同一首曲目不得重复取词")
         assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
     }
 
@@ -264,13 +264,13 @@ class LyricOrchestratorTest {
         f.hookSource!!.deliver(LyricOutcome.TransientFailure())
         assertEquals(1, f.apiSource!!.startCount)
 
-        f.apiSource!!.deliver(LyricOutcome.TransientFailure())
+        f.apiSource.deliver(LyricOutcome.TransientFailure())
         assertEquals(1, f.scheduler.pending, "首次失败应排期一次重试")
 
         f.scheduler.fireAll()
-        assertEquals(2, f.apiSource!!.startCount)
+        assertEquals(2, f.apiSource.startCount)
 
-        f.apiSource!!.deliver(success())
+        f.apiSource.deliver(success())
         assertNotNull(f.listener.resolved)
         assertEquals(0, f.listener.unavailableCount, "重试成功后不得再报失败")
         assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
@@ -307,7 +307,7 @@ class LyricOrchestratorTest {
         f.scheduler.fireAll()
         assertEquals(1, f.apiSource!!.startCount)
 
-        f.apiSource!!.deliver(success())
+        f.apiSource.deliver(success())
 
         assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
         assertNotNull(f.listener.resolved)
@@ -459,7 +459,7 @@ class LyricOrchestratorTest {
         }
 
         assertEquals(1, f.hookSource!!.startCount, "同一稳定标识不得重启 Hook 取词")
-        assertEquals(1, f.apiSource!!.startCount, "同一稳定标识不得重启网络取词")
+        assertEquals(1, f.apiSource.startCount, "同一稳定标识不得重启网络取词")
     }
 
     @Test

@@ -94,6 +94,7 @@ class LyricOrchestrator(
     private val listener: Listener,
     private val config: Config = Config(),
     private val nowMs: () -> Long = { System.nanoTime() / 1_000_000L },
+    private val diagnostics: (String) -> Unit = {},
 ) {
 
     enum class State {
@@ -324,8 +325,15 @@ class LyricOrchestrator(
     }
 
     private fun planHookCaptured(capturedEpoch: Long, outcome: LyricOutcome): Dispatch? {
-        if (capturedEpoch != epoch) return null
-        if (hookDelivered) return null
+        // 丢弃必须留痕：静默丢弃过一次真实的取词成果，排查时完全看不出它到过这里
+        if (capturedEpoch != epoch) {
+            diagnostics("dropping hook outcome ${outcome::class.simpleName}: epoch $capturedEpoch != $epoch")
+            return null
+        }
+        if (hookDelivered) {
+            diagnostics("dropping hook outcome ${outcome::class.simpleName}: hook already delivered")
+            return null
+        }
         hookDelivered = true
         cancelHookTimeoutLocked()
 
@@ -374,7 +382,12 @@ class LyricOrchestrator(
         val dispatch = synchronized(lock) {
             if (timedOutEpoch != epoch) return@synchronized null
             if (state != State.RESOLVING_HOOK) return@synchronized null
-            if (hookDelivered) return@synchronized null
+            if (hookDelivered) {
+                // Hook 其实已经交付过，超时任务只是晚到——留着这条痕迹才能区分
+                // "Hook 没结果"与"Hook 有结果但被别的路径吃掉了"
+                diagnostics("hook timeout fired after the hook had already delivered")
+                return@synchronized null
+            }
             val identity = currentIdentity ?: return@synchronized null
             hookDelivered = true
             // 超时只说明"这次没等到"，绝不等于"没有歌词"
@@ -384,7 +397,10 @@ class LyricOrchestrator(
     }
 
     private fun planApiCaptured(capturedEpoch: Long, outcome: LyricOutcome): Dispatch? {
-        if (capturedEpoch != epoch) return null
+        if (capturedEpoch != epoch) {
+            diagnostics("dropping api outcome ${outcome::class.simpleName}: epoch $capturedEpoch != $epoch")
+            return null
+        }
 
         val dispatch = Dispatch()
 

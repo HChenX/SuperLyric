@@ -142,6 +142,7 @@ abstract class MusicProvider : AbsPublisher() {
             ExecutorScheduler("$providerTag-Scheduler"),
             LyricPublishBridge(),
             orchestratorConfig(),
+            diagnostics = { reason -> AndroidLog.logD(providerTag, reason) },
         )
 
         hookMediaSession()
