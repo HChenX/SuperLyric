@@ -121,7 +121,17 @@ object KuwoLrcxParser {
             val line = parseLine(content, lineStart, c, d)
             if (line == null) continue
 
-            if (line.hasWords) taggedLines.add(line) else untaggedLines.add(line)
+            // 判据必须看**原始标签值**，不能看 line.words：`<0,0>` 这类全零标签产出的
+            // 是零时长词，而 parseLine 会给零时长词兜一个 fallback 时长，
+            // 于是"有没有逐字"就看不出来了。
+            // 真机实测：部分文件的**译文行也带标签但全是 `<0,0>`**，那等于没有逐字数据；
+            // 若不认这一点，译文行会被当成普通主行，译文永远配不上。
+            val hasTimedWords = WORD_TAG_PATTERN.findAll(content).any { tag ->
+                val v1 = tag.groupValues[1].toLongOrNull() ?: 0L
+                val v2 = tag.groupValues[2].toLongOrNull() ?: 0L
+                v1 != 0L || v2 != 0L
+            }
+            if (hasTimedWords) taggedLines.add(line) else untaggedLines.add(line)
         }
 
         // 字幕行：无逐字数据，且时间戳与某条逐字行完全一致 → 判定为那条行的译文

@@ -37,15 +37,19 @@ class ParserTest {
     // =========================================================================
 
     @Test
-    fun `bare qrc produces words with line relative timing`() {
-        val doc = QrcParser.parse("[0,3500](0,500)Hello (500,400)world")
+    fun `bare qrc keeps the first word and maps each word to its own timing`() {
+        // 真机报文形态：[行起始,行时长]文字(词起始,词时长)文字(词起始,词时长)…
+        // 文字在时间标签**之前**。旧实现按"标签在前"捕获，导致每行首个词被整段丢弃。
+        val doc = QrcParser.parse("[0,3500]Hello(0,500) world(500,400)")
 
         assertNotNull(doc)
         val line = doc!!.lines.single()
         assertEquals("Hello world", line.text)
+        assertTrue(line.text.startsWith("Hello"), "首个词绝不能丢")
         assertEquals(0L, line.startMs)
         assertEquals(3500L, line.endMs)
         assertEquals(2, line.words.size)
+        assertEquals("Hello", line.words[0].text)
         assertEquals(0L, line.words[0].startMs)
         assertEquals(500L, line.words[0].endMs)
         assertEquals(500L, line.words[1].startMs)
@@ -53,10 +57,50 @@ class ParserTest {
     }
 
     @Test
+    fun `qrc word text stays aligned with its own tag rather than the next one`() {
+        // 真机样本："后会无期" 曾被解析成 "会无期"
+        val doc = QrcParser.parse("[0,4000]后(0,1000)会(1000,1000)无(2000,1000)期(3000,1000)")
+
+        assertNotNull(doc)
+        val line = doc!!.lines.single()
+        assertEquals("后会无期", line.text)
+        assertEquals(listOf("后", "会", "无", "期"), line.words.map { it.text })
+        assertEquals(0L, line.words[0].startMs)
+        assertEquals(3000L, line.words[3].startMs)
+    }
+
+    @Test
+    fun `absolute word timing layout is detected and not offset by the line start`() {
+        // 真机 QQ 报文：词起始是**歌内绝对毫秒**。
+        // 早期实现按"行内相对偏移"解释，会把行起始加两次（20699 + 20699），
+        // 再被 normalize 把词首压回行首，逐字高光实际全程失效。
+        val doc = QrcParser.parse("[20699,2312]初(20699,434)め(21133,169)て(21302,84)")
+
+        assertNotNull(doc)
+        val line = doc!!.lines.single()
+        assertEquals("初めて", line.text)
+        assertEquals(20_699L, line.startMs)
+        assertEquals(listOf(20_699L, 21_133L, 21_302L), line.words.map { it.startMs })
+        assertEquals(20_699L + 434L, line.words[0].endMs)
+        assertEquals(21_133L + 169L, line.words[1].endMs)
+    }
+
+    @Test
+    fun `relative word timing layout is detected and offset by the line start`() {
+        // 另一种真实排布：词起始是行内相对偏移
+        val doc = QrcParser.parse("[1000,2000]你(0,500)好(500,500)")
+
+        assertNotNull(doc)
+        val line = doc!!.lines.single()
+        assertEquals(listOf(1_000L, 1_500L), line.words.map { it.startMs })
+        assertEquals(1_500L, line.words[0].endMs)
+    }
+
+    @Test
     fun `xml wrapped qrc attaches Lyric_2 as translation rather than a main line`() {
         val xml = """
             <QrcInfos><LyricInfo>
-            <Lyric_1 LyricType="1" LyricContent="[0,2000](0,1000)Hello (1000,1000)world"/>
+            <Lyric_1 LyricType="1" LyricContent="[0,2000]Hello(0,1000) world(1000,1000)"/>
             <Lyric_2 LyricType="2" LyricContent="[0,2000]你好 世界"/>
             </LyricInfo></QrcInfos>
         """.trimIndent()
@@ -74,7 +118,7 @@ class ParserTest {
         // 属性顺序被打乱，且译文用 <Lyric_1 LyricType="2"> 而非 <Lyric_2>
         val xml = """
             <QrcInfos>
-            <Lyric_1 LyricContent="[0,2000](0,2000)Hello" LyricType="1"/>
+            <Lyric_1 LyricContent="[0,2000]Hello(0,2000)" LyricType="1"/>
             <Lyric_1 LyricContent="[0,2000]你好" LyricType="2"/>
             </QrcInfos>
         """.trimIndent()
@@ -92,7 +136,7 @@ class ParserTest {
         // 旧实现用精确时间戳匹配，此处特意制造 37ms 漂移
         val xml = """
             <QrcInfos>
-            <Lyric_1 LyricType="1" LyricContent="[1000,2000](0,2000)Hello"/>
+            <Lyric_1 LyricType="1" LyricContent="[1000,2000]Hello(0,2000)"/>
             <Lyric_2 LyricType="2" LyricContent="[1037,2000]你好"/>
             </QrcInfos>
         """.trimIndent()
@@ -105,7 +149,7 @@ class ParserTest {
 
     @Test
     fun `xml entities are decoded`() {
-        val doc = QrcParser.parse("""[0,1000](0,1000)it&#39;s &amp; that""")
+        val doc = QrcParser.parse("""[0,1000]it&#39;s &amp; that(0,1000)""")
 
         assertNotNull(doc)
         assertEquals("it's & that", doc!!.lines[0].text)
@@ -143,6 +187,21 @@ class ParserTest {
         assertEquals(2000L, line.words[0].endMs)
         assertEquals(2500L, line.words[1].startMs)
         assertEquals(3000L, line.words[1].endMs)
+    }
+
+    @Test
+    fun `a zero-tagged translation line is still recognised as a translation`() {
+        // 真机报文（波点）：译文行**也带标签，但值全是 `<0,0>`**——那等于没有逐字数据。
+        // 若按"有标签即主行"处理，译文行会被当成普通歌词行，译文永远配不上
+        // （实测整首歌 196 行、0 条译文，且译文全部作为独立行下发）。
+        val text = "$lrcxHeader\n[00:01.00]<0,0>你好 世界\n[00:01.00]<1000,500>Hello <2000,1000>world"
+
+        val doc = KuwoLrcxParser.parse(text)
+
+        assertNotNull(doc)
+        assertEquals(1, doc!!.lines.size, "零标签的译文行绝不能成为独立主行")
+        assertEquals("Hello world", doc.lines[0].text)
+        assertEquals("你好 世界", doc.lines[0].translation)
     }
 
     @Test

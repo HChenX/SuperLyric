@@ -102,6 +102,7 @@ class LyricOrchestrator(
     private val scheduler: Scheduler,
     private val listener: Listener,
     private val config: Config = Config(),
+    private val nowMs: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
 
     enum class State {
@@ -120,8 +121,9 @@ class LyricOrchestrator(
         /**
          * 确认切换到新曲目，且该曲目尚无歌词。
          *
-         * 下游应据此**清空上一首的残留展示**。注意这不是"停止播放"，
-         * 因此**不得**走停止通道——那会清空服务端的活跃发布者并广播停播。
+         * 下游应据此**立即作废上一首的展示**：旧歌词与当前播放已无关系，
+         * 继续留着会让界面显示错误内容。具体下发什么由下游决定——
+         * 宿主侧目前下发切歌包，把空窗期呈现方式交给客户端。
          */
         fun onTrackChanged(identity: TrackIdentity) = Unit
 
@@ -142,21 +144,24 @@ class LyricOrchestrator(
     }
 
     /**
-     * @property hookTimeoutMs    等待 Hook 异步捕获的上限。宿主常在 30~100ms 后才吐出数据，
-     *                            因此绝不能在 0ms 立即判定 Hook 失效转网络。
-     * @property maxApiAttempts   网络取词的最大尝试次数（含首次）
-     * @property retryBaseDelayMs 指数退避基数
+     * @property hookTimeoutMs       等待 Hook 异步捕获的上限。宿主常在 30~100ms 后才吐出数据，
+     *                               因此绝不能在 0ms 立即判定 Hook 失效转网络。
+     * @property maxApiAttempts      网络取词的最大尝试次数（含首次）
+     * @property retryBaseDelayMs    指数退避基数
+     * @property provisionalGraceMs  允许"临时身份原地升级"的时间窗口，见 [isProvisionalUpgrade]
      */
     data class Config(
         val hookTimeoutMs: Long = 800L,
         val maxApiAttempts: Int = 3,
         val retryBaseDelayMs: Long = 500L,
+        val provisionalGraceMs: Long = 3_000L,
     )
 
     private val lock = Any()
 
     private var epoch: Long = 0L
     private var currentIdentity: TrackIdentity? = null
+    private var currentSinceMs: Long = 0L
     private var apiAttempts: Int = 0
     private var hookDelivered: Boolean = false
     private var apiDelivered: Boolean = false
@@ -214,6 +219,7 @@ class LyricOrchestrator(
             epoch++
             cancelHookTimeoutLocked()
             currentIdentity = null
+            currentSinceMs = 0L
             activeIdentity = null
             apiAttempts = 0
             hookDelivered = false
@@ -249,10 +255,25 @@ class LyricOrchestrator(
      */
     private fun planTrackChanged(identity: TrackIdentity): Dispatch? {
         val current = currentIdentity
-        if (current != null && current.matches(identity)) {
-            if (state == State.ACTIVE || state == State.RESOLVING_HOOK || state == State.FETCHING_API) {
+        if (current != null) {
+            if (current.matches(identity)) {
+                // 同一首曲目：只刷新元数据，**绝不重启取词**。
+                //
+                // 这里刻意不区分状态。早期实现只在 ACTIVE / RESOLVING_HOOK / FETCHING_API
+                // 时按"同一首"处理，NO_LYRICS 与 UNAVAILABLE 会落到下面重启一次——
+                // 那正是"事件 → 取词 → 无歌词 → 事件"死循环的成因：
+                // 宿主若高频改写元数据（椒盐开启蓝牙歌词后会把当前歌词行写进 TITLE），
+                // 同一个稳定标识会每几秒触发一次全新取词，并且**每次都下发纯音乐占位**。
+                // 而 NO_LYRICS 在架构上本就是终态，重启不可能得到不同结果。
                 currentIdentity = identity
                 activeIdentity = identity
+                return null
+            } else if (isProvisionalUpgrade(current, identity)) {
+                // 同一首歌拿到了更好的标识——原地升级，**不推进 epoch、不重启取词**。
+                // 推进 epoch 会让在途的取词结果因代际过期被丢弃，于是白白重取一次。
+                currentIdentity = identity
+                activeIdentity = identity
+                currentSinceMs = nowMs()
                 return null
             }
         }
@@ -262,6 +283,7 @@ class LyricOrchestrator(
         cancelHookTimeoutLocked()
         currentIdentity = identity
         activeIdentity = identity
+        currentSinceMs = nowMs()
         apiAttempts = 0
         hookDelivered = false
         apiDelivered = false
@@ -276,6 +298,43 @@ class LyricOrchestrator(
             planStartApi(identity, startedEpoch, null, dispatch)
         }
         return dispatch
+    }
+
+    /**
+     * 判断是否为"同一首歌拿到了更权威的标识"，而不是换歌。
+     *
+     * <h3>为什么需要它</h3>
+     * 宿主上报标识常常**分步收敛**：先给一个降级形态，稍后再给权威形态。实测：
+     * <ul>
+     *   <li>QQ 音乐先给数字 songID、约 30ms 后再给 14 位 songMID——两者是同一音轨；</li>
+     *   <li>若不识别这一步，第二次上报会被当成切歌，第一次已完成的取词因代际过期被丢弃。</li>
+     * </ul>
+     *
+     * <h3>为什么不比对标题</h3>
+     * 部分宿主会把**当前正在唱的那句歌词**写进 {@code METADATA_KEY_TITLE}（椒盐音乐即是）。
+     * 标题因此不是一个可信的同一性判据，本判据只用歌手与时长作佐证。
+     *
+     * <h3>为什么有时间上界</h3>
+     * 判据放宽了标题这一项，必须限制它只能在"临时身份刚建立"的短窗口内生效，
+     * 否则长期放宽会吞掉真实的切歌。窗口用 [Config.provisionalGraceMs] 控制。
+     * 注意这**不是去抖**：本机制不延迟任何东西，只判断该不该换歌。
+     */
+    private fun isProvisionalUpgrade(current: TrackIdentity, next: TrackIdentity): Boolean {
+        // 当前已有权威标识：任何变化都按换歌处理，不做任何放宽
+        if (current.hasStableId) return false
+        // 新标识也不权威：交给 matches 的组合判据，本机制不介入
+        if (!next.hasStableId) return false
+        if (current.source != next.source) return false
+
+        // 已经出结果了就不再放宽：此时"漏判切歌"的代价（展示错歌的歌词）远高于
+        // "误判切歌"的代价（多取一次词），因此一律按换歌处理。
+        if (state == State.ACTIVE) return false
+
+        val age = nowMs() - currentSinceMs
+        if (age < 0L || age > config.provisionalGraceMs) return false
+
+        return TrackIdentity.artistCompatible(current.artist, next.artist) &&
+            TrackIdentity.durationCompatible(current.durationMs, next.durationMs)
     }
 
     private fun planHookCaptured(capturedEpoch: Long, outcome: LyricOutcome): Dispatch? {

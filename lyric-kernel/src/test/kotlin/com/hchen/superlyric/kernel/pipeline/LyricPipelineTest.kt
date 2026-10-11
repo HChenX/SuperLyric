@@ -20,6 +20,7 @@ package com.hchen.superlyric.kernel.pipeline
 
 import com.hchen.superlyric.kernel.decode.DecodeException
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -85,7 +86,7 @@ class LyricPipelineTest {
     fun `qrc payload carries its embedded translation through`() {
         val xml = """
             <QrcInfos>
-            <Lyric_1 LyricType="1" LyricContent="[0,2000](0,2000)Hello"/>
+            <Lyric_1 LyricType="1" LyricContent="[0,2000]Hello(0,2000)"/>
             <Lyric_2 LyricType="2" LyricContent="[0,2000]你好"/>
             </QrcInfos>
         """.trimIndent()
@@ -101,7 +102,7 @@ class LyricPipelineTest {
     fun `lrc shaped sidecar is attached as translation`() {
         val request = LyricRequest(
             format = LyricFormat.QRC,
-            text = "[0,2000](0,2000)Hello",
+            text = "[0,2000]Hello(0,2000)",
             translationText = "[00:00.00]你好",
         )
 
@@ -115,7 +116,7 @@ class LyricPipelineTest {
     fun `sidecar is routed to the phonetic channel when requested`() {
         val request = LyricRequest(
             format = LyricFormat.QRC,
-            text = "[0,2000](0,2000)Hello",
+            text = "[0,2000]Hello(0,2000)",
             phoneticText = "[00:00.00]he-lou",
         )
 
@@ -128,7 +129,7 @@ class LyricPipelineTest {
 
     @Test
     fun `auto format sniffs each structural shape`() {
-        val qrc = LyricPipeline.parse(LyricRequest(text = "[0,2000](0,2000)Hello"))
+        val qrc = LyricPipeline.parse(LyricRequest(text = "[0,2000]Hello(0,2000)"))
         assertNotNull(qrc)
         assertEquals("Hello", qrc!!.lines[0].text)
 
@@ -150,7 +151,7 @@ class LyricPipelineTest {
         val doc = LyricPipeline.parse(
             LyricRequest(
                 format = LyricFormat.QRC,
-                text = "[0,1000](0,1000)Hello",
+                text = "[0,1000]Hello(0,1000)",
                 title = "T",
                 album = "A",
                 durationMs = 12345L,
@@ -222,7 +223,8 @@ class LyricPipelineTest {
 
     @Test
     fun `two component word tags are still treated as qrc`() {
-        val qrc = "[1000,2000](0,500)你(500,500)好"
+        // 真机 QRC 形态：文字在时间标签之前
+        val qrc = "[1000,2000]你(0,500)好(500,500)"
 
         val doc = LyricPipeline.parse(LyricRequest(text = qrc))
 
@@ -230,5 +232,156 @@ class LyricPipelineTest {
         val words = doc!!.lines[0].words
         assertEquals(1_000L, words[0].startMs, "QRC 词起始按行内相对偏移换算")
         assertEquals(1_500L, words[1].startMs)
+    }
+
+    @Test
+    fun `absurd end time is bounded so the last line cannot span until 2038`() {
+        // 上游库对"结束时间未知"的行会填 Int.MAX_VALUE 之类的哨兵值，末行尤其常见
+        // （它后面没有下一行可以兜住）。实测网易云的 LRC 就出现过 span=[384..2147483647]。
+        val doc = LyricPipeline.parse(
+            LyricRequest(text = "[00:00.00]First\n[00:10.00]Last", durationMs = 20_000L)
+        )
+
+        assertNotNull(doc)
+        doc!!.lines.forEach { line ->
+            assertTrue(
+                line.endMs - line.startMs <= 300_000L,
+                "行区间不得荒谬：\"${line.text}\" [${line.startMs}..${line.endMs}]",
+            )
+        }
+    }
+
+    @Test
+    fun `simultaneous romaji and translation never become independent lyric lines`() {
+        // 真机报文形态（椒盐）：同一时间戳连续三行——主歌词 / 罗马音 / 翻译。
+        // 解析库只能为一条主行接纳一条伴随行，于是罗马音被当成译文、
+        // 真正的译文留在列表里成了独立歌词行，界面就会把翻译当歌词显示。
+        val payload = """
+            [00:20.699]<00:20.699>初<00:21.133>め
+            [00:20.699]ha ji me
+            [00:20.699]第一次参观
+        """.trimIndent()
+
+        val doc = LyricPipeline.parse(LyricRequest(text = payload))
+
+        assertNotNull(doc)
+        val lines = doc!!.lines
+        assertEquals(1, lines.size, "同时刻的伴随行绝不能成为独立歌词行：${lines.map { it.text }}")
+        assertEquals("初め", lines[0].text)
+        assertEquals("第一次参观", lines[0].translation)
+        assertEquals("ha ji me", lines[0].phonetic)
+    }
+
+    @Test
+    fun `chinese companion of a latin main line is a translation not a romanization`() {
+        // 主行无可罗马化的字符时，同伴只可能是译文
+        val payload = """
+            [00:18.251]<00:18.251>We<00:18.690> don't
+            [00:18.251]我们不再
+        """.trimIndent()
+
+        val doc = LyricPipeline.parse(LyricRequest(text = payload))
+
+        assertNotNull(doc)
+        val lines = doc!!.lines
+        assertEquals(1, lines.size)
+        assertEquals("我们不再", lines[0].translation)
+        assertNull(lines[0].phonetic)
+    }
+
+    /**
+     * 真机报文形态（椒盐）：主行末尾的词标签把行的结束时间撑到**下一行起始之后**，
+     * 于是主行之间互相重叠。通用解析库按"区间重叠"配对主行与伴随行，
+     * 会把相邻主行误配成「主行 + 译文」，真正的伴随行反而落单成独立歌词行。
+     */
+    private val overlappingSaltPayload = """
+        [00:00.100] <00:00.100>We Don't Talk Anymore - Charlie Puth <00:00.200>
+        [00:00.150] <00:00.150>Written by：Jacob Kasher <00:00.300>
+        [00:00.860] <00:00.860>Charlie Puth： <00:00.960>
+        [00:00.867] <00:00.867>We <00:01.010>don't <00:01.249>talk <00:05.000>
+        [00:00.867]只剩沉默 我们之间只剩沉默
+        [00:05.523] <00:05.523>We <00:05.666>don't <00:06.281>talk <00:09.354>
+        [00:05.523]我们之间只有沉默
+    """.trimIndent()
+
+    @Test
+    fun `companion splitter strips companions and repairs overlap`() {
+        val split = CompanionSplitter.split(overlappingSaltPayload)
+
+        assertNotNull(split)
+        assertEquals(
+            listOf("[00:00.867]只剩沉默 我们之间只剩沉默", "[00:05.523]我们之间只有沉默"),
+            split!!.translation?.lines(),
+        )
+        assertNull(split.phonetic)
+
+        // 伴随行被移走
+        assertFalse(split.main.contains("只剩沉默"))
+        // 尾部词标签被钳到下一主行起始之前，让两条主行各自独立
+        assertFalse(split.main.contains("<00:00.200>"), "重叠必须被修掉：\n${split.main}")
+        assertFalse(split.main.contains("<00:00.960>"), "重叠必须被修掉：\n${split.main}")
+        // 三条主行都还在
+        assertTrue(split.main.contains("Written by：Jacob Kasher"))
+        assertTrue(split.main.contains("Charlie Puth："))
+    }
+
+    @Test
+    fun `companion lines never end up as independent lyric lines`() {
+        val doc = LyricPipeline.parse(LyricRequest(text = overlappingSaltPayload))
+
+        assertNotNull(doc)
+        val lines = doc!!.lines
+        assertEquals(
+            listOf(
+                "We Don't Talk Anymore - Charlie Puth",
+                "Written by：Jacob Kasher",
+                "Charlie Puth：",
+                "We don't talk",
+                "We don't talk",
+            ),
+            lines.map { it.text },
+            "伴随行不得成为独立歌词行，相邻主行也不得被相互吞并",
+        )
+        assertNull(lines[0].translation, "头行不得被错配上相邻主行作为译文")
+        assertNull(lines[1].translation)
+        assertEquals("只剩沉默 我们之间只剩沉默", lines[3].translation)
+        assertEquals("我们之间只有沉默", lines[4].translation)
+    }
+
+    @Test
+    fun `space-only slices are preserved so latin words stay separated`() {
+        // 真机报文（椒盐 · 翻唱版）把**空格本身**也作为一个切片：
+        // <00:00.106> <00:00.212>。若把它当空切片丢掉，会拼成 Wedon'ttalk。
+        val payload = """
+            [00:00.000] <00:00.000>We<00:00.106> <00:00.212>Don't<00:00.318> <00:00.424>Talk<00:01.590>
+            [00:00.000]不想说话
+        """.trimIndent()
+
+        val doc = LyricPipeline.parse(LyricRequest(text = payload))
+
+        assertNotNull(doc)
+        val line = doc!!.lines.single()
+        assertEquals("We Don't Talk", line.text)
+        assertEquals("不想说话", line.translation)
+    }
+
+    @Test
+    fun `blank and placeholder sidecars are dropped`() {
+        // 波点会下发只有空格的伴随行；TME（QQ）用 "//" 表示"此行无译文"。
+        // 两者都不该作为译文继续下发。
+        val payload = listOf(
+            "[00:00.100]Line one",
+            "[00:00.100] ",
+            "[00:05.000]Line two",
+            "[00:05.000]//",
+        ).joinToString("\n")
+
+        val doc = LyricPipeline.parse(LyricRequest(text = payload))
+
+        assertNotNull(doc)
+        val lines = doc!!.lines
+        assertEquals(listOf("Line one", "Line two"), lines.map { it.text })
+        assertNull(lines[0].translation, "空白译文不得继续下发")
+        assertNull(lines[1].translation, "占位符 // 不得作为译文继续下发")
     }
 }

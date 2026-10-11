@@ -124,7 +124,12 @@ class LyricOrchestratorTest {
         val listener = RecordingListener()
         val hookSource = if (hook) FakeSource("hook") else null
         val apiSource = if (api) FakeSource("api") else null
-        val orchestrator = LyricOrchestrator(hookSource, apiSource, scheduler, listener)
+
+        /** 可推进的假时钟，用于验证"临时身份升级"的时间上界。 */
+        var now = 0L
+        val orchestrator = LyricOrchestrator(
+            hookSource, apiSource, scheduler, listener, nowMs = { now },
+        )
     }
 
     // ---------------------------------------------------------------- 用例
@@ -327,5 +332,133 @@ class LyricOrchestratorTest {
         sessions.last().deliver(success())
         assertNotNull(f.listener.resolved)
         assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
+    }
+
+    // ---------------------------------------------------------------- 临时身份升级
+
+    /** 降级形态的身份：宿主还没给出权威标识。 */
+    private fun provisional(
+        title: String = "Song",
+        artist: String = "Artist",
+        duration: Long = 200_000L,
+    ) = TrackIdentity("qq", null, title, artist, duration)
+
+    /** 权威形态的身份：带命名空间稳定标识。 */
+    private fun authoritative(
+        id: String,
+        title: String = "Song",
+        artist: String = "Artist",
+        duration: Long = 200_000L,
+    ) = TrackIdentity("qq", "qq:$id", title, artist, duration)
+
+    @Test
+    fun `authoritative id arriving late upgrades in place instead of restarting the resolve`() {
+        val f = Fixture()
+
+        // 宿主先给降级形态（实测 QQ 先给数字 songID）
+        f.orchestrator.onTrackChanged(provisional())
+        assertEquals(1, f.hookSource!!.startCount)
+
+        // 约 30ms 后再给权威形态（songMID）
+        f.now = 30L
+        f.orchestrator.onTrackChanged(authoritative("004gZy7l1GYJ1Q"))
+
+        assertEquals(
+            1, f.hookSource.startCount,
+            "拿到更权威的标识不得重启取词，否则在途结果会因代际过期被丢弃",
+        )
+        assertEquals(LyricOrchestrator.State.RESOLVING_HOOK, f.orchestrator.state)
+
+        // 升级后，先前的会话回投仍然有效
+        f.hookSource.deliver(success())
+        assertNotNull(f.listener.resolved)
+    }
+
+    @Test
+    fun `upgrade still applies when the host rewrites the title mid track`() {
+        val f = Fixture()
+
+        // 某些宿主会把当前正在唱的歌词行写进 TITLE（椒盐音乐即如此），
+        // 因此升级判据刻意不看标题，只认歌手与时长。
+        f.orchestrator.onTrackChanged(provisional(title = "后会无期"))
+        f.now = 40L
+        f.orchestrator.onTrackChanged(
+            authoritative("004gZy7l1GYJ1Q", title = "| 我们变成了世上最熟悉的陌生人 |"),
+        )
+
+        assertEquals(1, f.hookSource!!.startCount, "标题被宿主改写不应被误判为切歌")
+        assertEquals(LyricOrchestrator.State.RESOLVING_HOOK, f.orchestrator.state)
+    }
+
+    @Test
+    fun `upgrade is refused once a result is already active`() {
+        val f = Fixture()
+
+        f.orchestrator.onTrackChanged(provisional())
+        f.hookSource!!.deliver(success())
+        assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
+
+        // 出结果之后不再放宽：宁可多取一次，也不能漏判真实切歌
+        f.now = 50L
+        f.orchestrator.onTrackChanged(authoritative("NEXT", title = "Another Song"))
+
+        assertEquals(2, f.hookSource.startCount)
+    }
+
+    @Test
+    fun `upgrade expires outside the provisional grace window`() {
+        val f = Fixture()
+
+        f.orchestrator.onTrackChanged(provisional())
+
+        // 超出宽限窗口后才到来的权威标识一律按换歌处理
+        f.now = 60_000L
+        f.orchestrator.onTrackChanged(authoritative("LATER", title = "Another Song"))
+
+        assertEquals(2, f.hookSource!!.startCount)
+    }
+
+    @Test
+    fun `upgrade is refused when the artist or duration disagrees`() {
+        val f = Fixture()
+
+        f.orchestrator.onTrackChanged(provisional(artist = "歌手甲", duration = 200_000L))
+        f.now = 10L
+        f.orchestrator.onTrackChanged(
+            authoritative("OTHER", artist = "歌手乙", duration = 200_000L),
+        )
+
+        assertEquals(2, f.hookSource!!.startCount, "歌手不符必须按换歌处理")
+    }
+
+    @Test
+    fun `authoritative to authoritative change is never treated as an upgrade`() {
+        val f = Fixture()
+
+        f.orchestrator.onTrackChanged(authoritative("A"))
+        f.now = 10L
+        f.orchestrator.onTrackChanged(authoritative("B"))
+
+        assertEquals(2, f.hookSource!!.startCount)
+    }
+
+    @Test
+    fun `metadata churn on the same track never restarts a resolve even after no lyrics`() {
+        val f = Fixture()
+
+        f.orchestrator.onTrackChanged(track("A"))
+        f.scheduler.fireAll()                       // Hook 超时 → 转网络
+        f.apiSource!!.deliver(LyricOutcome.NoLyrics("none"))
+        assertEquals(LyricOrchestrator.State.NO_LYRICS, f.orchestrator.state)
+
+        // 宿主高频改写元数据（椒盐开启蓝牙歌词后会把当前歌词行写进 TITLE）。
+        // 稳定标识没变，就绝不能重启取词——否则会形成
+        // "事件 → 取词 → 无歌词 → 事件" 的死循环，每次都下发一次纯音乐占位。
+        repeat(5) { index ->
+            f.orchestrator.onTrackChanged(track("A", title = "第 $index 句歌词"))
+        }
+
+        assertEquals(1, f.hookSource!!.startCount, "同一稳定标识不得重启 Hook 取词")
+        assertEquals(1, f.apiSource!!.startCount, "同一稳定标识不得重启网络取词")
     }
 }

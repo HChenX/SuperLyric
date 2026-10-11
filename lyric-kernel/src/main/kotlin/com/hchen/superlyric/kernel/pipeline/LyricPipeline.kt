@@ -149,15 +149,39 @@ object LyricPipeline {
 
         val format = if (request.format == LyricFormat.AUTO) sniff(content) else request.format
 
+        // 走通用解析库的载荷，先剥掉"主行 + 同时间戳伴随行"里的伴随行。
+        // 库判定哪一行是哪一行的伴随用的是**时间区间重叠**，相邻主行会互相误配，
+        // 且配对后无法还原——必须在库拿到文本之前拆（详见 [CompanionSplitter]）。
+        val split = when (format) {
+            LyricFormat.GENERAL, LyricFormat.KRC -> CompanionSplitter.split(content)
+            else -> null
+        }
+        val body = split?.main ?: content
+
         val doc = when (format) {
-            LyricFormat.QRC -> QrcParser.parse(content)
-            LyricFormat.LRCX -> KuwoLrcxParser.parse(content) ?: parseByLibrary(content)
-            LyricFormat.SODA_JSON -> SodaJsonParser.parse(content)
-            LyricFormat.KRC, LyricFormat.GENERAL -> parseByLibrary(content)
-            LyricFormat.AUTO -> parseByLibrary(content)
+            LyricFormat.QRC -> QrcParser.parse(body)
+            LyricFormat.LRCX -> KuwoLrcxParser.parse(body) ?: parseByLibrary(body)
+            LyricFormat.SODA_JSON -> SodaJsonParser.parse(body)
+            // 本形态的载荷必须自研解析：通用库会把起始相差小于 200ms 的相邻主行
+            // 相互吞并成「主行 + 译文」（详见 [WordTagLrcParser]）。
+            LyricFormat.KRC, LyricFormat.GENERAL, LyricFormat.AUTO ->
+                if (split != null) WordTagLrcParser.parse(body) ?: parseByLibrary(body)
+                else parseByLibrary(body)
         } ?: return null
 
-        return finalize(doc, request)
+        return finalize(doc, if (split == null) request else request.withSplitChannels(split))
+    }
+
+    /** 把拆分出的伴随通道并入请求，统一交给 [finalize] 对齐。 */
+    private fun LyricRequest.withSplitChannels(split: CompanionSplitter.Split): LyricRequest = copy(
+        translationText = joinChannels(split.translation, translationText),
+        phoneticText = joinChannels(split.phonetic, phoneticText),
+    )
+
+    private fun joinChannels(primary: String?, secondary: String?): String? = when {
+        primary.isNullOrBlank() -> secondary
+        secondary.isNullOrBlank() -> primary
+        else -> "$primary\n$secondary"
     }
 
     /**
@@ -205,14 +229,15 @@ object LyricPipeline {
      * 网易云 YRC 行的结构特征：{@code [数字,数字]} 后跟**三元组** {@code (数字,数字,数字)} 词标签。
      *
      * <h4>为什么必须与 QRC 分开识别</h4>
-     * QRC 与 YRC 的词标签长得极像，但语义**相反**：
-     * <ul>
-     *   <li>QRC 的 {@code wStart} 是**行内相对偏移**；</li>
-     *   <li>YRC 的 {@code wStart} 是**歌曲绝对毫秒**。</li>
-     * </ul>
-     * 若把 YRC 误判为 QRC，每个词的起始时间会被再加上一次行起始时间，
-     * 逐字高光会整体漂移。二者的可靠区分点是**分量个数**：
+     * QRC 与 YRC 的词标签形态极像，词标签**分量个数**是二者唯一可靠的区分点：
      * YRC 恒为 {@code (a,b,flag)} 三元组，QRC 为 {@code (a,b)} 二元组。
+     * 二者识别错误会让整段报文进错解析器。
+     *
+     * <h4>关于词起始的时间基准</h4>
+     * 早期文档断言"QRC 用行内相对偏移、YRC 用歌曲绝对毫秒"，**该断言与实测不符**——
+     * 两种基准在两种格式里都出现过（QQ 的 QRC 实测就是绝对毫秒）。
+     * [com.hchen.superlyric.kernel.parse.QrcParser] 因此按首词逐行自动判定基准，
+     * **不要**再依据格式名去假设时间基准。
      */
     private val YRC_LINE_MARKER = Regex("""\[\d+,\d+][^\n]*\(\d+,\d+,\d+\)""")
 
@@ -240,7 +265,8 @@ object LyricPipeline {
         attachSidecar(result, request.translationText, SidecarChannel.TRANSLATION)?.let { result = it }
         attachSidecar(result, request.phoneticText, SidecarChannel.PHONETIC)?.let { result = it }
 
-        val lines = normalize(result.lines)
+        val lines = normalize(collapseSimultaneous(result.lines), maxOf(result.durationMs, request.durationMs))
+            .map { it.withoutEmptySidecars() }
         if (lines.isEmpty()) return null
 
         return result.copy(
@@ -282,6 +308,141 @@ object LyricPipeline {
 
     private val MILLISECOND_LINE = Regex("""\[\d+,\d+]""")
 
+    /** 单行时长的合理上限；超过它即视为解析得到的结束时间不可信。 */
+    private const val MAX_LINE_SPAN_MS = 300_000L
+
+    /** 结束时间不可信、且曲目时长未知时的兜底行时长。 */
+    private const val FALLBACK_LINE_MS = 5_000L
+
+    /** TME 报文用这个串表示"此行没有译文"，属占位符而非内容。 */
+    private const val NO_TRANSLATION_MARKER = "//"
+
+    /**
+     * 清掉**无意义的伴随内容**。
+     *
+     * 两类：
+     * <ul>
+     *   <li><b>空白</b>——部分宿主会下发只有空格的伴随行（实测波点），挂上去等于一行空译文；</li>
+     *   <li><b>占位符 {@code //}</b>——TME 报文用它表示"此行无译文"（实测 QQ 的制作信息行）。</li>
+     * </ul>
+     * 放在 [finalize] 出口而不是某个解析器里：译文有两条来源——解析器**行内**写入
+     * （QQ 的 {@code <Lyric_2>}、椒盐的行内译文）与伴随载荷经 [TranslationMerger] 对齐。
+     * 只有公共出口能同时覆盖两者。
+     *
+     * <p><b>只作用于伴随通道</b>，主行正文一律不动。
+     */
+    private fun LyricLine.withoutEmptySidecars(): LyricLine {
+        val cleanTranslation = translation?.takeIf { it.isMeaningfulSidecar() }
+        val cleanPhonetic = phonetic?.takeIf { it.isMeaningfulSidecar() }
+        if (cleanTranslation == translation && cleanPhonetic == phonetic) return this
+        return copy(translation = cleanTranslation, phonetic = cleanPhonetic)
+    }
+
+    private fun String.isMeaningfulSidecar(): Boolean {
+        val trimmed = trim()
+        return trimmed.isNotEmpty() && trimmed != NO_TRANSLATION_MARKER
+    }
+
+    /** CJK 字符：汉字、平假名、片假名、谚文。 */
+    private val CJK = Regex("""[㐀-䶿一-鿿぀-ゟ゠-ヿ가-힯]""")
+
+    /**
+     * 折叠**起始时间完全相同**的行组。
+     *
+     * <h3>解决什么</h3>
+     * 部分宿主（实测椒盐）把一首曲目的三路内容以**同一时间戳重复出现**的形态给出：
+     * <pre>
+     * [00:20.699] &lt;00:20.699&gt;初&lt;…&gt;は     ← 主歌词（带逐字标签）
+     * [00:20.699]ha ji me te no ru u bu ru wa   ← 罗马音
+     * [00:20.699]第一次参观卢浮宫                 ← 翻译
+     * </pre>
+     * 通行解析库只能为一条主行接纳**一条**伴随行，于是它把罗马音当成了译文，
+     * 而真正的译文留在列表里，**变成了独立的主歌词行**——界面于是会把翻译当作歌词显示。
+     *
+     * <h3>判据是否合法</h3>
+     * 依据的是"与主行成对出现的行内语法"（同一时间戳重复出现），
+     * 属 TranslationTrack Rule 允许的判据。**不是**依据"缺少逐字标签"推断。
+     *
+     * <h3>分组内如何分工</h3>
+     * <ol>
+     *   <li>主行 = 组内有逐字切片的那一条；都没有则取第一条；</li>
+     *   <li>其余同伴：纯拉丁文且主行含 CJK 的判为**罗马音**（走 phonetic），
+     *       否则判为**翻译**（走 translation）；</li>
+     *   <li>两个通道都已占用的多余同伴**丢弃**——宁可少一行，也不能把伴随内容
+     *       当成歌词发出去。</li>
+     * </ol>
+     *
+     * <h3>已知边界</h3>
+     * 若主行为中文、同伴为英文**译文**（而非罗马音），会被判为罗马音。
+     * 二者在文本层面无法可靠区分，此处选择了对"日文歌 + 罗马音"这一更常见形态更准的一侧。
+     */
+    private fun collapseSimultaneous(lines: List<LyricLine>): List<LyricLine> {
+        if (lines.size < 2) return lines
+
+        val sorted = lines.sortedBy { it.startMs }
+        val result = ArrayList<LyricLine>(sorted.size)
+
+        var index = 0
+        while (index < sorted.size) {
+            var end = index + 1
+            while (end < sorted.size && sorted[end].startMs == sorted[index].startMs) end++
+
+            if (end - index == 1) {
+                result += sorted[index]
+                index = end
+                continue
+            }
+
+            val group = sorted.subList(index, end)
+
+            // 保守护栏：组内若有多条带逐字的行，那更像"同一瞬间真的有多个演唱内容"
+            // （例如对唱），不是"主行 + 伴随通道"，原样保留、不做折叠。
+            if (group.count { it.hasWords } > 1) {
+                result += group
+                index = end
+                continue
+            }
+
+            val mainIndex = group.indexOfFirst { it.hasWords }.let { if (it >= 0) it else 0 }
+            var main = group[mainIndex]
+
+            // 解析库可能已抢先把同伴行塞进了 translation。若那其实是罗马音，
+            // 先把它挪回 phonetic，腾出翻译位给真正的译文——否则译文会无处安放而被丢弃。
+            val owned = main.translation
+            if (main.phonetic.isNullOrEmpty() && !owned.isNullOrEmpty() && isRomanization(owned, main.text)) {
+                main = main.copy(translation = null, phonetic = owned)
+            }
+
+            for (i in group.indices) {
+                if (i == mainIndex) continue
+                val text = group[i].text.trim()
+                if (text.isEmpty()) continue
+
+                val romanization = isRomanization(text, main.text)
+                if (romanization) {
+                    if (main.phonetic.isNullOrEmpty()) main = main.copy(phonetic = text)
+                } else {
+                    if (main.translation.isNullOrEmpty()) main = main.copy(translation = text)
+                }
+            }
+
+            result += main
+            index = end
+        }
+        return result
+    }
+
+    /**
+     * 判断同伴行是否为**罗马音**。
+     *
+     * 纯拉丁文本且主行本身含 CJK 时才成立——主行没有可被罗马化的字符时，
+     * 那条同伴只可能是译文。
+     */
+    private fun isRomanization(candidate: String, mainText: String): Boolean {
+        if (candidate.isEmpty() || CJK.containsMatchIn(candidate)) return false
+        return CJK.containsMatchIn(mainText)
+    }
+
     private fun lineText(line: com.mocharealm.accompanist.lyrics.core.model.ISyncedLine): String =
         when (line) {
             is com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine ->
@@ -298,8 +459,10 @@ object LyricPipeline {
      *
      * 历史缺陷中的「时序倒错」与「0ms 坍缩」在此层被结构性消除——
      * 它是模块内所有解析器的**共同出口**，任何格式都无法绕过。
+     *
+     * @param durationMs 曲目总时长；末行缺少可信结束时间时用它收口
      */
-    private fun normalize(lines: List<LyricLine>): List<LyricLine> {
+    private fun normalize(lines: List<LyricLine>, durationMs: Long): List<LyricLine> {
         if (lines.isEmpty()) return emptyList()
 
         val sorted = lines.filter { it.text.isNotBlank() }.sortedBy { it.startMs }
@@ -316,6 +479,7 @@ object LyricPipeline {
             // 行结束时间不得超过下一行起始，避免行区间互相重叠
             val capByNext = if (nextStart > startMs) nextStart else Long.MAX_VALUE
             val endMs = minOf(maxOf(startMs, current.endMs, lastWordEnd), capByNext)
+                .let { boundEnd(it, startMs, capByNext, durationMs) }
 
             val words = current.words.map { word ->
                 val wordStart = word.startMs.coerceIn(startMs, maxOf(startMs, endMs))
@@ -327,5 +491,19 @@ object LyricPipeline {
             result += current.copy(startMs = startMs, endMs = endMs, words = words)
         }
         return result
+    }
+
+    /**
+     * 收口不可信的结束时间。
+     *
+     * 上游库对"结束时间未知"的行会填 {@code Int.MAX_VALUE} 之类的哨兵值，末行尤其常见
+     * （它后面没有下一行可以兜住）。若不处理，末行的区间会一直延伸到 2038 年。
+     * 曲目时长已知时收到时长，否则给一个兜底行时长。
+     */
+    private fun boundEnd(endMs: Long, startMs: Long, capByNext: Long, durationMs: Long): Long {
+        if (endMs - startMs <= MAX_LINE_SPAN_MS) return endMs
+
+        val fallback = if (durationMs > startMs) durationMs else startMs + FALLBACK_LINE_MS
+        return minOf(maxOf(startMs, fallback), capByNext)
     }
 }

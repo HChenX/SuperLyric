@@ -73,11 +73,7 @@ data class TrackIdentity(
         if (thisTitle != normalizeTitle(other.title)) return false
         if (!artistCompatible(artist, other.artist)) return false
 
-        // 时长双方都已知时才作约束；仅一方已知不构成否定证据
-        if (durationMs > 0 && other.durationMs > 0) {
-            return abs(durationMs - other.durationMs) <= DURATION_TOLERANCE_MS
-        }
-        return true
+        return durationCompatible(durationMs, other.durationMs)
     }
 
     /** 是否具备可直接比较的稳定标识。 */
@@ -132,6 +128,21 @@ data class TrackIdentity(
             val b = IGNORED_TITLE_CHARS.replace(right.lowercase(), "")
             if (a.isEmpty() || b.isEmpty()) return true
             return a.contains(b) || b.contains(a)
+        }
+
+        /**
+         * 时长相容判定。
+         *
+         * 双方都已知时才构成约束；**仅一方已知不构成否定证据**——
+         * 否则任何一条缺少时长上报的路径都会被误判为换歌。
+         *
+         * @param left  一侧时长（毫秒）；≤0 表示未知
+         * @param right 另一侧时长（毫秒）；≤0 表示未知
+         */
+        @JvmStatic
+        fun durationCompatible(left: Long, right: Long): Boolean {
+            if (left <= 0L || right <= 0L) return true
+            return abs(left - right) <= DURATION_TOLERANCE_MS
         }
     }
 }
