@@ -215,7 +215,10 @@ internal object QQNetwork {
                 item.optLong("interval", 0L) * 1000L,
                 true,
             )
-            if (score >= bestScore) {
+            // 用 `>` 而不是 `>=`：同分时采纳检索的排序首位。
+            // 同一首歌的不同版本可能登记成完全相同的歌名/歌手/时长，打分器无从区分，
+            // 平局只能靠顺序决定——取最后一个会随机配上错误版本的歌词。
+            if (score > bestScore) {
                 bestScore = score
                 best = mid to item.optLong("id", item.optLong("songid", 0L))
             }

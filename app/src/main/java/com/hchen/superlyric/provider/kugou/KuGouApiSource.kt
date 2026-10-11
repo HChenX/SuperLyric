@@ -36,6 +36,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -182,32 +183,53 @@ class KuGouApiSource : LyricSource {
 
         var bestHash: String? = null
         var bestScore = MIN_ACCEPT_SCORE
+        val candidates = ArrayList<String>(info.length())
 
         for (index in 0 until info.length()) {
             val item = info.optJSONObject(index) ?: continue
             val hash = item.optString("hash", "")
             if (hash.isEmpty()) continue
 
+            val candidateTitle = item.optString("songname", "")
+            val candidateArtist = item.optString("singername", "")
+            val candidateDurationMs = item.optLong("duration", 0L) * 1000L
             val score = LyricScorer.scoreCandidate(
                 identity.title,
                 identity.artist,
                 identity.durationMs,
-                item.optString("songname", ""),
-                item.optString("singername", ""),
-                item.optLong("duration", 0L) * 1000L,
+                candidateTitle,
+                candidateArtist,
+                candidateDurationMs,
                 true,
             )
-            if (score >= bestScore) {
+            candidates += "\"$candidateTitle\"/\"$candidateArtist\"/${candidateDurationMs / 1000}s" +
+                "=${score.roundTo1()} hash=$hash"
+            // 用 `>` 而不是 `>=`：同分时**采纳检索的排序首位**。
+            // 酷狗曲库里同一首歌的不同版本会登记成完全相同的歌名/歌手/时长
+            // （实测 NIGHT DANCER 的韩语版与日语原版三项逐字相同），打分器无从区分，
+            // 平局只能靠顺序决定——取最后一个会随机配上错误语言的歌词。
+            if (score > bestScore) {
                 bestScore = score
                 bestHash = hash
             }
         }
+
+        // 无论是否命中都要打出候选明细：只看"通过了/没通过"无法判断
+        // 是**检索没找对歌**、**正确的那版根本不在候选里**，还是**打分把它判掉了**。
+        // 这三种情况（尤其是"取到了同一首歌的另一个版本"）修法完全不同。
+        AndroidLog.logD(
+            sourceName,
+            "Candidates for \"$keyword\" (target \"${identity.title}\"/\"${identity.artist}\"/" +
+                "${identity.durationMs / 1000}s): ${candidates.joinToString(" | ").ifEmpty { "none" }}",
+        )
 
         if (bestHash == null) {
             AndroidLog.logD(sourceName, "No KuGou candidate reached the acceptance threshold for \"$keyword\"")
         }
         return bestHash
     }
+
+    private fun Double.roundTo1(): String = String.format(Locale.US, "%.1f", this)
 
     private fun downloadKrc(hash: String, durationMs: Long): String? {
         val searchUrl = "http://krcs.kugou.com/search?ver=1&man=yes&client=mobi&keyword=&duration=$durationMs&hash=$hash"
