@@ -67,6 +67,18 @@ object LyricDiag {
     var enabled: Boolean = BuildConfig.DEBUG ||
         LocalConfig.getLogLevelForXposed() == ModuleConfig.LOG_D
 
+    /**
+     * `MediaMetadata` 内部的原始 `Bundle`。
+     *
+     * 仅用于 [dumpMetadata] 取原始值判类型——`MediaMetadata` 没有泛型取值器，
+     * 而类型化取值器会在非文本键上抛 `ClassCastException` 并在宿主进程刷屏。
+     */
+    private val BUNDLE_FIELD: java.lang.reflect.Field? = runCatching {
+        android.media.MediaMetadata::class.java
+            .getDeclaredField("mBundle")
+            .apply { isAccessible = true }
+    }.getOrNull()
+
     /** 单次载荷输出的字符上限，防止畸形报文撑爆日志缓冲区。 */
     @JvmField
     var maxPayloadChars: Int = 120_000
@@ -273,9 +285,6 @@ object LyricDiag {
      * `dumpsys media_session` 只渲染 title/artist/album 三项，而宿主可能把真正的曲名
      * 放在别的键上（例如 `DISPLAY_TITLE`），同时用歌词行污染 `TITLE`。
      * 排查"曲名被宿主改写"这类问题时必须看到全量键。
-     *
-     * 注意 `MediaMetadata` 与 `Bundle` 不同，**没有**泛型 `get`，只有类型化取值器；
-     * 这里只用 `getText`，非文本键（时长、封面等）标记为 `<non-text>`。
      */
     @JvmStatic
     fun dumpMetadata(source: String, metadata: android.media.MediaMetadata) {
@@ -283,10 +292,31 @@ object LyricDiag {
 
         val keys = metadata.keySet()
         val parts = keys.sorted().joinToString(" | ") { key ->
-            val text = metadata.getText(key)
-            if (text != null) "$key=\"${text.toString().take(60)}\"" else "$key=<non-text>"
+            val text = textOf(metadata, key)
+            if (text != null) "$key=\"${text.take(60)}\"" else "$key=<non-text>"
         }
         log(source, "META keyCount=${keys.size} :: $parts")
+    }
+
+    /**
+     * 取某个键的文本值，非文本键返回 {@code null}。
+     *
+     * **不能直接调 `MediaMetadata.getText(key)`**：它内部是 `Bundle.getCharSequence`，
+     * 撞上 `DURATION`（Long）或 `USER_RATING`（Rating）会抛 `ClassCastException`。
+     * 异常虽被平台内部吞掉并返回 null，但 `BaseBundle` 会先以
+     * "Attempt to cast generated internal exception" 打一条 W——元数据回调是高频的，
+     * 于是每次切歌都会在宿主进程里刷屏。
+     *
+     * `MediaMetadata` **没有**泛型取值器，所以这里反射取内部 `Bundle` 拿原始值，
+     * 先判类型再转文本。反射失败时退回类型化取值器（此时会有上述噪声，但功能不受影响）。
+     */
+    @Suppress("DEPRECATION")
+    private fun textOf(metadata: android.media.MediaMetadata, key: String): String? {
+        val bundle = BUNDLE_FIELD
+            ?.let { field -> runCatching { field.get(metadata) }.getOrNull() }
+            as? android.os.Bundle
+        if (bundle == null) return runCatching { metadata.getText(key)?.toString() }.getOrNull()
+        return (bundle.get(key) as? CharSequence)?.toString()
     }
 
     // ---------------------------------------------------------------- 内部
