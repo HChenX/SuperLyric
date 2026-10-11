@@ -456,6 +456,12 @@ class LyricOrchestrator(
 
         dispatch.newTrack?.let(listener::onTrackChanged)
 
+        // 状态迁移必须**先于**启动来源回调：来源可以在 start() 里**同步**回投
+        // （例如按稳定标识暂存后的补投），那样它会把状态一路推到 ACTIVE。
+        // 若此时才发出先前捕获的 RESOLVING_HOOK，监听者就会看到
+        // ACTIVE 之后又回到 RESOLVING_HOOK——内部 state 是对的，但对外回报的顺序错了。
+        dispatch.stateChanged?.let(listener::onStateChanged)
+
         dispatch.startHookEpoch?.let { hookEpoch ->
             val identity = dispatch.newTrack ?: activeIdentity
             if (identity != null) {
@@ -471,7 +477,6 @@ class LyricOrchestrator(
         }
 
         // 下游回调一律在锁外，避免持锁进行 Binder 发布
-        dispatch.stateChanged?.let(listener::onStateChanged)
         dispatch.resolved?.let(listener::onLyricResolved)
         if (dispatch.noLyrics) listener.onNoLyrics(activeIdentity)
         if (dispatch.unavailable) listener.onUnavailable(activeIdentity)

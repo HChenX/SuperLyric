@@ -461,4 +461,32 @@ class LyricOrchestratorTest {
         assertEquals(1, f.hookSource!!.startCount, "同一稳定标识不得重启 Hook 取词")
         assertEquals(1, f.apiSource!!.startCount, "同一稳定标识不得重启网络取词")
     }
+
+    @Test
+    fun `a source delivering synchronously still reports states in order`() {
+        // 宿主侧存在"按稳定标识暂存、会话建立后补投"的来源，它在 start() 里**同步**回投。
+        // 若状态迁移在来源启动之后才发出，监听者会先看到 ACTIVE、再看到过期的
+        // RESOLVING_HOOK——内部 state 是对的，但对外回报的顺序是错的。
+        val listener = RecordingListener()
+        val synchronous = object : LyricSource {
+            override val sourceName: String = "sync"
+
+            override fun start(identity: TrackIdentity, session: LyricSource.Session) {
+                session.deliver(success())
+            }
+
+            override fun cancel() = Unit
+        }
+
+        LyricOrchestrator(
+            synchronous, null, FakeScheduler(), listener,
+        ).onTrackChanged(TrackIdentity("qq", "qq:A", "Song", "Artist", 200_000L))
+
+        assertEquals(
+            listOf(LyricOrchestrator.State.RESOLVING_HOOK, LyricOrchestrator.State.ACTIVE),
+            listener.transitions,
+            "状态回报必须按发生顺序，不得让 ACTIVE 之后又出现 RESOLVING_HOOK",
+        )
+        assertNotNull(listener.resolved)
+    }
 }
