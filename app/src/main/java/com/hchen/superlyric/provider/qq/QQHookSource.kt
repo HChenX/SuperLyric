@@ -58,6 +58,19 @@ class QQHookSource : HookLyricSource {
     @Volatile
     private var capturedMid: String? = null
 
+    /** 已经成功取回歌词的 songMID，避免宿主重复构造 LyricLoadBean 时反复发起网络请求。 */
+    @Volatile
+    private var deliveredMid: String? = null
+
+    /**
+     * 正在取词中的 songMID。
+     *
+     * 必须在**派发前**登记：宿主会在几十毫秒内连续构造多次 LyricLoadBean，
+     * 若只在取词完成后才登记，这几次并发请求会全部落空去重、各发一次网络请求。
+     */
+    @Volatile
+    private var inFlightMid: String? = null
+
     override fun install() {
         QQAnchors.install { songMid, songId, title, artist ->
             onSongInfoCaptured(songMid, songId, title, artist)
@@ -82,6 +95,9 @@ class QQHookSource : HookLyricSource {
     override fun cancel() {
         session = null
         pendingIdentity = null
+        // 播放停止后重新播放同一首歌必须能再次取词，因此这里要清空去重状态
+        deliveredMid = null
+        inFlightMid = null
     }
 
     private fun onSongInfoCaptured(songMid: String, songId: Long, title: String, artist: String) {
@@ -101,9 +117,21 @@ class QQHookSource : HookLyricSource {
         fetchAsync(songMid, songId, identity, activeSession)
     }
 
+    /**
+     * 发起一次取词。
+     *
+     * 去重集中在这里而不是调用点：宿主在播放期间会反复构造 {@code LyricLoadBean}，
+     * 且 [start] 与锚点回调可能对同一首曲目各发一次。若只在某一个调用点去重，
+     * 另一条路径仍会重复发起网络请求。
+     */
     private fun fetchAsync(mid: String, songId: Long, identity: TrackIdentity, target: LyricSource.Session) {
+        if (mid == deliveredMid || mid == inFlightMid) return
+        inFlightMid = mid
+
         executor.execute {
             val outcome = QQNetwork.fetchByMid(mid, songId, identity)
+            if (inFlightMid == mid) inFlightMid = null
+            if (outcome is LyricOutcome.Success) deliveredMid = mid
             target.deliver(outcome)
         }
     }

@@ -81,14 +81,17 @@ public class QQMusicProvider extends MusicProvider {
                 TAG, TrackIdentity.stableId(NAMESPACE, capturedMid), title, artist, duration);
         }
 
-        // 退回 MediaSession 上报的 MEDIA_ID（可能本身就是 songMID 或 songID）
+        // 退回 MediaSession 上报的 MEDIA_ID。它可能是 songMID，也可能是纯数字 songID；
+        // 后者不作为稳定标识——宿主会在同一首曲目上从 songID 切到 songMID，
+        // 那会被误判为切歌（详见 QQIdentity#isNumericId）。
         String mediaId = readString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID).trim();
-        if (!mediaId.isEmpty()) {
+        if (!mediaId.isEmpty() && !QQIdentity.isNumericId(mediaId)) {
             return new TrackIdentity(
                 TAG, TrackIdentity.stableId(NAMESPACE, mediaId), title, artist, duration);
         }
 
-        return super.buildIdentity(metadata);
+        // 没有可用稳定标识时，改用标题 + 歌手 + 时长判定同一性
+        return new TrackIdentity(TAG, null, title, artist, duration);
     }
 
     private static String readString(@NonNull MediaMetadata metadata, @NonNull String key) {

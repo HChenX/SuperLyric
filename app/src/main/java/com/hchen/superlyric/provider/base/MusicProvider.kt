@@ -28,8 +28,13 @@ import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.orchestrate.LyricOrchestrator
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
 import com.hchen.superlyric.publisher.AbsPublisher
+import com.hchen.superlyric.utils.LyricDiag
 
 import io.github.libxposed.api.XposedModuleInterface
+
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 
 /**
  * 音乐应用 Provider 的统一骨架。
@@ -58,6 +63,25 @@ import io.github.libxposed.api.XposedModuleInterface
 abstract class MusicProvider : AbsPublisher() {
 
     private var hookSource: HookLyricSource? = null
+
+    /** 上一次已输出日志的元数据；宿主会高频重发同一份，用它降噪。 */
+    private var lastSeenIdentity: TrackIdentity? = null
+
+    /** 上一次已转储全部元数据键的稳定标识。 */
+    private var lastDumpedStableId: String? = null
+
+    /** 待确认停止的令牌；任何撤销都会让它自增，从而使已排期的确认失效。 */
+    @Volatile
+    private var stopToken: Long = 0L
+
+    /** 当前是否有一次待确认的停止（仅用于诊断输出，不参与判定）。 */
+    @Volatile
+    private var pendingStop: Boolean = false
+
+    private val stopConfirmer: ScheduledExecutorService =
+        Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "SuperLyric-StopConfirm").apply { isDaemon = true }
+        }
 
     /** 由基类在 [onPackageReady] 中构建；Provider 的子类不应自行创建编排器。 */
     protected lateinit var orchestrator: LyricOrchestrator
@@ -113,7 +137,7 @@ abstract class MusicProvider : AbsPublisher() {
 
         hookMediaSession()
 
-        AndroidLog.logI(
+        AndroidLog.logD(
             providerTag,
             "Provider ready for ${param.packageName}: hook=${hookSource?.sourceName ?: "none"}, " +
                 "api=${apiSource?.sourceName ?: "none"}",
@@ -144,33 +168,108 @@ abstract class MusicProvider : AbsPublisher() {
             object : AbsHook() {
                 override fun after() {
                     val state = getArg(0) as? PlaybackState ?: return
-                    if (state.state == PlaybackState.STATE_STOPPED) {
-                        AndroidLog.logD(providerTag, "Playback stopped")
-                        orchestrator.onPlaybackStopped()
-                    }
+                    onPlaybackStateChanged(state)
                 }
             },
         )
     }
 
+    /**
+     * 播放状态变化。
+     *
+     * <h3>为什么停止必须"确认"后才生效</h3>
+     * 宿主在过渡期会**瞬发** {@code STATE_STOPPED}：实测网易云在一次切歌前后
+     * 连发多次停止状态，随后又回到正常播放。而 `onPlaybackStopped` 是终态操作——
+     * 它清空当前音轨、推进 epoch，并向系统下发**停止**包（服务端据此清空活跃发布者
+     * 并广播停播）。瞬发停止若被当真，歌词会莫名闪空。
+     *
+     * 因此这里只登记一次"待确认的停止"，由**两个条件**撤销：
+     * <ol>
+     *   <li>随后到来的任何**其它播放状态**；</li>
+     *   <li>随后到来的**可用元数据**（即曲目信息，见 [onMetadataChanged]）——
+     *       宿主还在宣布曲目，就说明播放没停。</li>
+     * </ol>
+     * 第 2 条是必需的：真机上风暴里的几次 STOPPED 之间**没有别的播放状态**，
+     * 只看第 1 条挡不住。
+     *
+     * <p>这**不是无差别去抖**——只有真正的终态信号才需要确认，且窗口很短。
+     */
+    private fun onPlaybackStateChanged(state: PlaybackState) {
+        if (state.state != PlaybackState.STATE_STOPPED) {
+            cancelPendingStop("playback state ${state.state}")
+            return
+        }
+
+        AndroidLog.logD(providerTag, "STATE_STOPPED received; awaiting confirmation")
+        pendingStop = true
+        val token = ++stopToken
+        stopConfirmer.schedule({
+            if (token == stopToken) {
+                pendingStop = false
+                AndroidLog.logD(providerTag, "Playback stopped (confirmed)")
+                orchestrator.onPlaybackStopped()
+            }
+        }, STOP_CONFIRM_MS, TimeUnit.MILLISECONDS)
+    }
+
+    /**
+     * 撤销待确认的停止。
+     *
+     * 撤销与确认都必须留下日志：否则"从未收到 STOPPED"与"收到但每次都被撤销"
+     * 在日志上完全一样，无法判断这条防线到底有没有生效。
+     */
+    private fun cancelPendingStop(reason: String) {
+        val hadPending = pendingStop
+        pendingStop = false
+        stopToken++
+        if (hadPending) {
+            AndroidLog.logD(providerTag, "Pending stop cancelled by $reason")
+        }
+    }
+
     private fun onMetadataChanged(metadata: MediaMetadata) {
         val identity = buildIdentity(metadata)
 
-        // 空元数据在过渡期很常见。此处刻意**不**判定为停止——
-        // 那会让歌词在切歌途中闪断。真正的停止由 STATE_STOPPED 判定。
+        // 空元数据在过渡期很常见。它既不是"切歌"也不是"停止"，只是宿主还没填好，
+        // 因此这里直接忽略：切歌由带标识的元数据触发，停止由 STATE_STOPPED 判定。
         if (identity.title.isEmpty() && !identity.hasStableId) {
             AndroidLog.logD(providerTag, "Ignoring metadata without title or stable id")
             return
         }
 
-        AndroidLog.logD(
-            providerTag,
-            "Metadata changed: id=${identity.stableId}, title=\"${identity.title}\", " +
-                "artist=\"${identity.artist}\", duration=${identity.durationMs}ms",
-        )
+        if (identity != lastSeenIdentity) {
+            lastSeenIdentity = identity
+            AndroidLog.logD(
+                providerTag,
+                "Metadata changed: id=${identity.stableId}, title=\"${identity.title}\", " +
+                    "artist=\"${identity.artist}\", duration=${identity.durationMs}ms",
+            )
+        }
+
+        // 每首曲目只转储一次全部元数据键，用于排查"曲名被宿主改写"这类问题
+        if (identity.stableId != lastDumpedStableId) {
+            lastDumpedStableId = identity.stableId
+            LyricDiag.dumpMetadata(providerTag, metadata)
+        }
+
+        // 收到可用的曲目信息，说明播放仍在继续——先前那次 STOPPED 属过渡期瞬发，撤销它。
+        // 这是挡住"停止风暴"的关键条件：实测网易云风暴里的几次 STOPPED **之间并没有别的
+        // 播放状态**（夹在中间的是元数据），所以只盯着播放状态是挡不住的。
+        cancelPendingStop("track metadata")
+
         orchestrator.onTrackChanged(identity)
     }
 
     /** 供子类读取当前 Hook 侧已知的稳定标识。 */
     protected fun hookStableId(): String? = hookSource?.currentStableId()
+
+    private companion object {
+        /**
+         * 停止状态的确认窗口。
+         *
+         * 宿主过渡期的瞬发 STOPPED 通常几十毫秒内就被后续状态取代；
+         * 而真正的停止晚 400ms 生效对用户不可见。
+         */
+        const val STOP_CONFIRM_MS = 400L
+    }
 }

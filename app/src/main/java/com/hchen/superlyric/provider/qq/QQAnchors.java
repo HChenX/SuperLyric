@@ -28,6 +28,7 @@ import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.superlyric.utils.LyricDiag;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
@@ -78,6 +79,11 @@ public final class QQAnchors {
 
     private static volatile boolean sInstalled;
 
+    /** 上一次已输出的原始串，用于抑制宿主的重复构造刷屏。 */
+    private static volatile String sLastRawToString;
+    private static volatile String sLastRawShortMessage;
+    private static volatile String sLastExtracted;
+
     private QQAnchors() {
     }
 
@@ -108,8 +114,16 @@ public final class QQAnchors {
                 return;
             }
 
+            dumpConstructors(beanClass);
+
+            int hooked = 0;
             for (Constructor<?> constructor : beanClass.getDeclaredConstructors()) {
-                if (constructor.getParameterCount() < 4) continue;
+                // Kotlin 会为一个 8 参主构造器额外合成一个 (…, int, DefaultConstructorMarker) 桥接。
+                // 旧实现"取第一个参数数 >= 4 的"在选择顺序上是不确定的：一旦先返回桥接，
+                // 而宿主实际走 8 参路径，Hook 就永远不会触发。此处改为**按首参类型精确筛选**。
+                Class<?>[] parameterTypes = constructor.getParameterTypes();
+                if (parameterTypes.length == 0) continue;
+                if (!isSongInfo(parameterTypes[0])) continue;
 
                 constructor.setAccessible(true);
                 CoreTool.hook(constructor, new AbsHook() {
@@ -122,13 +136,37 @@ public final class QQAnchors {
                         }
                     }
                 });
-                AndroidLog.logI(TAG, "Hooked LyricLoadBean constructor");
-                return;
+                hooked++;
+                AndroidLog.logD(TAG, "Hooked LyricLoadBean ctor: " + constructor.toGenericString());
             }
-            AndroidLog.logW(TAG, "No usable LyricLoadBean constructor found");
+
+            if (hooked == 0) {
+                AndroidLog.logW(TAG, "No SongInfo-typed LyricLoadBean constructor found");
+            }
         } catch (Throwable t) {
             AndroidLog.logE(TAG, "Failed to install QQ anchors", t);
         }
+    }
+
+    /**
+     * 首参是否为宿主曲目信息类型。
+     *
+     * 这里出现的 {@code SongInfo} 是宿主的**业务类名**（非混淆产物），跨版本稳定；
+     * 判据用后缀匹配以容忍包路径调整。
+     */
+    private static boolean isSongInfo(@Nullable Class<?> type) {
+        if (type == null) return false;
+        String name = type.getName();
+        return "SongInfo".equals(name) || name.endsWith(".SongInfo");
+    }
+
+    /** 输出候选构造器清单，用于核对"到底挂了哪一个"。 */
+    private static void dumpConstructors(@NonNull Class<?> beanClass) {
+        StringBuilder builder = new StringBuilder();
+        for (Constructor<?> constructor : beanClass.getDeclaredConstructors()) {
+            builder.append("\n  ").append(constructor.toGenericString());
+        }
+        LyricDiag.dumpPayload(TAG, "CTORS", beanClass.getName() + " ctors:" + builder);
     }
 
     private static Class<?> locateBeanClass() {
@@ -152,6 +190,14 @@ public final class QQAnchors {
     private static void dispatch(@Nullable Object songInfo, @NonNull SongInfoListener listener) {
         if (songInfo == null) return;
 
+        // 未解析的原始数据：这两个串正是 MID/ID/NAME 正则的输入，必须原样可见。
+        // 宿主会反复重建同一份 SongInfo，因此只在内容变化时输出。
+        String raw = String.valueOf(songInfo);
+        if (!raw.equals(sLastRawToString)) {
+            sLastRawToString = raw;
+            LyricDiag.dumpPayload(TAG, "RAW-toString", raw);
+        }
+
         String songMid = "";
         long songId = 0L;
         String title = "";
@@ -160,6 +206,10 @@ public final class QQAnchors {
         try {
             Object shortMessage = CoreTool.callMethodIfExists(songInfo, "shortMessage");
             if (shortMessage instanceof String text && !text.isEmpty()) {
+                if (!text.equals(sLastRawShortMessage)) {
+                    sLastRawShortMessage = text;
+                    LyricDiag.dumpPayload(TAG, "RAW-shortMessage", text);
+                }
                 Matcher matcher = SHORT_MESSAGE_PATTERN.matcher(text);
                 if (matcher.find()) {
                     songId = parseLong(matcher.group(1));
@@ -194,6 +244,13 @@ public final class QQAnchors {
         }
 
         if (songMid.isEmpty() && songId <= 0) return;
+
+        String extracted = songMid + "|" + songId + "|" + title + "|" + artist;
+        if (!extracted.equals(sLastExtracted)) {
+            sLastExtracted = extracted;
+            LyricDiag.dumpPayload(TAG, "EXTRACTED", "songMid=" + songMid + " songId=" + songId
+                + " title=\"" + title + "\" artist=\"" + artist + "\"");
+        }
         listener.onSongInfo(songMid, songId, title, artist);
     }
 

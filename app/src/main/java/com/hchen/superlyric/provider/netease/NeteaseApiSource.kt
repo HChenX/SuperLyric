@@ -25,8 +25,8 @@ import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
-import com.hchen.superlyric.kernel.pipeline.LyricPipeline
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
+import com.hchen.superlyric.utils.LyricDiag
 
 import org.json.JSONObject
 
@@ -108,7 +108,8 @@ class NeteaseApiSource : LyricSource {
         val translation = lyricText(payload, "ytlrc").ifEmpty { lyricText(payload, "tlyric") }
         val phonetic = lyricText(payload, "yromalrc").ifEmpty { lyricText(payload, "romalrc") }
 
-        val doc = LyricPipeline.parse(
+        val doc = LyricDiag.parse(
+            sourceName,
             LyricRequest(
                 format = LyricFormat.GENERAL,
                 text = main,
@@ -135,14 +136,35 @@ class NeteaseApiSource : LyricSource {
 
     private fun fetchLyricPayload(songId: Long): JSONObject? {
         // 首选 EAPI 端点：字段最全（含 yrc / yromalrc）
-        post(
+        //
+        // ⚠️ 这里的 lv/tv/rv/yv/ytv/yrv 取 **0 表示"要这一路"**，不是"关掉"。
+        // 曾经有人（包括本项目的重构）看到一串 0 就以为是全部禁用、打算改成 1——
+        // 实测证伪：0 与 1 与 -1 的响应**逐字节相同**，而 0 确实能拿到
+        // yrc / ytlrc / yromalrc 三路逐字载荷。**不要动这几个参数。**
+        // 若某首歌没有 yrc，是那首歌本身没有逐字歌词，不是参数写错。
+        val primary = post(
             url = URL_V1,
             body = "id=$songId&cp=false&tv=0&lv=0&rv=0&kv=0&yv=0&ytv=0&yrv=0",
-        )?.let { return it }
+        )
+        primary?.let {
+            LyricDiag.dumpNeteaseChannels("NeteaseApi/V1", URL_V1, it)
+            if (hasAnyLyricChannel(it)) return it
+        }
 
         // 退回老端点
-        return get("$URL_LEGACY?id=$songId&lv=1&kv=1&tv=-1&rv=1")
+        val legacy = get("$URL_LEGACY?id=$songId&lv=1&kv=1&tv=-1&rv=1")
+        legacy?.let { LyricDiag.dumpNeteaseChannels("NeteaseApi/Legacy", URL_LEGACY, it) }
+        return legacy ?: primary
     }
+
+    /**
+     * 判断响应里是否真的带了任何一路歌词。
+     *
+     * V1 端点若版本参数全为 0，服务端会返回结构完整但**内容全空**的 JSON。
+     * 旧实现直接把这个空壳当成成功，于是"有歌词的歌"被误判为无歌词。
+     */
+    private fun hasAnyLyricChannel(payload: JSONObject): Boolean =
+        NET_LYRIC_KEYS.any { key -> lyricText(payload, key).isNotEmpty() }
 
     private fun searchSongId(identity: TrackIdentity): Long? {
         if (identity.title.isBlank()) return null
@@ -230,6 +252,9 @@ class NeteaseApiSource : LyricSource {
         val FORM_MEDIA_TYPE = "application/x-www-form-urlencoded; charset=utf-8".toMediaType()
 
         val NUMERIC_ID = Regex("^\\d{1,15}$")
+
+        /** 接口可能返回的全部歌词通道，用于判断响应是否为空壳。 */
+        val NET_LYRIC_KEYS = listOf("yrc", "lrc", "ytlrc", "tlyric", "yromalrc", "romalrc")
 
         val client: OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(4, TimeUnit.SECONDS)

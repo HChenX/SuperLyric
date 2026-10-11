@@ -26,6 +26,7 @@ import com.hchen.superlyric.kernel.model.LyricWord
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.provider.spotify.SpotifyLyricAnalysis.SpotifyLine
+import com.hchen.superlyric.utils.LyricDiag
 
 import java.util.concurrent.Executors
 
@@ -101,6 +102,7 @@ class SpotifyApiSource : LyricSource {
                 SpotifyLyricAnalysis.invalidate(headers)
 
                 val doc = toDoc(lines, identity)
+                LyricDiag.dumpDoc(sourceName, doc)
                 AndroidLog.logI(
                     sourceName,
                     "Fetched lyric for $trackId, lines=${doc.lines.size}, " +

@@ -65,6 +65,7 @@ class QQApiSource : LyricSource {
         // 元数据自带 mid 时直接直查，无需检索
         val directMid = QQIdentity.midOf(identity)
         if (directMid != null) {
+            AndroidLog.logI(sourceName, "Direct fetch by mid=$directMid")
             return QQNetwork.fetchByMid(directMid, QQIdentity.idOf(identity), identity)
         }
 

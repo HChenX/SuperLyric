@@ -26,8 +26,8 @@ import com.hchen.superlyric.kernel.decode.QrcCipher
 import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
-import com.hchen.superlyric.kernel.pipeline.LyricPipeline
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
+import com.hchen.superlyric.utils.LyricDiag
 
 import org.json.JSONArray
 import org.json.JSONObject
@@ -217,12 +217,17 @@ internal object QQNetwork {
      * @return 成功时返回结果；当前 profile 未命中时返回 null 以便继续尝试其它入口
      */
     private fun parsePayloads(lyricRaw: String, data: JSONObject, identity: TrackIdentity): LyricOutcome? {
+        LyricDiag.dumpRawPreview(TAG, "ENCRYPTED-lyric", lyricRaw)
+        LyricDiag.dumpRawPreview(TAG, "ENCRYPTED-trans", data.optString("trans", ""))
+        LyricDiag.dumpRawPreview(TAG, "ENCRYPTED-roma", data.optString("roma", ""))
+
         val mainText = decryptField(lyricRaw) ?: return null
 
         val translationText = decryptField(data.optString("trans", ""))
         val phoneticText = decryptField(data.optString("roma", ""))
 
-        val doc = LyricPipeline.parse(
+        val doc = LyricDiag.parse(
+            TAG,
             LyricRequest(
                 format = LyricFormat.QRC,
                 text = mainText,

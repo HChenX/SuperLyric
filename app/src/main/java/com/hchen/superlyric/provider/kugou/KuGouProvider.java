@@ -18,32 +18,33 @@
  */
 package com.hchen.superlyric.provider.kugou;
 
-import android.media.MediaMetadata;
-
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.hchen.processor.HookThis;
-import com.hchen.superlyric.kernel.identity.TrackIdentity;
 import com.hchen.superlyric.kernel.orchestrate.LyricSource;
 import com.hchen.superlyric.provider.base.HookLyricSource;
 import com.hchen.superlyric.provider.base.MusicProvider;
 
 /**
- * 酷狗音乐歌词提供者。
+ * 酷狗音乐歌词提供者：**仅走官方 API 路径**。
  *
- * <h3>取词路径</h3>
+ * <h3>为什么没有 Hook 路径</h3>
+ * 原设计锚定酷狗的跨进程 IPC 中枢 {@code @twin:GlobalVariate}，
+ * 在宿主写入 {@code LyricData}（key=41）后读取宿主自己下载的本地 {@code .krc} 文件。
+ * 实机验证（酷狗 20.8.2）证明该路径**完全不可用**：
  * <ul>
- *   <li><b>Hook 路径（准确优先）</b>：单个锚点 {@code @twin:GlobalVariate}。
- *       宿主写入 {@code LyricData}（key=41）即"歌词已就绪"，同时从 key=207 读出音频 Hash；
- *       随后直接读取宿主自己下载的本地 {@code .krc} 文件。
- *       报文由模块自行调用 {@code KrcCipher} + 库的 KRC 解析器解开，不经宿主任何加工。</li>
- *   <li><b>API 路径（兜底）</b>：酷狗开放 KRC 接口，支持 Hash 直查与歌名检索。</li>
+ *   <li>宿主根本不把 {@code .krc} 落盘——{@code filesDir}（194 项）与
+ *       {@code externalFilesDir}（26 项）下均无任何 lyric 目录，8 个候选路径全部不存在；</li>
+ *   <li>key=41 在整个播放期间每秒重发多次，每次都触发一轮无效的文件系统探测。</li>
  * </ul>
+ * 因此该路径已整体删除，改由官方 KRC 接口直接取词。
  *
- * <h3>标识一致性</h3>
- * 覆写 [buildIdentity] 以音频 Hash 作为稳定标识，使 Hook 上报与 `MediaSession`
- * 上报的标识落在同一个命名空间里（{@code kugou:<hash>}），从而相互可比较。
- * 否则 Hook 捕获会因"标识表示法不同"被当成过期数据丢弃。
+ * <h3>标识与检索</h3>
+ * 酷狗在 {@code MediaMetadata.MEDIA_ID} 中对**同一首曲目**会上报**多个不同的哈希**
+ * （实测 160~600ms 内出现 null → 甲 → 乙）。其中只有一个能直查到歌词，
+ * 因此 {@link KuGouApiSource} 在直查落空时必须回退到「歌名 + 歌手」检索，
+ * 否则会把有歌词的歌误判为无歌词并下发纯音乐占位。
  *
  * <p>本类必须用 Java 编写：{@code @HookThis} 由 Java 注解处理器消费，
  * 而 Kotlin 类不会经过该处理器，写 Kotlin 会导致整个 Provider 不被注册。
@@ -53,43 +54,22 @@ import com.hchen.superlyric.provider.base.MusicProvider;
 @HookThis(targetPackage = "com.kugou.android")
 public class KuGouProvider extends MusicProvider {
     private static final String TAG = "KuGouProvider";
-    private static final String NAMESPACE = "kugou";
 
     @Override
     protected String getProviderTag() {
         return TAG;
     }
 
-    @NonNull
+    @Nullable
     @Override
     protected HookLyricSource createHookSource() {
-        return new KuGouHookSource();
+        // 宿主的原生报文不落盘，没有可用的 Hook 取词点
+        return null;
     }
 
     @NonNull
     @Override
     protected LyricSource createApiSource() {
         return new KuGouApiSource();
-    }
-
-    @NonNull
-    @Override
-    protected TrackIdentity buildIdentity(@NonNull MediaMetadata metadata) {
-        String hash = hookStableId();
-        if (hash != null && !hash.isEmpty()) {
-            return new TrackIdentity(
-                TAG,
-                TrackIdentity.stableId(NAMESPACE, hash),
-                readString(metadata, MediaMetadata.METADATA_KEY_TITLE),
-                readString(metadata, MediaMetadata.METADATA_KEY_ARTIST),
-                metadata.getLong(MediaMetadata.METADATA_KEY_DURATION)
-            );
-        }
-        return super.buildIdentity(metadata);
-    }
-
-    private static String readString(@NonNull MediaMetadata metadata, @NonNull String key) {
-        String value = metadata.getString(key);
-        return value != null ? value : "";
     }
 }

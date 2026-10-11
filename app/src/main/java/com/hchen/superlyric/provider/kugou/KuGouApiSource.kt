@@ -24,10 +24,10 @@ import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
-import com.hchen.superlyric.kernel.pipeline.LyricPipeline
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
 import com.hchen.superlyric.kernel.decode.DecodeException
 import com.hchen.superlyric.kernel.decode.PayloadBytes
+import com.hchen.superlyric.utils.LyricDiag
 
 import org.json.JSONArray
 import org.json.JSONObject
@@ -89,16 +89,45 @@ class KuGouApiSource : LyricSource {
     }
 
     private fun resolve(identity: TrackIdentity): LyricOutcome {
-        val hash = hashOf(identity) ?: searchBestHash(identity) ?: return LyricOutcome.NoLyrics("kugou: no candidate")
+        // 直查：宿主上报的哈希并不总是歌词哈希（同一首曲目实测会出现多个不同哈希），
+        // 因此落空时**必须**回退到检索。否则会把有歌词的歌误判为无歌词、下发纯音乐占位。
+        hashOf(identity)?.let { direct ->
+            attempt(direct, identity)?.let { return it }
+            AndroidLog.logD(
+                sourceName,
+                "Direct hash lookup yielded no lyric: $direct; falling back to keyword search",
+            )
+        }
 
+        val searchedHash = searchBestHash(identity)
+            ?: return LyricOutcome.NoLyrics("kugou: no candidate")
+
+        attempt(searchedHash, identity)?.let { return it }
+        return LyricOutcome.NoLyrics("kugou: no lyric for hash $searchedHash")
+    }
+
+    /**
+     * 对单个哈希取词。
+     *
+     * @return [LyricOutcome.Success] 或 [LyricOutcome.TransientFailure]；
+     *         返回 {@code null} 表示**这个哈希没有歌词**，调用方可继续尝试其它哈希
+     */
+    private fun attempt(hash: String, identity: TrackIdentity): LyricOutcome? {
         val krcPayload = downloadKrc(hash, identity.durationMs)
-            ?: return LyricOutcome.NoLyrics("kugou: no lyric for hash $hash")
+        if (krcPayload == null) {
+            AndroidLog.logD(sourceName, "No KRC payload for hash=$hash")
+            return null
+        }
 
         val bytes = PayloadBytes.decode(krcPayload)
-        if (bytes.isEmpty()) return LyricOutcome.NoLyrics("kugou: empty payload")
+        if (bytes.isEmpty()) {
+            AndroidLog.logD(sourceName, "Empty KRC payload for hash=$hash")
+            return null
+        }
 
         val doc = try {
-            LyricPipeline.parse(
+            LyricDiag.parse(
+                sourceName,
                 LyricRequest(
                     format = LyricFormat.KRC,
                     bytes = bytes,
@@ -114,7 +143,10 @@ class KuGouApiSource : LyricSource {
             return LyricOutcome.TransientFailure(e)
         }
 
-        if (doc == null || doc.isEmpty) return LyricOutcome.NoLyrics("kugou: parsed empty")
+        if (doc == null || doc.isEmpty) {
+            AndroidLog.logD(sourceName, "Parsed no lines for hash=$hash")
+            return null
+        }
 
         AndroidLog.logI(sourceName, "Fetched KRC for hash=$hash, lines=${doc.lines.size}")
         return LyricOutcome.Success(doc)

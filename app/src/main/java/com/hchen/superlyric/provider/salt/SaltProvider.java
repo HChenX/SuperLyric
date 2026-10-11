@@ -21,6 +21,7 @@ package com.hchen.superlyric.provider.salt;
 import android.media.MediaMetadata;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import com.hchen.processor.HookThis;
 import com.hchen.superlyric.kernel.identity.TrackIdentity;
@@ -57,10 +58,15 @@ public class SaltProvider extends MusicProvider {
         return TAG;
     }
 
+    /** Hook 取词来源；同时用于读取宿主的真实曲目信息。 */
+    @Nullable
+    private SaltHookSource saltHookSource;
+
     @NonNull
     @Override
     protected HookLyricSource createHookSource() {
-        return new SaltHookSource();
+        saltHookSource = new SaltHookSource();
+        return saltHookSource;
     }
 
     @NonNull
@@ -72,12 +78,27 @@ public class SaltProvider extends MusicProvider {
     @NonNull
     @Override
     protected TrackIdentity buildIdentity(@NonNull MediaMetadata metadata) {
-        String title = readString(metadata, MediaMetadata.METADATA_KEY_TITLE);
-        String artist = readString(metadata, MediaMetadata.METADATA_KEY_ARTIST);
-        long duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION);
-
         String captured = hookStableId();
-        if (captured != null && !captured.isEmpty()) {
+        boolean hasCaptured = captured != null && !captured.isEmpty();
+
+        // 宿主真实曲目信息优先。椒盐在开启蓝牙歌词后会把元数据的 TITLE 写成当前歌词行
+        // 或制作人名单、把 ARTIST 拼成 "歌手 - 曲名"，元数据完全不可信；
+        // 而宿主自己的 Song 对象里字段是干净的，且其 id 与 captured 一一对应。
+        SaltHookSource.SongInfo info = hasCaptured && saltHookSource != null
+            ? saltHookSource.songInfo(captured)
+            : null;
+
+        String title = info != null && !info.getTitle().isEmpty()
+            ? info.getTitle()
+            : readString(metadata, MediaMetadata.METADATA_KEY_TITLE);
+        String artist = info != null && !info.getArtist().isEmpty()
+            ? info.getArtist()
+            : readString(metadata, MediaMetadata.METADATA_KEY_ARTIST);
+        long duration = info != null && info.getDurationMs() > 0L
+            ? info.getDurationMs()
+            : metadata.getLong(MediaMetadata.METADATA_KEY_DURATION);
+
+        if (hasCaptured) {
             return new TrackIdentity(
                 TAG, TrackIdentity.stableId(NAMESPACE, captured), title, artist, duration);
         }

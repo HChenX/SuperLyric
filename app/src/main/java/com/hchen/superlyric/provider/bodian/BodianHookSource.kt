@@ -20,12 +20,13 @@ package com.hchen.superlyric.provider.bodian
 
 import com.hchen.hooktool.log.AndroidLog
 import com.hchen.superlyric.kernel.identity.TrackIdentity
+import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
-import com.hchen.superlyric.kernel.pipeline.LyricPipeline
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
 import com.hchen.superlyric.provider.base.HookLyricSource
+import com.hchen.superlyric.utils.LyricDiag
 
 import java.io.File
 import java.util.concurrent.Executors
@@ -68,6 +69,20 @@ class BodianHookSource : HookLyricSource {
 
     private var lastProcessedPath: String? = null
 
+    /**
+     * 已解析、但尚未被任何会话消费的结果。
+     *
+     * 宿主会**分两次上报标识**：先发一个陈旧的 `MEDIA_ID`（还是上一首的），
+     * 稍后才发正确的。而歌词往往在第一次之前就已经解析完毕——那时投递会被
+     * 随后推进的 epoch 判为过期丢弃，表现为"歌词明明解析出来了却整轮超时转网络"，
+     * 甚至因检索失败而下发纯音乐占位。因此按稳定标识暂存，等它自己的会话建立后补投。
+     */
+    @Volatile
+    private var stashedDoc: LyricDoc? = null
+
+    @Volatile
+    private var stashedId: String? = null
+
     override fun install() {
         BodianAnchors.install { filePath, title, artist, album, rid ->
             onLyricFile(filePath, title, artist, album, rid)
@@ -80,11 +95,21 @@ class BodianHookSource : HookLyricSource {
         this.session = session
         this.pendingIdentity = identity
         lastProcessedPath = null
+
+        val stashed = stashedDoc
+        if (stashed != null && stashedId == identity.stableId) {
+            stashedDoc = null
+            stashedId = null
+            AndroidLog.logD(sourceName, "Replaying stashed lyric for id=${identity.stableId}")
+            session.deliver(LyricOutcome.Success(stashed))
+        }
     }
 
     override fun cancel() {
         session = null
         pendingIdentity = null
+        stashedDoc = null
+        stashedId = null
     }
 
     private fun onLyricFile(filePath: String, title: String, artist: String, album: String, rid: String) {
@@ -110,7 +135,21 @@ class BodianHookSource : HookLyricSource {
 
         executor.execute {
             val outcome = parseFile(filePath, identity, album)
-            activeSession.deliver(outcome)
+            if (outcome is LyricOutcome.Success) {
+                stashedDoc = outcome.doc
+                stashedId = identity.stableId
+            }
+
+            // 只投给确实属于当前会话的结果；身份对不上就先留着，等它自己的会话建立后补投。
+            // 绝不能投给别的曲目的会话——那会被当成新曲目的歌词发布出去。
+            if (identity.stableId == null || identity.stableId == pendingIdentity?.stableId) {
+                activeSession.deliver(outcome)
+            } else {
+                AndroidLog.logD(
+                    sourceName,
+                    "Stashed lyric for ${identity.stableId}; will replay once its session is up",
+                )
+            }
         }
     }
 
@@ -129,7 +168,8 @@ class BodianHookSource : HookLyricSource {
         }
 
         val doc = try {
-            LyricPipeline.parse(
+            LyricDiag.parse(
+                sourceName,
                 LyricRequest(
                     format = LyricFormat.AUTO,
                     text = text,

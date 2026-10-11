@@ -26,6 +26,7 @@ import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.superlyric.utils.LyricDiag;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
@@ -33,6 +34,7 @@ import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.result.ClassData;
 import org.luckypray.dexkit.result.ClassDataList;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -64,6 +66,9 @@ public final class SaltAnchors {
     /** 锚点：{@code LyricsDocument} 的 toString 格式串。 */
     private static final String DOCUMENT_ANCHOR = "LyricsDocument(sourceText=";
 
+    /** 宿主的曲目模型类；带 {@code @Keep}，类名与 getter 名都是稳定的。 */
+    private static final String SONG_CLASS = "com.salt.music.data.entry.Song";
+
     private static final String CONTROLLER_CLASS = "com.salt.music.service.MusicController";
 
     private static volatile boolean sInstalled;
@@ -78,6 +83,27 @@ public final class SaltAnchors {
          * @param songId     宿主显式给出的曲目标识；可能为空
          */
         void onLyrics(@NonNull String sourceText, @NonNull String songId);
+
+        /**
+         * 宿主的**真实曲目信息**。
+         *
+         * <p>椒盐在开启蓝牙歌词后会把 {@code METADATA_KEY_TITLE} 写成当前歌词行或制作人名单、
+         * 把 {@code ARTIST} 拼成 {@code "歌手 - 曲名"}——元数据完全不可信。
+         * 这个回调给出的是宿主自己的 {@code Song} 对象里的原始字段，且其
+         * {@code id} 与 {@link #onLyrics} 的 {@code songId} 完全一致，可精确关联。
+         *
+         * @param songId     曲目标识，与 {@link #onLyrics} 的 songId 同源
+         * @param title      真实曲名
+         * @param artist     真实歌手
+         * @param durationMs 曲目时长（毫秒）
+         */
+        default void onSong(
+            @NonNull String songId,
+            @NonNull String title,
+            @NonNull String artist,
+            long durationMs
+        ) {
+        }
     }
 
     /**
@@ -104,6 +130,9 @@ public final class SaltAnchors {
                 AndroidLog.logW(TAG, "MusicController not found");
                 return;
             }
+
+            // 探针：独立挂载，失败不影响主取词路径
+            installSongProbe(controllerClass, listener);
 
             for (Method method : controllerClass.getDeclaredMethods()) {
                 Class<?>[] params = method.getParameterTypes();
@@ -150,6 +179,145 @@ public final class SaltAnchors {
                 return (classes == null || classes.isEmpty()) ? null : classes.get(0);
             }
         });
+    }
+
+    /**
+     * 挂载宿主那一个"曲目已切换"回调，取回 {@code com.salt.music.data.entry.Song}。
+     *
+     * <h3>为什么是这条路</h3>
+     * 先试过 {@code LyriconSongSnapshot} 的构造器，真机实测**切歌时零触发**——
+     * 那是 Lyricon 歌词渲染器的快照，只有歌词页面订阅时才会生成，不能作为取数依据。
+     * 而 {@code MusicController} 内部以 {@code Song} 为参数的回调稳定触发，
+     * 且 {@code Song} 带 {@code @Keep}、{@code Song.getId()} 与
+     * {@link LyricsListener#onLyrics} 的 songId **完全一致**，可精确关联。
+     *
+     * <h3>为什么按签名而不是按名字</h3>
+     * 触发的方法名是混淆产物（实测为单个生僻字符），无法跨版本硬编码；
+     * 而参数类型序列 {@code (Song, long, long, Long)} 由 {@code @Keep} 的
+     * {@code Song} 与基本类型构成，是稳定可辨的。
+     *
+     * <h3>签名失配时不退回"广撒网"</h3>
+     * 宿主若改动了这个签名，本层就取不到真实曲目信息（退化为使用元数据），
+     * 只记一条警告。刻意不去挂载"所有以 Song 为参数的方法"：
+     * 那会牵进一批与曲目切换无关的方法，违背"最少最精准"。
+     * 真遇到签名变更，再针对具体情况处理。
+     */
+    private static void installSongProbe(
+        @NonNull Class<?> controllerClass,
+        @NonNull LyricsListener listener
+    ) {
+        try {
+            Class<?> songClass = CoreTool.findClassIfExists(SONG_CLASS);
+            if (songClass == null) {
+                AndroidLog.logW(TAG, SONG_CLASS + " not found");
+                return;
+            }
+
+            int hooked = hookSongCallback(
+                controllerClass, listener,
+                new Class<?>[]{songClass, long.class, long.class, Long.class}
+            );
+            if (hooked == 0) {
+                AndroidLog.logW(TAG, "Song callback signature not found; real track info unavailable");
+                return;
+            }
+
+            AndroidLog.logD(TAG, "Hooked " + hooked + " Song callback(s)");
+        } catch (Throwable t) {
+            AndroidLog.logE(TAG, "Failed to install song probe", t);
+        }
+    }
+
+    /** 按精确参数序列挂载静态 void 方法。 */
+    private static int hookSongCallback(
+        @NonNull Class<?> controllerClass,
+        @NonNull LyricsListener listener,
+        @NonNull Class<?>[] expected
+    ) {
+        int hooked = 0;
+        for (Method method : controllerClass.getDeclaredMethods()) {
+            if (!Modifier.isStatic(method.getModifiers())) continue;
+            if (method.getReturnType() != void.class) continue;
+
+            Class<?>[] params = method.getParameterTypes();
+            if (params.length != expected.length || !params[0].equals(expected[0])) continue;
+
+            boolean same = true;
+            for (int i = 1; i < params.length; i++) {
+                if (!params[i].equals(expected[i])) {
+                    same = false;
+                    break;
+                }
+            }
+            if (!same) continue;
+
+            hookOnSong(method, 0, listener);
+            hooked++;
+        }
+        return hooked;
+    }
+
+    private static void hookOnSong(
+        @NonNull Method method,
+        int songArgIndex,
+        @NonNull LyricsListener listener
+    ) {
+        method.setAccessible(true);
+        CoreTool.hook(method, new AbsHook() {
+            @Override
+            public void after() {
+                try {
+                    reportSong(getArg(songArgIndex), listener);
+                } catch (Throwable ignored) {
+                    // 绝不干扰宿主
+                }
+            }
+        });
+    }
+
+    /** 已转储过的曲目标识，避免热路径刷屏。 */
+    private static volatile String sLastDumpedSongId;
+
+    private static void reportSong(@Nullable Object song, @NonNull LyricsListener listener) {
+        if (song == null) return;
+
+        String songId = invoke(song, "getId");
+        String title = invoke(song, "getTitle");
+        String artist = invoke(song, "getArtist");
+
+        listener.onSong(songId, title, artist, parseLong(invoke(song, "getDuration")));
+
+        if (songId.equals(sLastDumpedSongId)) return;
+        sLastDumpedSongId = songId;
+
+        StringBuilder builder = new StringBuilder(256);
+        builder.append("id=").append(songId);
+        builder.append(" title=\"").append(title).append('"');
+        builder.append(" artist=\"").append(artist).append('"');
+        builder.append(" album=\"").append(invoke(song, "getAlbum")).append('"');
+        builder.append(" duration=").append(invoke(song, "getDuration"));
+        builder.append(" path=").append(invoke(song, "getPath"));
+
+        LyricDiag.dumpPayload(TAG, "SONG", builder.toString());
+    }
+
+    private static long parseLong(@NonNull String value) {
+        try {
+            return Long.parseLong(value.trim());
+        } catch (Throwable ignored) {
+            return 0L;
+        }
+    }
+
+    /** 反射调用无参 getter；失败时返回标记串而不是抛出。 */
+    @NonNull
+    private static String invoke(@NonNull Object target, @NonNull String method) {
+        try {
+            Object value = target.getClass().getMethod(method).invoke(target);
+            return value == null ? "null" : String.valueOf(value);
+        } catch (Throwable t) {
+            return "<" + t.getClass().getSimpleName() + ">";
+        }
     }
 
     /**

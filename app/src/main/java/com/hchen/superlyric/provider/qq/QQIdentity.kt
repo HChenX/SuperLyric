@@ -41,6 +41,19 @@ internal object QQIdentity {
     fun midOf(identity: TrackIdentity): String? =
         TrackIdentity.normalizeStableId(identity.stableId)?.takeIf { MID_PATTERN.matches(it) }
 
+    /**
+     * 是否为**纯数字**的 songID。
+     *
+     * <p>QQ 音乐的 `MediaSession` 会分两步上报同一首曲目的标识：先给数字 songID、
+     * 再给 songMID。两者是同一音轨的两种表示法，若把数字形态也当作独立稳定标识，
+     * 宿主从 songID 切到 songMID 时会被判定为切歌——白白推进一次 epoch，
+     * 使已完成的取词因代际过期而被丢弃，并重复发起一次网络请求。
+     *
+     * @return 形如 {@code ^\d{1,15}$} 时为 true
+     */
+    @JvmStatic
+    fun isNumericId(raw: String?): Boolean = raw != null && ID_PATTERN.matches(raw)
+
     fun idOf(identity: TrackIdentity): Long =
         TrackIdentity.normalizeStableId(identity.stableId)
             ?.takeIf { ID_PATTERN.matches(it) }
