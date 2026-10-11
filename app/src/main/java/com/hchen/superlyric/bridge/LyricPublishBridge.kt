@@ -71,9 +71,11 @@ class LyricPublishBridge : LyricOrchestrator.Listener {
     }
 
     override fun onNoLyrics(identity: TrackIdentity?) {
+        // 这条日志过去写的是"所有来源一致认为没有歌词"——那是旧口径。现在只有平台或宿主
+        // **明确**说没有歌词才会走到这里；"查不到"走 onUnavailable，不下发占位
         AndroidLog.logI(
             TAG,
-            "All sources agree there is no lyric; publishing instrumental placeholder for " +
+            "Platform/host reported no lyric; publishing instrumental placeholder for " +
                 "id=${identity?.stableId}"
         )
         val doc = PureMusicDoc.create(

@@ -22,6 +22,8 @@ import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.model.LyricLine
 import com.hchen.superlyric.kernel.model.LyricWord
 import com.hchen.superlyric.kernel.model.PureMusicDoc
+import com.hchen.superlyricapi.SuperLyricData
+import com.hchen.superlyricapi.SuperLyricLine
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -154,5 +156,40 @@ class LyricDocAdapterTest {
     @Test
     fun `null input yields an empty document`() {
         assertTrue(LyricDocAdapter.toDoc(null).isEmpty)
+    }
+
+    @Test
+    fun `a delta payload falls back to the single line channel`() {
+        // 增量包不带 allLyrics，只有顶层译文/次歌词这一条通道。只读全量通道会解出空文档，
+        // 行、译文、次歌词一起丢光（全量包则会把每行的译文/次歌词随行过线，两条都在 wire 上）
+        val delta = SuperLyricData()
+            .setTitle("T")
+            .setArtist("A")
+            .setAlbum("Al")
+            .setLyricId("qq:x")
+            .setDuration(2_000L)
+            .setCurrentLyricIndex(1)
+            .setPosition(1_400L)
+            .setLyric(SuperLyricLine("World", null, 1_000L, 2_000L))
+            .setTranslation(SuperLyricLine("世界", null, 1_000L, 2_000L))
+            .setSecondary(SuperLyricLine("wa-rudo", null, 1_000L, 2_000L))
+
+        val restored = LyricDocAdapter.toDoc(delta)
+
+        assertEquals(1, restored.lines.size)
+        assertEquals("World", restored.lines[0].text)
+        assertEquals("世界", restored.lines[0].translation)
+        assertEquals("wa-rudo", restored.lines[0].phonetic)
+        assertEquals(1_000L, restored.lines[0].startMs)
+        assertEquals("T", restored.title)
+        assertEquals("qq:x", restored.lyricId)
+    }
+
+    @Test
+    fun `a stop payload still yields an empty document`() {
+        // 回退不得把"停止"变成"有一行歌词"：停止包只有元数据，没有任何行
+        val stop = SuperLyricData().setTitle("T").setArtist("A")
+
+        assertTrue(LyricDocAdapter.toDoc(stop).isEmpty)
     }
 }

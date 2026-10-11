@@ -54,9 +54,12 @@ object LyricDocAdapter {
             .setLyricId(doc.lyricId)
             .setDuration(doc.durationMs)
             .setAllLyrics(lines.toTypedArray())
-            .setCurrentLyricIndex(0)
 
-        lines.firstOrNull()?.let { data.setLyric(it) }
+        // 只有确实有行时才声明"当前行"：空文档上标 index=0 会让消费方以为存在第 0 行
+        lines.firstOrNull()?.let { first ->
+            data.setCurrentLyricIndex(0)
+            data.setLyric(first)
+        }
         return data
     }
 
@@ -64,6 +67,11 @@ object LyricDocAdapter {
      * 构造**单行增量**包（服务端时钟推进时使用）。
      *
      * 不携带全量歌词，是本项目 IPC 开销最小的包型。
+     *
+     * **译文与次歌词写两处，两条都在 wire 上**：每行的 [SuperLyricLine]（[toFullData] 带全量
+     * 数组时随行过线——`SuperLyricData.writeToParcel` 会把 `allLyrics` 每行的译文/次歌词写成
+     * 并列数组），以及顶层 [SuperLyricData.setTranslation] / [SuperLyricData.setSecondary]
+     * （只带一行的增量包只有这一条通道）。消费端**两条都要读**，见 [toDoc]
      *
      * @param index      行下标；越界时返回 null
      * @param positionMs 当前播放位置
@@ -91,6 +99,10 @@ object LyricDocAdapter {
      * 将收到的 [SuperLyricData] 读入不可变模型。
      *
      * 读取时逐字段复制值，不做任何引用共享；接收方随后持有的是一个与 Binder 入参完全解耦的快照。
+     *
+     * **全量行缺失时回退到单行通道**：只读 [SuperLyricData.getAllLyrics] 会让增量包解出空文档
+     * （行、译文、次歌词全丢）。当前仓内喂进来的都是全量包，但公开 API 允许增量包，
+     * 这个回退让调用方不必先弄清包型
      */
     fun toDoc(data: SuperLyricData?): LyricDoc {
         if (data == null) return LyricDoc.EMPTY
@@ -98,12 +110,27 @@ object LyricDocAdapter {
         val lines = data.allLyrics?.mapNotNull { toLyricLine(it) }.orEmpty()
 
         return LyricDoc(
-            lines = lines,
+            lines = if (lines.isNotEmpty()) lines else singleLineFallback(data),
             title = data.title.orEmpty(),
             artist = data.artist.orEmpty(),
             album = data.album.orEmpty(),
             durationMs = if (data.duration > 0L) data.duration else 0L,
             lyricId = data.lyricId,
+        )
+    }
+
+    /** 从单行 + 顶层译文/次歌词拼出文档；单行通道为空时返回空列表。 */
+    private fun singleLineFallback(data: SuperLyricData): List<LyricLine> {
+        val line = data.lyric?.let { toLyricLine(it) } ?: return emptyList()
+        return listOf(
+            LyricLine(
+                startMs = line.startMs,
+                endMs = line.endMs,
+                text = line.text,
+                translation = data.translation?.text?.takeIf { it.isNotEmpty() },
+                phonetic = data.secondary?.text?.takeIf { it.isNotEmpty() },
+                words = line.words,
+            )
         )
     }
 
