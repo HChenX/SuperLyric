@@ -163,7 +163,7 @@
     <string name="tidal_music">No additional setup required</string>
     <string name="haibei_music">Unknown</string>
     <string name="wangyiyun_rongyao_music">Enable the "Meizu status bar lyrics" option in settings</string>
-    <string name="migu_music">Enable the "Meizu status bar lyrics" option in settings</string>
+    <string name="migu_music">Extracts native full-song lyrics, word timing and translations via Hook</string>
     <string name="aplayer_music">Enable the "Status bar lyrics" option in settings</string>
     <string name="lmusic_music">Enable the "Meizu status bar lyrics" option in settings</string>
     <string name="yinliu_music">Enable the "Meizu status bar lyrics" option in settings</string>

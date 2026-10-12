@@ -163,7 +163,7 @@
     <string name="tidal_music">无需额外设置</string>
     <string name="haibei_music">未知</string>
     <string name="wangyiyun_rongyao_music">开启设置中的“魅族状态栏歌词”功能即可</string>
-    <string name="migu_music">开启设置中的“魅族状态栏歌词”功能即可</string>
+    <string name="migu_music">通过原生 Hook 获取整首歌词、逐字时序和翻译</string>
     <string name="aplayer_music">开启设置中的“状态栏歌词”功能即可</string>
     <string name="lmusic_music">开启设置中的“魅族状态栏歌词”功能即可</string>
     <string name="yinliu_music">开启设置中的“魅族状态栏歌词”功能即可</string>

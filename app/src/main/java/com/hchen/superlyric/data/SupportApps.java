@@ -50,7 +50,7 @@ public final class SupportApps {
             // add("com.meizu.media.music"); // 魅族音乐
             // add("com.mimicry.mymusic"); // 拟声音乐
             // add("com.miui.player"); // 小米音乐
-            // add("cmccwm.mobilemusic"); // 咪咕音乐
+            add("cmccwm.mobilemusic"); // 咪咕音乐
             // add("fun.upup.musicfree"); // MusicFree
             add("com.netease.cloudmusic"); // 网易云音乐
             // add("com.oppo.music"); // OPPO 音乐
@@ -87,7 +87,7 @@ public final class SupportApps {
             // put("com.meizu.media.music", R.string.meizu_music);
             // put("com.mimicry.mymusic", R.string.nisheng_music);
             // put("com.miui.player", R.string.qq_music_xiaomi);
-            // put("cmccwm.mobilemusic", R.string.migu_music);
+            put("cmccwm.mobilemusic", R.string.migu_music);
             // put("fun.upup.musicfree", R.string.musicfree_music);
             put("com.netease.cloudmusic", R.string.wangyiyun_music);
             // put("com.oppo.music", R.string.oppo_music);
