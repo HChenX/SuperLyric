@@ -154,6 +154,7 @@
     <string name="bodian_music">No additional setup required, play normally</string>
     <string name="kugou_music">No additional setup required, play normally</string>
     <string name="kugou_lite_music">No additional setup required, play normally</string>
+    <string name="migu_music">No additional setup required, play normally</string>
     <string name="qq_music">No additional setup required, play normally</string>
     <string name="wangyiyun_music">Keep network connected, play normally</string>
     <string name="spotify_music">Keep network connected, play normally</string>
@@ -163,7 +164,6 @@
     <string name="tidal_music">No additional setup required</string>
     <string name="haibei_music">Unknown</string>
     <string name="wangyiyun_rongyao_music">Enable the "Meizu status bar lyrics" option in settings</string>
-    <string name="migu_music">Enable the "Meizu status bar lyrics" option in settings</string>
     <string name="aplayer_music">Enable the "Status bar lyrics" option in settings</string>
     <string name="lmusic_music">Enable the "Meizu status bar lyrics" option in settings</string>
     <string name="yinliu_music">Enable the "Meizu status bar lyrics" option in settings</string>

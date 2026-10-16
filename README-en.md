@@ -32,6 +32,7 @@
 - BoDian Music (cn.wenyu.bodian) -> Hook Acquisition
 - Kugou Music (com.kugou.android) -> Network
 - Kugou Music Lite (com.kugou.android.lite) -> Network
+- Migu Music (cmccwm.mobilemusic) -> Hook Acquisition
 - NetEase Cloud Music (com.netease.cloudmusic) -> Network
 - QQ Music (com.tencent.qqmusic) -> Hook Acquisition
 - Salt Music (com.salt.music) -> Hook Acquisition
@@ -53,7 +54,6 @@
 - Meizu Music (com.meizu.media.music) -> Meizu Status Bar Lyrics
 - Mimicry Music (com.mimicry.mymusic) -> Meizu Status Bar Lyrics
 - Mi Music (com.miui.player) -> Bluetooth Lyrics
-- Migu Music (cmccwm.mobilemusic) -> Meizu Status Bar Lyrics
 - MusicFree (fun.upup.musicfree) -> Desktop Lyrics
 - OPPO Music (com.oppo.music) -> Bluetooth Lyrics
 - Poweramp (com.maxmpz.audioplayer) -> Lyrics available only when on the app's lyrics interface
