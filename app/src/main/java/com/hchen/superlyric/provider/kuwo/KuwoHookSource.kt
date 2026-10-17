@@ -31,14 +31,6 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
 /**
- * 宿主曲目的最小信息集
- *
- * <p>放在 Kotlin 侧而不是 Java 锚点类里：与椒盐的做法一致，
- * 避免 Java 嵌套类跨语言解析的问题。
- */
-data class KuwoTrack(val rid: String, val title: String, val artist: String)
-
-/**
  * 酷我音乐 Hook 取词来源：解析宿主交给自己渲染层的**明文歌词全文**。
  *
  * ## 取词流程
@@ -107,6 +99,8 @@ class KuwoHookSource : HookLyricSource {
     private var lastDelivered: Pair<String?, String>? = null
 
     override fun install() {
+        // 曲目回调用对象表达式而不是 lambda：它是三参接口，lambda 形式在 Kotlin 里
+        // 无法按位置推断参数名，可读性差
         KuwoAnchors.installTrackProbe(object : KuwoAnchors.TrackListener {
             override fun onTrack(rid: String, title: String, artist: String) {
                 handleTrack(rid, title, artist)
@@ -118,7 +112,9 @@ class KuwoHookSource : HookLyricSource {
         }
     }
 
+    /** 记录宿主上报的当前曲目 */
     private fun handleTrack(rid: String, title: String, artist: String) {
+        if (rid.isEmpty()) return
         if (rid.isEmpty()) return
         // 必须在此写入：歌词回调要拿它构造与宿主一致的稳定标识。缺了它，
         // 歌词侧只能回退到 MediaSession 的身份，而切歌瞬间两者会短暂错配，
@@ -130,9 +126,6 @@ class KuwoHookSource : HookLyricSource {
     }
 
     override fun currentStableId(): String? = capturedRid
-
-    /** 取回指定 rid 的宿主真实曲目信息；未知时返回 null */
-    fun trackInfo(rid: String): KuwoTrack? = trackStore[rid]
 
     /** 取回指定 rid 的宿主曲名；未知时返回空串 */
     fun trackTitle(rid: String): String = trackStore[rid]?.title.orEmpty()
@@ -246,14 +239,21 @@ class KuwoHookSource : HookLyricSource {
         identity: TrackIdentity?
     ): com.hchen.superlyric.kernel.model.LyricDoc {
         if (identity == null) return this
-        val info = TrackIdentity.normalizeStableId(identity.stableId)?.let { trackInfo(it) }
+        val rid = TrackIdentity.normalizeStableId(identity.stableId) ?: return this
         return copy(
-            title = identity.title.ifBlank { info?.title.orEmpty() }.ifBlank { title },
-            artist = identity.artist.ifBlank { info?.artist.orEmpty() }.ifBlank { artist },
+            title = identity.title.ifBlank { trackTitle(rid) }.ifBlank { title },
+            artist = identity.artist.ifBlank { trackArtist(rid) }.ifBlank { artist },
             durationMs = if (identity.durationMs > 0L) identity.durationMs else durationMs,
             lyricId = identity.stableId ?: lyricId,
         )
     }
+
+    /** 宿主曲目的最小信息集 */
+    private data class KuwoTrack(
+        val rid: String,
+        val title: String,
+        val artist: String,
+    )
 
     private companion object {
         const val NAMESPACE = "kuwo"

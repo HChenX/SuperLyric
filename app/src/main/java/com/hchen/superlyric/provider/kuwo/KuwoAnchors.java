@@ -24,21 +24,22 @@ import androidx.annotation.Nullable;
 import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.hooktool.log.AndroidLog;
-import com.hchen.dexkitcache.DexkitCache;
-import com.hchen.dexkitcache.IDexkit;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.FindClass;
-import org.luckypray.dexkit.query.enums.StringMatchType;
-import org.luckypray.dexkit.query.matchers.MethodMatcher;
-import org.luckypray.dexkit.query.matchers.ParameterMatcher;
-import org.luckypray.dexkit.query.matchers.ParametersMatcher;
-import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.result.ClassData;
 import org.luckypray.dexkit.result.ClassDataList;
 import org.luckypray.dexkit.result.MethodData;
 import org.luckypray.dexkit.result.MethodDataList;
+import org.luckypray.dexkit.query.enums.StringMatchType;
+import org.luckypray.dexkit.query.matchers.ClassMatcher;
+import org.luckypray.dexkit.query.matchers.MethodMatcher;
+import org.luckypray.dexkit.query.matchers.ParameterMatcher;
+import org.luckypray.dexkit.query.matchers.ParametersMatcher;
+
+import com.hchen.dexkitcache.DexkitCache;
+import com.hchen.dexkitcache.IDexkit;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -52,27 +53,26 @@ import java.util.List;
  * 酷我音乐 Hook 锚点：取回**解密后的 LRCX 全文**（含逐字时间戳）。
  *
  * <h3>两个分发变体</h3>
- * 手机版与车机版的歌词管线同构，但混淆后的包名与类名都不同，因此所有锚点都按
- * 候选清单逐个尝试，命中哪个用哪个，不为两个变体维护两份代码：
- * <ul>
- *   <li>手机版 {@code cn.kuwo.player}：歌词包 {@code cn.kuwo.mod.lyrics}（复数）</li>
- *   <li>车机版 {@code cn.kuwo.kwmusiccar}：歌词包 {@code cn.kuwo.mod.lyric}（单数）</li>
- * </ul>
+ * 手机版（{@code cn.kuwo.player}）与车机版（{@code cn.kuwo.kwmusiccar}）的歌词管线
+ * 同构，但混淆后的包名与类名都不同。两者共用本类的全部逻辑，不做成两份。
  *
- * <h3>锚点位置</h3>
- * <ul>
- *   <li><b>手机版</b>：{@code j6.f.a(String)} 与 {@code j6.d.a(String)}，即接口
- *       {@code cn.kuwo.mod.lyrics.g} 的两个实现（LRCX 与普通 LRC）。入参就是
- *       <b>已解密、未被宿主裁切</b>的全文 —— 此时 zlib 已解、yeelion 异或已去、
- *       逐字标签 {@code <v1,v2>} 与八进制密钥头 {@code [kuwo:KEY]} 都还是原样。</li>
- *   <li><b>车机版</b>：{@code cn.kuwo.mod.lyric.h.h([B, LyricsType) → String}。
- *       车机版把解密与解析拆开了：{@code g.a(String)} 只负责解析，明文由
- *       {@code h.h} 产出，所以只挂解析入口等不到数据，必须锚在解密出口。</li>
- * </ul>
+ * <h3>锚点怎么定位</h3>
+ * 一律按<b>行为特征</b>定位，不硬编码任何类名或包名 —— 那些都是混淆产物，
+ * 宿主一次升级就可能全变。流程是：
+ * <ol>
+ *   <li>用 LRCX 协议固有的参数名 {@code lrcx=} 反查歌词模块内的一个类，
+ *       再由类名推出包名（见 [locateLyricPackage]）</li>
+ *   <li>在该包内按签名检索解析入口与取词入口</li>
+ * </ol>
+ * 各步骤的检索条件与实测坑见对应方法的注释。
+ *
+ * <h3>取到的数据是什么</h3>
+ * 解析入口的入参就是<b>已解密、未被宿主裁切</b>的 LRCX 全文：此时 zlib 已解、
+ * yeelion 异或已去、逐字标签 {@code <v1,v2>} 与八进制密钥头 {@code [kuwo:KEY]}
+ * 都还是原样。
  *
  * <h3>为什么绕开宿主的行/词模型</h3>
- * 拿到明文后，宿主的下一层（{@code LyricsImpl → w → x}）会对相邻词元做重叠裁切
- * （见 {@code Lj6.f.f} 里逐词回写 {@code e = d}），使逐字时戳出现 0ms 坍缩、动效卡死。
+ * 拿到明文后，宿主的下一层会对相邻词元做重叠裁切，使逐字时戳出现 0ms 坍缩、动效卡死。
  * 锚在它之前就绕开了那套裁切，与波点、椒盐的做法同源。
  *
  * <h3>进度怎么来</h3>
@@ -113,8 +113,6 @@ public final class KuwoAnchors {
      */
     private static final String KEY_LYRIC_PACKAGE = "kuwo_lyric_module_anchor_v1";
 
-    /** 取词入口构造器的缓存键 */
-
     /** 包内类列表的缓存键前缀；后接包名，避免不同包共用同一键 */
     private static final String KEY_PACKAGE_CLASSES = "kuwo_pkg_classes_";
 
@@ -125,7 +123,6 @@ public final class KuwoAnchors {
      * 检索条件之一，真正的约束来自签名。
      */
     private static final String ANCHOR_PARSER_NAME = "a";
-
 
     /**
      * LRCX 的 URL 查询参数名
@@ -177,9 +174,6 @@ public final class KuwoAnchors {
     /**
      * 检索歌词解析入口的方法
      *
-     * <p>把搜索范围限死在歌词包内，再按签名筛。包名是这两个变体之间**唯一稳定**的
-     * 差异点（只有单复数之差），而包内的类名全是混淆产物。
-     *
      * <p>结果为空时必须返回 {@code null} 而不是空列表：DexkitCache 只对 {@code null}
      * 跳过缓存写入，空列表会被当成有效结果落盘，此后每次命中缓存都反序列化出空数据
      * 并抛 {@code Illegal state}，检索条件再怎么改都不再生效。
@@ -225,15 +219,6 @@ public final class KuwoAnchors {
     }
 
     /**
-     * 由 LRC 时间标签正则定位歌词解析类所在的包
-     *
-     * <p>不硬编码包名：两个变体的歌词包名不同（{@code lyrics} / {@code lyric}），
-     * 且都可能随版本改。改用一个只可能在歌词解析类出现的正则片段反查所在类，
-     * 再从类名推出包名 —— 包名怎么变都能跟上。
-     *
-     * @return 歌词包名；定位不到返回 {@code null}
-     */
-    /**
      * 由 LRCX 参数名定位歌词模块所在的包
      *
      * <p>不硬编码包名：两个变体的歌词包名不同（{@code lyrics} / {@code lyric}），
@@ -268,6 +253,7 @@ public final class KuwoAnchors {
         int dot = name.lastIndexOf('.');
         return dot > 0 ? name.substring(0, dot) : null;
     }
+
     /**
      * 检索解密入口的方法（车机版）
      *
@@ -302,12 +288,7 @@ public final class KuwoAnchors {
         }
         return found;
     }
-    /**
 
-     *
-     * <p>签名取 {@code (Music, boolean, Music)}。只覆盖方法；构造器由
-     * [locateTrackConstructors] 单独定位。
-     */
     /**
      * 检索取词入口的方法
      *
@@ -326,8 +307,6 @@ public final class KuwoAnchors {
         }
         return found;
     }
-
-
 
     /**
      * 由 DexKit 定位解析入口并挂载
@@ -368,12 +347,6 @@ public final class KuwoAnchors {
     }
 
     /**
-     * 按类名兜底挂载解析入口
-     *
-     * <p>只在该类确实存在且带目标签名时才挂：类名是混淆产物，宿主升级后很可能消失，
-     * 此时静默跳过即可，由 DexKit 那条路径负责。
-
-    /**
      * 从解析入口抽取明文歌词
      *
      * <p>取**入参**：调用时宿主手里就是解密后的全文。宿主随后才会做
@@ -383,12 +356,6 @@ public final class KuwoAnchors {
         if (!(rawArg instanceof String raw) || raw.isEmpty()) return;
         listener.onLyricText(raw);
     }
-
-    /**
-     * 返回类型是否为歌词实现
-     *
-     * <p>只要落在歌词包内即算。包名比类名稳定：混淆会让类名在 {@code e} / {@code a}
-     * 之间变，但不会把整个包改名。
 
     /**
      * 由 DexKit 直接定位解密入口并挂载
@@ -433,8 +400,7 @@ public final class KuwoAnchors {
      * 由 DexKit 定位取词入口并挂载（曲目探针）
      *
      * <p>同时覆盖方法与构造器：两个变体的取词入口形态不同（手机版是方法，
-     * 车机版是构造器），而 {@code findMethod} 只能返回方法，构造器要另走
-     * {@code FindClass} 按构造签名定位。两条路都试，命中哪个算哪个。
+     * 车机版是构造器）。两条路都走包内反射扫，命中哪个算哪个。
      */
     private static void installTrackProbes(@NonNull TrackListener listener) {
         List<Executable> members = new ArrayList<>();
@@ -477,12 +443,6 @@ public final class KuwoAnchors {
         AndroidLog.logI(TAG, "Hooked " + hooked + " track entry(ies)");
     }
 
-    /**
-     * 检索取词入口的构造器
-     *
-     * <p>按构造签名 {@code (Music, boolean, Music)} 定位，不依赖类名。
-     * {@code findMethod} 覆盖不到构造器，因此这里单独走 {@code FindClass}。
-     */
     /**
      * 检索取词入口（方法与构造器）
      *
@@ -541,29 +501,19 @@ public final class KuwoAnchors {
         return result;
     }
 
-
     /**
-     * 挂载宿主曲目探针。
+     * 挂载宿主曲目探针（对外入口）。
      *
-     * <p>两个变体的取词入口形态不同，但参数签名一致 {@code (Music, boolean, Music)}：
-     * 手机版是 {@code cn.kuwo.mod.lyrics.a0.B(...)} 这个方法，车机版是
-     * {@code cn.kuwo.mod.lyric.i} 的构造器。方法与构造器都挂上，
-     * 命中哪个算哪个。
-     *
-     * <p>拿到的是宿主自己的 {@code Music}，其 {@code rid} 是稳定标识，
-     * {@code name}/{@code artist} 是干净曲名。之所以需要它：酷我的
+     * <p>探针本身不参与取词，只为拿到宿主自己的 {@code Music}：其 {@code rid} 是稳定
+     * 标识，{@code name}/{@code artist} 是干净曲名。之所以需要它，是因为酷我的
      * {@code MediaMetadata} 会把<b>当前歌词行</b>写进 {@code METADATA_KEY_TITLE}
      * （实测每次回调都变），元数据不可信。
+     *
+     * @see installTrackProbes 实际的定位与挂载
      */
     public static void installTrackProbe(@NonNull TrackListener listener) {
         installTrackProbes(listener);
     }
-
-    /**
-     * 挂载单个类上所有 {@code (Music, boolean, Music)} 形态的成员
-     *
-     * <p>构造器与方法都试：手机版用方法、车机版用构造器，而两者都能用同一套
-     * 参数签名描述。
 
     /**
      * 从宿主 {@code Music} 对象上读 rid / 曲名 / 歌手。
