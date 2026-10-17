@@ -42,11 +42,13 @@ import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.lang.reflect.Method;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -100,9 +102,6 @@ public final class KuwoAnchors {
 
     /** 解密入口的缓存键 */
     private static final String KEY_DECRYPT_METHODS = "kuwo_decrypt_methods_v2";
-
-    /** 取词入口的缓存键 */
-    private static final String KEY_TRACK_ENTRIES = "kuwo_track_entries_v2";
 
     /**
      * 歌词包的缓存键
@@ -206,8 +205,13 @@ public final class KuwoAnchors {
             // 同包内有一批同名同签名的方法（CoverLinkCache.a、d.a 等）。DexKit 的
             // declaredClass/usingStrings 与 returnType 在本版本实测都不生效，因此这一层
             // 放到 Java 侧做：只保留返回类型落在歌词包内的，真正的解析入口必然在其中。
-            // 多余的几个签名相同，回调里对非 String 入参自然被过滤，不会错误发布
+            // 多余的几个签名相同，回调里对非 String 入参自然被过滤，不会错误发布。
+            //
+            // 另需排除抽象方法与接口：同包的歌词接口（如 lyric.a）带着同签名的抽象方法，
+            // 挂上去只会得到 "Cannot hook abstract methods" 的噪音
             for (Method method : located) {
+                if (Modifier.isAbstract(method.getModifiers())) continue;
+                if (Modifier.isAbstract(method.getDeclaringClass().getModifiers())) continue;
                 if (method.getReturnType().getName().startsWith(lyricPackage + ".")) {
                     found.add(method);
                 }
@@ -259,6 +263,9 @@ public final class KuwoAnchors {
      *
      * <p>签名取 {@code ([B, LyricsType) → String}。取**返回值**：入参是密文字节，
      * 解密后的明文只在返回值里。
+     *
+     * <p>第二个参数校验为 LyricsType：只按「两参 + 首参 byte[]」会命中一批无关的
+     * 字节处理方法，而歌词类型参数是解密入口独有的。
      */
     @NonNull
     private static List<Method> locateDecryptMethods() {
@@ -274,9 +281,13 @@ public final class KuwoAnchors {
                         .matcher(MethodMatcher.create()
                             .returnType("Ljava/lang/String;", StringMatchType.Equals, true)
                             .paramCount(2)
-                            .params(ParametersMatcher.create().params(Collections.singletonList(
+                            // 两个参数都要列出：只描述首参 byte[] 会命中一批无关的
+                            // 字节处理方法，而歌词类型参数是解密入口独有的
+                            .params(ParametersMatcher.create().params(Arrays.asList(
                                 ParameterMatcher.create()
-                                    .type("[B", StringMatchType.Equals, true))))
+                                    .type("[B", StringMatchType.Equals, true),
+                                ParameterMatcher.create()
+                                    .type("LyricsType", StringMatchType.Contains, true))))
                         )
                     );
                     return (result == null || result.isEmpty()) ? null : result;
