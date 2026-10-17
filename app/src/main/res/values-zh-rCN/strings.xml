@@ -178,7 +178,8 @@
     <string name="oppo_music">开启“蓝牙歌词”功能</string>
     <string name="rplayer_music">开启“蓝牙歌词”功能</string>
     <string name="qishui_music">开启“蓝牙歌词”功能</string>
-    <string name="kuwo_music">开启“蓝牙歌词”功能</string>
+    <string name="kuwo_music">无需额外设置，正常播放即可</string>
+    <string name="kuwo_car_music">无需额外设置，正常播放即可</string>
     <string name="nisheng_music">开启“蓝牙歌词”功能</string>
     <string name="huawei_music">开启“蓝牙歌词”功能</string>
     <string name="kde_music">开启“蓝牙歌词”功能</string>
