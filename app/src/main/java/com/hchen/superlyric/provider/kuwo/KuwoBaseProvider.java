@@ -115,10 +115,11 @@ abstract class KuwoBaseProvider extends MusicProvider {
         String captured = hookStableId();
         if (captured != null && !captured.isEmpty()) {
             KuwoHookSource hook = kuwoHookSource;
-            KuwoAnchors.KuwoTrack info = hook != null ? hook.trackInfo(captured) : null;
-            if (info != null) {
-                if (!info.title.isEmpty()) title = info.title;
-                if (!info.artist.isEmpty()) artist = info.artist;
+            if (hook != null) {
+                String hostTitle = hook.trackTitle(captured);
+                String hostArtist = hook.trackArtist(captured);
+                if (!hostTitle.isEmpty()) title = hostTitle;
+                if (!hostArtist.isEmpty()) artist = hostArtist;
             }
             return new TrackIdentity(
                 providerTag, TrackIdentity.stableId(NAMESPACE, captured), title, artist, duration);

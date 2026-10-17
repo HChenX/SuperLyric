@@ -24,6 +24,21 @@ import androidx.annotation.Nullable;
 import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.dexkitcache.DexkitCache;
+import com.hchen.dexkitcache.IDexkit;
+
+import org.luckypray.dexkit.DexKitBridge;
+import org.luckypray.dexkit.query.FindMethod;
+import org.luckypray.dexkit.query.FindClass;
+import org.luckypray.dexkit.query.enums.StringMatchType;
+import org.luckypray.dexkit.query.matchers.MethodMatcher;
+import org.luckypray.dexkit.query.matchers.ParameterMatcher;
+import org.luckypray.dexkit.query.matchers.ParametersMatcher;
+import org.luckypray.dexkit.query.matchers.ClassMatcher;
+import org.luckypray.dexkit.result.ClassData;
+import org.luckypray.dexkit.result.ClassDataList;
+import org.luckypray.dexkit.result.MethodData;
+import org.luckypray.dexkit.result.MethodDataList;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -73,44 +88,57 @@ import java.util.List;
 public final class KuwoAnchors {
     private static final String TAG = "KuwoAnchors";
 
-    /**
-     * 歌词解析器的候选全限定名
-     *
-     * <p>两个变体的混淆结果完全不同：
-     * <ul>
-     *   <li>手机版：混淆器把 {@code j6} 包提到了顶层，解析实现是 {@code j6.f}（LRCX）
-     *       与 {@code j6.d}（纯 LRC）。**不是** {@code cn.kuwo.mod.lyrics.j6.f}</li>
-     *   <li>车机版：解析器就是 {@code cn.kuwo.mod.lyric.g} 一个类，LRCX 与纯 LRC
-     *       由它内部按标签分派，没有拆成两个实现</li>
-     * </ul>
-     * 逐个尝试，命中哪个用哪个。
-     */
-    private static final String[] PARSER_CANDIDATES = {
-        "j6.f",
-        "j6.d",
-        "cn.kuwo.mod.lyric.g",
-    };
+    // ---------------------------------------------------------------- 缓存键
 
     /**
-     * 解密入口（车机版）
+     * 解析入口的缓存键
      *
-     * <p>{@code h.h([B, LyricsType) → String}：输入密文字节与歌词类型，输出明文。
-     * 车机版把解密与解析拆开了 —— {@code g.a(String)} 只是解析，喂给它的明文由
-     * {@code h.h} 产出，因此只挂 {@code g.a} 等不到数据，必须锚在解密出口。
+     * <p>按**方法**而不是按类缓存：类名会随混淆变，而"单 String 入参、返回歌词实现"
+     * 这个签名由宿主接口决定，跨版本稳定。宿主升级后缓存失效会自动重新检索。
      */
-    private static final String DECRYPT_ENTRY = "cn.kuwo.mod.lyric.h";
+    private static final String KEY_PARSER_METHODS = "kuwo_parser_methods_v2";
+
+    /** 解密入口的缓存键 */
+    private static final String KEY_DECRYPT_METHODS = "kuwo_decrypt_methods_v2";
+
+    /** 取词入口的缓存键 */
+    private static final String KEY_TRACK_ENTRIES = "kuwo_track_entries_v2";
 
     /**
-     * 歌词包名
+     * 歌词包的缓存键
      *
-     * <p>两个变体包名不同：手机版是 {@code cn.kuwo.mod.lyrics}（复数），
-     * 车机版是 {@code cn.kuwo.mod.lyric}（单数）。按候选列表逐个尝试，
-     * 命中哪个就用哪个，避免为两个变体维护两份锚点。
+     * <p>键里带返回值形态：{@code ClassData} 与 {@code ClassDataList} 会被缓存成
+     * 不同的 Java 类型（{@code Class} 与 {@code Class[]}），复用同一个键会强转失败。
+     * 换检索形态时必须换键。
      */
-    private static final String[] LYRIC_PACKAGES = {
-        "cn.kuwo.mod.lyrics",
-        "cn.kuwo.mod.lyric",
-    };
+    private static final String KEY_LYRIC_PACKAGE = "kuwo_lyric_module_anchor_v1";
+
+    /** 取词入口构造器的缓存键 */
+
+    /** 包内类列表的缓存键前缀；后接包名，避免不同包共用同一键 */
+    private static final String KEY_PACKAGE_CLASSES = "kuwo_pkg_classes_";
+
+    /**
+     * 解析入口的名字
+     *
+     * <p>两个变体的解析入口都叫 {@code a}（混淆产物）。名字本身不稳定，因此只作为
+     * 检索条件之一，真正的约束来自签名。
+     */
+    private static final String ANCHOR_PARSER_NAME = "a";
+
+
+    /**
+     * LRCX 的 URL 查询参数名
+     *
+     * <p>形如 {@code lrcx=}，是酷我请求逐字歌词时带的参数名。实测在两个变体的 dex 里
+     * 各只出现一次，且只属于歌词模块内的类（车机版在 {@code lyric/h}，即解密类）。
+     * 用它定位歌词模块，再由类名推出包名。
+     *
+     * <p>选它的理由：比字段名（{@code lrcx_roma} 会被网络层引用）唯一，比类名稳定，
+     * 比正则片段（{@code \d{1,2}} 会被一批工具类引用）精确。它是酷我歌词协议的一部分，
+     * 只要还支持逐字歌词就得有这个参数。
+     */
+    private static final String ANCHOR_LRCX_PARAM = "lrcx=";
 
     private static volatile boolean sInstalled;
 
@@ -128,10 +156,11 @@ public final class KuwoAnchors {
     /** 宿主当前曲目回调。 */
     public interface TrackListener {
         /**
-         * @param music    宿主曲目对象；可能为 null
-         * @param fallback 宿主给出的第二曲目参数（K歌/伴唱场景）；可能为 null
+         * @param rid    宿主曲目标识
+         * @param title  曲名
+         * @param artist 歌手
          */
-        void onTrack(@Nullable Object music, @Nullable Object fallback);
+        void onTrack(@NonNull String rid, @NonNull String title, @NonNull String artist);
     }
 
     /**
@@ -141,53 +170,182 @@ public final class KuwoAnchors {
         if (sInstalled) return;
         sInstalled = true;
 
-        int hooked = 0;
-        for (String className : PARSER_CANDIDATES) {
-            hooked += installParserHook(className, listener);
-        }
-        hooked += installDecryptHook(listener);
-
-        if (hooked == 0) {
-            AndroidLog.logW(TAG, "No lyric parser entry hooked; Kuwo hook path is dead");
-        } else {
-            AndroidLog.logI(TAG, "Hooked " + hooked + " lyric parser entry(ies)");
-        }
+        installParsers(listener);
+        installDecryptors(listener);
     }
 
     /**
-     * 挂载单个解析器实现的 {@code a(String) → LyricsImpl}。
+     * 检索歌词解析入口的方法
      *
-     * <p>按<b>参数个数与返回类型</b>定位而不是按名字：{@code a} 是混淆产物，
-     * 而"单 String 入参、返回歌词实现"这个签名由 {@code g} 接口唯一确定。
-     * 取**入参**：调用时宿主手里就是解密后的全文。
+     * <p>把搜索范围限死在歌词包内，再按签名筛。包名是这两个变体之间**唯一稳定**的
+     * 差异点（只有单复数之差），而包内的类名全是混淆产物。
+     *
+     * <p>结果为空时必须返回 {@code null} 而不是空列表：DexkitCache 只对 {@code null}
+     * 跳过缓存写入，空列表会被当成有效结果落盘，此后每次命中缓存都反序列化出空数据
+     * 并抛 {@code Illegal state}，检索条件再怎么改都不再生效。
      */
-    private static int installParserHook(
-        @NonNull String className,
-        @NonNull LyricTextListener listener
-    ) {
+    @NonNull
+    private static List<Method> locateParserMethods() {
+        List<Method> found = new ArrayList<>();
+        String lyricPackage = locateLyricPackage();
+        if (lyricPackage == null) {
+            AndroidLog.logW(TAG, "Lyric module not located; parser hook unavailable");
+            return found;
+        }
         try {
-            Class<?> parserClass = CoreTool.findClassIfExists(className);
-            if (parserClass == null) {
-                // 两个变体只命中一个，另一个类不存在是预期情况，不必告警
-                AndroidLog.logD(TAG, "Parser class not found: " + className);
-                return 0;
+            Method[] located = DexkitCache.findMember(KEY_PARSER_METHODS, new IDexkit<MethodDataList>() {
+                @Override
+                public MethodDataList dexkit(@NonNull DexKitBridge bridge)
+                    throws ReflectiveOperationException {
+                    MethodDataList result = bridge.findMethod(FindMethod.create()
+                        .searchPackages(lyricPackage)
+                        .matcher(MethodMatcher.create()
+                            .paramCount(1)
+                            .name(ANCHOR_PARSER_NAME, StringMatchType.Equals, true)
+                        )
+                    );
+                    return (result == null || result.isEmpty()) ? null : result;
+                }
+            });
+            if (located == null) return found;
+
+            // 同包内有一批同名同签名的方法（CoverLinkCache.a、d.a 等）。DexKit 的
+            // declaredClass/usingStrings 与 returnType 在本版本实测都不生效，因此这一层
+            // 放到 Java 侧做：只保留返回类型落在歌词包内的，真正的解析入口必然在其中。
+            // 多余的几个签名相同，回调里对非 String 入参自然被过滤，不会错误发布
+            for (Method method : located) {
+                if (method.getReturnType().getName().startsWith(lyricPackage + ".")) {
+                    found.add(method);
+                }
             }
+        } catch (Throwable t) {
+            AndroidLog.logW(TAG, "Failed to locate parser methods: " + t.getMessage());
+        }
+        return found;
+    }
 
-            int hooked = 0;
-            for (Method method : parserClass.getDeclaredMethods()) {
-                if (method.getParameterCount() != 1) continue;
-                if (method.getParameterTypes()[0] != String.class) continue;
-                // 必须精确到返回歌词实现：只按"非 void 非 String"筛会把同类上的私有
-                // 辅助方法一并挂上。实测手机版 {@code j6.f.g(String) → Matcher} 是逐行
-                // 解析时的内部回调，挂上后同一份歌词会被拆成若干片段（每次只有一行），
-                // 片段解析不出行又会判成 Unsupported，反而盖掉真正成功的取词。
-                //
-                // 返回类型随变体而变：手机版 {@code cn.kuwo.mod.lyrics.e}、
-                // 车机版 {@code cn.kuwo.mod.lyric.a}，因此只校验它落在歌词包内。
-                // 注意是比较内容：Java 的 == 比的是引用，写错会让入口一个都挂不上
-                String returned = method.getReturnType().getName();
-                if (!isLyricImpl(returned)) continue;
+    /**
+     * 由 LRC 时间标签正则定位歌词解析类所在的包
+     *
+     * <p>不硬编码包名：两个变体的歌词包名不同（{@code lyrics} / {@code lyric}），
+     * 且都可能随版本改。改用一个只可能在歌词解析类出现的正则片段反查所在类，
+     * 再从类名推出包名 —— 包名怎么变都能跟上。
+     *
+     * @return 歌词包名；定位不到返回 {@code null}
+     */
+    /**
+     * 由 LRCX 参数名定位歌词模块所在的包
+     *
+     * <p>不硬编码包名：两个变体的歌词包名不同（{@code lyrics} / {@code lyric}），
+     * 且都可能随版本改。改用一个只可能在歌词模块出现的参数名反查所在类，
+     * 再从类名推出包名 —— 包名怎么变都能跟上。
+     *
+     * @return 歌词包名；定位不到返回 {@code null}
+     */
+    @Nullable
+    private static String locateLyricPackage() {
+        // 必须用 Class<?> 接收：findMember 会把 ClassData 解析成 Class 再缓存，
+        // 用 ClassData 接收会在缓存命中时强转失败
+        Class<?> located = DexkitCache.findMember(KEY_LYRIC_PACKAGE, new IDexkit<ClassData>() {
+            @Override
+            public ClassData dexkit(@NonNull DexKitBridge bridge)
+                throws ReflectiveOperationException {
+                ClassDataList classes = bridge.findClass(FindClass.create()
+                    .matcher(ClassMatcher.create()
+                        .usingEqStrings(ANCHOR_LRCX_PARAM)
+                    )
+                );
+                return (classes == null || classes.isEmpty()) ? null : classes.get(0);
+            }
+        });
 
+        if (located == null) {
+            AndroidLog.logW(TAG, "Lyric module not located by anchor: " + ANCHOR_LRCX_PARAM);
+            return null;
+        }
+        String name = located.getName();
+        AndroidLog.logD(TAG, "Lyric module anchor class: " + name);
+        int dot = name.lastIndexOf('.');
+        return dot > 0 ? name.substring(0, dot) : null;
+    }
+    /**
+     * 检索解密入口的方法（车机版）
+     *
+     * <p>签名取 {@code ([B, LyricsType) → String}。取**返回值**：入参是密文字节，
+     * 解密后的明文只在返回值里。
+     */
+    @NonNull
+    private static List<Method> locateDecryptMethods() {
+        List<Method> found = new ArrayList<>();
+        String lyricPackage = locateLyricPackage();
+        if (lyricPackage == null) return found;
+        try {
+            Method[] located = DexkitCache.findMember(KEY_DECRYPT_METHODS, new IDexkit<MethodDataList>() {
+                @Override
+                public MethodDataList dexkit(@NonNull DexKitBridge bridge) throws ReflectiveOperationException {
+                    MethodDataList result = bridge.findMethod(FindMethod.create()
+                        .searchPackages(lyricPackage)
+                        .matcher(MethodMatcher.create()
+                            .returnType("Ljava/lang/String;", StringMatchType.Equals, true)
+                            .paramCount(2)
+                            .params(ParametersMatcher.create().params(Collections.singletonList(
+                                ParameterMatcher.create()
+                                    .type("[B", StringMatchType.Equals, true))))
+                        )
+                    );
+                    return (result == null || result.isEmpty()) ? null : result;
+                }
+            });
+            if (located != null) Collections.addAll(found, located);
+        } catch (Throwable t) {
+            AndroidLog.logW(TAG, "Failed to locate decrypt methods: " + t.getMessage());
+        }
+        return found;
+    }
+    /**
+
+     *
+     * <p>签名取 {@code (Music, boolean, Music)}。只覆盖方法；构造器由
+     * [locateTrackConstructors] 单独定位。
+     */
+    /**
+     * 检索取词入口的方法
+     *
+     * <p>与 [locateTrackConstructors] 同路：DexKit 的 {@code findMethod} 配
+     * {@code searchPackages} 在本版本实测也匹配不到，改用包内反射扫。
+     */
+    @NonNull
+    private static List<Executable> locateTrackEntries() {
+        List<Executable> found = new ArrayList<>();
+        String lyricPackage = locateLyricPackage();
+        if (lyricPackage == null) return found;
+        for (Class<?> clazz : classesInPackage(lyricPackage)) {
+            for (Method method : clazz.getDeclaredMethods()) {
+                if (isTrackEntry(method)) found.add(method);
+            }
+        }
+        return found;
+    }
+
+
+
+    /**
+     * 由 DexKit 定位解析入口并挂载
+     *
+     * <p>刻意不做硬编码类名的兜底：那些名字是混淆产物，几乎必然随版本变，
+     * 留着只会给人"已经兼容"的错觉。定位不到就明确报错，让人知道要去修检索条件。
+     */
+    private static void installParsers(@NonNull LyricTextListener listener) {
+        List<Method> located = locateParserMethods();
+        AndroidLog.logD(TAG, "locateParsers: dexkit=" + located.size());
+        if (located.isEmpty()) {
+            AndroidLog.logW(TAG, "No lyric parser entry hooked; Kuwo hook path is dead");
+            return;
+        }
+
+        int hooked = 0;
+        for (Method method : located) {
+            try {
                 method.setAccessible(true);
                 CoreTool.hook(method, new AbsHook() {
                     @Override
@@ -200,22 +358,26 @@ public final class KuwoAnchors {
                     }
                 });
                 hooked++;
-                AndroidLog.logI(TAG, "Hooked " + parserClass.getName() + "." + method.getName());
+                AndroidLog.logI(TAG, "Hooked parser: " + method.getDeclaringClass().getName()
+                    + "." + method.getName());
+            } catch (Throwable t) {
+                AndroidLog.logW(TAG, "Failed to hook parser " + method + ": " + t.getMessage());
             }
-
-            if (hooked == 0) {
-                AndroidLog.logW(TAG, "No (String) entry on " + parserClass.getName());
-            }
-            return hooked;
-        } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to install parser hook for " + className + ": " + t.getMessage());
-            return 0;
         }
+        AndroidLog.logI(TAG, "Hooked " + hooked + " lyric parser entry(ies) via DexKit");
     }
 
     /**
-     * 从解析入口抽取明文歌词。
+     * 按类名兜底挂载解析入口
      *
+     * <p>只在该类确实存在且带目标签名时才挂：类名是混淆产物，宿主升级后很可能消失，
+     * 此时静默跳过即可，由 DexKit 那条路径负责。
+
+    /**
+     * 从解析入口抽取明文歌词
+     *
+     * <p>取**入参**：调用时宿主手里就是解密后的全文。宿主随后才会做
+     * {@code replaceAll} 与逐行裁切，我们拿的是那之前的原始形态。
      */
     private static void handleParse(@Nullable Object rawArg, @NonNull LyricTextListener listener) {
         if (!(rawArg instanceof String raw) || raw.isEmpty()) return;
@@ -223,41 +385,26 @@ public final class KuwoAnchors {
     }
 
     /**
-     * 是否为歌词实现类型
+     * 返回类型是否为歌词实现
      *
-     * <p>返回类型落在 {@link #LYRIC_PACKAGES} 任一首字母包内即算。包名比类名稳定：
-     * 混淆会让类名在 {@code e} / {@code a} 之间变，但歌词包本身不会搬走。
-     */
-    private static boolean isLyricImpl(@NonNull String returnedName) {
-        for (String pkg : LYRIC_PACKAGES) {
-            if (returnedName.startsWith(pkg + ".")) return true;
-        }
-        return false;
-    }
+     * <p>只要落在歌词包内即算。包名比类名稳定：混淆会让类名在 {@code e} / {@code a}
+     * 之间变，但不会把整个包改名。
 
     /**
-     * 挂载解密入口 {@code h.h([B, LyricsType) → String}
+     * 由 DexKit 直接定位解密入口并挂载
      *
-     * <p>取**返回值**而不是入参：入参是密文字节，解密后的明文只在返回值里。
-     * 这是车机版唯一产出明文的位置 —— 它的 {@code g.a(String)} 只负责解析，
-     * 明文由这里喂进去，所以只挂解析入口等不到任何数据。
+     * <p>取**返回值**：入参是密文字节，解密后的明文只在返回值里。
      */
-    private static int installDecryptHook(@NonNull LyricTextListener listener) {
-        try {
-            Class<?> clazz = CoreTool.findClassIfExists(DECRYPT_ENTRY);
-            if (clazz == null) {
-                AndroidLog.logD(TAG, "Decrypt entry not found: " + DECRYPT_ENTRY);
-                return 0;
-            }
-
-            int hooked = 0;
-            for (Method method : clazz.getDeclaredMethods()) {
-                // 签名：([B, LyricsType) → String
-                if (method.getParameterCount() != 2) continue;
-                if (method.getParameterTypes()[0] != byte[].class) continue;
-                if (!method.getParameterTypes()[1].getName().contains("LyricsType")) continue;
-                if (method.getReturnType() != String.class) continue;
-
+    private static void installDecryptors(@NonNull LyricTextListener listener) {
+        List<Method> located = locateDecryptMethods();
+        AndroidLog.logD(TAG, "locateDecryptors: dexkit=" + located.size());
+        if (located.isEmpty()) {
+            AndroidLog.logD(TAG, "DexKit located no decrypt method; skipped");
+            return;
+        }
+        int hooked = 0;
+        for (Method method : located) {
+            try {
                 method.setAccessible(true);
                 CoreTool.hook(method, new AbsHook() {
                     @Override
@@ -273,18 +420,127 @@ public final class KuwoAnchors {
                     }
                 });
                 hooked++;
-                AndroidLog.logI(TAG, "Hooked decrypt entry: " + clazz.getName() + "." + method.getName());
+                AndroidLog.logI(TAG, "Hooked decrypt: " + method.getDeclaringClass().getName()
+                    + "." + method.getName());
+            } catch (Throwable t) {
+                AndroidLog.logW(TAG, "Failed to hook decrypt " + method + ": " + t.getMessage());
             }
-
-            if (hooked == 0) {
-                AndroidLog.logW(TAG, "No ([B, LyricsType) entry on " + clazz.getName());
-            }
-            return hooked;
-        } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to install decrypt hook: " + t.getMessage());
-            return 0;
         }
+        AndroidLog.logI(TAG, "Hooked " + hooked + " decrypt entry(ies) via DexKit");
     }
+
+    /**
+     * 由 DexKit 定位取词入口并挂载（曲目探针）
+     *
+     * <p>同时覆盖方法与构造器：两个变体的取词入口形态不同（手机版是方法，
+     * 车机版是构造器），而 {@code findMethod} 只能返回方法，构造器要另走
+     * {@code FindClass} 按构造签名定位。两条路都试，命中哪个算哪个。
+     */
+    private static void installTrackProbes(@NonNull TrackListener listener) {
+        List<Executable> members = new ArrayList<>();
+        List<Executable> entryMethods = locateTrackEntries();
+        List<Constructor<?>> entryCtors = locateTrackConstructors();
+        members.addAll(entryMethods);
+        members.addAll(entryCtors);
+        AndroidLog.logD(TAG, "locateTrackProbes: methods=" + entryMethods.size()
+            + " ctors=" + entryCtors.size());
+        if (members.isEmpty()) {
+            AndroidLog.logW(TAG, "No (Music, boolean, Music) entry found; track probe unavailable");
+            return;
+        }
+
+        int hooked = 0;
+        for (Executable member : members) {
+            try {
+                member.setAccessible(true);
+                CoreTool.hook(member, new AbsHook() {
+                    @Override
+                    public void before() {
+                        try {
+                            Object hostMusic = getArg(0) != null ? getArg(0) : getArg(2);
+                            if (hostMusic == null) return;
+                            listener.onTrack(
+                                readStringField(hostMusic, "rid"),
+                                readStringField(hostMusic, "name"),
+                                readStringField(hostMusic, "artist"));
+                        } catch (Throwable t) {
+                            AndroidLog.logW(TAG, "Error in track probe: " + t.getMessage());
+                        }
+                    }
+                });
+                hooked++;
+                AndroidLog.logI(TAG, "Hooked track entry: " + member);
+            } catch (Throwable t) {
+                AndroidLog.logW(TAG, "Failed to hook track entry " + member + ": " + t.getMessage());
+            }
+        }
+        AndroidLog.logI(TAG, "Hooked " + hooked + " track entry(ies)");
+    }
+
+    /**
+     * 检索取词入口的构造器
+     *
+     * <p>按构造签名 {@code (Music, boolean, Music)} 定位，不依赖类名。
+     * {@code findMethod} 覆盖不到构造器，因此这里单独走 {@code FindClass}。
+     */
+    /**
+     * 检索取词入口（方法与构造器）
+     *
+     * <p>不用 DexKit：{@code ClassMatcher.methods} 这个匹配器在本版本实测匹配不到构造器
+     * （{@code lyric/i} 的 {@code (Music, boolean, Music)} 明明存在）。包名已经由
+     * [locateLyricPackage] 推出，直接在包内反射扫更可靠 —— 歌词包内类数量有限，
+     * 一次性枚举的成本可以忽略，且完全不依赖 DexKit 匹配器的具体行为。
+     */
+    @NonNull
+    private static List<Constructor<?>> locateTrackConstructors() {
+        List<Constructor<?>> found = new ArrayList<>();
+        String lyricPackage = locateLyricPackage();
+        if (lyricPackage == null) return found;
+        for (Class<?> clazz : classesInPackage(lyricPackage)) {
+            for (Constructor<?> ctor : clazz.getDeclaredConstructors()) {
+                if (isTrackEntry(ctor)) found.add(ctor);
+            }
+        }
+        return found;
+    }
+
+    /** 是否为取词入口：参数形如 {@code (Music, boolean, Music)} */
+    private static boolean isTrackEntry(@NonNull Executable member) {
+        Class<?>[] params = member.getParameterTypes();
+        if (params.length != 3) return false;
+        if (!params[0].getName().endsWith("base.bean.Music")) return false;
+        if (params[1] != boolean.class) return false;
+        return params[2].getName().endsWith("base.bean.Music");
+    }
+
+    /**
+     * 枚举指定包内的所有类
+     *
+     * <p>走 DexKit 按包名列出，不反射 Android 的 {@code DexPathList} —— 那套内部结构
+     * 在系统升级后随时会变，且失败时是静默返回空列表，排查困难。
+     */
+    @NonNull
+    private static List<Class<?>> classesInPackage(@NonNull String packageName) {
+        List<Class<?>> result = new ArrayList<>();
+        try {
+            // ClassDataList 会被 findMember 转成 Class[]，必须用 Class[] 接收
+            Class<?>[] classes = DexkitCache.findMember(KEY_PACKAGE_CLASSES + packageName,
+                new IDexkit<ClassDataList>() {
+                    @Override
+                    public ClassDataList dexkit(@NonNull DexKitBridge bridge)
+                        throws ReflectiveOperationException {
+                        return bridge.findClass(FindClass.create()
+                            .searchPackages(packageName)
+                        );
+                    }
+                });
+            if (classes != null) Collections.addAll(result, classes);
+        } catch (Throwable t) {
+            AndroidLog.logW(TAG, "Failed to enumerate package " + packageName + ": " + t.getMessage());
+        }
+        return result;
+    }
+
 
     /**
      * 挂载宿主曲目探针。
@@ -300,17 +556,7 @@ public final class KuwoAnchors {
      * （实测每次回调都变），元数据不可信。
      */
     public static void installTrackProbe(@NonNull TrackListener listener) {
-        int hooked = 0;
-        for (String pkg : LYRIC_PACKAGES) {
-            hooked += hookTrackEntry(pkg + ".a0", listener);
-            hooked += hookTrackEntry(pkg + ".i", listener);
-        }
-
-        if (hooked == 0) {
-            AndroidLog.logW(TAG, "No (Music, boolean, Music) entry found; track probe unavailable");
-        } else {
-            AndroidLog.logI(TAG, "Hooked " + hooked + " track entry(ies)");
-        }
+        installTrackProbes(listener);
     }
 
     /**
@@ -318,47 +564,6 @@ public final class KuwoAnchors {
      *
      * <p>构造器与方法都试：手机版用方法、车机版用构造器，而两者都能用同一套
      * 参数签名描述。
-     */
-    private static int hookTrackEntry(@NonNull String className, @NonNull TrackListener listener) {
-        try {
-            Class<?> clazz = CoreTool.findClassIfExists(className);
-            if (clazz == null) {
-                AndroidLog.logD(TAG, "Track entry class not found: " + className);
-                return 0;
-            }
-
-            int hooked = 0;
-            List<Executable> members = new ArrayList<>();
-            Collections.addAll(members, clazz.getDeclaredConstructors());
-            Collections.addAll(members, clazz.getDeclaredMethods());
-
-            for (Executable member : members) {
-                Class<?>[] params = member.getParameterTypes();
-                if (params.length != 3) continue;
-                if (!params[0].getName().endsWith("base.bean.Music")) continue;
-                if (params[1] != boolean.class) continue;
-                if (!params[2].getName().endsWith("base.bean.Music")) continue;
-
-                member.setAccessible(true);
-                CoreTool.hook(member, new AbsHook() {
-                    @Override
-                    public void before() {
-                        try {
-                            listener.onTrack(getArg(0), getArg(2));
-                        } catch (Throwable t) {
-                            AndroidLog.logW(TAG, "Error in track probe: " + t.getMessage());
-                        }
-                    }
-                });
-                hooked++;
-                AndroidLog.logI(TAG, "Hooked track entry: " + member);
-            }
-            return hooked;
-        } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to install track probe for " + className + ": " + t.getMessage());
-            return 0;
-        }
-    }
 
     /**
      * 从宿主 {@code Music} 对象上读 rid / 曲名 / 歌手。
@@ -367,15 +572,6 @@ public final class KuwoAnchors {
      * 大量 getter 有副作用（查数据库），而 {@code rid} / {@code name} / {@code artist}
      * 是普通字段。
      */
-    @NonNull
-    public static KuwoTrack readTrack(@Nullable Object music) {
-        if (music == null) return KuwoTrack.EMPTY;
-        String rid = readStringField(music, "rid");
-        String title = readStringField(music, "name");
-        String artist = readStringField(music, "artist");
-        return new KuwoTrack(rid, title, artist);
-    }
-
     @NonNull
     private static String readStringField(@NonNull Object target, @NonNull String name) {
         try {
@@ -388,18 +584,4 @@ public final class KuwoAnchors {
         }
     }
 
-    /** 宿主曲目的最小信息集。 */
-    public static final class KuwoTrack {
-        public static final KuwoTrack EMPTY = new KuwoTrack("", "", "");
-
-        public final String rid;
-        public final String title;
-        public final String artist;
-
-        KuwoTrack(@NonNull String rid, @NonNull String title, @NonNull String artist) {
-            this.rid = rid;
-            this.title = title;
-            this.artist = artist;
-        }
-    }
 }

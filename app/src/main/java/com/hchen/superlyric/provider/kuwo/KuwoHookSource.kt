@@ -25,11 +25,18 @@ import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
 import com.hchen.superlyric.provider.base.HookLyricSource
-import com.hchen.superlyric.provider.kuwo.KuwoAnchors.KuwoTrack
 import com.hchen.superlyric.utils.LyricDiag
 
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+
+/**
+ * 宿主曲目的最小信息集
+ *
+ * <p>放在 Kotlin 侧而不是 Java 锚点类里：与椒盐的做法一致，
+ * 避免 Java 嵌套类跨语言解析的问题。
+ */
+data class KuwoTrack(val rid: String, val title: String, val artist: String)
 
 /**
  * 酷我音乐 Hook 取词来源：解析宿主交给自己渲染层的**明文歌词全文**。
@@ -100,27 +107,38 @@ class KuwoHookSource : HookLyricSource {
     private var lastDelivered: Pair<String?, String>? = null
 
     override fun install() {
-        KuwoAnchors.installTrackProbe { music, fallback ->
-            val track = KuwoAnchors.readTrack(music ?: fallback ?: return@installTrackProbe)
-            if (track.rid.isEmpty()) return@installTrackProbe
-            // 必须在此写入：歌词回调要拿它构造与宿主一致的稳定标识。缺了它，
-            // 歌词侧只能回退到 MediaSession 的身份，而切歌瞬间两者会短暂错配，
-            // 表现为同一份歌词配上了另一个 rid
-            capturedRid = track.rid
-            // 只做缓存，容量到顶即整体清空——保留最近若干首足够覆盖切歌时序
-            if (trackStore.size >= MAX_CACHED_TRACKS) trackStore.clear()
-            trackStore[track.rid] = track
-        }
+        KuwoAnchors.installTrackProbe(object : KuwoAnchors.TrackListener {
+            override fun onTrack(rid: String, title: String, artist: String) {
+                handleTrack(rid, title, artist)
+            }
+        })
 
         KuwoAnchors.install { text ->
             handleLyricText(text)
         }
     }
 
+    private fun handleTrack(rid: String, title: String, artist: String) {
+        if (rid.isEmpty()) return
+        // 必须在此写入：歌词回调要拿它构造与宿主一致的稳定标识。缺了它，
+        // 歌词侧只能回退到 MediaSession 的身份，而切歌瞬间两者会短暂错配，
+        // 表现为同一份歌词配上了另一个 rid
+        capturedRid = rid
+        // 只做缓存，容量到顶即整体清空——保留最近若干首足够覆盖切歌时序
+        if (trackStore.size >= MAX_CACHED_TRACKS) trackStore.clear()
+        trackStore[rid] = KuwoTrack(rid, title, artist)
+    }
+
     override fun currentStableId(): String? = capturedRid
 
     /** 取回指定 rid 的宿主真实曲目信息；未知时返回 null */
     fun trackInfo(rid: String): KuwoTrack? = trackStore[rid]
+
+    /** 取回指定 rid 的宿主曲名；未知时返回空串 */
+    fun trackTitle(rid: String): String = trackStore[rid]?.title.orEmpty()
+
+    /** 取回指定 rid 的宿主歌手；未知时返回空串 */
+    fun trackArtist(rid: String): String = trackStore[rid]?.artist.orEmpty()
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
         this.session = session
