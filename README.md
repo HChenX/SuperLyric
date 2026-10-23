@@ -34,8 +34,7 @@
 - 混淆类通过 DexKit 字符串锚点定位，调用 Poweramp 自己的 `LrcParser` 读取 LRC，绕过 scoped storage
 - LRC 原始字节按 UTF-8 严格解码，失败自动回退 GBK
 - 仅支持本地 LRC 或已缓存歌词；只有内嵌标签歌词的曲目仍需打开一次歌词界面
-- **更新模块 APK 后需重启手机**，让 system_server 重新加载模块，否则系统服务仍为旧版
-- Release APK：[Releases](https://github.com/BlueEve04/SuperLyric-Poweramp/releases)
+- **更新模块 APK 后需重启手机**，让 system_server 重新加载模块，否则系统服务仍为旧版，服务不正常
 
 ---
 
