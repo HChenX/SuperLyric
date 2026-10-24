@@ -10,12 +10,8 @@
 ![language](https://img.shields.io/badge/language-java%2Fkotlin-purple)
 
 <p><b><a href="README-en.md">English</a> | <a href="README.md">简体中文</a></b></p>
-<p>SuperLyric</p>
+<p>Lyrics Fetcher | Super Lyric</p>
 </div>
-
-> SuperLyric is an LSPosed module that extracts lyrics from music apps and publishes them to
-> the Android framework. Playback state and progress belong to the framework. It supports both
-> Hook and official API paths, with local caching for online lyrics.
 
 ---
 
@@ -26,23 +22,7 @@
 - Completely abandons the traditional broadcast approach, fully embracing the higher-performance,
   lower-latency Binder cross-process capabilities!
 - Lyrics can be acquired via Hook or the network: the acquisition mode is switchable per app for
-  NetEase, Spotify uses the network path, and online lyrics are locally cached.
-
----
-
-## 🎧 Poweramp Adaptation
-
-- Tested with Poweramp `build-1031-uni` (versionCode `1031009`)
-- **Lyrics on track change**: reads `cached_lyrics.content` / `lrc_files` from the host database,
-  so opening the lyrics screen is not required
-- Obfuscated classes are located with DexKit string anchors; the host's own `LrcParser` is used to
-  read LRC files, bypassing scoped storage
-- Raw LRC bytes are decoded as strict UTF-8 with an automatic GBK fallback
-- Only local LRC files or already-cached lyrics are supported; tracks whose lyrics exist only in
-  embedded tags still require opening the lyrics screen once
-- **Reboot the device after updating the module APK** so system_server reloads the module;
-  otherwise the old system service keeps running
-- Release APK: [Releases](https://github.com/HChenX/SuperLyric/releases)
+  NetEase and Honor Music, Spotify uses the network path, and online lyrics are locally cached.
 
 ---
 
@@ -52,8 +32,6 @@
 - BoDian Music (cn.wenyu.bodian) -> Hook Acquisition
 - Kugou Music (com.kugou.android) -> Network
 - Kugou Music Lite (com.kugou.android.lite) -> Network
-- Kuwo Music (cn.kuwo.player) -> Hook Acquisition
-- Kuwo Music Car (cn.kuwo.kwmusiccar) -> Hook Acquisition
 - Migu Music (cmccwm.mobilemusic) -> Hook Acquisition
 - NetEase Cloud Music (com.netease.cloudmusic) -> Network
 - Poweramp (com.maxmpz.audioplayer) -> Hook Acquisition (local LRC / lyric cache)
