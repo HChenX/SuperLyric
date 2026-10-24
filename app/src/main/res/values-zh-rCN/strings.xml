@@ -59,6 +59,9 @@
     <string name="clear_dexkit_cache_summary">或许可以修复某些应用不生效的问题</string>
     <string name="cleared">已清除</string>
     <string name="clear_failed">清除失败</string>
+    <string name="hide_icon">隐藏图标</string>
+    <string name="show_icon">显示图标</string>
+    <string name="icon_toggle_failed">修改图标失败</string>
     <string name="api_test">API 测试</string>
     <string name="service_not_started">SuperLyric 服务未启动</string>
 

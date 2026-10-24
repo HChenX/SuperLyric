@@ -19,6 +19,7 @@
 package com.hchen.superlyric.ui.screen
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -73,6 +74,7 @@ import com.hchen.superlyric.ui.data.LocalViewModel
 import com.hchen.superlyric.ui.effect.BlurredBar
 import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
 import com.hchen.superlyric.ui.viewmodel.MainUiAction
+import com.hchen.superlyric.utils.LauncherIconController
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.DropdownEntry
@@ -132,7 +134,9 @@ fun HomeLayout(
         )
     }
 
-    val settingsEntries = remember(logLevel) {
+    var launcherHidden by remember { mutableStateOf(LauncherIconController.isHidden(context)) }
+
+    val settingsEntries = remember(logLevel, launcherHidden) {
         listOf(
             DropdownEntry(
                 items = listOf(
@@ -147,6 +151,28 @@ fun HomeLayout(
                                 Toast.makeText(context, context.getString(R.string.cleared), Toast.LENGTH_SHORT).show()
                             } else {
                                 Toast.makeText(context, context.getString(R.string.clear_failed), Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    ),
+                    DropdownItem(
+                        text = context.getString(
+                            if (launcherHidden) R.string.show_icon else R.string.hide_icon
+                        ),
+                        selected = false,
+                        onClick = {
+                            val next = !launcherHidden
+                            if (LauncherIconController.setHidden(context, next)) {
+                                // DONT_KILL_APP：组件状态立即持久化，桌面通过 package-changed
+                                // 刷新图标，当前进程不需要重启。隐藏时把任务移出最近任务，
+                                // 否则用户仍能从 recents 回到这个已经隐藏的入口。
+                                launcherHidden = next
+                                if (next) (context as? Activity)?.finishAndRemoveTask()
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.icon_toggle_failed),
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
                         }
                     ),
