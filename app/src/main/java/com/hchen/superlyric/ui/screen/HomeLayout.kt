@@ -20,6 +20,7 @@ package com.hchen.superlyric.ui.screen
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.ActivityManager
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -166,7 +167,13 @@ fun HomeLayout(
                                 // 刷新图标，当前进程不需要重启。隐藏时把任务移出最近任务，
                                 // 否则用户仍能从 recents 回到这个已经隐藏的入口。
                                 launcherHidden = next
-                                if (next) (context as? Activity)?.finishAndRemoveTask()
+                                if (next) {
+                                    // 从桌面和 LSPosed 进入会形成两个 task；只结束当前 task
+                                    // 会留下另一个可回到的入口。这里结束本应用的全部 task。
+                                    val activityManager = context.getSystemService(ActivityManager::class.java)
+                                    activityManager?.appTasks?.forEach { it.finishAndRemoveTask() }
+                                    (context as? Activity)?.finishAndRemoveTask()
+                                }
                             } else {
                                 Toast.makeText(
                                     context,
