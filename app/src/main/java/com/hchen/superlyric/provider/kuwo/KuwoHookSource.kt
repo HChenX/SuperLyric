@@ -25,6 +25,9 @@ import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
 import com.hchen.superlyric.provider.base.HookLyricSource
+import com.hchen.superlyric.provider.base.KeyedStash
+import com.hchen.superlyric.provider.base.SourceRequestGate
+import com.hchen.superlyric.provider.base.withMetadata
 import com.hchen.superlyric.utils.LyricDiag
 
 import java.util.concurrent.ConcurrentHashMap
@@ -58,11 +61,8 @@ class KuwoHookSource : HookLyricSource {
         Thread(runnable, "SuperLyric-KuwoHook").apply { isDaemon = true }
     }
 
-    @Volatile
-    private var session: LyricSource.Session? = null
-
-    @Volatile
-    private var pendingIdentity: TrackIdentity? = null
+    private val requests = SourceRequestGate()
+    private val docStash = KeyedStash<com.hchen.superlyric.kernel.model.LyricDoc>()
 
     /**
      * 最近一次由宿主上报的 rid
@@ -81,13 +81,6 @@ class KuwoHookSource : HookLyricSource {
      * 歌词回调同一时序到达，可精确关联。
      */
     private val trackStore = ConcurrentHashMap<String, KuwoTrack>()
-
-    /** 已解析、尚未被会话消费的结果。宿主先给歌词后发元数据，见 [start] 的补投。 */
-    @Volatile
-    private var stashedDoc: com.hchen.superlyric.kernel.model.LyricDoc? = null
-
-    @Volatile
-    private var stashedId: String? = null
 
     /**
      * 最近一次交给解析器的（标识, 正文）
@@ -136,26 +129,19 @@ class KuwoHookSource : HookLyricSource {
     fun trackArtist(rid: String): String = trackStore[rid]?.artist.orEmpty()
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
-        this.session = session
-        this.pendingIdentity = identity
-
-        // 补投：宿主的歌词回调可能早于元数据更新到达，成果必须还给刚刚建立的新会话
-        val stashed = stashedDoc
-        // 必须要求暂存标识**非空**：两边都是 null 时相等，会把上一首的歌词当成本曲目的
-        // 结果发布出去（直接投递那条路径本来就要求非空，这里不能更松）
-        if (stashed != null && stashedId != null && stashedId == identity.stableId) {
-            stashedDoc = null
-            stashedId = null
+        requests.open(identity, session)
+        docStash.takeIf(identity.stableId)?.let { stashed ->
+            val rid = TrackIdentity.normalizeStableId(identity.stableId).orEmpty()
             AndroidLog.logD(sourceName, "Replaying stashed lyric for id=${identity.stableId}")
-            session.deliver(LyricOutcome.Success(stashed.withMetadata(identity)))
+            session.deliver(
+                LyricOutcome.Success(stashed.withMetadata(identity, trackTitle(rid), trackArtist(rid)))
+            )
         }
     }
 
     override fun cancel() {
-        session = null
-        pendingIdentity = null
-        stashedDoc = null
-        stashedId = null
+        requests.invalidate()
+        docStash.clear()
         lastDelivered = null
         // 一并清掉：残留的旧 rid 会让下一首的歌词回调先被配上上一首的标识
         capturedRid = null
@@ -163,8 +149,9 @@ class KuwoHookSource : HookLyricSource {
 
     private fun handleLyricText(text: String) {
         val rid = capturedRid ?: ""
+        val active = requests.current()
         // 用当前已知的 rid 构造稳定标识；宿主的 rid 由 trackProbe 先一步送达
-        val stableId = TrackIdentity.stableId(NAMESPACE, rid) ?: pendingIdentity?.stableId
+        val stableId = TrackIdentity.stableId(NAMESPACE, rid) ?: active?.identity?.stableId
 
         val last = lastDelivered
         if (last != null && stableId != null && stableId == last.first && text == last.second) {
@@ -179,9 +166,8 @@ class KuwoHookSource : HookLyricSource {
                     LyricRequest(
                         format = LyricFormat.AUTO,
                         text = text,
-                        // 不在此处带曲目元数据：解析可能发生在切歌之前，那时 pendingIdentity
-                        // 还是上一首的，带进来就会把旧曲名/旧时长烤进文档、事后无法纠正。
-                        // 元数据一律在投递时由 withMetadata 按当时的身份回填。
+                        // 解析可能早于切歌完成；这里只带稳定 id，元数据在投递时
+                        // 由当前请求身份回填，避免把上一首的曲名/时长写进文档。
                         lyricId = stableId,
                     )
                 )
@@ -207,8 +193,9 @@ class KuwoHookSource : HookLyricSource {
                     return@execute
                 }
                 AndroidLog.logW(sourceName, "Parsed no lines from lyric text (len=${text.length})")
-                val target = session
-                val current = pendingIdentity
+                val activeAtDelivery = requests.current()
+                val target = activeAtDelivery?.session
+                val current = activeAtDelivery?.identity
                 if (target != null && (stableId == null || stableId == current?.stableId)) {
                     target.deliver(LyricOutcome.Unsupported("kuwo: parsed empty"))
                 } else {
@@ -217,16 +204,20 @@ class KuwoHookSource : HookLyricSource {
                 return@execute
             }
 
-            stashedDoc = parsed
-            stashedId = stableId
+            docStash.put(stableId, parsed)
             AndroidLog.logI(sourceName, "Parsed lyric text, lines=${parsed.lines.size}")
 
             // 只有当这份结果确实属于当前会话时才直接投递；否则留给 start() 补投。
             // 绝不能投给一个属于别的曲目的会话——那会被当成新曲目的歌词发布出去。
-            val target = session
-            val current = pendingIdentity
+            val activeAtDelivery = requests.current()
+            val target = activeAtDelivery?.session
+            val current = activeAtDelivery?.identity
             if (target != null && (stableId == null || stableId == current?.stableId)) {
-                target.deliver(LyricOutcome.Success(parsed.withMetadata(current)))
+                target.deliver(
+                    LyricOutcome.Success(
+                        parsed.withMetadata(current, trackTitle(rid), trackArtist(rid))
+                    )
+                )
             } else {
                 AndroidLog.logD(
                     sourceName,
@@ -234,26 +225,6 @@ class KuwoHookSource : HookLyricSource {
                 )
             }
         }
-    }
-
-    /**
-     * 用音轨身份补齐曲目信息
-     *
-     * <p>**身份优先，而不是"仅在为空时补齐"**：酷我的歌词回调可能早于元数据到达，
-     * 解析时用的也许是上一首的身份。若只在字段为空时才覆盖，那些错误值就永远纠不过来。
-     * 因此只要身份里有值就一律以身份为准。
-     */
-    private fun com.hchen.superlyric.kernel.model.LyricDoc.withMetadata(
-        identity: TrackIdentity?
-    ): com.hchen.superlyric.kernel.model.LyricDoc {
-        if (identity == null) return this
-        val rid = TrackIdentity.normalizeStableId(identity.stableId) ?: return this
-        return copy(
-            title = identity.title.ifBlank { trackTitle(rid) }.ifBlank { title },
-            artist = identity.artist.ifBlank { trackArtist(rid) }.ifBlank { artist },
-            durationMs = if (identity.durationMs > 0L) identity.durationMs else durationMs,
-            lyricId = identity.stableId ?: lyricId,
-        )
     }
 
     /** 宿主曲目的最小信息集 */

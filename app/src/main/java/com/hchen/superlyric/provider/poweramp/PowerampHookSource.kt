@@ -31,6 +31,10 @@ import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
 import com.hchen.superlyric.provider.base.HookLyricSource
+import com.hchen.superlyric.provider.base.KeyedStash
+import com.hchen.superlyric.provider.base.SourceRequest
+import com.hchen.superlyric.provider.base.SourceRequestGate
+import com.hchen.superlyric.provider.base.withMetadata
 import com.hchen.superlyric.publisher.AbsPublisher
 import com.hchen.superlyric.utils.LyricDiag
 
@@ -68,22 +72,8 @@ class PowerampHookSource : HookLyricSource {
         Thread(runnable, "SuperLyric-PowerampHook").apply { isDaemon = true }
     }
 
-    @Volatile
-    private var session: LyricSource.Session? = null
-
-    @Volatile
-    private var pendingIdentity: TrackIdentity? = null
-
-    /** 每次 start/cancel 递增；旧 fetch 在关键点自行退出，不再占用一条 lane 跑完整链路 */
-    @Volatile
-    private var requestGeneration = 0L
-
-    /** 已解析但当前会话尚未建立的结果；键是归一化后的 `title|artist`。 */
-    @Volatile
-    private var stashedDoc: LyricDoc? = null
-
-    @Volatile
-    private var stashedKey: String? = null
+    private val requests = SourceRequestGate()
+    private val docStash = KeyedStash<LyricDoc>()
 
     override fun install() {
         PowerampAnchors.install(object : PowerampAnchors.LyricsListener {
@@ -104,36 +94,27 @@ class PowerampHookSource : HookLyricSource {
     override fun currentStableId(): String? = null
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
-        this.session = session
-        this.pendingIdentity = identity
-
-        val stashed = stashedDoc
-        val key = stashedKey
-        if (stashed != null && key != null && key == identityToken(identity)) {
-            stashedDoc = null
-            stashedKey = null
+        val request = requests.open(identity, session)
+        val key = identityToken(identity)
+        docStash.takeIf(key)?.let { stashed ->
             AndroidLog.logD(sourceName, "Replaying stashed lyric for $key")
             session.deliver(LyricOutcome.Success(stashed.withMetadata(identity)))
             return
         }
 
         // 切歌就查库；不依赖歌词界面是否打开
-        val generation = ++requestGeneration
-        executor.execute { fetchFromHost(identity, generation) }
+        executor.execute { fetchFromHost(identity, request) }
     }
 
     override fun cancel() {
-        requestGeneration++
-        session = null
-        pendingIdentity = null
-        stashedDoc = null
-        stashedKey = null
+        requests.invalidate()
+        docStash.clear()
     }
 
     // ---------------------------------------------------------------- 宿主数据库
 
-    private fun fetchFromHost(identity: TrackIdentity, generation: Long) {
-        if (generation != requestGeneration) return
+    private fun fetchFromHost(identity: TrackIdentity, request: SourceRequest) {
+        if (!requests.isCurrent(request)) return
         val database = PowerampAnchors.getDatabase()
         if (database == null) {
             // DB 连接由 RestProvider.getWritableDatabase 钩子填充；首次切歌时可能还没打开。
@@ -157,7 +138,7 @@ class PowerampHookSource : HookLyricSource {
                         "content=${row.content?.length ?: 0},lrc=${row.lrcPath})"
                 },
         )
-        if (rows.isEmpty() || generation != requestGeneration) return
+        if (rows.isEmpty() || !requests.isCurrent(request)) return
 
         val matching = rows.filter { row ->
             TrackIdentity.artistCompatible(identity.artist, row.artist) &&
@@ -168,7 +149,7 @@ class PowerampHookSource : HookLyricSource {
             return
         }
 
-        if (generation != requestGeneration) return
+        if (!requests.isCurrent(request)) return
         val withFile = matching.firstOrNull { it.lrcPath.isNotEmpty() }
         if (withFile != null) {
             val text = readLrcFile(withFile)
@@ -474,7 +455,7 @@ class PowerampHookSource : HookLyricSource {
         durationMs: Long,
         extra: String,
     ) {
-        val identity = pendingIdentity ?: run {
+        val identity = requests.current()?.identity ?: run {
             AndroidLog.logD(sourceName, "$source: no session yet, ignoring")
             return
         }
@@ -543,12 +524,12 @@ class PowerampHookSource : HookLyricSource {
             return false
         }
 
-        stashedDoc = doc
-        stashedKey = key
+        docStash.put(key, doc)
         AndroidLog.logI(sourceName, "$source: parsed ${doc.lines.size} lines for $key")
 
-        val target = session
-        val current = pendingIdentity
+        val activeAtDelivery = requests.current()
+        val target = activeAtDelivery?.session
+        val current = activeAtDelivery?.identity
         if (target != null && current != null && key == identityToken(current)) {
             target.deliver(LyricOutcome.Success(doc.withMetadata(current)))
         } else {
@@ -588,13 +569,6 @@ class PowerampHookSource : HookLyricSource {
         identity.stableId?.takeIf { it.isNotBlank() }
             ?: ("title:" + TrackIdentity.normalizeTitle(identity.title) + "|" +
                 TrackIdentity.normalizeTitle(identity.artist))
-
-    private fun LyricDoc.withMetadata(identity: TrackIdentity): LyricDoc = copy(
-        title = identity.title.ifBlank { title },
-        artist = identity.artist.ifBlank { artist },
-        durationMs = if (identity.durationMs > 0L) identity.durationMs else durationMs,
-        lyricId = identity.stableId ?: lyricId,
-    )
 
     /**
      * 有界读取：content:// 可能返回无限流，先读到内存再判大小已经太晚。

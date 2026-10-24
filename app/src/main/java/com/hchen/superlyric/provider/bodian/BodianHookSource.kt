@@ -26,6 +26,9 @@ import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
 import com.hchen.superlyric.provider.base.HookLyricSource
+import com.hchen.superlyric.provider.base.KeyedStash
+import com.hchen.superlyric.provider.base.SourceRequestGate
+import com.hchen.superlyric.provider.base.withMetadata
 import com.hchen.superlyric.utils.LyricCacheStore
 import com.hchen.superlyric.utils.LyricDiag
 
@@ -53,13 +56,6 @@ class BodianHookSource : HookLyricSource {
         Thread(runnable, "SuperLyric-BodianHook").apply { isDaemon = true }
     }
 
-    /**
-     * 会话与身份必须作为**一个快照**发布：两次独立 volatile 写会让回调读到
-     * “新 session + 旧 identity”，把旧曲目的载荷投给新代际。
-     */
-    private data class Pending(val session: LyricSource.Session, val identity: TrackIdentity)
-
-    /** 会话尚未建立时先记住宿主给的歌词文件路径，等 start() 再解析 */
     private data class PathStash(
         val rid: String,
         val filePath: String,
@@ -68,33 +64,16 @@ class BodianHookSource : HookLyricSource {
         val album: String,
     )
 
-    @Volatile
-    private var pending: Pending? = null
+    private data class ParsedStash(val doc: LyricDoc, val rid: String?, val baseId: String?)
 
-    @Volatile
-    private var stashedPath: PathStash? = null
+    private val requests = SourceRequestGate()
+    private val docStash = KeyedStash<ParsedStash>()
+    private val pathStash = KeyedStash<PathStash>()
 
     @Volatile
     private var capturedRid: String? = null
 
     private var lastProcessedPath: String? = null
-
-    /**
-     * 已解析、尚未被会话消费的结果
-     *
-     * 宿主分两次上报标识（先旧后新），而歌词常在第一次之前就解析完毕。那时投递会被
-     * 随后推进的 epoch 判为过期丢弃，表现为"解析成功却整轮超时转网络"。故按稳定标识暂存，
-     * 等它自己的会话建立后补投
-     */
-    @Volatile
-    private var stashedDoc: LyricDoc? = null
-
-    @Volatile
-    private var stashedId: String? = null
-
-    /** 建立 stash 时 pending.identity 的 stableId（可能是 MEDIA_ID，而非 rid 派生值） */
-    @Volatile
-    private var stashedBaseId: String? = null
 
     override fun install() {
         BodianAnchors.install { filePath, title, artist, album, rid ->
@@ -105,28 +84,16 @@ class BodianHookSource : HookLyricSource {
     override fun currentStableId(): String? = capturedRid
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
-        pending = Pending(session, identity)
+        requests.open(identity, session)
         lastProcessedPath = null
 
-        val stashed = stashedDoc
-        // 必须要求暂存标识**非空**：两边都是 null 时相等，会把上一首的歌词当成本曲目的
-        // 结果发布出去（直接投递那条路径本来就要求非空，这里不能更松）
-        val matches = stashedId != null &&
-            (stashedId == identity.stableId || stashedBaseId == identity.stableId)
-        if (stashed != null && matches) {
-            stashedDoc = null
-            stashedId = null
-            stashedBaseId = null
+        docStash.takeIfAny(identity.stableId)?.let { stashed ->
             AndroidLog.logD(sourceName, "Replaying stashed lyric for id=${identity.stableId}")
-            session.deliver(LyricOutcome.Success(stashed.withMetadata(identity)))
+            session.deliver(LyricOutcome.Success(stashed.doc.withMetadata(identity)))
         }
 
-        // 会话建立前宿主已经给了路径：按 rid 命中后立刻解析
-        val path = stashedPath
-        if (path != null &&
-            TrackIdentity.normalizeStableId(path.rid) == TrackIdentity.normalizeStableId(identity.stableId)
-        ) {
-            stashedPath = null
+        val pathKey = TrackIdentity.normalizeStableId(identity.stableId)
+        pathStash.takeIf(pathKey)?.let { path ->
             executor.execute {
                 val outcome = parseFile(path.filePath, path.album, identity.stableId, path.title, path.artist)
                 session.deliver(outcome.withMetadata(identity, path.title, path.artist))
@@ -135,17 +102,15 @@ class BodianHookSource : HookLyricSource {
     }
 
     override fun cancel() {
-        pending = null
-        stashedPath = null
-        stashedDoc = null
-        stashedId = null
-        stashedBaseId = null
+        requests.invalidate()
+        pathStash.clear()
+        docStash.clear()
     }
 
     private fun onLyricFile(filePath: String, title: String, artist: String, album: String, rid: String) {
         if (rid.isNotEmpty()) capturedRid = rid
 
-        val active = pending
+        val active = requests.current()
         if (active == null) {
             if (filePath.isEmpty()) {
                 AndroidLog.logW(sourceName, "No session yet and host reported no lyric file; dropping")
@@ -155,7 +120,7 @@ class BodianHookSource : HookLyricSource {
                 AndroidLog.logW(sourceName, "No session yet and no rid; cannot associate the file: $filePath")
                 return
             }
-            stashedPath = PathStash(rid, filePath, title, artist, album)
+            pathStash.put(TrackIdentity.normalizeStableId(rid), PathStash(rid, filePath, title, artist, album))
             AndroidLog.logD(sourceName, "Stashed lyric file until its session is up: rid=$rid")
             return
         }
@@ -191,9 +156,7 @@ class BodianHookSource : HookLyricSource {
         executor.execute {
             val outcome = parseFile(filePath, album, identity.stableId, title, artist)
             if (outcome is LyricOutcome.Success) {
-                stashedDoc = outcome.doc
-                stashedId = identity.stableId
-                stashedBaseId = base.stableId
+                docStash.put(listOf(identity.stableId, base.stableId), ParsedStash(outcome.doc, identity.stableId, base.stableId))
             }
 
             // 会话与身份都必须在**投递时**重读，不能在回调入口处捕获：
@@ -201,7 +164,7 @@ class BodianHookSource : HookLyricSource {
             // 投给入口处捕获的那个旧会话会被 epoch 判为过期而丢弃 —— 表现为
             // "Hook 明明解析成功却整轮超时转网络"，网络再匹配不上就成了纯音乐占位。
             // 身份对不上也先留着，投给别的曲目的会话会被当成新曲目的歌词发布出去
-            val activeAtDelivery = pending
+            val activeAtDelivery = requests.current()
             val current = activeAtDelivery?.identity
             val sameTrack = identity.stableId == current?.stableId || base.stableId == current?.stableId
             if (activeAtDelivery == null || !sameTrack) {
@@ -215,9 +178,7 @@ class BodianHookSource : HookLyricSource {
             // 直接投递成功后清掉暂存：`start()` 的补投路径本就要求暂存只在"投不出去"时留着，
             // 留着会让同一曲目再次 `start()`（重播）把旧文档重放一遍
             if (outcome is LyricOutcome.Success) {
-                stashedDoc = null
-                stashedId = null
-                stashedBaseId = null
+                docStash.clear()
             }
         }
     }
@@ -274,39 +235,6 @@ class BodianHookSource : HookLyricSource {
 
         AndroidLog.logI(sourceName, "Parsed local lyric file, lines=${doc.lines.size}")
         return LyricOutcome.Success(doc)
-    }
-
-    /**
-     * 用音轨身份补齐曲目信息
-     *
-     * **身份优先，而不是"仅在为空时补齐"**：波点的歌词文件回调会早于元数据更新到达，
-     * 解析时若带上身份，烤进去的会是**上一首**的曲名与时长。只在字段为空时才覆盖，
-     * 那些错误值就永远纠不过来
-     *
-     * @param hostTitle  宿主为这份歌词文件给出的曲名；身份里没有时用它兜底
-     * @param hostArtist 同上，歌手
-     */
-    private fun LyricDoc.withMetadata(
-        identity: TrackIdentity?,
-        hostTitle: String = "",
-        hostArtist: String = "",
-    ): LyricDoc {
-        if (identity == null) return this
-        return copy(
-            title = identity.title.ifBlank { hostTitle }.ifBlank { title },
-            artist = identity.artist.ifBlank { hostArtist }.ifBlank { artist },
-            durationMs = if (identity.durationMs > 0L) identity.durationMs else durationMs,
-            lyricId = identity.stableId ?: lyricId,
-        )
-    }
-
-    private fun LyricOutcome.withMetadata(
-        identity: TrackIdentity?,
-        hostTitle: String = "",
-        hostArtist: String = "",
-    ): LyricOutcome = when (this) {
-        is LyricOutcome.Success -> LyricOutcome.Success(doc.withMetadata(identity, hostTitle, hostArtist))
-        else -> this
     }
 
     private companion object {
