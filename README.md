@@ -1,21 +1,20 @@
 <div align="center">
-<h1>SuperLyric-Poweramp</h1>
+<h1>SuperLyric</h1>
 
-![stars](https://img.shields.io/github/stars/BlueEve04/SuperLyric-Poweramp?style=flat)
-![downloads](https://img.shields.io/github/downloads/BlueEve04/SuperLyric-Poweramp/total)
-![Github repo size](https://img.shields.io/github/repo-size/BlueEve04/SuperLyric-Poweramp)
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/BlueEve04/SuperLyric-Poweramp)](https://github.com/BlueEve04/SuperLyric-Poweramp/releases)
-[![GitHub Release Date](https://img.shields.io/github/release-date/BlueEve04/SuperLyric-Poweramp)](https://github.com/BlueEve04/SuperLyric-Poweramp/releases)
-![last commit](https://img.shields.io/github/last-commit/BlueEve04/SuperLyric-Poweramp?style=flat)
+![stars](https://img.shields.io/github/stars/HChenX/SuperLyric?style=flat)
+![downloads](https://img.shields.io/github/downloads/HChenX/SuperLyric/total)
+![Github repo size](https://img.shields.io/github/repo-size/HChenX/SuperLyric)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/HChenX/SuperLyric)](https://github.com/HChenX/SuperLyric/releases)
+[![GitHub Release Date](https://img.shields.io/github/release-date/HChenX/SuperLyric)](https://github.com/HChenX/SuperLyric/releases)
+![last commit](https://img.shields.io/github/last-commit/HChenX/SuperLyric?style=flat)
 ![language](https://img.shields.io/badge/language-java%2Fkotlin-purple)
 
 <p><b><a href="README-en.md">English</a> | <a href="README.md">简体中文</a></b></p>
-<p>Poweramp 适配分支 | SuperLyric</p>
+<p>SuperLyric</p>
 </div>
 
-> 本仓库基于 [HChenX/SuperLyric](https://github.com/HChenX/SuperLyric) 4.1，
-> 新增 Poweramp（`com.maxmpz.audioplayer`）歌词 Provider：切歌时直接读取本地 LRC
-> 或宿主歌词缓存，无需打开 Poweramp 歌词界面。原始项目版权归 HChenX 所有。
+> SuperLyric 是一个 LSPosed 模块：从音乐应用提取歌词并发布到 Android 框架，
+> 播放状态与进度由系统框架负责。支持 Hook 与官方 API 双路径，在线歌词带本地缓存。
 
 ---
 
@@ -23,7 +22,7 @@
 
 - 基于 Binder 数据传递的音乐软件歌词获取与发布模块！
 - 完全抛弃传统的广播模式，全面拥抱更高性能更低延迟的 Binder 跨进程能力！
-- 支持 Hook / 网络双路径获取歌词：网易云、荣耀音乐可按应用切换获取方式，Spotify 走网络获取，在线歌词带本地缓存。
+- 支持 Hook / 网络双路径获取歌词：网易云可按应用切换获取方式，Spotify 走网络获取，在线歌词带本地缓存。
 
 ---
 
@@ -44,6 +43,8 @@
 - 波点音乐 (cn.wenyu.bodian) -> Hook 获取
 - 酷狗音乐 (com.kugou.android) -> 网络获取
 - 酷狗概念版 (com.kugou.android.lite) -> 网络获取
+- 酷我音乐 (cn.kuwo.player) -> Hook 获取
+- 酷我音乐车机版 (cn.kuwo.kwmusiccar) -> Hook 获取
 - 咪咕音乐 (cmccwm.mobilemusic) -> Hook 获取
 - 网易云音乐 (com.netease.cloudmusic) -> 网络获取
 - Poweramp (com.maxmpz.audioplayer) -> Hook 获取（本地 LRC / 歌词缓存）
