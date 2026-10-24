@@ -146,6 +146,7 @@ fun AboutLayout(
     }
 
     val isInDark = isSystemInDarkTheme()
+    val logoColor = if (isInDark) Color(0xFFD89AD0) else Color(0xFF6C1B6C)
     val cardBlend = if (isInDark) ColorBlendToken.Overlay_Thin_Light else ColorBlendToken.Pured_Regular_Light
     val logoBlend = remember(isInDark) {
         if (isInDark) {
@@ -233,7 +234,7 @@ fun AboutLayout(
                             },
                         painter = painterResource(R.drawable.ic_superlyric_logo),
                         contentDescription = null,
-                        tint = MiuixTheme.colorScheme.primary,
+                        tint = logoColor,
                     )
                     Text(
                         modifier = Modifier
