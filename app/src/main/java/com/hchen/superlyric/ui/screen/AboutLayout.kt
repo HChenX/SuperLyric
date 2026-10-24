@@ -470,7 +470,7 @@ fun AboutLayout(
                 Spacer(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .size(12.dp)
+                        .height(12.dp)
                 )
 
                 Row(horizontalArrangement = Arrangement.Absolute.SpaceBetween) {
@@ -498,7 +498,10 @@ private fun openUrl(context: Context, url: String) {
         }
 
         context.startActivity(intent)
-    } catch (_: Exception) {
+    } catch (e: Exception) {
+        // 留痕：无浏览器可处理该 scheme、URI 非法、Activity 未导出都会抛，
+        // 只给用户一个 Toast 会把这些原因丢掉
+        android.util.Log.w("AboutLayout", "Failed to open url $url", e)
         Toast.makeText(context, R.string.no_activity, Toast.LENGTH_SHORT).show()
     }
 }

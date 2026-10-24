@@ -249,8 +249,8 @@ fun ApiLayout(
                     titleColor = titleColor,
                     defaultWindowInsetsPadding = false,
                     actions = {
-                        // 调试面板只进 debug 包：它能注入模拟歌词、暂停时钟、清零计数，
-                        // 全是面向开发的操作，不该出现在发布版界面上
+                        // 面板能注入模拟歌词、暂停接收、清零计数，是开发专用入口，
+                        // 发布版不能出现（de74eba 的修复）。
                         if (BuildConfig.DEBUG) {
                             IconButton(
                                 onClick = {
@@ -429,9 +429,9 @@ fun ApiLayout(
         }
 
         // 右上角 API 调试控制台弹窗
-        // 修复：关闭默认内置 insets，仅保留底部导航白条/三大按键 + 16dp 呼吸空间，避免空间过大
+        // 关闭默认内置 insets，仅保留底部导航白条/三大按键 + 16dp 呼吸空间，避免空间过大
         WindowBottomSheet(
-            show = isDebugSheetShowing,
+            show = BuildConfig.DEBUG && isDebugSheetShowing,
             title = stringResource(R.string.api_debug_and_test),
             defaultWindowInsetsPadding = false,
             startAction = {

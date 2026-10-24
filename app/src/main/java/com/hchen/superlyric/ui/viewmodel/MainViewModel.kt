@@ -134,7 +134,8 @@ class MainViewModel(
                 }
                 loadApps()
 
-                delay(300)
+                // PackageLoader 先写入 sMediaApps/sMediaApiApps、再 complete future；
+                // awaitCompletion 返回时列表已经是新的，不需要额外等待。
                 val targetPkg = _currentApp.value.packageName
                 if (!targetPkg.isNullOrEmpty()) {
                     _currentApp.value = _hookApps.value.fastFirstOrNull { it.packageName == targetPkg }

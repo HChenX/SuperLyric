@@ -529,15 +529,18 @@ private fun AppDetailsDialog(
             TextButton(
                 text = stringResource(android.R.string.ok),
                 onClick = {
+                    val pkgName = appData.packageName.orEmpty()
                     try {
-                        val pkgName = appData.packageName.orEmpty()
                         val intent = context.packageManager.getLaunchIntentForPackage(pkgName)
                         if (intent != null) {
                             context.startActivity(intent)
                         } else {
                             Toast.makeText(context, R.string.no_activity, Toast.LENGTH_SHORT).show()
                         }
-                    } catch (_: Throwable) {
+                    } catch (e: Throwable) {
+                        // 留痕：`getLaunchIntentForPackage`/`startActivity` 抛错的原因
+                        // （包不存在、权限、Activity 未导出）各不相同，只给用户一个 Toast 会丢掉它们
+                        android.util.Log.w("HomeLayout", "Failed to launch app $pkgName", e)
                         Toast.makeText(context, R.string.no_activity, Toast.LENGTH_SHORT).show()
                     }
 
