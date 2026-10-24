@@ -248,11 +248,8 @@ object KuwoLrcxParser {
             val nextStart = if (index + 1 < lines.size) lines[index + 1].startMs
             else current.startMs + MAX_LINE_DURATION_MS
 
-            val end = maxOf(
-                current.startMs,
-                lastWordEnd,
-                minOf(nextStart, current.startMs + MAX_LINE_DURATION_MS),
-            )
+            val hardEnd = minOf(nextStart, current.startMs + MAX_LINE_DURATION_MS)
+            val end = maxOf(current.startMs, minOf(lastWordEnd, hardEnd))
             lines[index] = current.copy(endMs = end)
         }
     }

@@ -141,7 +141,10 @@ object LyricPipeline {
      *
      * @throws DecodeException 原始载荷无法解密
      */
-    fun parse(request: LyricRequest): LyricDoc? {
+    fun parse(
+        request: LyricRequest,
+        qrcStats: com.hchen.superlyric.kernel.parse.QrcParser.ParseStats? = null,
+    ): LyricDoc? {
         val content = resolveContent(request) ?: return null
         if (content.isBlank()) return null
 
@@ -157,7 +160,7 @@ object LyricPipeline {
         val body = split?.main ?: content
 
         val doc = when (format) {
-            LyricFormat.QRC -> QrcParser.parse(body)
+            LyricFormat.QRC -> QrcParser.parse(body, qrcStats)
             LyricFormat.LRCX -> KuwoLrcxParser.parse(body) ?: parseByLibrary(body)
             LyricFormat.SODA_JSON -> SodaJsonParser.parse(body)
             // 本形态的载荷必须自研解析：通用库会把起始相差小于 200ms 的相邻主行
@@ -226,14 +229,14 @@ object LyricPipeline {
     /**
      * 网易云 YRC 行的结构特征：`[数字,数字]` 后跟**三元组** `(数字,数字,数字)` 词标签。
      *
-     * <h4>为什么必须与 QRC 分开识别</h4>
+     * #### 为什么必须与 QRC 分开识别
      * QRC 与 YRC 的词标签形态极像，词标签**分量个数**是二者唯一可靠的区分点：
      * YRC 恒为 `(a,b,flag)` 三元组，QRC 为 `(a,b)` 二元组。
      * 二者识别错误会让整段报文进错解析器。
      *
-     * <h4>关于词起始的时间基准</h4>
-     * 早期文档断言"QRC 用行内相对偏移、YRC 用歌曲绝对毫秒"，**该断言与实测不符**——
-     * 两种基准在两种格式里都出现过（QQ 的 QRC 实测就是绝对毫秒）。
+     * #### 关于词起始的时间基准
+     * 词起始的时间基准**不能按格式名推断**：两种基准在两种格式里都出现过
+     * （QQ 的 QRC 实测就是绝对毫秒）。
      * [com.hchen.superlyric.kernel.parse.QrcParser] 因此按首词逐行自动判定基准，
      * **不要**再依据格式名去假设时间基准。
      */
@@ -258,12 +261,14 @@ object LyricPipeline {
      * 规范化并补齐伴随通道与元数据。
      */
     private fun finalize(doc: LyricDoc, request: LyricRequest): LyricDoc? {
-        var result = doc
+        // 先折叠同一时刻的行，再挂伴随通道：反过来的话，译文可能先挂到即将被折叠丢弃的
+        // 伴随行上，折叠后整段译文消失（只由行序决定）。
+        var result = doc.copy(lines = collapseSimultaneous(doc.lines))
 
         attachSidecar(result, request.translationText, SidecarChannel.TRANSLATION)?.let { result = it }
         attachSidecar(result, request.phoneticText, SidecarChannel.PHONETIC)?.let { result = it }
 
-        val lines = normalize(collapseSimultaneous(result.lines), maxOf(result.durationMs, request.durationMs))
+        val lines = normalize(result.lines, maxOf(result.durationMs, request.durationMs))
             .map { it.withoutEmptySidecars() }
         if (lines.isEmpty()) return null
 

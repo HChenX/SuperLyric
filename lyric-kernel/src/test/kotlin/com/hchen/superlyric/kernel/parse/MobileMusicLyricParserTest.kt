@@ -80,8 +80,17 @@ class MobileMusicLyricParserTest {
     fun `empty or unordered payloads do not become deterministic no lyrics`() {
         assertNull(MobileMusicLyricParser.parse(emptyList(), emptyList(), 5_000L, 0L))
         assertNull(MobileMusicLyricParser.parse(listOf(line(-1L, "bad")), emptyList(), 5_000L, 0L))
+        // 乱序不再整首拒绝：按起始排序后保留两行
+        val sorted = MobileMusicLyricParser.parse(
+            listOf(line(2_000L, "two"), line(1_000L, "one")), emptyList(), 5_000L, 0L,
+        )!!
+        assertEquals(listOf("one", "two"), sorted.lines.map { it.text })
+        // 坏行占比超过 20% 才整体拒绝
         assertNull(
-            MobileMusicLyricParser.parse(listOf(line(2_000L, "two"), line(1_000L, "one")), emptyList(), 5_000L, 0L),
+            MobileMusicLyricParser.parse(
+                listOf(line(-1L, "bad"), line(1_000L, "a"), line(2_000L, "b"), line(3_000L, "c")),
+                emptyList(), 5_000L, 0L,
+            ),
         )
     }
 

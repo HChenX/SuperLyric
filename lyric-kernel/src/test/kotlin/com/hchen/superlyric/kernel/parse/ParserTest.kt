@@ -86,6 +86,29 @@ class ParserTest {
         assertEquals(21_133L + 169L, line.words[1].endMs)
     }
 
+
+    @Test
+    fun `qrc offset is applied to absolute word timings exactly once`() {
+        val doc = QrcParser.parse("[offset:500]\n[1000,2000]Hello(1000,500)world(1500,500)")
+
+        assertNotNull(doc)
+        val line = doc!!.lines.single()
+        assertEquals(1_500L, line.startMs)
+        assertEquals(listOf(1_500L, 2_000L), line.words.map { it.startMs })
+    }
+
+
+    @Test
+    fun `qrc parse stats count skipped long and unmatched lines`() {
+        val stats = QrcParser.ParseStats()
+        val text = "[0,1000]" + "a".repeat(5000) + "\n[bad]"
+
+        QrcParser.parse(text, stats)
+
+        assertTrue(stats.skippedLongLines > 0)
+        assertTrue(stats.skippedUnmatchedLines > 0)
+    }
+
     @Test
     fun `relative word timing layout is detected and offset by the line start`() {
         // 另一种真实排布：词起始是行内相对偏移
@@ -154,6 +177,44 @@ class ParserTest {
 
         assertNotNull(doc)
         assertEquals("it's & that", doc!!.lines[0].text)
+    }
+
+    @Test
+    fun `an uppercase hexadecimal entity is decoded too`() {
+        // 正则曾写成 `&#x?`（只认小写 x），而解析分支同时处理了 `#X`——
+        // 大写形式永远进不了那个分支，退化为显示原始实体串
+        val doc = QrcParser.parse("[0,1000]a&#X41;b(0,1000)")
+
+        assertNotNull(doc)
+        assertEquals("aAb", doc!!.lines[0].text)
+    }
+
+    @Test
+    fun `an entity encoded invisible character is stripped from a wordless line`() {
+        // 无逐字标签的回退分支：若先剥不可见字符、后解实体，`&#x200b;` 会在剥离**之后**
+        // 才被解成零宽空格，等于没剥。它会让下游按字符索引做逐字高亮时越界
+        val doc = QrcParser.parse("[0,1000]a&#x200b;b")
+
+        assertNotNull(doc)
+        assertEquals("ab", doc!!.lines[0].text)
+    }
+
+    @Test
+    fun `an entity encoded invisible character is stripped from a word tag`() {
+        // 同一个模式在逐字分支里也要成立，否则"两处都改了"只是一句口号
+        val doc = QrcParser.parse("[0,1000]a(0,500)b(500,500)")
+
+        assertNotNull(doc)
+        assertEquals("ab", doc!!.lines[0].text)
+    }
+
+    @Test
+    fun `an entity encoded invisible character is stripped from a sidecar`() {
+        // 伴随载荷（译文 / 罗马音）走的是第三条路径，同样必须先解实体再剥
+        val sidecar = QrcParser.parseSidecar("[0,1000]译&#x200b;文")
+
+        assertEquals(1, sidecar.size)
+        assertEquals("译文", sidecar[0].text)
     }
 
     @Test
@@ -324,6 +385,40 @@ class ParserTest {
 
         assertNotNull(doc)
         assertEquals("Nested", doc!!.lines[0].text)
+    }
+
+    @Test
+    fun `soda json reads translations from the same nested container as the sentences`() {
+        // 主歌词沿容器下潜、译文却只读根节点时，嵌套形态的译文会整段丢失。
+        // 二者必须取自同一个容器
+        val json = """
+            {"loaderData":{"track_page":{"lyrics":{
+              "sentences":[{"startMs":0,"endMs":2000,"text":"Hello"}],
+              "translations":{"cn":[{"startMs":0,"text":"你好"}]}}}}}
+        """.trimIndent()
+
+        val doc = SodaJsonParser.parse(json)
+
+        assertNotNull(doc)
+        assertEquals("Hello", doc!!.lines[0].text)
+        assertEquals("你好", doc.lines[0].translation)
+    }
+
+    @Test
+    fun `soda json still reads translations from the root when the sentences are nested`() {
+        // 与上一条互补：主歌词在嵌套层、译文却在根节点。译文查找必须两条路都走，
+        // 否则修好"同容器"会反过来丢掉这一种排布
+        val json = """
+            {"translations":{"cn":[{"startMs":0,"text":"你好"}]},
+             "loaderData":{"track_page":{"lyrics":{
+               "sentences":[{"startMs":0,"endMs":2000,"text":"Hello"}]}}}}
+        """.trimIndent()
+
+        val doc = SodaJsonParser.parse(json)
+
+        assertNotNull(doc)
+        assertEquals("Hello", doc!!.lines[0].text)
+        assertEquals("你好", doc.lines[0].translation)
     }
 
     @Test

@@ -62,6 +62,18 @@ class TranslationMergerTest {
         assertEquals("译文", result.lines[0].translation)
     }
 
+
+    @Test
+    fun `Long MIN_VALUE does not overflow into a false match`() {
+        val result = TranslationMerger.attach(
+            doc(0L),
+            listOf(TimeText(Long.MIN_VALUE, "bad")),
+            SidecarChannel.TRANSLATION,
+        )
+
+        assertNull(result.lines[0].translation)
+    }
+
     @Test
     fun `drift beyond the tolerance is dropped rather than misattached`() {
         val result = TranslationMerger.attach(

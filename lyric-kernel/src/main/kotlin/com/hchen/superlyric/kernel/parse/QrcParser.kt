@@ -81,9 +81,6 @@ object QrcParser {
 
     private val OFFSET_PATTERN = Regex("""\[offset:\s*(-?\d+)]""", RegexOption.IGNORE_CASE)
 
-    /** 匹配整个 Lyric 标签：`<Lyric_n 属性...>` */
-    private val LYRIC_TAG_PATTERN = Regex("""<Lyric_(\d)\b([^>]*)>""")
-
     /** 从属性串中取 LyricContent */
     private val LYRIC_CONTENT_ATTR = Regex("""LyricContent="([^"]*)"""")
 
@@ -95,19 +92,42 @@ object QrcParser {
     /** 单行长度上限：超过它只可能是畸形载荷，而超长行会让词标签正则退化成 O(n²) */
     private const val MAX_LINE_CHARS = 4 * 1024
 
+    /** 整份载荷上限：正则/扫描都必须在有界输入上运行 */
+    private const val MAX_INPUT_CHARS = 2_000_000
+
+    /** XML 标签数量上限：大量未闭合 <Lyric_ 会让标签正则按 k·n 回溯 */
+    private const val MAX_XML_TAGS = 256
+
+    /** 单份载荷的有效行上限；正常歌词远小于此值 */
+    private const val MAX_LINES = 5_000
+
     /**
      * 解析 QRC 明文
      *
      * @param text 解密后的 QRC 明文
      * @return 解析结果；无有效歌词行时返回 null
      */
-    fun parse(text: String?): LyricDoc? {
+    data class ParseStats(
+        var skippedLongLines: Int = 0,
+        var skippedUnmatchedLines: Int = 0,
+        var emptyWords: Int = 0,
+        var skippedXmlTags: Int = 0,
+        var truncatedLines: Boolean = false,
+    ) {
+        override fun toString(): String =
+            "long=$skippedLongLines, unmatched=$skippedUnmatchedLines, " +
+                "emptyWords=$emptyWords, xmlTags=$skippedXmlTags, truncated=$truncatedLines"
+    }
+
+    fun parse(text: String?, stats: ParseStats? = null): LyricDoc? {
         if (text.isNullOrBlank()) return null
+        if (text.length > MAX_INPUT_CHARS) return null
+        if (countXmlTags(text) > MAX_XML_TAGS) return null
 
         val mainContent: String
         val translationContent: String?
 
-        val blocks = extractXmlBlocks(text)
+        val blocks = extractXmlBlocks(text, stats)
         if (blocks != null) {
             mainContent = blocks.main ?: return null
             translationContent = blocks.translation
@@ -116,10 +136,11 @@ object QrcParser {
             translationContent = null
         }
 
-        val doc = parseLines(mainContent) ?: return null
+        val doc = parseLines(mainContent, stats) ?: return null
         if (translationContent.isNullOrBlank()) return doc
 
-        val translationEntries = parsePlainTimeText(translationContent)
+        val offset = OFFSET_PATTERN.find(mainContent)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+        val translationEntries = parsePlainTimeText(translationContent, offset, stats)
         if (translationEntries.isEmpty()) return doc
 
         return TranslationMerger.attach(doc, translationEntries, SidecarChannel.TRANSLATION)
@@ -133,9 +154,9 @@ object QrcParser {
      */
     fun parseSidecar(text: String?): List<TimeText> {
         if (text.isNullOrBlank()) return emptyList()
-        val blocks = extractXmlBlocks(text)
+        val blocks = extractXmlBlocks(text, null)
         val content = if (blocks != null) (blocks.translation ?: blocks.main ?: return emptyList()) else text
-        return parsePlainTimeText(content)
+        return parsePlainTimeText(content, 0L, null)
     }
 
     private class XmlBlocks(val main: String?, val translation: String?)
@@ -151,7 +172,7 @@ object QrcParser {
      *
      * @return 拆解结果；文本不是 XML 包裹形态时返回 null
      */
-    private fun extractXmlBlocks(text: String): XmlBlocks? {
+    private fun extractXmlBlocks(text: String, stats: ParseStats?): XmlBlocks? {
         if (!text.contains("<Lyric_")) return null
 
         // 按 <Lyric_n ...> 整标签切块，再在属性串内独立判定 LyricType，
@@ -159,13 +180,29 @@ object QrcParser {
         val mainParts = StringBuilder()
         val translationParts = StringBuilder()
 
-        for (match in LYRIC_TAG_PATTERN.findAll(text)) {
-            val tagIndex = match.groupValues[1]
-            val attributes = match.groupValues[2]
+        // 线性扫描标签，不用 [^>]* 正则：大量未闭合的 <Lyric_ 会让正则按 k·n 回溯。
+        var cursor = 0
+        while (true) {
+            val start = text.indexOf("<Lyric_", cursor)
+            if (start < 0) break
+            val end = text.indexOf('>', start)
+            if (end < 0) break
+            cursor = end + 1
 
-            val content = LYRIC_CONTENT_ATTR.find(attributes)?.groupValues?.get(1) ?: continue
+            var nameEnd = start + 7
+            while (nameEnd < end && text[nameEnd].isDigit()) nameEnd++
+            val tagIndex = text.substring(start + 7, nameEnd)
+            if (tagIndex.isEmpty()) continue
+            val attributes = if (nameEnd < end) text.substring(nameEnd + 1, end) else ""
+
+            val content = LYRIC_CONTENT_ATTR.find(attributes)?.groupValues?.get(1) ?: run {
+                stats?.let { it.skippedXmlTags++ }
+                continue
+            }
             val lyricType = LYRIC_TYPE_ATTR.find(attributes)?.groupValues?.get(1)
-            val decoded = LyricText.decodeEntities(content)
+            // 不在 XML 边界解码：行解析会统一 decodeEntities。这里先解一次会让
+            // 双重转义文本多解一层，也会把 &#10; 变成真实换行、在按行切分前就把一行拆断。
+            val decoded = content
 
             val isTranslation = when (lyricType) {
                 "2", "3" -> true
@@ -193,11 +230,27 @@ object QrcParser {
     /**
      * 解析带逐字标签的主体歌词行
      */
-    private fun parseLines(content: String): LyricDoc? {
+    private fun countXmlTags(text: String): Int {
+        if (!text.contains("<Lyric_")) return 0
+        var count = 0
+        var index = text.indexOf("<Lyric_")
+        while (index >= 0) {
+            count++
+            if (count > MAX_XML_TAGS) return count
+            index = text.indexOf("<Lyric_", index + 7)
+        }
+        return count
+    }
+
+    private fun parseLines(content: String, stats: ParseStats?): LyricDoc? {
         val offset = OFFSET_PATTERN.find(content)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
 
         val lines = ArrayList<LyricLine>()
         for (raw in content.lineSequence()) {
+            if (lines.size >= MAX_LINES) {
+                stats?.truncatedLines = true
+                break
+            }
             val line = raw.trim()
             if (line.isEmpty()) continue
             if (TAG_PATTERN.matches(line)) continue
@@ -205,9 +258,15 @@ object QrcParser {
             // 词标签正则以 `([^(]*)` 开头，在没有 `(` 的**超长行**上会逐位置回溯成 O(n²)，
             // 把解析线程整个卡住。正常歌词行远小于此上限，超限只可能是畸形载荷。
             // 内核不能打日志（零 Android 依赖），这里只能静默跳过
-            if (line.length > MAX_LINE_CHARS) continue
+            if (line.length > MAX_LINE_CHARS) {
+                stats?.let { it.skippedLongLines++ }
+                continue
+            }
 
-            val lineMatch = LINE_PATTERN.find(line) ?: continue
+            val lineMatch = LINE_PATTERN.find(line) ?: run {
+                stats?.let { it.skippedUnmatchedLines++ }
+                continue
+            }
             val lineStart = lineMatch.groupValues[1].toLongOrNull() ?: continue
             val lineDuration = lineMatch.groupValues[2].toLongOrNull() ?: 0L
             val body = lineMatch.groupValues[3]
@@ -216,7 +275,7 @@ object QrcParser {
             val durationMs = if (lineDuration > 0) lineDuration else DEFAULT_LINE_DURATION_MS
             val endMs = startMs + durationMs
 
-            val parsed = parseBody(body, startMs, endMs)
+            val parsed = parseBody(body, startMs, endMs, offset, lineStart, stats)
             if (parsed.text.isBlank()) continue
             lines += parsed
         }
@@ -229,7 +288,14 @@ object QrcParser {
     /**
      * 解析行体，产出逐字切片与重建后的行文本
      */
-    private fun parseBody(body: String, startMs: Long, endMs: Long): LyricLine {
+    private fun parseBody(
+        body: String,
+        startMs: Long,
+        endMs: Long,
+        offset: Long,
+        rawLineStart: Long,
+        stats: ParseStats?,
+    ): LyricLine {
         val words = ArrayList<LyricWord>()
         val textBuilder = StringBuilder()
         var consumed = 0
@@ -241,9 +307,11 @@ object QrcParser {
         //
         // 判据取首词：绝对排布下首词原始值不会小于行起始；相对排布下它是个小偏移。
         // 必须**逐行**判定而非逐词——同一行内混用两种解释会自相矛盾。
+        // 用未加 offset 的行起始做判定：若拿 startMs（已加 offset）来比，
+        // 正 offset 会把绝对排布误判成相对排布，词时间被二次叠加行起始。
         val absoluteTime = matches.firstOrNull()
             ?.groupValues?.get(2)?.toLongOrNull()
-            ?.let { it >= startMs }
+            ?.let { it >= rawLineStart }
             ?: true
 
         for (match in matches) {
@@ -252,9 +320,12 @@ object QrcParser {
             val rawDuration = match.groupValues[3].toLongOrNull() ?: 0L
             consumed = match.range.last + 1
 
-            if (rawStart == null || wordText.isEmpty()) continue
+            if (rawStart == null || wordText.isEmpty()) {
+                if (wordText.isEmpty()) stats?.let { it.emptyWords++ }
+                continue
+            }
 
-            val wordStart = if (absoluteTime) rawStart else startMs + rawStart
+            val wordStart = if (absoluteTime) rawStart + offset else startMs + rawStart
             val wordEnd = if (rawDuration > 0) wordStart + rawDuration else wordStart + LyricText.fallbackWordDuration(wordText)
 
             words += LyricWord(wordText, wordStart, wordEnd)
@@ -269,8 +340,8 @@ object QrcParser {
         }
 
         if (words.isEmpty()) {
-            val plain = LyricText.decodeEntities(
-                LyricText.cleanInvisibleChars(WORD_TAG_ONLY.replace(body, ""))
+            val plain = LyricText.cleanInvisibleChars(
+                LyricText.decodeEntities(WORD_TAG_ONLY.replace(body, ""))
             ).trim()
             return LyricLine(startMs = startMs, endMs = endMs, text = plain)
         }
@@ -286,7 +357,11 @@ object QrcParser {
     /**
      * 解析不含逐字标签的伴随载荷（译文 / 罗马音）
      */
-    private fun parsePlainTimeText(content: String): List<TimeText> {
+    private fun parsePlainTimeText(
+        content: String,
+        offsetMs: Long = 0L,
+        stats: ParseStats? = null,
+    ): List<TimeText> {
         val entries = ArrayList<TimeText>()
         for (raw in content.lineSequence()) {
             val line = raw.trim()
@@ -295,12 +370,12 @@ object QrcParser {
 
             val lineMatch = LINE_PATTERN.find(line) ?: continue
             val startMs = lineMatch.groupValues[1].toLongOrNull() ?: continue
-            val text = LyricText.decodeEntities(
-                LyricText.cleanInvisibleChars(WORD_TAG_ONLY.replace(lineMatch.groupValues[3], ""))
+            val text = LyricText.cleanInvisibleChars(
+                LyricText.decodeEntities(WORD_TAG_ONLY.replace(lineMatch.groupValues[3], ""))
             ).trim()
 
             if (text.isEmpty()) continue
-            entries += TimeText(startMs = startMs, text = text)
+            entries += TimeText(startMs = (startMs + offsetMs).coerceAtLeast(0L), text = text)
         }
         return entries
     }

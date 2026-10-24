@@ -26,7 +26,7 @@ import java.nio.charset.StandardCharsets;
  * <b>只做解密，不做解析。</b>解密后的明文（{@code <QrcInfos>…} XML 或裸的
  * {@code [start,dur](w,dur)chars} 行）交由 {@code QrcParser} 解析。
  * <p>
- * <b>关于算法：</b>QQ 使用的是**经过改造的 Triple-DES**，与标准 DES 不兼容，因此
+ * <b>关于算法：</b>QQ 使用的是<b>经过改造的 Triple-DES</b>，与标准 DES 不兼容，因此
  * 无法使用 JCE 的 {@code DESede}。改造点在于 S 盒查表：{@link #sboxBit(byte)} 的
  * 取值展开后等价于标准 DES 的 {@code row * 16 + col}（已逐位验算），
  * 但 {@code SBOX2} 的第 24 项被改为 {@code 15}（标准 DES 为 {@code 14}）。
@@ -80,6 +80,11 @@ public final class QrcCipher {
     private static byte[] tripleDesDecrypt(byte[] cipherBytes) throws DecodeException {
         if (cipherBytes.length < 8) {
             throw new DecodeException("qrc ciphertext shorter than one DES block");
+        }
+        if (cipherBytes.length % 8 != 0) {
+            // 3DES/ECB 的密文必然是 8 的倍数。静默丢掉尾部可能把截断解成“成功”，
+            // 用户只会发现最后几行歌词消失，而整条链路判定为 Success。
+            throw new DecodeException("qrc ciphertext is not a multiple of 8 bytes");
         }
         int blocks = cipherBytes.length / 8;
         byte[] decrypted = new byte[blocks * 8];

@@ -18,6 +18,8 @@
  */
 package com.hchen.superlyric.kernel.pipeline
 
+import java.util.Locale
+
 /**
  * 把「主行 + 同时间戳伴随行」形态的载荷拆成**三个独立通道**
  *
@@ -109,8 +111,15 @@ internal object CompanionSplitter {
 
         if (phonetic.isEmpty() && translation.isEmpty()) return null
 
+        // 指令行（[offset:]、[ti:]、[ar:] 等）不参与行分类，但必须原样回到主载荷：
+        // 丢掉 [offset:] 会让整首时间平移，丢掉 [ti:]/[ar:] 会丢元数据。
+        val directives = text.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && DIRECTIVE.matches(it) }
+            .toList()
+
         return Split(
-            main = rebuildMain(mainLines),
+            main = rebuildMain(mainLines, directives),
             phonetic = phonetic.takeIf { it.isNotEmpty() }?.joinToString("\n"),
             translation = translation.takeIf { it.isNotEmpty() }?.joinToString("\n"),
         )
@@ -147,8 +156,9 @@ internal object CompanionSplitter {
      *
      * 最后一条主行没有下界，原样保留。
      */
-    private fun rebuildMain(rows: List<Row>): String {
-        val builder = StringBuilder(rows.sumOf { it.raw.length + 1 })
+    private fun rebuildMain(rows: List<Row>, directives: List<String>): String {
+        val builder = StringBuilder(rows.sumOf { it.raw.length + 1 } + directives.sumOf { it.length + 1 })
+        for (directive in directives) builder.append(directive).append('\n')
         for (index in rows.indices) {
             val row = rows[index]
             val nextStart = rows.getOrNull(index + 1)?.startMs
@@ -159,6 +169,9 @@ internal object CompanionSplitter {
 
     private fun clampTags(raw: String, startMs: Long, nextStartMs: Long?): String {
         if (nextStartMs == null) return raw
+        // 两条主行起始完全相同（对唱/双语同瞬）时，nextStart-1 会把整行所有词标签
+        // 压到行首；这种排布不是“主行 + 伴随行”，应原样保留。
+        if (nextStartMs <= startMs) return raw
 
         val limit = maxOf(startMs, nextStartMs - 1L)
         val replacement = "<${formatTimestamp(limit)}>"
@@ -198,6 +211,9 @@ internal object CompanionSplitter {
         val minutes = safe / 60_000L
         val seconds = (safe % 60_000L) / 1_000L
         val millis = safe % 1_000L
-        return "%02d:%02d.%03d".format(minutes, seconds, millis)
+        // 必须锁 Locale.ROOT：默认 Locale 下 `%d` 会按区域产出数字（阿语/波斯语区是
+        // 阿拉伯-印度数字）。这个串是 `<mm:ss.mmm>` 词标签，会被拼回**主载荷**，
+        // 而下游 `WORD_TAG` 用 `\d` 解析——非 ASCII 数字匹配不上，整段逐字时序失效
+        return String.format(Locale.ROOT, "%02d:%02d.%03d", minutes, seconds, millis)
     }
 }
