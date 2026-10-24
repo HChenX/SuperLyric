@@ -146,7 +146,6 @@ fun AboutLayout(
     }
 
     val isInDark = isSystemInDarkTheme()
-    val logoColor = if (isInDark) Color(0xFFD89AD0) else Color(0xFF6C1B6C)
     val cardBlend = if (isInDark) ColorBlendToken.Overlay_Thin_Light else ColorBlendToken.Pured_Regular_Light
     val logoBlend = remember(isInDark) {
         if (isInDark) {
@@ -166,6 +165,18 @@ fun AboutLayout(
 
     val backdrop = rememberBlurBackdrop()
     val barBackdrop = rememberBlurBackdrop()
+    val logoEffect = if (backdrop != null) {
+        Modifier.textureBlur(
+            backdrop = backdrop,
+            shape = RoundedCornerShape(24.dp),
+            blurRadius = 150f,
+            noiseCoefficient = BlurDefaults.NoiseCoefficient,
+            colors = BlurDefaults.blurColors(blendColors = logoBlend),
+            contentBlendMode = BlendMode.DstIn,
+        )
+    } else {
+        Modifier
+    }
     // Defer the frame-rate scroll read out of composition: these booleans only flip at the
     // single 1f threshold, so derivedStateOf recomposes the bar on flip rather than every frame.
     val collapsed by remember { derivedStateOf { scrollProgress == 1f } }
@@ -231,10 +242,11 @@ fun AboutLayout(
                                 alpha = 1 - iconProgress
                                 scaleX = 1 - (iconProgress * 0.05f)
                                 scaleY = 1 - (iconProgress * 0.05f)
-                            },
+                            }
+                            .then(logoEffect),
                         painter = painterResource(R.drawable.ic_superlyric_logo),
                         contentDescription = null,
-                        tint = logoColor,
+                        tint = if (backdrop != null) Color.White else MiuixTheme.colorScheme.onBackground,
                     )
                     Text(
                         modifier = Modifier
