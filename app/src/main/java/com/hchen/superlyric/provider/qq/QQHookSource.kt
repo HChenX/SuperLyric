@@ -96,13 +96,15 @@ class QQHookSource : HookLyricSource {
         val mid = QQIdentity.midOf(identity)
         if (mid != null) {
             capturedMid = mid
-            fetchAsync(mid, QQIdentity.idOf(identity), identity)
+            val token = fetches.open()
+            fetchAsync(mid, QQIdentity.idOf(identity), identity, token)
         } else {
             AndroidLog.logD(sourceName, "Awaiting LyricLoadBean capture for songMID")
         }
     }
 
     override fun cancel() {
+        fetches.invalidate()
         session = null
         pendingIdentity = null
         // 播放停止后重新播放同一首歌必须能再次取词，因此这里要清空去重状态
@@ -145,7 +147,7 @@ class QQHookSource : HookLyricSource {
         )
         pendingIdentity = identity
 
-        fetchAsync(songMid, songId, identity)
+        fetchAsync(songMid, songId, identity, fetches.open())
     }
 
     /**
@@ -155,16 +157,17 @@ class QQHookSource : HookLyricSource {
      * 且 [start] 与锚点回调可能对同一首曲目各发一次。若只在某一个调用点去重，
      * 另一条路径仍会重复发起网络请求。
      *
-     * 登记"已交付"的时机与投递绑定：取词是一次网络往返，期间可能已经切歌。投给入口处
-     * 捕获的旧会话会被编排器按代际丢弃，而"已交付"若在投递之外提前登记，这首曲目在
-     * 本次进程里就再也走不到 Hook 路径了
+     * 登记"已交付"的时机与投递绑定：取词是一次网络往返，期间可能已经切歌。投递时
+     * 重新读取当前 session/identity，只有仍是同一首才交付；"已交付"若在投递之外提前
+     * 登记，这首曲目在本次进程里就再也走不到 Hook 路径了
      */
-    private fun fetchAsync(mid: String, songId: Long, identity: TrackIdentity) {
+    private fun fetchAsync(mid: String, songId: Long, identity: TrackIdentity, token: Long) {
         if (!claimFetch(mid)) return
 
         fetches.execute {
-            val outcome = QQNetwork.fetchByMid(mid, songId, identity)
+            val outcome = QQNetwork.fetchByMid(mid, songId, identity) { fetches.isCurrent(token) }
             releaseInFlight(mid)
+            if (!fetches.isCurrent(token)) return@execute
 
             val target = session
             val current = pendingIdentity
@@ -173,7 +176,13 @@ class QQHookSource : HookLyricSource {
                 return@execute
             }
 
-            if (outcome is LyricOutcome.Success) markDelivered(mid)
+            if (outcome is LyricOutcome.Success ||
+                outcome is LyricOutcome.NoLyrics ||
+                outcome is LyricOutcome.Unsupported) {
+                // 终态也登记：宿主重建 LyricLoadBean 时不再重打一轮接口。
+                // TransientFailure 不登记，保留重试机会。
+                markDelivered(mid)
+            }
             target.deliver(outcome)
         }
     }

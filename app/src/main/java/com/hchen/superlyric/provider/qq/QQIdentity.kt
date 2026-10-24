@@ -30,13 +30,51 @@ import com.hchen.superlyric.kernel.identity.TrackIdentity
  */
 internal object QQIdentity {
 
-    /** songMID：14 位字母数字组合 */
-    private val MID_PATTERN = Regex("^[0-9A-Za-z]{14}$")
+    /** songMID：14 位字母数字组合，且至少含一个字母（纯数字是 songID，不是 songMID） */
 
     private val ID_PATTERN = Regex("^\\d{1,15}$")
 
     fun midOf(identity: TrackIdentity): String? =
-        TrackIdentity.normalizeStableId(identity.stableId)?.takeIf { MID_PATTERN.matches(it) }
+        TrackIdentity.normalizeStableId(identity.stableId)?.takeIf { isMid(it) }
+
+    /** 是否形如 songMID（14 位字母数字组合） */
+    @JvmStatic
+    fun isMid(raw: String?): Boolean {
+        if (raw == null || raw.length != 14) return false
+        var hasLetter = false
+        for (ch in raw) {
+            val letter = (ch in 'a'..'z') || (ch in 'A'..'Z')
+            val digit = ch in '0'..'9'
+            if (!letter && !digit) return false
+            if (letter) hasLetter = true
+        }
+        return hasLetter
+    }
+
+    /**
+     * 在"锚点捕获的 songMID"与"`MediaSession` 元数据自带的标识"之间选出更可信的那个
+     *
+     * ## 为什么不能简单地"信更新的"
+     * 锚点常**先于**新曲目的元数据到达（实测早约 8~30ms），此时它说的是下一首，而元数据
+     * 可能仍是上一首。反过来，切歌时锚点也可能**根本没触发**（宿主改名或走了别的路径），
+     * 于是 [capturedMid] 一直停在上一首，把新曲目伪装成旧的 —— 表现为漏切歌。
+     *
+     * ## 判据
+     * 只有当元数据自带一个**合法且不同**的 songMID 时才改用它：那一刻元数据与当前曲目
+     * **原子绑定**，而锚点值已证明落后。其余情形一律沿用锚点——它是唯一能把数字 songID
+     * 与 songMID 区分开的来源，元数据的 `MEDIA_ID` 常常只是数字 songID
+     *
+     * @param capturedMid 锚点最近捕获的 songMID；未捕获过时为 null
+     * @param metadataId  `MediaMetadata.MEDIA_ID` 的原始值；缺失时为空串
+     * @return 应当采用的 songMID；两者都不可用时返回 null
+     */
+    @JvmStatic
+    fun preferredMid(capturedMid: String?, metadataId: String?): String? {
+        val captured = capturedMid?.trim()?.takeIf { isMid(it) }
+        val fromMetadata = metadataId?.trim()?.takeIf { isMid(it) }
+        if (fromMetadata != null && fromMetadata != captured) return fromMetadata
+        return captured ?: fromMetadata
+    }
 
     /**
      * 是否为**纯数字**的 songID

@@ -31,7 +31,7 @@ import com.hchen.superlyric.provider.base.MusicProvider;
  *
  * <h3>与酷狗音乐的关系</h3>
  * 概念版与酷狗音乐同源（同为 {@code com.kugou.framework} 播放服务），因此两者的取词
- * 路线完全一致：宿主把原生报文放在自己的内存里、**不落盘**，没有可用的 Hook 取词点，
+ * 路线完全一致：宿主把原生报文放在自己的内存里、<b>不落盘</b>，没有可用的 Hook 取词点，
  * 于是都只走官方 KRC 接口。差异仅在于目标包名，其余（标识构建、直查落空后回退到
  * 「歌名 + 歌手」检索、缓存命名空间）全部共用，理由与边界详见
  * {@link KuGouProvider} 的类注释。

@@ -48,7 +48,7 @@ import java.util.regex.Pattern;
  * 是"末端反射"路线的典型陷阱。但无论模型怎么改，宿主都必须先把
  * {@code LyricLoadBean}（含 {@code SongInfo}）交给歌词引擎——这个构造入口是稳定的。
  *
- * 因此本层**只做一件事**：拦截该构造器，取出 {@code songMID} / {@code songID}。
+ * 因此本层<b>只做一件事</b>：拦截该构造器，取出 {@code songMID} / {@code songID}。
  * 歌词本身由模块自行向官方接口拉取原生 QRC 报文并解密，
  * 与宿主内部模型彻底解耦——宿主改一次模型，本层不受影响。
  *
@@ -154,7 +154,7 @@ public final class QQAnchors {
     /**
      * 首参是否为宿主曲目信息类型。
      *
-     * 这里出现的 {@code SongInfo} 是宿主的**业务类名**（非混淆产物），跨版本稳定；
+     * 这里出现的 {@code SongInfo} 是宿主的<b>业务类名</b>（非混淆产物），跨版本稳定；
      * 判据用后缀匹配以容忍包路径调整。
      */
     private static boolean isSongInfo(@Nullable Class<?> type) {
@@ -246,7 +246,14 @@ public final class QQAnchors {
             // toString 不保证稳定
         }
 
-        if (songMid.isEmpty() && songId <= 0) return;
+        if (songMid.isEmpty() && songId <= 0) {
+            // 锚点已经触发但没抽出任何标识：这可能是 shortMessage/toString 的格式变了，
+            // 也可能是宿主本来就只给了空壳。两者含义不同，不能都静默。
+            AndroidLog.logW(TAG, "LyricLoadBean captured but no usable song id; "
+                + "rawLen=" + raw.length() + ", shortMessageLen="
+                + (sLastRawShortMessage == null ? 0 : sLastRawShortMessage.length()));
+            return;
+        }
 
         String extracted = songMid + "|" + songId + "|" + title + "|" + artist;
         if (!extracted.equals(sLastExtracted)) {

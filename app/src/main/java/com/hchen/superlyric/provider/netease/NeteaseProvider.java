@@ -39,7 +39,7 @@ import io.github.libxposed.api.XposedModuleInterface;
  *
  * <h3>为什么是纯网络取词</h3>
  * 网易云 9.6+ 的歌词模型混淆严重且与状态栏/界面强耦合，Hook 路径的收益远低于其脆弱性。
- * 因此本 Provider **不提供 Hook 来源**，只走官方接口：
+ * 因此本 Provider <b>不提供 Hook 来源</b>，只走官方接口：
  * 由 `MediaSession` 提供曲目标识，模块在后台拉取原生 YRC/LRC 并自行解析。
  *
  * <h3>易盾加固绕过</h3>
