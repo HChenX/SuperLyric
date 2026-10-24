@@ -18,6 +18,8 @@
  */
 package com.hchen.superlyric.provider.kuwo;
 
+import android.os.SystemClock;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -30,10 +32,10 @@ import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.FindClass;
 import org.luckypray.dexkit.result.ClassData;
 import org.luckypray.dexkit.result.ClassDataList;
-import org.luckypray.dexkit.result.MethodData;
 import org.luckypray.dexkit.result.MethodDataList;
 import org.luckypray.dexkit.query.enums.StringMatchType;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
+import org.luckypray.dexkit.query.matchers.InterfacesMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.query.matchers.ParameterMatcher;
 import org.luckypray.dexkit.query.matchers.ParametersMatcher;
@@ -47,12 +49,14 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
- * 酷我音乐 Hook 锚点：取回**解密后的 LRCX 全文**（含逐字时间戳）。
+ * 酷我音乐 Hook 锚点：取回<b>解密后的 LRCX 全文</b>（含逐字时间戳）。
  *
  * <h3>两个分发变体</h3>
  * 手机版（{@code cn.kuwo.player}）与车机版（{@code cn.kuwo.kwmusiccar}）的歌词管线
@@ -63,7 +67,7 @@ import java.util.List;
  * 宿主一次升级就可能全变。流程是：
  * <ol>
  *   <li>用 LRCX 协议固有的参数名 {@code lrcx=} 反查歌词模块内的一个类，
- *       再由类名推出包名（见 [locateLyricPackage]）</li>
+ *       再由类名推出包名（见 {@link #locateLyricPackage}）</li>
  *   <li>在该包内按签名检索解析入口与取词入口</li>
  * </ol>
  * 各步骤的检索条件与实测坑见对应方法的注释。
@@ -82,7 +86,7 @@ import java.util.List;
  * Provider 只发布全量歌词。
  *
  * <h3>还挂了一个曲目探针</h3>
- * 见 [installTrackProbe]。它不参与取词，只为拿到宿主的 {@code Music.rid} 作为
+ * 见 {@link #installTrackProbe}。它不参与取词，只为拿到宿主的 {@code Music.rid} 作为
  * 稳定标识 —— 酷我的 {@code MediaMetadata} 不可信。
  *
  * @author 焕晨HChen
@@ -95,10 +99,13 @@ public final class KuwoAnchors {
     /**
      * 解析入口的缓存键
      *
-     * <p>按**方法**而不是按类缓存：类名会随混淆变，而"单 String 入参、返回歌词实现"
+     * <p>按<b>方法</b>而不是按类缓存：类名会随混淆变，而"单 String 入参、返回歌词实现"
      * 这个签名由宿主接口决定，跨版本稳定。宿主升级后缓存失效会自动重新检索。
+     *
+     * <p>改动检索条件（搜索域、匹配器）必须同时换键：旧键落盘的是旧条件的方法集，
+     * 继续复用等于让新条件永远不生效。后缀只是用来让旧缓存失效，不代表版本语义。
      */
-    private static final String KEY_PARSER_METHODS = "kuwo_parser_methods_v2";
+    private static final String KEY_PARSER_METHODS = "kuwo_parser_methods_v5";
 
     /** 解密入口的缓存键 */
     private static final String KEY_DECRYPT_METHODS = "kuwo_decrypt_methods_v2";
@@ -112,14 +119,23 @@ public final class KuwoAnchors {
      */
     private static final String KEY_LYRIC_PACKAGE = "kuwo_lyric_module_anchor_v1";
 
-    /** 包内类列表的缓存键前缀；后接包名，避免不同包共用同一键 */
-    private static final String KEY_PACKAGE_CLASSES = "kuwo_pkg_classes_";
+    /**
+     * 包内类列表的缓存键前缀；后接包名，避免不同包共用同一键
+     *
+     * <p>v2：检索结果补了 {@code null}/空列表归一，"空结果"的形态变了，
+     * 必须换键 —— 否则此前落盘的空数组会被当成有效命继续复用。
+     */
+    private static final String KEY_PACKAGE_CLASSES = "kuwo_pkg_classes_v2_";
 
     /**
      * 解析入口的名字
      *
-     * <p>两个变体的解析入口都叫 {@code a}（混淆产物）。名字本身不稳定，因此只作为
-     * 检索条件之一，真正的约束来自签名。
+     * <p>两个变体的解析入口当前都叫 {@code a}（混淆产物）。它<b>不</b>作为判据，
+     * 只用来缩小 DexKit 的检索范围 —— 实测只给 {@code paramCount} 时 DexKit 在本版本
+     * 匹配不到任何方法，手机版会因此整条失效。真正的判据是 {@link #isLyricParser}
+     * 里的签名（单 {@code String} 入参 + 返回歌词包内类型）。
+     *
+     * <p>名字变了也不会失联：车机版走的是反射扫描歌词包，完全不看名字。
      */
     private static final String ANCHOR_PARSER_NAME = "a";
 
@@ -136,7 +152,52 @@ public final class KuwoAnchors {
      */
     private static final String ANCHOR_LRCX_PARAM = "lrcx=";
 
-    private static volatile boolean sInstalled;
+    /** 安装尝试的总次数上限（含首轮） */
+    private static final int MAX_INSTALL_ATTEMPTS = 3;
+
+    /** 两次安装尝试之间的最小间隔 */
+    private static final long MIN_INSTALL_RETRY_INTERVAL_MS = 5000L;
+
+    /**
+     * 解析入口是否已<b>成功</b>挂上
+     *
+     * <p>语义是"成功"而不是"尝试过"，这是本类最要紧的一处区分：{@link #installParsers}
+     * 定位不到时只记日志、不抛异常，若一次失败被当成"已安装"，本进程内就再没有第二次
+     * 机会 —— 而 {@link #install} 只在宿主进程注入时被调用一次
+     * （{@code MusicProvider.onPackageReady()}）。
+     *
+     * <p>宿主 dex 尚未完全加载、DexKit 首轮检索超时，都会让首次定位落空。表现为
+     * "歌词时有时无、重启宿主就好"：重启等于换了个进程，也换了一次首轮运气。
+     */
+    private static volatile boolean sParserInstalled;
+
+    /** 解密入口是否已尝试挂载；重试时不能再挂一次，否则回调会叠加 */
+    private static boolean sDecryptorsInstalled;
+
+    /** 已尝试安装的次数；用于封顶重试，避免每次切歌都白烧一次 DexKit 检索 */
+    private static int sInstallAttempts;
+
+    /** 最近一次安装尝试的时刻（{@link SystemClock#elapsedRealtime()}） */
+    private static long sLastInstallAttemptAt;
+
+    /**
+     * 首次安装时传进来的回调
+     *
+     * <p>存起来供重试使用：{@link #install} 只有一次调用，重试时没有 listener 可用。
+     */
+    private static volatile LyricTextListener sListener;
+
+    /**
+     * 最近一次取词入口上报的 rid
+     *
+     * <p>宿主的取词入口（{@code (Music, boolean, Music)}）一定<b>早于</b>解析入口被调用，
+     * 且两者属于同一次取词流程。解析入口的入参只有歌词正文、拿不到 rid，
+     * 因此由这里转手。
+     *
+     * <p>之所以不放在 Kotlin 侧：宿主是单线程同步调用的，跨线程传会让「谁属于哪次
+     * 取词」重新变得不确定，而那正是要消除的错配。
+     */
+    private static volatile String sCurrentRid = "";
 
     private KuwoAnchors() {
     }
@@ -145,8 +206,14 @@ public final class KuwoAnchors {
     public interface LyricTextListener {
         /**
          * @param lyricText 明文歌词全文；LRCX 或普通 LRC
+         * @param rid       这份歌词所属曲目的 rid，与 [TrackListener.onTrack] 上报同源；
+         *                   拿不到时为空串
+         *
+         * <p>必须由回调自带 rid：宿主的取词入口与曲目探针是<b>两次独立回调</b>，
+         * 切歌时探针先翻到新 rid，而歌词回调手里还是上一首的正文。若此处改读共享的
+         * 当前 rid，就会把旧正文配上新标识，解析结果被身份校验判掉、整条丢失。
          */
-        void onLyricText(@NonNull String lyricText);
+        void onLyricText(@NonNull String lyricText, @NonNull String rid);
     }
 
     /** 宿主当前曲目回调。 */
@@ -160,66 +227,271 @@ public final class KuwoAnchors {
     }
 
     /**
-     * 定位并挂载 Hook。幂等；失败只记录日志。
+     * 定位并挂载 Hook，可重复调用
+     *
+     * <p>全工程只有 {@code MusicProvider#onPackageReady()} 一处调用它，一个进程仅此一次；
+     * 而首次定位可能落空（宿主 dex 尚未加载完、DexKit 首轮检索超时）。因此定位失败时
+     * 不置"已安装"标志，留给 {@link #retryInstallIfNeeded()} 在切歌时再试 ——
+     * 否则解析入口会在本进程内永久缺失，表现为"歌词时有时无、重启宿主就好"。
      */
     public static void install(@NonNull LyricTextListener listener) {
-        if (sInstalled) return;
-        sInstalled = true;
+        sListener = listener;
+        attemptInstall();
+    }
 
-        installParsers(listener);
-        installDecryptors(listener);
+    /**
+     * 若解析入口尚未挂上，再试一次安装。
+     *
+     * <p>由 {@link KuwoHookSource} 在每次切歌（{@code start()}）时调用：那时宿主已跑起来、
+     * dex 必然加载完毕，是首轮失败后最自然的补救时机。
+     *
+     * <p>限流与封顶：两次尝试至少间隔 {@link #MIN_INSTALL_RETRY_INTERVAL_MS}，
+     * 总次数不超过 {@link #MAX_INSTALL_ATTEMPTS}。DexKit 全包检索不便宜，
+     * 无节制重试会让每次切歌都白烧一次。
+     *
+     * @return 解析入口当前是否已挂上
+     */
+    public static boolean retryInstallIfNeeded() {
+        if (sParserInstalled) return true;
+        return attemptInstall();
+    }
+
+    /** 解析入口是否已成功挂上 */
+    public static boolean isParserInstalled() {
+        return sParserInstalled;
+    }
+
+    /**
+     * 真正执行一次安装尝试
+     *
+     * @return 解析入口是否已挂上
+     */
+    private static synchronized boolean attemptInstall() {
+        if (sParserInstalled) return true;
+        LyricTextListener listener = sListener;
+        if (listener == null) return false;
+        if (sInstallAttempts >= MAX_INSTALL_ATTEMPTS) return false;
+
+        long now = SystemClock.elapsedRealtime();
+        // 首轮不限间隔（sInstallAttempts == 0），重试才限流
+        if (sInstallAttempts > 0 && now - sLastInstallAttemptAt < MIN_INSTALL_RETRY_INTERVAL_MS) {
+            return false;
+        }
+        sInstallAttempts++;
+        sLastInstallAttemptAt = now;
+        AndroidLog.logI(TAG, "Install attempt #" + sInstallAttempts + "/" + MAX_INSTALL_ATTEMPTS);
+
+        // retryInstallIfNeeded 会被 Hook 回调线程调用，异常绝不能往上抛：
+        // 定位链路上 locateLyricPackage 的 DexKit 调用没有内部 try/catch。
+        try {
+            if (!installParsers(listener)) {
+                AndroidLog.logW(TAG, "Parser entry not hooked yet (attempt #"
+                    + sInstallAttempts + "); will retry on a later track change");
+            }
+            if (!sDecryptorsInstalled) {
+                // 解密入口只挂一次：重试是对解析入口做的，再挂一次解密会让回调叠加
+                sDecryptorsInstalled = true;
+                installDecryptors(listener);
+            }
+        } catch (Throwable t) {
+            AndroidLog.logW(TAG, "Install attempt #" + sInstallAttempts + " failed: " + t.getMessage());
+        }
+        return sParserInstalled;
     }
 
     /**
      * 检索歌词解析入口的方法
      *
-     * <p>结果为空时必须返回 {@code null} 而不是空列表：DexkitCache 只对 {@code null}
-     * 跳过缓存写入，空列表会被当成有效结果落盘，此后每次命中缓存都反序列化出空数据
-     * 并抛 {@code Illegal state}，检索条件再怎么改都不再生效。
+     * <p>解析入口的签名是<b>唯一稳定的锚</b>：{@code (String) → 歌词对象}。入参就是宿主
+     * 解密的歌词明文，返回值是它自己的歌词模型。两个变体都按这个签名命中：
+     * <ul>
+     *   <li>手机版：{@code j6/d.a(String)}、{@code j6/f.a(String)}，返回值是
+     *       {@code cn.kuwo.mod.lyrics.e}</li>
+     *   <li>车机版：{@code cn.kuwo.mod.lyric.g.a(String)}（普通 LRC）与
+     *       {@code cn.kuwo.mod.lyric.n.a(String)}（逐字 LRCX），返回值是
+     *       {@code cn.kuwo.mod.lyric.a}</li>
+     * </ul>
+     *
+     * <p>两条检索路径互补，都必须跑：
+     * <ol>
+     *   <li><b>DexKit：实现了歌词包内任意接口的类及其直接子类</b>。手机版的解析入口
+     *       （{@code j6/d}、{@code j6/f}）不在歌词包内，只有这一路能圈到它。</li>
+     *   <li><b>反射扫描歌词包内的全部类</b>。车机版的解析入口就在歌词包里
+     *       （{@code g} / {@code n} 实现的是包外的解析器接口 {@code a8.b}），
+     *       按接口实现类圈会全部漏掉 —— 实测正是因此只挂到 {@code a(int)} 这类
+     *       接口实现方法，解析入口一个都没挂上，整首没有歌词。</li>
+     * </ol>
+     * 第二条不走 DexKit 的方法检索：包内类列表已由 {@link #classesInPackage} 缓存好，
+     * 直接反射扫描既便宜又不依赖 DexKit 匹配器的具体行为。
+     *
+     * <p>方法名只用于缩小 DexKit 的检索范围，不是判据：它是混淆产物，也不保证两个变体一致。
+     * 真正的约束来自参数类型（单个 {@code String}）与返回类型（落在歌词包内），见
+     * {@link #isLyricParser}。
+     *
+     * <p>DexKit 侧结果为空时必须返回 {@code null} 而不是空列表：DexkitCache 只对
+     * {@code null} 跳过缓存写入，空列表会被当成有效结果落盘，此后每次命中缓存都反序列化
+     * 出空数据并抛 {@code Illegal state}，检索条件再怎么改都不再生效。
      */
     @NonNull
     private static List<Method> locateParserMethods() {
-        List<Method> found = new ArrayList<>();
         String lyricPackage = locateLyricPackage();
         if (lyricPackage == null) {
             AndroidLog.logW(TAG, "Lyric module not located; parser hook unavailable");
-            return found;
+            return new ArrayList<>();
         }
-        try {
-            Method[] located = DexkitCache.findMember(KEY_PARSER_METHODS, new IDexkit<MethodDataList>() {
-                @Override
-                public MethodDataList dexkit(@NonNull DexKitBridge bridge)
-                    throws ReflectiveOperationException {
-                    MethodDataList result = bridge.findMethod(FindMethod.create()
-                        .searchPackages(lyricPackage)
-                        .matcher(MethodMatcher.create()
-                            .paramCount(1)
-                            .name(ANCHOR_PARSER_NAME, StringMatchType.Equals, true)
-                        )
-                    );
-                    return (result == null || result.isEmpty()) ? null : result;
-                }
-            });
-            if (located == null) return found;
+        // LinkedHashSet：两条路径会命中同一批方法，去重必须按方法身份而不是名字
+        Set<Method> found = new LinkedHashSet<>();
+        collectParsersByDexKit(lyricPackage, found);
+        collectParsersByReflection(lyricPackage, found, true);
+        if (found.isEmpty()) {
+            // 收紧后一无所获才退回宽松判据：宁可多挂几个无害锚点，也不能整条路径空手
+            collectParsersByReflection(lyricPackage, found, false);
+        }
+        AndroidLog.logI(TAG, "Parser entries located: " + found.size()
+            + " for " + lyricPackage);
+        return new ArrayList<>(found);
+    }
 
-            // 同包内有一批同名同签名的方法（CoverLinkCache.a、d.a 等）。DexKit 的
-            // declaredClass/usingStrings 与 returnType 在本版本实测都不生效，因此这一层
-            // 放到 Java 侧做：只保留返回类型落在歌词包内的，真正的解析入口必然在其中。
-            // 多余的几个签名相同，回调里对非 String 入参自然被过滤，不会错误发布。
-            //
-            // 另需排除抽象方法与接口：同包的歌词接口（如 lyric.a）带着同签名的抽象方法，
-            // 挂上去只会得到 "Cannot hook abstract methods" 的噪音
+    /**
+     * DexKit 路径：接口实现类 + 其直接子类
+     *
+     * <p>手机版的解析入口不在歌词包内，只能靠继承体系圈定。
+     */
+    private static void collectParsersByDexKit(@NonNull String lyricPackage,
+                                               @NonNull Set<Method> out) {
+        try {
+            Method[] located = DexkitCache.findMember(KEY_PARSER_METHODS,
+                new IDexkit<MethodDataList>() {
+                    @Override
+                    public MethodDataList dexkit(@NonNull DexKitBridge bridge)
+                        throws ReflectiveOperationException {
+                        // 接口名不硬编码：只要实现了歌词包内的接口就算命中
+                        ClassDataList implementers = bridge.findClass(FindClass.create()
+                            .matcher(ClassMatcher.create()
+                                .interfaces(InterfacesMatcher.create()
+                                    .add(lyricPackage + ".", StringMatchType.StartsWith, true)
+                                )
+                            )
+                        );
+                        if (implementers == null || implementers.isEmpty()) {
+                            AndroidLog.logW(TAG, "No lyric interface implementer in " + lyricPackage);
+                            return null;
+                        }
+
+                        // 解析入口在实现类下面再派生一层，所以要补子类
+                        ClassDataList domain = new ClassDataList(implementers);
+                        for (ClassData implementer : implementers) {
+                            ClassDataList subclasses = bridge.findClass(FindClass.create()
+                                .matcher(ClassMatcher.create()
+                                    .superClass(implementer.getName(), StringMatchType.Equals, true)
+                                )
+                            );
+                            if (subclasses != null && !subclasses.isEmpty()) {
+                                domain.addAll(subclasses);
+                            }
+                        }
+
+                        // 参数个数 + 名字一起约束：实测只给 paramCount 时 DexKit 在本版本
+                        // 匹配不到东西（手机版曾因此整条 Hook 路径失效），名字这一条必须留着。
+                        // 名字是混淆产物，所以它只用于<b>缩小</b> DexKit 的检索范围，
+                        // 真正的判据仍是 Java 侧的签名（见 isLyricParser），
+                        // 且车机版那条路完全不依赖它（反射扫描歌词包）。
+                        MethodDataList result = bridge.findMethod(FindMethod.create()
+                            .searchInClass(domain)
+                            .matcher(MethodMatcher.create()
+                                .paramCount(1)
+                                .name(ANCHOR_PARSER_NAME, StringMatchType.Equals, true)
+                            )
+                        );
+                        return (result == null || result.isEmpty()) ? null : result;
+                    }
+                });
+            if (located == null) return;
             for (Method method : located) {
-                if (Modifier.isAbstract(method.getModifiers())) continue;
-                if (Modifier.isAbstract(method.getDeclaringClass().getModifiers())) continue;
-                if (method.getReturnType().getName().startsWith(lyricPackage + ".")) {
-                    found.add(method);
-                }
+                if (isLyricParser(method, lyricPackage)) out.add(method);
             }
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to locate parser methods: " + t.getMessage());
+            AndroidLog.logW(TAG, "DexKit parser lookup failed: " + t.getMessage());
         }
-        return found;
+    }
+
+    /**
+     * 反射路径：歌词包内的全部类
+     *
+     * <p>车机版的解析入口就在这里。不依赖 DexKit 的方法检索，只依赖包内类列表 ——
+     * 那份列表由 {@link #classesInPackage} 取得，曲目探针走的是同一条路，实测可用。
+     *
+     * <p>{@code strictOnly} 为真时只收"返回类型是歌词模型"的方法。收紧是必要的：
+     * 歌词包里还有 {@code AIColorPicker$Companion.g(String)} 这类工具方法，
+     * 签名同样是"单 String 入参、返回歌词包内类型"，实测会被一起挂上。
+     * 调用方在<b>两条路径合计</b>一无所获时才用宽松判据再扫一遍 —— 兜底只在真正空手时生效，
+     * 否则工具方法会被重新加回来。
+     */
+    private static void collectParsersByReflection(@NonNull String lyricPackage,
+                                                   @NonNull Set<Method> out,
+                                                   boolean strictOnly) {
+        int skipped = 0;
+        for (Class<?> clazz : classesInPackage(lyricPackage)) {
+            Method[] methods;
+            try {
+                methods = clazz.getDeclaredMethods();
+            } catch (Throwable t) {
+                continue;
+            }
+            for (Method method : methods) {
+                if (!isLyricParser(method, lyricPackage)) continue;
+                if (strictOnly && !isLyricModelType(method.getReturnType(), lyricPackage)) {
+                    skipped++;
+                    continue;
+                }
+                out.add(method);
+            }
+        }
+        if (strictOnly && skipped > 0) {
+            AndroidLog.logI(TAG, "Reflection path skipped " + skipped
+                + " non-lyric method(s) in " + lyricPackage);
+        }
+    }
+
+    /**
+     * 返回类型是否为歌词模型：歌词包内的接口，或实现了歌词包内接口的类
+     *
+     * <p>解析入口的返回值必然是宿主自己的歌词模型：车机版返回接口
+     * {@code cn.kuwo.mod.lyric.a}，手机版返回接口 {@code cn.kuwo.mod.lyrics.e}。
+     * 而同一包里还有颜色选择器一类工具类型，它们不实现歌词接口。
+     */
+    private static boolean isLyricModelType(@NonNull Class<?> type, @NonNull String lyricPackage) {
+        if (type.isInterface()) {
+            return type.getName().startsWith(lyricPackage + ".");
+        }
+        for (Class<?> itf : type.getInterfaces()) {
+            if (itf.getName().startsWith(lyricPackage + ".")) return true;
+        }
+        Class<?> superClass = type.getSuperclass();
+        return superClass != null && superClass != Object.class
+            && isLyricModelType(superClass, lyricPackage);
+    }
+
+    /**
+     * 是否为歌词解析入口：单 {@code String} 入参、返回歌词包内的类型、可挂载
+     *
+     * <p>参数类型这一条不能省：只按"返回歌词对象"会命中接口实现方法（如 {@code a(int)}），
+     * 它们永远拿不到歌词正文，挂上去只是噪音。
+     *
+     * <p>抽象方法与接口一并排除：歌词接口本身带着同签名的抽象方法，
+     * 挂上去只会得到 "Cannot hook abstract methods" 的噪音。
+     *
+     * <p>枚举也排除：{@code LyricsDefine$LyricsType.valueOf(String)} 这类方法签名同样是
+     * "单 String 入参、返回歌词包内类型"，但它只是枚举反查，永远不会收到歌词正文。
+     */
+    private static boolean isLyricParser(@NonNull Method method, @NonNull String lyricPackage) {
+        if (Modifier.isAbstract(method.getModifiers())) return false;
+        Class<?> declaring = method.getDeclaringClass();
+        if (Modifier.isAbstract(declaring.getModifiers())) return false;
+        if (declaring.isEnum()) return false;
+        Class<?>[] params = method.getParameterTypes();
+        if (params.length != 1 || params[0] != String.class) return false;
+        return method.getReturnType().getName().startsWith(lyricPackage + ".");
     }
 
     /**
@@ -259,13 +531,42 @@ public final class KuwoAnchors {
     }
 
     /**
-     * 检索解密入口的方法（车机版）
+     * 检索取词入口的方法
      *
-     * <p>签名取 {@code ([B, LyricsType) → String}。取**返回值**：入参是密文字节，
-     * 解密后的明文只在返回值里。
+     * <p>与 {@link #locateTrackConstructors} 同路：DexKit 的 {@code findMethod} 配
+     * {@code searchPackages} 在本版本实测也匹配不到，改用包内反射扫。
+     */
+    @NonNull
+    private static List<Executable> locateTrackEntries() {
+        List<Executable> found = new ArrayList<>();
+        String lyricPackage = locateLyricPackage();
+        if (lyricPackage == null) return found;
+        for (Class<?> clazz : classesInPackage(lyricPackage)) {
+            Method[] methods;
+            try {
+                methods = clazz.getDeclaredMethods();
+            } catch (Throwable t) {
+                continue;
+            }
+            for (Method method : methods) {
+                if (isTrackEntry(method)) found.add(method);
+            }
+        }
+        return found;
+    }
+
+    /**
+     * 定位解析入口并挂载
      *
-     * <p>第二个参数校验为 LyricsType：只按「两参 + 首参 byte[]」会命中一批无关的
-     * 字节处理方法，而歌词类型参数是解密入口独有的。
+     * <p>刻意不做硬编码类名的兜底：那些名字是混淆产物，几乎必然随版本变，
+     * 留着只会给人"已经兼容"的错觉。定位不到就明确报错，让人知道要去修检索条件。
+     */
+    /**
+     * 检索解密入口的方法
+     *
+     * <p>签名取 {@code ([B, LyricsType) → String}。取<b>返回值</b>：入参是密文字节，
+     * 解密后的明文只在返回值里。解析入口与解密入口各自独立命中——解析入口收的是已解密
+     * 全文，解密入口是它之前的那一步；两条都挂上才能覆盖宿主不同的取词路径。
      */
     @NonNull
     private static List<Method> locateDecryptMethods() {
@@ -301,36 +602,49 @@ public final class KuwoAnchors {
     }
 
     /**
-     * 检索取词入口的方法
+     * 由 DexKit 直接定位解密入口并挂载
      *
-     * <p>与 [locateTrackConstructors] 同路：DexKit 的 {@code findMethod} 配
-     * {@code searchPackages} 在本版本实测也匹配不到，改用包内反射扫。
+     * <p>取<b>返回值</b>：入参是密文字节，解密后的明文只在返回值里。
      */
-    @NonNull
-    private static List<Executable> locateTrackEntries() {
-        List<Executable> found = new ArrayList<>();
-        String lyricPackage = locateLyricPackage();
-        if (lyricPackage == null) return found;
-        for (Class<?> clazz : classesInPackage(lyricPackage)) {
-            for (Method method : clazz.getDeclaredMethods()) {
-                if (isTrackEntry(method)) found.add(method);
+    private static void installDecryptors(@NonNull LyricTextListener listener) {
+        List<Method> located = locateDecryptMethods();
+        AndroidLog.logD(TAG, "locateDecryptors: dexkit=" + located.size());
+        if (located.isEmpty()) {
+            AndroidLog.logD(TAG, "DexKit located no decrypt method; skipped");
+            return;
+        }
+        int hooked = 0;
+        for (Method method : located) {
+            try {
+                method.setAccessible(true);
+                CoreTool.hook(method, new AbsHook() {
+                    @Override
+                    public void after() {
+                        try {
+                            Object raw = getResult();
+                            if (raw instanceof String text && !text.isEmpty()) {
+                                listener.onLyricText(text, sCurrentRid);
+                            }
+                        } catch (Throwable t) {
+                            AndroidLog.logW(TAG, "Error in decrypt hook: " + t.getMessage());
+                        }
+                    }
+                });
+                hooked++;
+                AndroidLog.logI(TAG, "Hooked decrypt: " + method.getDeclaringClass().getName()
+                    + "." + method.getName());
+            } catch (Throwable t) {
+                AndroidLog.logW(TAG, "Failed to hook decrypt " + method + ": " + t.getMessage());
             }
         }
-        return found;
+        AndroidLog.logI(TAG, "Hooked " + hooked + " decrypt entry(ies) via DexKit");
     }
 
-    /**
-     * 由 DexKit 定位解析入口并挂载
-     *
-     * <p>刻意不做硬编码类名的兜底：那些名字是混淆产物，几乎必然随版本变，
-     * 留着只会给人"已经兼容"的错觉。定位不到就明确报错，让人知道要去修检索条件。
-     */
-    private static void installParsers(@NonNull LyricTextListener listener) {
+    private static boolean installParsers(@NonNull LyricTextListener listener) {
         List<Method> located = locateParserMethods();
-        AndroidLog.logD(TAG, "locateParsers: dexkit=" + located.size());
         if (located.isEmpty()) {
             AndroidLog.logW(TAG, "No lyric parser entry hooked; Kuwo hook path is dead");
-            return;
+            return false;
         }
 
         int hooked = 0;
@@ -354,61 +668,28 @@ public final class KuwoAnchors {
                 AndroidLog.logW(TAG, "Failed to hook parser " + method + ": " + t.getMessage());
             }
         }
-        AndroidLog.logI(TAG, "Hooked " + hooked + " lyric parser entry(ies) via DexKit");
+        AndroidLog.logI(TAG, "Hooked " + hooked + " lyric parser entry(ies)");
+        if (hooked > 0) {
+            // 只有真正挂上才置位：部分成功时若允许重试，会对同一个 Method 二次 hook，
+            // 回调叠加比"少挂一个入口"更难排查。
+            sParserInstalled = true;
+        }
+        return hooked > 0;
     }
 
     /**
      * 从解析入口抽取明文歌词
      *
-     * <p>取**入参**：调用时宿主手里就是解密后的全文。宿主随后才会做
+     * <p>取<b>入参</b>：调用时宿主手里就是解密后的全文。宿主随后才会做
      * {@code replaceAll} 与逐行裁切，我们拿的是那之前的原始形态。
      */
     private static void handleParse(@Nullable Object rawArg, @NonNull LyricTextListener listener) {
         if (!(rawArg instanceof String raw) || raw.isEmpty()) return;
-        listener.onLyricText(raw);
+        listener.onLyricText(raw, sCurrentRid);
     }
 
     /**
-     * 由 DexKit 直接定位解密入口并挂载
-     *
-     * <p>取**返回值**：入参是密文字节，解密后的明文只在返回值里。
-     */
-    private static void installDecryptors(@NonNull LyricTextListener listener) {
-        List<Method> located = locateDecryptMethods();
-        AndroidLog.logD(TAG, "locateDecryptors: dexkit=" + located.size());
-        if (located.isEmpty()) {
-            AndroidLog.logD(TAG, "DexKit located no decrypt method; skipped");
-            return;
-        }
-        int hooked = 0;
-        for (Method method : located) {
-            try {
-                method.setAccessible(true);
-                CoreTool.hook(method, new AbsHook() {
-                    @Override
-                    public void after() {
-                        try {
-                            Object raw = getResult();
-                            if (raw instanceof String text && !text.isEmpty()) {
-                                listener.onLyricText(text);
-                            }
-                        } catch (Throwable t) {
-                            AndroidLog.logW(TAG, "Error in decrypt hook: " + t.getMessage());
-                        }
-                    }
-                });
-                hooked++;
-                AndroidLog.logI(TAG, "Hooked decrypt: " + method.getDeclaringClass().getName()
-                    + "." + method.getName());
-            } catch (Throwable t) {
-                AndroidLog.logW(TAG, "Failed to hook decrypt " + method + ": " + t.getMessage());
-            }
-        }
-        AndroidLog.logI(TAG, "Hooked " + hooked + " decrypt entry(ies) via DexKit");
-    }
-
-    /**
-     * 由 DexKit 定位取词入口并挂载（曲目探针）
+     * 挂载曲目探针
      *
      * <p>同时覆盖方法与构造器：两个变体的取词入口形态不同（手机版是方法，
      * 车机版是构造器）。两条路都走包内反射扫，命中哪个算哪个。
@@ -419,7 +700,7 @@ public final class KuwoAnchors {
         List<Constructor<?>> entryCtors = locateTrackConstructors();
         members.addAll(entryMethods);
         members.addAll(entryCtors);
-        AndroidLog.logD(TAG, "locateTrackProbes: methods=" + entryMethods.size()
+        AndroidLog.logI(TAG, "locateTrackProbes: methods=" + entryMethods.size()
             + " ctors=" + entryCtors.size());
         if (members.isEmpty()) {
             AndroidLog.logW(TAG, "No (Music, boolean, Music) entry found; track probe unavailable");
@@ -436,8 +717,10 @@ public final class KuwoAnchors {
                         try {
                             Object hostMusic = getArg(0) != null ? getArg(0) : getArg(2);
                             if (hostMusic == null) return;
+                            // 先记下本次取词的 rid：解析入口随后就会被调用，它拿不到 rid
+                            sCurrentRid = readStringField(hostMusic, "rid");
                             listener.onTrack(
-                                readStringField(hostMusic, "rid"),
+                                sCurrentRid,
                                 readStringField(hostMusic, "name"),
                                 readStringField(hostMusic, "artist"));
                         } catch (Throwable t) {
@@ -459,7 +742,7 @@ public final class KuwoAnchors {
      *
      * <p>不用 DexKit：{@code ClassMatcher.methods} 这个匹配器在本版本实测匹配不到构造器
      * （{@code lyric/i} 的 {@code (Music, boolean, Music)} 明明存在）。包名已经由
-     * [locateLyricPackage] 推出，直接在包内反射扫更可靠 —— 歌词包内类数量有限，
+     * {@link #locateLyricPackage} 推出，直接在包内反射扫更可靠 —— 歌词包内类数量有限，
      * 一次性枚举的成本可以忽略，且完全不依赖 DexKit 匹配器的具体行为。
      */
     @NonNull
@@ -468,7 +751,13 @@ public final class KuwoAnchors {
         String lyricPackage = locateLyricPackage();
         if (lyricPackage == null) return found;
         for (Class<?> clazz : classesInPackage(lyricPackage)) {
-            for (Constructor<?> ctor : clazz.getDeclaredConstructors()) {
+            Constructor<?>[] ctors;
+            try {
+                ctors = clazz.getDeclaredConstructors();
+            } catch (Throwable t) {
+                continue;
+            }
+            for (Constructor<?> ctor : ctors) {
                 if (isTrackEntry(ctor)) found.add(ctor);
             }
         }
@@ -500,9 +789,12 @@ public final class KuwoAnchors {
                     @Override
                     public ClassDataList dexkit(@NonNull DexKitBridge bridge)
                         throws ReflectiveOperationException {
-                        return bridge.findClass(FindClass.create()
+                        ClassDataList classes = bridge.findClass(FindClass.create()
                             .searchPackages(packageName)
                         );
+                        // 必须归一：DexkitCache 只对 null 跳过缓存写入，
+                        // 空列表会被当成有效结果落盘，此后命中缓存只会反序列化出空数据
+                        return (classes == null || classes.isEmpty()) ? null : classes;
                     }
                 });
             if (classes != null) Collections.addAll(result, classes);
@@ -513,25 +805,30 @@ public final class KuwoAnchors {
     }
 
     /**
-     * 挂载宿主曲目探针（对外入口）。
+     * 挂载宿主曲目探针（对外入口）
      *
      * <p>探针本身不参与取词，只为拿到宿主自己的 {@code Music}：其 {@code rid} 是稳定
      * 标识，{@code name}/{@code artist} 是干净曲名。之所以需要它，是因为酷我的
      * {@code MediaMetadata} 会把<b>当前歌词行</b>写进 {@code METADATA_KEY_TITLE}
      * （实测每次回调都变），元数据不可信。
      *
-     * @see installTrackProbes 实际的定位与挂载
+     * <p>读不到时不要紧：车机版的 {@code Music} 字段名全被混淆成单字母，
+     * {@code rid} 只能落空，标识退化为元数据身份；手机版的字段名未混淆，可以读到。
+     *
+     * @see #installTrackProbes 实际的定位与挂载
      */
     public static void installTrackProbe(@NonNull TrackListener listener) {
         installTrackProbes(listener);
     }
 
     /**
-     * 从宿主 {@code Music} 对象上读 rid / 曲名 / 歌手。
+     * 从宿主 {@code Music} 对象上读一个字段并转成字符串
      *
-     * <p>字段直读而不是调 getter：酷我的 {@code Music} 有 278 个字段、194 个方法，
-     * 大量 getter 有副作用（查数据库），而 {@code rid} / {@code name} / {@code artist}
-     * 是普通字段。
+     * <p>字段直读而不是调 getter：{@code Music} 有上百个字段与方法，大量 getter 会查数据库
+     * 或有别的副作用，而 {@code rid} / {@code name} / {@code artist} 都是普通字段。
+     *
+     * <p>字段不存在时返回空串而不是抛异常：混淆后的字段名（车机版是单字母）随时会变，
+     * 读不到只该让标识退化，不该影响宿主。
      */
     @NonNull
     private static String readStringField(@NonNull Object target, @NonNull String name) {
