@@ -19,12 +19,15 @@
 package com.hchen.superlyric.core;
 
 import android.media.session.PlaybackState;
+import android.os.Process;
 import android.os.SystemClock;
 import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.hchen.hooktool.log.XposedLog;
+import com.hchen.superlyric.data.SupportApps;
 import com.hchen.superlyricapi.SuperLyricData;
 
 import java.util.Set;
@@ -69,6 +72,22 @@ final class PublisherRegistry {
 
     static boolean isDisabled(@NonNull String packageName) {
         return disabledPackages.contains(packageName);
+    }
+
+    static boolean registerPublisher(@NonNull String packageName, int pid, int uid) {
+        if (uid < Process.FIRST_APPLICATION_UID) {
+            XposedLog.logW("SuperLyricService", "Registration as publisher rejected! Non-app caller, uid: "
+                + uid + ", pid: " + pid);
+            return false;
+        }
+        if (!SupportApps.sMediaAppPackages.contains(packageName)) {
+            XposedLog.logW("SuperLyricService",
+                "Registration as publisher rejected! Unsupported package: " + packageName);
+            return false;
+        }
+        register(packageName, pid);
+        XposedLog.logI("SuperLyricService", "Register publisher: " + packageName + ", pid: " + pid);
+        return true;
     }
 
     static boolean register(@NonNull String packageName, int pid) {

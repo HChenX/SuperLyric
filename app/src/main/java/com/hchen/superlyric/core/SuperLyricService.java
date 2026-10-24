@@ -218,28 +218,14 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     @Override
     public void registerPublisher() throws RemoteException {
         int pid = Binder.getCallingPid();
-        int uid = Binder.getCallingUid();
-
-        // 仅允许第三方应用注册 publisher，拒绝非应用进程，防止伪造发布者广播垃圾数据
-        if (uid < android.os.Process.FIRST_APPLICATION_UID) {
-            XposedLog.logW(TAG, "Registration as publisher rejected! Non-app caller, uid: " + uid + ", pid: " + pid);
+        String packageName = getPackageNameWithPid(pid);
+        if (packageName.isEmpty()) {
+            XposedLog.logW(TAG, "Registration as publisher failed! Unable to obtain package name for pid: " + pid);
             return;
         }
-
-        String packageName = getPackageNameWithPid(pid);
-        if (!packageName.isEmpty()) {
-            // 只允许支持清单内的应用注册发布者；否则任意应用都能占用会话槽与 stop map。
-            if (!com.hchen.superlyric.data.SupportApps.sMediaAppPackages.contains(packageName)) {
-                XposedLog.logW(TAG, "Registration as publisher rejected! Unsupported package: " + packageName);
-                return;
-            }
-            PublisherRegistry.register(packageName, pid);
-            XposedLog.logI(TAG, "Register publisher: " + packageName + ", pid: " + pid);
-            if (playback.listener != null) {
-                playback.listener.syncCurrentStateForPackage(packageName);
-            }
-        } else {
-            XposedLog.logW(TAG, "Registration as publisher failed! Unable to obtain package name for pid: " + pid);
+        if (!PublisherRegistry.registerPublisher(packageName, pid, Binder.getCallingUid())) return;
+        if (playback.listener != null) {
+            playback.listener.syncCurrentStateForPackage(packageName);
         }
     }
 
