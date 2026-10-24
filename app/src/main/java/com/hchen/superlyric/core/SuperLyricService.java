@@ -35,7 +35,6 @@ import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyric.kernel.orchestrate.PlaybackSignal;
 import com.hchen.superlyric.kernel.orchestrate.StopEvidence;
-import com.hchen.superlyric.kernel.orchestrate.StopGate;
 import com.hchen.superlyric.publisher.PlaybackTracker;
 import com.hchen.superlyric.utils.LyricSanitizer;
 import com.hchen.superlyric.utils.PlaybackSignals;
@@ -68,7 +67,9 @@ import java.util.concurrent.TimeUnit;
 public final class SuperLyricService extends ISuperLyricManager.Stub {
     private static final String TAG = "SuperLyricService";
 
-    /** "还没有任何进程发布过"的哨兵。Binder 的 pid 恒 &gt; 0 */
+    /**
+     * "还没有任何进程发布过"的哨兵。Binder 的 pid 恒 &gt; 0
+     */
     private static final int NO_PID = 0;
 
     private final Object mAms;
@@ -96,7 +97,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
     /**
      * 停止确认的计时器
-     *
+     * <p>
      * 必须与广播线程分开：{@link #mBroadcastExecutor} 会<b>同步</b>调用每个接收者的 Binder 接口，
      * 一个卡住的或垂死的接收者足以把那一条线程堵住数秒，确认计时不能跟着一起被拖住
      */
@@ -370,7 +371,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         }
 
         // 锁外调用：它会读 MediaController 的播放状态并可能注册回调——**是对第三方 App 的
-        // Binder 调用**；更要紧的是它会回调进 onSystemPlaybackStateChanged 再取 publishers.lock，
+        // Binder 调用**；更要紧的是系统播放回调会再取 publishers.lock，
         // 而广播路径会持接收者锁走这条路，锁内调用即构成 AB-BA 死锁
         if (syncPlayState && playback.listener != null) {
             playback.listener.syncCurrentStateForPackage(packageName);
@@ -546,33 +547,15 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         return publishers.isStillPublishing(packageName);
     }
 
-    /**
-     * 各发布者的停止判定
-     *
-     * 判定规则本身在内核的 {@link StopGate}，与宿主进程内的 Provider <b>共用同一套</b>：
-     * `STATE_NONE` 在中性语义下不推进停止，两侧必须保持同一映射
-     *
-     * <p>实例<b>不回收</b>：只有注册成发布者的包才会走到这里（见
-     * {@link #onSystemPlaybackStateChanged} 首行的 isPublisher 判定），数量被支持的宿主
-     * 应用数量所限，而一个 StopGate 只有几个字段。回收反而会引入竞态：删掉后重建的新实例
-     * 令牌从头开始，旧实例上仍在排期的任务会重新对上号
-     */
-    /**
-     * 每包的"播放仍在继续"证据计数（见 {@link StopEvidence}）
-     *
-     * <p>{@link StopGate} 的令牌只能证明"排期时没人撤销"，证明不了"确认成立之后也没人发布"。
-     * 因此排期时 {@code snapshot()}、确认前 {@code isStillValid()}：期间来过歌词/元数据/其它播放
-     * 状态，这次确认就不成立
-     *
-     * <p>与 {@link SystemPlaybackCoordinator#stopGates} 一样<b>不回收</b>：只有注册成发布者的包会写进来，数量被支持的
-     * 宿主应用数所限；回收会让计数归零，使"期间有没有新证据"失去判别力
-     */
+    /** 每包的"播放仍在继续"证据计数。 */
     @NonNull
     private StopEvidence stopEvidence(@NonNull String packageName) {
         return playback.evidence(packageName);
     }
 
-    /** 撤销待确认的停止。只在真的撤掉了什么时留痕，否则元数据风暴会刷屏。 */
+    /**
+     * 撤销待确认的停止。只在真的撤掉了什么时留痕，否则元数据风暴会刷屏。
+     */
     private void cancelPendingStop(@NonNull String packageName) {
         if (playback.cancelPending(packageName)) {
             XposedLog.logD(TAG, "Pending stop cancelled by a newer state or metadata: " + packageName);
@@ -581,7 +564,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
     /**
      * 宿主的 MediaSession 被销毁
-     *
+     * <p>
      * 这是"播放源已经不存在"的<b>确定</b>信号，不是"不知道"——与 `STATE_NONE` 截然不同。
      * 宿主<b>释放了会话而进程仍在</b>时，这是服务端能收到的唯一通知
      * 任何通知：`publishers.activePublisher` 一直挂着、时钟继续插值，界面就停在最后一句上
@@ -659,10 +642,4 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         void call(ISuperLyricReceiver receiver, String publisher, SuperLyricData data) throws RemoteException;
     }
 
-    /**
-     * 独立应用歌词会话实体。
-     * <p>
-     * 隔离保存各应用的最新歌词数据、当前系统播放状态、活跃时间戳等，
-     * 彻底解决多应用同时运行或非正常切换时的快照覆盖与竞争问题。
-     */
 }
