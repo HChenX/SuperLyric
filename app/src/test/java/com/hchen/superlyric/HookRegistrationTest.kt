@@ -86,6 +86,18 @@ class HookRegistrationTest {
         )
     }
 
+
+    @Test
+    fun `system-start hooks are keyed only by system`() {
+        assertEquals(setOf(SYSTEM_PACKAGE), HookMaps.ON_SYSTEM_STARTING.keys)
+        // system 在生成器里同时进入两张表是正常的（处理器按注解两路注册）；
+        // 不允许的是音乐应用出现在 ON_SYSTEM_STARTING 里。
+        assertEquals(
+            setOf(SYSTEM_PACKAGE),
+            HookMaps.ON_PACKAGE_LOADED.keys.intersect(HookMaps.ON_SYSTEM_STARTING.keys),
+        )
+    }
+
     private fun hookTargets(): Set<String> =
         HookMaps.ON_PACKAGE_LOADED.keys + HookMaps.ON_SYSTEM_STARTING.keys
 

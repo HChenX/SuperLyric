@@ -46,8 +46,9 @@ import io.github.libxposed.api.XposedModuleInterface;
  *   <li><b>全量歌词</b>——{@link #publishFullLyric}；</li>
  *   <li><b>停止</b>——{@link #publishStop}。</li>
  * </ul>
- * 进度推进由系统服务端的唯一时钟负责：宿主**没有任何**发布进度的通道，
- * "宿主插足进度"在类型层面就不可表达。
+ * 进度推进由系统服务端的唯一时钟负责。这是<b>约定</b>而非类型保证：
+ * {@link com.hchen.superlyricapi.SuperLyricData} 仍是公开可变 Parcelable，
+ * 带 position 的包也能从这两个入口发出；服务端不校验，发布者必须遵守本约定。
  *
  * @author 焕晨HChen
  */
@@ -55,9 +56,11 @@ public abstract class AbsPublisher extends AbsModule {
     private static final Object sPublishLock = new Object();
 
     private static volatile Context sAppContext;
-    private static String sPackageName;
-    private static long sVersionCode = -1L;
-    private static String sVersionName = "unknown";
+    private static volatile String sPackageName;
+    private static volatile long sVersionCode = -1L;
+    private static volatile String sVersionName = "unknown";
+    private static volatile boolean sContextFallbackLogged;
+    private static volatile boolean sNeedsReRegister;
 
     @CallSuper
     @Override
@@ -94,7 +97,12 @@ public abstract class AbsPublisher extends AbsModule {
                 sAppContext = ctx.getApplicationContext();
                 return sAppContext;
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable t) {
+            if (!sContextFallbackLogged) {
+                sContextFallbackLogged = true;
+                com.hchen.hooktool.log.AndroidLog.logW("AbsPublisher",
+                    "Cannot resolve Application context via ActivityThread", t);
+            }
         }
         return null;
     }
@@ -118,7 +126,14 @@ public abstract class AbsPublisher extends AbsModule {
         SuperLyricData clean = LyricSanitizer.sanitizeData(fullData);
         if (clean == null) return;
         synchronized (sPublishLock) {
-            SuperLyricHelper.sendLyric(clean);
+            ensureRegistered();
+            try {
+                SuperLyricHelper.sendLyric(clean);
+            } catch (Throwable t) {
+                // API 在未注册时抛 IllegalStateException；不能让异常穿出编排器回调线程。
+                sNeedsReRegister = true;
+                com.hchen.hooktool.log.AndroidLog.logE("AbsPublisher", "Failed to publish full lyric", t);
+            }
         }
     }
 
@@ -134,7 +149,25 @@ public abstract class AbsPublisher extends AbsModule {
      */
     public static void publishStop(@NonNull SuperLyricData stopData) {
         synchronized (sPublishLock) {
-            SuperLyricHelper.sendStop(stopData);
+            ensureRegistered();
+            try {
+                SuperLyricHelper.sendStop(stopData);
+            } catch (Throwable t) {
+                sNeedsReRegister = true;
+                com.hchen.hooktool.log.AndroidLog.logE("AbsPublisher", "Failed to publish stop", t);
+            }
+        }
+    }
+
+    /** 发布失败后置位；下一次发布前重试注册，避免整轮歌词永久丢失。 */
+    private static void ensureRegistered() {
+        if (!sNeedsReRegister) return;
+        try {
+            SuperLyricHelper.registerPublisher();
+            sNeedsReRegister = false;
+            com.hchen.hooktool.log.AndroidLog.logI("AbsPublisher", "Re-registered publisher after failure");
+        } catch (Throwable t) {
+            com.hchen.hooktool.log.AndroidLog.logW("AbsPublisher", "Re-register failed; will retry", t);
         }
     }
 }

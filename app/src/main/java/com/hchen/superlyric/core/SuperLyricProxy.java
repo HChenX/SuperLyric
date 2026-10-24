@@ -65,8 +65,12 @@ public final class SuperLyricProxy extends AbsModule {
                                 sSuperLyricService = new SuperLyricService(getThisObject());
                                 SystemPlayStateListener playStateListener = new SystemPlayStateListener(mContext, sSuperLyricService);
                                 sSuperLyricService.setSystemPlayStateListener(playStateListener);
-                                playStateListener.register();
-                                logI(tag, "Super lyric system service initialized successfully.");
+                                if (playStateListener.register()) {
+                                    logI(tag, "Super lyric system service initialized successfully.");
+                                } else {
+                                    logE(tag, "Super lyric system service initialized, "
+                                        + "but the system playback listener is unavailable.");
+                                }
                             }
                         }
                     } catch (Throwable e) {
@@ -88,25 +92,37 @@ public final class SuperLyricProxy extends AbsModule {
             );
         }
 
-        Objects.requireNonNull(servicesMethod, "Failed to load super lyric service, [ActivityManagerService#getCommonServicesLocked()] not found.");
+        if (servicesMethod == null) {
+            logE(tag, "ActivityManagerService#getCommonServicesLocked() not found; binder service not exposed.");
+        } else {
         hook(servicesMethod,
             new AbsHook() {
                 @Override
                 public void after() {
-                    if (sSuperLyricService == null) return;
+                    try {
+                        if (sSuperLyricService == null) return;
 
-                    boolean isolated = (boolean) getArg(0);
-                    if (isolated) return;
+                        boolean isolated = (boolean) getArg(0);
+                        if (isolated) return;
 
-                    @SuppressWarnings("unchecked")
-                    Map<String, IBinder> mAppBindArgs = (Map<String, IBinder>) getResult();
-                    if (!mAppBindArgs.containsKey("super_lyric")) {
-                        mAppBindArgs.put("super_lyric", sSuperLyricService);
-                        logI(tag, "Exposed super_lyric binder service to common services.");
+                        @SuppressWarnings("unchecked")
+                        Map<String, IBinder> mAppBindArgs = (Map<String, IBinder>) getResult();
+                        if (mAppBindArgs == null) {
+                            logE(tag, "getCommonServicesLocked returned null; binder not exposed.");
+                            return;
+                        }
+                        if (!mAppBindArgs.containsKey("super_lyric")) {
+                            mAppBindArgs.put("super_lyric", sSuperLyricService);
+                            logI(tag, "Exposed super_lyric binder service to common services.");
+                        }
+                    } catch (Throwable t) {
+                        // 这是 AMS 的 after 钩子；异常穿回去会打断 getCommonServicesLocked 的调用方。
+                        logE(tag, "Failed to expose super_lyric binder service.", t);
                     }
                 }
             }
         );
+        }
 
         Method appDiedLockedMethod = findMethodIfExists("com.android.server.am.ActivityManagerService",
             "appDiedLocked",
@@ -122,14 +138,17 @@ public final class SuperLyricProxy extends AbsModule {
             );
         }
 
-        Objects.requireNonNull(appDiedLockedMethod, "Failed to load super lyric service, [ActivityManagerService#appDiedLocked()] not found.");
+        if (appDiedLockedMethod == null) {
+            logE(tag, "ActivityManagerService#appDiedLocked() not found; process-death reclaim disabled.");
+        } else {
         hook(appDiedLockedMethod,
             new AbsHook() {
                 @Override
                 public void after() {
-                    if (sSuperLyricService == null) return;
+                    try {
+                        if (sSuperLyricService == null) return;
 
-                    Object app = getArg(0);
+                        Object app = getArg(0);
                     ApplicationInfo info = (ApplicationInfo) getField(app, "info");
                     if (info == null) return;
 
@@ -161,8 +180,13 @@ public final class SuperLyricProxy extends AbsModule {
                     synchronized (procLock) {
                         sSuperLyricService.onProcessDied(info.packageName, pid);
                     }
+                    } catch (Throwable t) {
+                        // 进程死亡回调同样不能把异常抛回 AMS；一次失败最多漏掉一次回收。
+                        logE(tag, "Failed to handle appDiedLocked for super lyric.", t);
+                    }
                 }
             }
         );
+        }
     }
 }

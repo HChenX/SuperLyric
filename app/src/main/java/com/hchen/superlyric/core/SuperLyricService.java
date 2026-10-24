@@ -48,11 +48,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -72,6 +75,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class SuperLyricService extends ISuperLyricManager.Stub {
     private static final String TAG = "SuperLyricService";
     private static final int MAX_CACHED_SESSIONS = 5;
+    private static final int MAX_RECEIVERS = 64;
 
     /** "还没有任何进程发布过"的哨兵。Binder 的 pid 恒 &gt; 0 */
     private static final int NO_PID = 0;
@@ -79,14 +83,30 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     private final Object mAms;
     private final Set<IBinder> mReceiverBinders = ConcurrentHashMap.newKeySet();
 
+    /** 单个接收者 Binder 调用的最长等待；超时只放弃本次投递，不阻塞整条广播。 */
+    private static final long RECEIVER_CALL_TIMEOUT_MS = 500L;
+    private static final int MAX_RECEIVERS_PER_UID = 16;
+
+    private final ConcurrentHashMap<Integer, Integer> mReceiverUidCounts = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<IBinder, Integer> mReceiverUids = new ConcurrentHashMap<>();
+
     private final RemoteCallbackList<ISuperLyricReceiver> mCallbacks = new RemoteCallbackList<>() {
         @Override
         public void onCallbackDied(ISuperLyricReceiver callbackInterface) {
             super.onCallbackDied(callbackInterface);
-            mReceiverBinders.remove(callbackInterface.asBinder());
-            XposedLog.logI(TAG, "Receiver died: " + callbackInterface + ", binder: " + callbackInterface.asBinder());
+            IBinder binder = callbackInterface.asBinder();
+            mReceiverBinders.remove(binder);
+            Integer uid = mReceiverUids.remove(binder);
+            if (uid != null) decrementReceiverUid(uid);
+            XposedLog.logI(TAG, "Receiver died: " + callbackInterface + ", binder: " + binder);
         }
     };
+
+    private final ExecutorService mReceiverCallExecutor = Executors.newFixedThreadPool(4, runnable -> {
+        Thread thread = new Thread(runnable, "SuperLyric-ReceiverCall");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private final ExecutorService mBroadcastExecutor = Executors.newSingleThreadExecutor(
         new ThreadFactory() {
@@ -111,7 +131,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     /**
      * 停止确认的计时器
      *
-     * 必须与广播线程分开：[#mBroadcastExecutor] 会**同步**调用每个接收者的 Binder 接口，
+     * 必须与广播线程分开：{@link #mBroadcastExecutor} 会<b>同步</b>调用每个接收者的 Binder 接口，
      * 一个卡住的或垂死的接收者足以把那一条线程堵住数秒，确认计时不能跟着一起被拖住
      */
     private final ScheduledExecutorService mStopConfirmer = Executors.newSingleThreadScheduledExecutor(
@@ -128,7 +148,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     /**
      * 发布者死亡 / 反注册时的停止通知专用线程
      * <p>
-     * 不能复用 {@link #mBroadcastExecutor}：那条线程会**同步**等待每个接收者的 Binder 返回，
+     * 不能复用 {@link #mBroadcastExecutor}：那条线程会<b>同步</b>等待每个接收者的 Binder 返回，
      * 一个卡住的消费者能把它堵住数秒，死亡通知便一直排在它后面发不出去，消费方会永远
      * 停在最后一句歌词上。两条线程并发广播是安全的（{@link RemoteCallbackList} 自身同步），
      * 而"先播出歌词、后播出停止"由世代守卫保证——死亡时世代已被移除，排队中的旧歌词
@@ -151,7 +171,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     /**
      * 发布者世代的全局递增源
      * <p>
-     * 世代必须**永不重复**：按包名从 1 累加的话，一个包死亡（世代被移除）后重新注册又会
+     * 世代必须<b>永不重复</b>：按包名从 1 累加的话，一个包死亡（世代被移除）后重新注册又会
      * 从 1 开始，"死亡前捕获的世代"与"重注册后的世代"可能相等，守卫就形同虚设
      */
     private static final AtomicLong sPublisherGenerationSequence = new AtomicLong();
@@ -248,6 +268,11 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
         String packageName = getPackageNameWithPid(pid);
         if (!packageName.isEmpty()) {
+            // 只允许支持清单内的应用注册发布者；否则任意应用都能占用会话槽与 stop map。
+            if (!com.hchen.superlyric.data.SupportApps.sMediaAppPackages.contains(packageName)) {
+                XposedLog.logW(TAG, "Registration as publisher rejected! Unsupported package: " + packageName);
+                return;
+            }
             Set<Integer> pids = sPublisherPids.computeIfAbsent(packageName, ignored -> ConcurrentHashMap.newKeySet());
             if (pids.add(pid)) {
                 sPublisherGenerations.put(packageName, sPublisherGenerationSequence.incrementAndGet());
@@ -512,11 +537,24 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     @Override
     public void registerReceiver(ISuperLyricReceiver receiver) throws RemoteException {
         if (receiver != null) {
+            if (mCallbacks.getRegisteredCallbackCount() >= MAX_RECEIVERS) {
+                XposedLog.logW(TAG, "Refusing receiver: over limit " + MAX_RECEIVERS);
+                return;
+            }
+            int uid = Binder.getCallingUid();
+            int count = mReceiverUidCounts.getOrDefault(uid, 0);
+            if (count >= MAX_RECEIVERS_PER_UID) {
+                XposedLog.logW(TAG, "Refusing receiver: uid " + uid + " over per-uid limit");
+                return;
+            }
             int pid = Binder.getCallingPid();
             String packageName = getPackageNameWithPid(pid);
-            mCallbacks.register(receiver);
-            mReceiverBinders.add(receiver.asBinder());
-            XposedLog.logI(TAG, "Register receiver: " + receiver + ", pkg: " + packageName + ", pid: " + pid + ", binder: " + receiver.asBinder());
+            if (mCallbacks.register(receiver)) {
+                mReceiverBinders.add(receiver.asBinder());
+                mReceiverUids.put(receiver.asBinder(), uid);
+                mReceiverUidCounts.merge(uid, 1, Integer::sum);
+                XposedLog.logI(TAG, "Register receiver: " + receiver + ", pkg: " + packageName + ", pid: " + pid + ", uid: " + uid + ", binder: " + receiver.asBinder());
+            }
         }
     }
 
@@ -525,10 +563,18 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         if (receiver != null) {
             int pid = Binder.getCallingPid();
             String packageName = getPackageNameWithPid(pid);
-            mCallbacks.unregister(receiver);
-            mReceiverBinders.remove(receiver.asBinder());
-            XposedLog.logI(TAG, "Unregister receiver: " + receiver + ", pkg: " + packageName + ", pid: " + pid + ", binder: " + receiver.asBinder());
+            IBinder binder = receiver.asBinder();
+            if (mCallbacks.unregister(receiver)) {
+                mReceiverBinders.remove(binder);
+                Integer uid = mReceiverUids.remove(binder);
+                if (uid != null) decrementReceiverUid(uid);
+                XposedLog.logI(TAG, "Unregister receiver: " + receiver + ", pkg: " + packageName + ", pid: " + pid + ", binder: " + binder);
+            }
         }
+    }
+
+    private void decrementReceiverUid(int uid) {
+        mReceiverUidCounts.computeIfPresent(uid, (key, count) -> count <= 1 ? null : count - 1);
     }
 
     @Override
@@ -603,6 +649,10 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
             }
             if (lastPid) {
                 mSessions.remove(packageName);
+                // 包已彻底没有发布进程：停止判定/证据计数也一并回收，避免按包名无界增长。
+                // 若有新进程重新注册，computeIfAbsent 会重建。
+                mStopGates.remove(packageName);
+                mStopEvidence.remove(packageName);
             }
             if (TextUtils.equals(mActivePublisher, packageName)) {
                 mActivePublisher = null;
@@ -640,7 +690,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     }
 
     /**
-     * 这个包当前是否有进程**正在发布**
+     * 这个包当前是否有进程<b>正在发布</b>
      *
      * <p>与 {@link #isPublisher} 的区别：后者只回答"还有没有进程注册过"，
      * 而一个包可以有多个注册进程，其中只有一两个在真正发布
@@ -655,10 +705,10 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     /**
      * 各发布者的停止判定
      *
-     * 判定规则本身在内核的 {@link StopGate}，与宿主进程内的 Provider **共用同一套**——
-     * 此前两侧各写一套，而 `STATE_NONE` 在两侧被映射成了相反的含义
+     * 判定规则本身在内核的 {@link StopGate}，与宿主进程内的 Provider <b>共用同一套</b>：
+     * `STATE_NONE` 在中性语义下不推进停止，两侧必须保持同一映射
      *
-     * <p>实例**不回收**：只有注册成发布者的包才会走到这里（见
+     * <p>实例<b>不回收</b>：只有注册成发布者的包才会走到这里（见
      * {@link #onSystemPlaybackStateChanged} 首行的 isPublisher 判定），数量被支持的宿主
      * 应用数量所限，而一个 StopGate 只有几个字段。回收反而会引入竞态：删掉后重建的新实例
      * 令牌从头开始，旧实例上仍在排期的任务会重新对上号
@@ -714,7 +764,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
      * 因此排期时 {@code snapshot()}、确认前 {@code isStillValid()}：期间来过歌词/元数据/其它播放
      * 状态，这次确认就不成立
      *
-     * <p>与 {@link #mStopGates} 一样**不回收**：只有注册成发布者的包会写进来，数量被支持的
+     * <p>与 {@link #mStopGates} 一样<b>不回收</b>：只有注册成发布者的包会写进来，数量被支持的
      * 宿主应用数所限；回收会让计数归零，使"期间有没有新证据"失去判别力
      */
     private final ConcurrentHashMap<String, StopEvidence> mStopEvidence = new ConcurrentHashMap<>();
@@ -768,8 +818,8 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     /**
      * 宿主的 MediaSession 被销毁
      *
-     * 这是"播放源已经不存在"的**确定**信号，不是"不知道"——与 `STATE_NONE` 截然不同。
-     * 此前服务端没有任何入口处理它，于是宿主**释放了会话而进程仍在**时，服务端收不到
+     * 这是"播放源已经不存在"的<b>确定</b>信号，不是"不知道"——与 `STATE_NONE` 截然不同。
+     * 宿主<b>释放了会话而进程仍在</b>时，这是服务端能收到的唯一通知
      * 任何通知：`mActivePublisher` 一直挂着、时钟继续插值，界面就停在最后一句上
      */
     public void onSystemSessionDestroyed(@NonNull String packageName) {
@@ -927,7 +977,32 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
                     continue;
                 }
                 try {
-                    invocation.invoke(receiver);
+                    Future<?> future = mReceiverCallExecutor.submit(() -> {
+                        try {
+                            invocation.invoke(receiver);
+                        } catch (Throwable t) {
+                            throw new RuntimeException(t);
+                        }
+                        return null;
+                    });
+                    try {
+                        future.get(RECEIVER_CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                    } catch (TimeoutException e) {
+                        future.cancel(true);
+                        XposedLog.logW(TAG, "Receiver call timed out after "
+                            + RECEIVER_CALL_TIMEOUT_MS + "ms during " + action + ": " + receiver.asBinder());
+                    } catch (InterruptedException e) {
+                        future.cancel(true);
+                        Thread.currentThread().interrupt();
+                        XposedLog.logW(TAG, "Broadcast interrupted during " + action);
+                        break;
+                    } catch (ExecutionException e) {
+                        Throwable cause = e.getCause();
+                        if (cause instanceof RuntimeException && cause.getCause() != null) {
+                            cause = cause.getCause();
+                        }
+                        throw cause;
+                    }
                 } catch (Throwable t) {
                     boolean isDead = (t instanceof DeadObjectException)
                         || !receiver.asBinder().isBinderAlive()
@@ -978,40 +1053,53 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         Set<Integer> pids = sPublisherPids.get(packageName);
         if (pids == null) return;
         pids.remove(pid);
-        if (pids.isEmpty()) {
+        boolean lastPid = pids.isEmpty();
+        if (lastPid) {
             sPublisherPids.remove(packageName, pids);
             sPublisherGenerations.remove(packageName);
             sSystemPlayStateListenerDisabledPackages.remove(packageName);
+        }
 
-            boolean wasActive = false;
-            synchronized (mSnapshotLock) {
-                PublisherSession session = mSessions.remove(packageName);
-                if (session != null) {
-                    session.publishingPid = NO_PID;
-                    session.clear();
-                }
-                if (TextUtils.equals(mActivePublisher, packageName)) {
-                    mActivePublisher = null;
-                    mSystemTracker.stop();
-                    mSystemTracker.setLyrics(null);
-                    wasActive = true;
-                }
+        boolean wasActive = false;
+        synchronized (mSnapshotLock) {
+            PublisherSession session = mSessions.get(packageName);
+            // 与 onProcessDied 同一判据：未发布过内容的会话任何人都能回收；
+            // 已发布内容的会话只认发布它的 pid，避免无关子进程反注册误清当前歌词。
+            boolean wasPublishing = session != null
+                && (session.publishingPid == pid || !session.published);
+            if (!lastPid && !wasPublishing) {
+                XposedLog.logD(TAG, "Non-publishing process unregistered for " + packageName
+                    + ", pid=" + pid + "; " + pids.size() + " publisher process(es) remain");
+                return;
             }
 
-            if (wasActive) {
-                mDeathNotifier.execute(() -> {
-                    // 反注册与死亡对消费方是同一件事，守卫也必须一致：这个包在我们排队期间
-                    // 重新注册的话，这次 onStop 会误杀新会话，而它此时可能已经在播了。
-                    //
-                    // 判据只能是"现在是否还注册着"——**不能**拿移除前捕获的世代与移除后的
-                    // 取值相比（移除后恒为 0，必然不等，守卫会恒真、通知永远发不出去）
-                    if (isPublisher(packageName)) {
-                        return;
-                    }
-
-                    broadcastToReceivers("removePublisherProcess", receiver -> receiver.onStop(packageName, new SuperLyricData()));
-                });
+            if (session != null) {
+                session.publishingPid = NO_PID;
+                session.clear();
             }
+            if (lastPid) {
+                mSessions.remove(packageName);
+                mStopGates.remove(packageName);
+                mStopEvidence.remove(packageName);
+            }
+            if (TextUtils.equals(mActivePublisher, packageName)) {
+                mActivePublisher = null;
+                mSystemTracker.stop();
+                mSystemTracker.setLyrics(null);
+                wasActive = true;
+            }
+        }
+
+        if (wasActive) {
+            mDeathNotifier.execute(() -> {
+                // 反注册与死亡对消费方是同一件事，守卫也必须一致：这个包在我们排队期间
+                // 重新注册的话，这次 onStop 会误杀新会话，而它此时可能已经在播了。
+                if (isPublisher(packageName)) {
+                    return;
+                }
+
+                broadcastToReceivers("removePublisherProcess", receiver -> receiver.onStop(packageName, new SuperLyricData()));
+            });
         }
     }
 
@@ -1109,7 +1197,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         /**
          * 本会话是否收到过真正的发布（歌词或停止）
          *
-         * <p>会话并不只由发布创建：[#onSystemPlaybackStateChanged] 与
+         * <p>会话并不只由发布创建：{@link #onSystemPlaybackStateChanged} 与
          * [#onSystemMetadataChanged] 都会建会话，而它们都来自 system_server，拿不到宿主
          * 的 pid。因此"没人发布过"与"发布者 pid 是别人"必须能分开——见 {@link #onProcessDied}
          */

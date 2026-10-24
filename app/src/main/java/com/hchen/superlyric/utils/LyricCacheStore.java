@@ -48,7 +48,7 @@ import java.util.regex.Pattern;
  * <p>
  * 按提供者命名空间独立存储接口原始响应（JSON 或 protobuf 字节），
  * 直接写入宿主 cache 目录：{@code cacheDir/superlyric/lyric/{provider}/{key}.json}。
- * 文件带版本与长度字段（{@code {"v":2,"n":<len>,"d":<原始响应>}}），版本不符视为未命中并删除。
+ * 文件带版本与长度字段（{@code {"v":<CACHE_VERSION>,"n":<len>,"d":<原始响应>}}），版本不符视为未命中并删除。
  * key 仅允许 {@code [A-Za-z0-9._-]} 与 {@code '/'} 分隔，杜绝路径穿越。
  *
  * @author 彼岸喵Higanoneko & 焕晨HChen
@@ -69,7 +69,7 @@ public final class LyricCacheStore {
     /**
      * 帧头：{@code {"v":<版本>,"n":<载荷字节数>,"d":}。
      * <p>
-     * 长度字段是**校验**用的：只靠"末尾一个 {@code }}"无法发现截断——载荷本身
+     * 长度字段是<b>校验</b>用的：只靠"末尾一个 {@code }}"无法发现截断——载荷本身
      * （JSON、protobuf）里到处是 {@code }}，断在哪都可能恰好以它收尾。声明长度与
      * 帧内剩余空间必须精确吻合，见 {@link #unpack}
      */
@@ -85,7 +85,7 @@ public final class LyricCacheStore {
     /**
      * 帧的最大可能字节数：帧头 + 长度字段的最大位数 + 分隔符 + 上限载荷 + 收尾 '}'
      * <p>
-     * 不能拿 {@link #FRAME_MIN_BYTES} 当基数再加大载荷：那是按**一位**长度字段算的，
+     * 不能拿 {@link #FRAME_MIN_BYTES} 当基数再加大载荷：那是按<b>一位</b>长度字段算的，
      * 而接近上限的帧其长度字段有 7 位，于是合法的满额条目会被当成损坏文件删掉
      */
     private static final long FRAME_MAX_BYTES =
@@ -193,7 +193,7 @@ public final class LyricCacheStore {
     /**
      * 将接口返回的原始响应字节（JSON 或 protobuf）写入磁盘缓存。
      * <p>
-     * 写入只做"临时文件 + 原子改名（{@code REPLACE_EXISTING}）"，**不检查既有文件**：
+     * 写入只做"临时文件 + 原子改名（{@code REPLACE_EXISTING}）"，<b>不检查既有文件</b>：
      * 旧格式的迁移发生在读取侧——{@link #get} 发现版本不符就删掉并报未命中，
      * 下一次取词自然按新格式重写。
      *
@@ -231,6 +231,11 @@ public final class LyricCacheStore {
                     Files.move(temp.toPath(), file.toPath(),
                         StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
                 } catch (AtomicMoveNotSupportedException e) {
+                    // 退化为非原子替换：读侧靠"写走 tmp + 原子改名"这一前提而不加锁，
+                    // 该分支下读侧可能读到半成品并判废删除。文件系统不支持原子改名时才会走到，
+                    // 必须留痕——否则"从未进入"与"每次都进入"在日志上无法分辨
+                    AndroidLog.logW(TAG, "Atomic move unsupported; falling back to non-atomic replace for "
+                        + file.getAbsolutePath());
                     Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
                 }
                 AndroidLog.logI(TAG, "Successfully cached lyric on disk: " + file.getAbsolutePath() + " (" + data.length + " bytes)");
@@ -270,11 +275,11 @@ public final class LyricCacheStore {
      * 从帧字节中解出原始响应；帧不完整、版本不符或声明长度与实长不符时返回 {@code null}。
      */
     @Nullable
-    private static byte[] unpack(@NonNull byte[] data) {
+    private static byte[] unpack(@NonNull byte[] data, @NonNull StringBuilder reason) {
         int cursor = FRAME_HEAD_BYTES.length;
-        if (data.length <= cursor) return null;
+        if (data.length <= cursor) return invalidFrame(reason, "too short");
         for (int i = 0; i < FRAME_HEAD_BYTES.length; i++) {
-            if (data[i] != FRAME_HEAD_BYTES[i]) return null;
+            if (data[i] != FRAME_HEAD_BYTES[i]) return invalidFrame(reason, "bad magic");
         }
 
         long declared = 0L;
@@ -282,23 +287,31 @@ public final class LyricCacheStore {
         while (cursor < data.length && data[cursor] >= '0' && data[cursor] <= '9') {
             declared = declared * 10 + (data[cursor] - '0');
             // 边解析边设界：定长读取，绝不会因为长度字段本身很长而溢出
-            if (declared > MAX_PAYLOAD_BYTES) return null;
+            if (declared > MAX_PAYLOAD_BYTES) return invalidFrame(reason, "declared length too large");
             cursor++;
             digits++;
         }
-        if (digits == 0) return null;
+        if (digits == 0) return invalidFrame(reason, "missing length");
 
-        if (data.length - cursor < FRAME_SEPARATOR_BYTES.length) return null;
+        if (data.length - cursor < FRAME_SEPARATOR_BYTES.length) return invalidFrame(reason, "truncated separator");
         for (int i = 0; i < FRAME_SEPARATOR_BYTES.length; i++) {
-            if (data[cursor + i] != FRAME_SEPARATOR_BYTES[i]) return null;
+            if (data[cursor + i] != FRAME_SEPARATOR_BYTES[i]) return invalidFrame(reason, "bad separator");
         }
         cursor += FRAME_SEPARATOR_BYTES.length;
 
         // 声明长度必须与帧内剩余空间**精确**吻合，且结尾就是那一个 '}'。
         // 这一步才是"校验"：截断的帧剩余空间与声明长度对不上，直接判废
-        if (declared <= 0 || data.length - cursor - 1 != declared) return null;
-        if (data[data.length - 1] != '}') return null;
+        if (declared <= 0 || data.length - cursor - 1 != declared) {
+            return invalidFrame(reason, "length mismatch");
+        }
+        if (data[data.length - 1] != '}') return invalidFrame(reason, "missing terminator");
         return Arrays.copyOfRange(data, cursor, cursor + (int) declared);
+    }
+
+    @Nullable
+    private static byte[] invalidFrame(@NonNull StringBuilder reason, @NonNull String why) {
+        reason.append(why);
+        return null;
     }
 
     private static boolean isReadableCacheSize(@NonNull File file) {
@@ -345,9 +358,10 @@ public final class LyricCacheStore {
                 Files.deleteIfExists(file.toPath());
                 return null;
             }
-            byte[] payload = unpack(Files.readAllBytes(file.toPath()));
+            StringBuilder reason = new StringBuilder();
+            byte[] payload = unpack(Files.readAllBytes(file.toPath()), reason);
             if (payload == null) {
-                AndroidLog.logW(TAG, "get: Unpack version mismatch, deleting: " + file.getAbsolutePath());
+                AndroidLog.logW(TAG, "get: Unpack failed (" + reason + "), deleting: " + file.getAbsolutePath());
                 Files.deleteIfExists(file.toPath());
                 return null;
             }
@@ -364,7 +378,10 @@ public final class LyricCacheStore {
      */
     public static void delete(@Nullable Context context, @NonNull String provider, @NonNull String key) {
         Context ctx = resolveContext(context);
-        if (ctx == null) return;
+        if (ctx == null) {
+            AndroidLog.logW(TAG, "Cannot delete cache without a Context: provider=" + provider + ", key=" + key);
+            return;
+        }
 
         File file = getFile(ctx, provider, key);
         if (file == null) return;
@@ -545,6 +562,12 @@ public final class LyricCacheStore {
         }
 
         File providerDirFile = new File(new File(cacheDir, CACHE_ROOT), providerDir);
+        if (hasSymbolicLinkBetween(providerDirFile, cacheDir)) {
+            // canonical 前缀只保证 target 在 providerDir 下；如果 providerDir 本身是符号链接，
+            // 它仍然会以自己为前缀放行到 cacheDir 之外。读写路径必须和清理路径用同一判据。
+            AndroidLog.logW(TAG, "getFile rejected: symbolic link in provider path: " + providerDirFile);
+            return null;
+        }
         File file = new File(providerDirFile, keyPath + ".json");
         if (!isSafeCachePath(providerDirFile, file)) {
             AndroidLog.logW(TAG, "getFile rejected by isSafeCachePath: " + file.getPath());
@@ -578,10 +601,10 @@ public final class LyricCacheStore {
      * 解析宿主 Context：优先使用传入的宿主 Application Context，
      * 缺失时（onApplicationCreated 未触发的兜底场景）反射获取当前 Application。
      * <p>
-     * 注意 {@code getApplicationContext()} **可能返回 null**：模块在 Hook
+     * 注意 {@code getApplicationContext()} <b>可能返回 null</b>：模块在 Hook
      * {@code Application.attach(Context)} 的时点就会调用 {@code onApplicationCreated}，
      * 那一刻 Application 尚未挂上，取不到 Application Context。此时必须退回使用
-     * **传入的这个 Context 本身**（它同样是可用的宿主 Context，能正常取 cacheDir），
+     * <b>传入的这个 Context 本身</b>（它同样是可用的宿主 Context，能正常取 cacheDir），
      * 否则整条缓存迁移链路每次启动都会静默失败。
      */
     @Nullable
