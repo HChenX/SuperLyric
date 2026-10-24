@@ -55,7 +55,7 @@ public final class SupportApps {
             // add("fun.upup.musicfree"); // MusicFree
             add("com.netease.cloudmusic"); // 网易云音乐
             // add("com.oppo.music"); // OPPO 音乐
-            // add("com.maxmpz.audioplayer"); // Poweramp
+            add("com.maxmpz.audioplayer"); // Poweramp
             // add("com.xuncorp.qinalt.music"); // 青盐音乐
             // add("com.luna.music"); // 汽水音乐
             add("com.tencent.qqmusic"); // QQ 音乐
@@ -93,7 +93,7 @@ public final class SupportApps {
             // put("fun.upup.musicfree", R.string.musicfree_music);
             put("com.netease.cloudmusic", R.string.wangyiyun_music);
             // put("com.oppo.music", R.string.oppo_music);
-            // put("com.maxmpz.audioplayer", R.string.unknown);
+            put("com.maxmpz.audioplayer", R.string.poweramp_music);
             // put("com.xuncorp.qinalt.music", R.string.qingyan_music);
             // put("com.luna.music", R.string.qishui_music);
             put("com.tencent.qqmusic", R.string.qq_music);
