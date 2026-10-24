@@ -252,7 +252,7 @@ class LyricOrchestrator(
     private fun planTrackChanged(identity: TrackIdentity): Dispatch? {
         val current = currentIdentity
         if (current != null) {
-            if (current.matches(identity)) {
+            if (current.matches(identity) || isTitleEnrichment(current, identity)) {
                 // 同一首曲目：只刷新元数据，**绝不重启取词**。
                 //
                 // 这里刻意不区分状态。早期实现只在 ACTIVE / RESOLVING_HOOK / FETCHING_API
@@ -294,6 +294,32 @@ class LyricOrchestrator(
             planStartApi(identity, startedEpoch, null, dispatch)
         }
         return dispatch
+    }
+
+    /**
+     * 判断是否为同一平台标识的两种写法：一侧带标题段、另一侧还没带上
+     *
+     * 稳定标识由「平台 id + 标题」拼成，而标题要等宿主把曲目对象交出来才拿得到。
+     * 实测酷我：元数据先到（`kuwo:486777537`），44ms 后曲目探针补上标题
+     * （`kuwo:486777537#南山南…`）。按字符串判等会当成换歌——推进 epoch、清屏、
+     * 重新取词一次，而那次取词拿到的还是同一首。
+     *
+     * 只在**有一侧没有标题段**时放宽。两侧都带标题且不同，是有声书换集
+     * （专辑级 rid 下唯一能区分集的依据），必须按换歌处理。
+     *
+     * **必须有时间上界**：标题是紧接着 id 补上来的，而"这一首始终没拿到标题"
+     * （该集没有歌词、探针从未触发）与"换到同一专辑的另一集"在字符串上无法区分。
+     * 窗口外一律按换歌处理，否则新一集会一直沿用上一集的歌词。
+     */
+    private fun isTitleEnrichment(current: TrackIdentity, next: TrackIdentity): Boolean {
+        val age = nowMs() - currentSinceMs
+        if (age < 0L || age > config.provisionalGraceMs) return false
+        val a = TrackIdentity.normalizeStableId(current.stableId) ?: return false
+        val b = TrackIdentity.normalizeStableId(next.stableId) ?: return false
+        if (a == b) return true
+        val aRid = a.substringBefore('#')
+        if (aRid.isEmpty() || aRid != b.substringBefore('#')) return false
+        return !a.contains('#') || !b.contains('#')
     }
 
     /**

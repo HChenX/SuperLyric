@@ -212,6 +212,58 @@ class LyricOrchestratorTest {
     }
 
     @Test
+    fun `a title segment arriving after the platform id does not restart the resolve`() {
+        val f = Fixture()
+
+        // 实测酷我：元数据先到，此刻只有平台 id
+        f.orchestrator.onTrackChanged(TrackIdentity("kuwo", "kuwo:486777537", "", "", 191_000L))
+        assertEquals(1, f.hookSource!!.startCount)
+
+        // 44ms 后曲目探针补上标题
+        f.now = 44L
+        f.orchestrator.onTrackChanged(
+            TrackIdentity("kuwo", "kuwo:486777537#南山南", "南山南", "王思瑞", 191_000L),
+        )
+
+        assertEquals(1, f.hookSource.startCount, "标题是后补的，不是换歌，不得重新取词")
+        assertEquals("kuwo:486777537#南山南", f.orchestrator.activeIdentity?.stableId)
+        assertEquals(LyricOrchestrator.State.RESOLVING_HOOK, f.orchestrator.state)
+    }
+
+    @Test
+    fun `a title arriving outside the grace window is a real track change`() {
+        val f = Fixture()
+
+        // 这一集始终没拿到标题（没有歌词、曲目探针从未触发），身份一直只有平台 id
+        f.orchestrator.onTrackChanged(TrackIdentity("kuwo", "kuwo:100", "", "", 600_000L))
+        assertEquals(1, f.hookSource!!.startCount)
+
+        // 两分钟后换到同一专辑的另一集，标题此刻才出现 —— 不得当成"标题补全"
+        f.now = 120_000L
+        f.orchestrator.onTrackChanged(
+            TrackIdentity("kuwo", "kuwo:100#第489集", "第489集", "某书", 600_000L),
+        )
+
+        assertEquals(2, f.hookSource.startCount, "窗口外的标题变化只能是换集")
+    }
+
+    @Test
+    fun `a different episode title on the same album id is a real track change`() {
+        val f = Fixture()
+
+        f.orchestrator.onTrackChanged(
+            TrackIdentity("kuwo", "kuwo:100#第481集", "第481集", "某书", 600_000L),
+        )
+        assertEquals(1, f.hookSource!!.startCount)
+
+        f.orchestrator.onTrackChanged(
+            TrackIdentity("kuwo", "kuwo:100#第489集", "第489集", "某书", 600_000L),
+        )
+
+        assertEquals(2, f.hookSource.startCount, "两侧都带标题且不同是有声书换集，必须重新取词")
+    }
+
+    @Test
     fun `all sources reporting no lyrics concludes with the placeholder path`() {
         val f = Fixture()
 
