@@ -46,11 +46,14 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Set;
 
 /**
@@ -72,16 +75,14 @@ public final class MobileMusicAnchors {
     /** 末尾空格是宿主字符串常量的一部分，精确匹配时必须保留 */
     private static final String VIEW_ANCHOR = "treasure song Normal lyrics view apply skin mApplySkinChange = ";
 
-    private static final ClassValue<Map<String, Method>> GETTERS = new ClassValue<>() {
-        @Override
-        protected Map<String, Method> computeValue(Class<?> type) {
-            Map<String, Method> methods = new HashMap<>();
-            for (Method method : type.getMethods()) {
-                if (method.getParameterCount() == 0) methods.put(method.getName(), method);
-            }
-            return methods;
-        }
-    };
+    /**
+     * 按类缓存无参 getter。
+     *
+     * <p>不要用 {@link ClassValue}：它在 Android 上是 API 34 才有的类，而本模块
+     * {@code minSdk 30}；类初始化时就会在 Android 11–13 上失败，连一次取词都跑不到。
+     */
+    private static final ConcurrentHashMap<Class<?>, Map<String, Method>> GETTERS =
+        new ConcurrentHashMap<>();
 
     public record Capture(
         TrackIdentity identity,
@@ -213,8 +214,7 @@ public final class MobileMusicAnchors {
                 for (Object line : list) {
                     String[] words = (String[]) invoke(line, "getLyricsWords");
                     int[] intervals = (int[]) invoke(line, "getWordsDisInterval");
-                    List<Long> durations = intervals == null ? null : Arrays.stream(intervals)
-                        .mapToObj(value -> (long) value).toList();
+                    List<Long> durations = durationsOf(intervals);
                     lines.add(new NativeLine(
                         number(invoke(line, "getStartTime")), number(invoke(line, "getEndTime")),
                         string(invoke(line, "getLineLyrics")), string(invoke(line, "getTrcLrc")),
@@ -324,18 +324,46 @@ public final class MobileMusicAnchors {
         }
     }
 
-    private static TrackIdentity identity(Object song) throws ReflectiveOperationException {
-        String id = null;
+    /** 按 Song 实例缓存首次选中的 getter，避免宿主分步填充时 stableId 在两种表示法之间抖动 */
+    private static final Map<Object, String> STABLE_IDS =
+        Collections.synchronizedMap(new WeakHashMap<>());
+
+    private static String stableIdOf(Object song) throws ReflectiveOperationException {
+        String cached = STABLE_IDS.get(song);
+        if (cached != null) return cached;
+        String selected = null;
         for (String getter : List.of("getSongId", "getContentId", "getLocalPathMd5")) {
             String raw = string(invoke(song, getter)).trim();
             if (!raw.isEmpty()) {
-                id = TrackIdentity.stableId("migu", getter + ":" + raw);
+                selected = TrackIdentity.stableId("migu", raw);
                 break;
             }
         }
+        if (selected != null) STABLE_IDS.put(song, selected);
+        return selected;
+    }
+
+    private static TrackIdentity identity(Object song) throws ReflectiveOperationException {
+        String id = stableIdOf(song);
         return new TrackIdentity("MobileMusicProvider", id,
             string(invoke(song, "getSongName")), string(invoke(song, "getSingerName")),
-            Math.max(0L, number(invoke(song, "getMicroSecondsDuration"))));
+            durationMs(number(invoke(song, "getMicroSecondsDuration"))));
+    }
+
+    /**
+     * 把宿主给的词间隔数组转成列表。
+     *
+     * <p>不要用 {@code Arrays.stream(...).toList()}：{@code Stream.toList()} 是 Java 16 / Android 34
+     * 才有的 API，而本模块 {@code minSdk 30}，在 Android 11–13 上会抛 {@link NoSuchMethodError}。
+     */
+    @Nullable
+    private static List<Long> durationsOf(@Nullable int[] intervals) {
+        if (intervals == null) return null;
+        List<Long> durations = new ArrayList<>(intervals.length);
+        for (int interval : intervals) {
+            durations.add((long) interval);
+        }
+        return durations;
     }
 
     private static boolean sameSong(Object song, Object other) throws ReflectiveOperationException {
@@ -343,19 +371,38 @@ public final class MobileMusicAnchors {
         if (song == other) return true;
         for (String getter : List.of("getSongId", "getContentId", "getLocalPathMd5")) {
             String value = string(invoke(song, getter));
-            if (!value.isBlank() && Objects.equals(value, invoke(other, getter))) return true;
+            if (!value.trim().isEmpty() && Objects.equals(value, invoke(other, getter))) return true;
         }
         return false;
     }
 
     private static Object invoke(Object target, String getter) throws ReflectiveOperationException {
-        Method method = GETTERS.get(target.getClass()).get(getter);
+        Map<String, Method> methods = GETTERS.computeIfAbsent(target.getClass(), type -> {
+            Map<String, Method> found = new HashMap<>();
+            for (Method method : type.getMethods()) {
+                if (method.getParameterCount() == 0) found.put(method.getName(), method);
+            }
+            return found;
+        });
+        Method method = methods.get(getter);
         if (method == null) throw new NoSuchMethodException(target.getClass().getName() + "." + getter);
         return method.invoke(target);
     }
 
     private static long number(Object value) {
         return ((Number) value).longValue();
+    }
+
+    /**
+     * 宿主方法名是 {@code getMicroSecondsDuration}，但不同版本可能实际给毫秒。
+     *
+     * <p>用“超过 24 小时”作为不可能出现在毫秒里的上界：一般歌曲远小于它，
+     * 而微秒表示 3 分钟就是 1.8e8，必然超过。这样既兼容两种单位，又不会把
+     * 正常时长误除。
+     */
+    private static long durationMs(long raw) {
+        if (raw <= 0L) return 0L;
+        return raw > 86_400_000L ? raw / 1_000L : raw;
     }
 
     private static String string(Object value) {

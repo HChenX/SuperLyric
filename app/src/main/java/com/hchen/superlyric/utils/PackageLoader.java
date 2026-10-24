@@ -93,8 +93,7 @@ public final class PackageLoader {
             boolean runAgain;
             synchronized (LOAD_LOCK) {
                 completedFuture = sCurrentLoad;
-                completedLoadCount++;
-                listenersSnapshot = List.copyOf(sPackageLoadedListeners);
+                listenersSnapshot = List.of(sPackageLoadedListeners.toArray(new Runnable[0]));
                 runAgain = rescanRequested;
                 if (runAgain) {
                     rescanRequested = false;
@@ -106,11 +105,15 @@ public final class PackageLoader {
             }
 
             if (failure == null) {
+                synchronized (LOAD_LOCK) {
+                    completedLoadCount++;
+                }
                 completedFuture.complete(null);
+                notifyPackageLoadedListeners(listenersSnapshot);
             } else {
+                // 失败不能通知监听器：监听器只拿到旧列表，会把“加载失败”当成“列表刷新完成”。
                 completedFuture.completeExceptionally(failure);
             }
-            notifyPackageLoadedListeners(listenersSnapshot);
 
             if (runAgain) {
                 scheduleLoad(context);
@@ -125,7 +128,8 @@ public final class PackageLoader {
         List<PackageInfo> infos = pm.getInstalledPackages(PackageManager.GET_META_DATA);
 
         for (PackageInfo info : infos) {
-            if (sMediaAppPackages.contains(info.packageName)) {
+            try {
+                if (sMediaAppPackages.contains(info.packageName)) {
                 mediaApps.add(PackageTool.createAppData(pm, info, true));
             }
 
@@ -137,7 +141,11 @@ public final class PackageLoader {
                     if (!isXposed) {
                         ApiAppData apiAppData = new ApiAppData();
                         apiAppData.icon = BitmapTool.drawableToBitmap(info.applicationInfo.loadIcon(pm));
-                        apiAppData.label = (String) info.applicationInfo.loadLabel(pm);
+                        // `loadLabel` 声明返回 CharSequence：标签来自 `Resources.getText()` 时
+                        // 可能是 SpannedString，强转 String 会抛 ClassCastException，而异常会被
+                        // scheduleLoad 吞成"整个包列表加载失败"——一个 App 的标签形态异常就让
+                        // 界面里所有受支持应用消失。用 String.valueOf 无条件取文本
+                        apiAppData.label = String.valueOf(info.applicationInfo.loadLabel(pm));
                         apiAppData.packageName = info.applicationInfo.packageName;
                         apiAppData.versionName = info.versionName;
                         apiAppData.versionCode = Long.toString(info.getLongVersionCode());
@@ -147,12 +155,15 @@ public final class PackageLoader {
                     }
                 }
             }
+            } catch (Throwable t) {
+                AndroidLog.logW(TAG, "Skipping package " + info.packageName, t);
+            }
         }
 
         sortAppData(mediaApps);
         sortAppData(mediaApiApps);
-        sMediaApps = List.copyOf(mediaApps);
-        sMediaApiApps = List.copyOf(mediaApiApps);
+        sMediaApps = List.of(mediaApps.toArray(new AppData[0]));
+        sMediaApiApps = List.of(mediaApiApps.toArray(new ApiAppData[0]));
         AndroidLog.logD(TAG, "Successfully loaded package list: media=" + sMediaApps.size() + ", api=" + sMediaApiApps.size());
     }
 

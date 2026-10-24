@@ -18,6 +18,7 @@
  */
 package com.hchen.superlyric.utils
 
+import android.annotation.SuppressLint
 import com.hchen.hooktool.ModuleConfig
 import com.hchen.hooktool.log.AndroidLog
 import com.hchen.superlyric.BuildConfig
@@ -77,6 +78,7 @@ object LyricDiag {
      * 仅用于 [dumpMetadata] 取原始值判类型——`MediaMetadata` 没有泛型取值器，
      * 而类型化取值器会在非文本键上抛 `ClassCastException` 并在宿主进程刷屏。
      */
+    @SuppressLint("SoonBlockedPrivateApi") // 只读诊断；反射失败由 runCatching 降级为 null
     private val BUNDLE_FIELD: java.lang.reflect.Field? = runCatching {
         android.media.MediaMetadata::class.java
             .getDeclaredField("mBundle")
@@ -87,7 +89,9 @@ object LyricDiag {
     @JvmField
     var maxPayloadChars: Int = 120_000
 
-    private const val CHUNK = 2600
+    // logcat 单条约 4KB；中文每字符 UTF-8 占 3 字节。2600 字符约 7.8KB，会被截断。
+    // 取 1200 字符，最坏 3.6KB + 前缀，仍在单条上限内。
+    private const val CHUNK = 1200
 
     // ---------------------------------------------------------------- 解析包装
 
@@ -101,13 +105,19 @@ object LyricDiag {
 
         dumpRequest(source, request)
 
+        val qrcStats = com.hchen.superlyric.kernel.parse.QrcParser.ParseStats()
         val doc = try {
-            LyricPipeline.parse(request)
+            LyricPipeline.parse(request, qrcStats)
         } catch (t: Throwable) {
             log(source, "PARSE THREW ${t.javaClass.simpleName}: ${t.message}")
             throw t
         }
 
+        if (qrcStats.skippedLongLines > 0 || qrcStats.skippedUnmatchedLines > 0 ||
+            qrcStats.emptyWords > 0 || qrcStats.skippedXmlTags > 0 || qrcStats.truncatedLines
+        ) {
+            log(source, "QRC STATS $qrcStats")
+        }
         dumpDocSummary(source, doc)
         return doc
     }
@@ -123,7 +133,7 @@ object LyricDiag {
         if (!enabled) return
 
         if (doc == null) {
-            log(source, "DOC-SUMMARY null（确定性无歌词）")
+            log(source, "DOC-SUMMARY null（本层未产出有效行；不等于平台无歌词）")
             return
         }
 
@@ -168,7 +178,7 @@ object LyricDiag {
         if (!enabled) return
 
         if (doc == null) {
-            log(source, "=== DOC === null（确定性无歌词）")
+            log(source, "=== DOC === null（本层未产出有效行；不等于平台无歌词）")
             return
         }
 
