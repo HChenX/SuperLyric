@@ -86,6 +86,7 @@ class LyricOrchestratorTest {
         var lastNoLyricsIdentity: TrackIdentity? = null
         var lastUnavailableIdentity: TrackIdentity? = null
         val transitions = ArrayList<LyricOrchestrator.State>()
+        var onState: ((LyricOrchestrator.State) -> Unit)? = null
 
         override fun onLyricResolved(outcome: LyricOutcome.Success) {
             resolved = outcome
@@ -107,6 +108,7 @@ class LyricOrchestratorTest {
 
         override fun onStateChanged(state: LyricOrchestrator.State) {
             transitions += state
+            onState?.invoke(state)
         }
     }
 
@@ -209,6 +211,26 @@ class LyricOrchestratorTest {
 
         assertEquals(1, f.hookSource.startCount, "同一首曲目不得重复取词")
         assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
+    }
+
+
+    @Test
+    fun `a stop re-entered from onStateChanged does not publish a placeholder`() {
+        val f = Fixture()
+        var stopped = false
+        f.listener.onState = { state ->
+            if (!stopped && state == LyricOrchestrator.State.NO_LYRICS) {
+                stopped = true
+                f.orchestrator.onPlaybackStopped()
+            }
+        }
+
+        f.orchestrator.onTrackChanged(track("A"))
+        f.hookSource!!.deliver(LyricOutcome.NoLyrics("host says none"))
+        f.apiSource!!.deliver(LyricOutcome.NoLyrics("platform says none"))
+
+        assertEquals(0, f.listener.noLyricsCount, "停止后不得再发布占位")
+        assertEquals(1, f.listener.idleCount)
     }
 
     @Test

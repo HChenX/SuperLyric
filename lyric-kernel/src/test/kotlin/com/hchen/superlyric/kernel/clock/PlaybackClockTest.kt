@@ -44,6 +44,17 @@ class PlaybackClockTest {
     }
 
     @Test
+    fun `an anchor from the future does not freeze the clock`() {
+        val clock = clock()
+
+        now = 1_000L
+        clock.sync(PlaybackStatus.PLAYING, positionMs = 5_000L, speed = 1f, positionUpdateTimeMs = 10_000L)
+        now = 2_000L
+
+        assertEquals(6_000L, clock.positionAt(), "未来锚点应退回当前时刻，而不是让 elapsed 长期为负")
+    }
+
+    @Test
     fun `position advances with elapsed time`() {
         val clock = clock()
 

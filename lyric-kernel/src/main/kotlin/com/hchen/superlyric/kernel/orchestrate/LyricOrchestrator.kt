@@ -178,6 +178,7 @@ class LyricOrchestrator(
     private class Dispatch {
         var newTrack: TrackIdentity? = null
         var startHookEpoch: Long? = null
+        var startHookIdentity: TrackIdentity? = null
         var startApiEpoch: Long? = null
         var startApiIdentity: TrackIdentity? = null
         var stateChanged: State? = null
@@ -187,6 +188,12 @@ class LyricOrchestrator(
         var idle = false
         var cancelHookSource = false
         var cancelApiSource = false
+
+        /** 计划这次 dispatch 时的 epoch；执行前必须与当前 epoch 一致 */
+        var plannedEpoch: Long = -1L
+
+        /** 计划这次 dispatch 时的曲目；发布占位/不可用时用它，不能用执行时的 activeIdentity */
+        var identity: TrackIdentity? = null
     }
 
     // ------------------------------------------------------------------ 对外
@@ -222,6 +229,7 @@ class LyricOrchestrator(
             apiDelivered = false
 
             Dispatch().apply {
+                plannedEpoch = epoch
                 transitionLocked(State.IDLE, this)
                 idle = true
                 cancelHookSource = true
@@ -284,12 +292,17 @@ class LyricOrchestrator(
         hookDelivered = false
         apiDelivered = false
 
-        val dispatch = Dispatch().apply { newTrack = identity }
+        val dispatch = Dispatch().apply {
+            newTrack = identity
+            plannedEpoch = startedEpoch
+            this.identity = identity
+        }
 
         if (hookSource != null) {
             transitionLocked(State.RESOLVING_HOOK, dispatch)
             hookTimeout = scheduler.schedule(config.hookTimeoutMs) { onHookTimedOut(startedEpoch) }
             dispatch.startHookEpoch = startedEpoch
+            dispatch.startHookIdentity = identity
         } else {
             planStartApi(identity, startedEpoch, null, dispatch)
         }
@@ -341,7 +354,10 @@ class LyricOrchestrator(
         hookDelivered = true
         cancelHookTimeoutLocked()
 
-        val dispatch = Dispatch()
+        val dispatch = Dispatch().apply {
+            plannedEpoch = capturedEpoch
+            identity = currentIdentity
+        }
 
         if (outcome is LyricOutcome.Success) {
             transitionLocked(State.ACTIVE, dispatch)
@@ -361,6 +377,8 @@ class LyricOrchestrator(
         hookOutcome: LyricOutcome?,
         dispatch: Dispatch = Dispatch(),
     ): Dispatch {
+        dispatch.plannedEpoch = startEpoch
+        dispatch.identity = identity
         if (apiDelivered) return dispatch
 
         // 两个来源都不存在 = Provider 配置错误。绝不能与"平台明确说没有歌词"走同一条路：
@@ -416,8 +434,17 @@ class LyricOrchestrator(
             diagnostics("dropping api outcome ${outcome.label}: epoch $capturedEpoch != $epoch")
             return null
         }
+        if (apiDelivered) {
+            // 契约允许来源多次投递，编排器以先到者为准。没有这道守卫，
+            // 迟到的 NoLyrics 会覆盖已经发布的真歌词，迟到的 Success 会二次广播整首。
+            diagnostics("dropping duplicate api outcome ${outcome.label}")
+            return null
+        }
 
-        val dispatch = Dispatch()
+        val dispatch = Dispatch().apply {
+            plannedEpoch = capturedEpoch
+            identity = currentIdentity
+        }
 
         when (outcome) {
             is LyricOutcome.Success -> {
@@ -428,6 +455,7 @@ class LyricOrchestrator(
 
             is LyricOutcome.NoLyrics -> {
                 // 平台明确说"这首没有歌词"——**这是允许下发纯音乐占位的唯一来源**
+                apiDelivered = true
                 transitionLocked(State.NO_LYRICS, dispatch)
                 dispatch.noLyrics = true
             }
@@ -435,6 +463,7 @@ class LyricOrchestrator(
             is LyricOutcome.Unsupported -> {
                 // "这个来源服务不了这一首"（平台无版权、拿不到必要的标识）**不是**"平台说没有歌词"：
                 // 请求要么根本没发出去，要么服务端没说这句话。据此下发占位等于替平台编结论
+                apiDelivered = true
                 transitionLocked(State.UNAVAILABLE, dispatch)
                 dispatch.unavailable = true
             }
@@ -443,6 +472,7 @@ class LyricOrchestrator(
                 apiAttempts++
                 if (apiAttempts >= config.maxApiAttempts) {
                     // 重试耗尽：失败不等于"没有歌词"，绝不下发纯音乐占位
+                    apiDelivered = true
                     transitionLocked(State.UNAVAILABLE, dispatch)
                     dispatch.unavailable = true
                 } else {
@@ -465,7 +495,10 @@ class LyricOrchestrator(
     private fun scheduleRetry(retryEpoch: Long, identity: TrackIdentity) {
         val dispatch = synchronized(lock) {
             if (retryEpoch != epoch) return@synchronized null
+            if (state != State.FETCHING_API || apiDelivered) return@synchronized null
             Dispatch().apply {
+                plannedEpoch = retryEpoch
+                this.identity = identity
                 startApiEpoch = retryEpoch
                 startApiIdentity = identity
             }
@@ -476,6 +509,13 @@ class LyricOrchestrator(
     // ------------------------------------------------------------ 锁外执行
 
     private fun execute(dispatch: Dispatch) {
+        // 计划与执行之间可能已经切歌/停止：所有发布与来源启动都必须以计划时的 epoch 为准。
+        // 少了这一条，旧曲目的 resolved/noLyrics 会在 stop 之后照常发布，占位还会挂到新曲目上。
+        if (dispatch.plannedEpoch >= 0L && dispatch.plannedEpoch != epoch) {
+            diagnostics("dropping planned dispatch: epoch " + dispatch.plannedEpoch + " != " + epoch)
+            return
+        }
+
         if (dispatch.cancelHookSource) hookSource?.cancel()
         if (dispatch.cancelApiSource) apiSource?.cancel()
 
@@ -488,23 +528,40 @@ class LyricOrchestrator(
         dispatch.stateChanged?.let(listener::onStateChanged)
 
         dispatch.startHookEpoch?.let { hookEpoch ->
-            val identity = dispatch.newTrack ?: activeIdentity
+            val identity = dispatch.startHookIdentity
             if (identity != null) {
-                hookSource?.start(identity) { outcome -> onHookCaptured(hookEpoch, outcome) }
+                runCatching {
+                    hookSource?.start(identity) { outcome -> onHookCaptured(hookEpoch, outcome) }
+                }.onFailure {
+                    diagnostics("hook source failed to start: ${it.message}")
+                    onHookCaptured(hookEpoch, LyricOutcome.TransientFailure(it))
+                }
             }
         }
 
         dispatch.startApiEpoch?.let { apiEpoch ->
-            val identity = dispatch.startApiIdentity ?: activeIdentity
+            val identity = dispatch.startApiIdentity
             if (identity != null) {
-                apiSource?.start(identity) { outcome -> onApiCaptured(apiEpoch, outcome) }
+                runCatching {
+                    apiSource?.start(identity) { outcome -> onApiCaptured(apiEpoch, outcome) }
+                }.onFailure {
+                    diagnostics("api source failed to start: ${it.message}")
+                    onApiCaptured(apiEpoch, LyricOutcome.TransientFailure(it))
+                }
             }
         }
 
-        // 下游回调一律在锁外，避免持锁进行 Binder 发布
+        // stateChanged 或来源 start 都可能同步重入 stop/切歌；发布前再复核一次 epoch，
+        // 否则上面那次检查只能挡住“进入 execute 之前”的变化。
+        if (dispatch.plannedEpoch >= 0L && dispatch.plannedEpoch != epoch) {
+            diagnostics("dropping planned dispatch after callbacks: epoch " + dispatch.plannedEpoch + " != " + epoch)
+            return
+        }
+
+        // 下游回调一律在锁外，避免持锁进行 Binder 发布；identity 用计划时的，不用执行时的 activeIdentity
         dispatch.resolved?.let(listener::onLyricResolved)
-        if (dispatch.noLyrics) listener.onNoLyrics(activeIdentity)
-        if (dispatch.unavailable) listener.onUnavailable(activeIdentity)
+        if (dispatch.noLyrics) listener.onNoLyrics(dispatch.identity)
+        if (dispatch.unavailable) listener.onUnavailable(dispatch.identity)
         if (dispatch.idle) listener.onIdle()
     }
 

@@ -90,6 +90,14 @@ class TrackIdentityTest {
     }
 
     @Test
+    fun `a title that normalises to empty still matches itself`() {
+        val track = id(title = "(间奏)", artist = "Artist", durationMs = 1_000L)
+
+        assertTrue(track.matches(track))
+        assertTrue(track.matches(track.copy()))
+    }
+
+    @Test
     fun `bracketed suffixes are ignored during title comparison`() {
         val plain = id(title = "Song", artist = "Artist", durationMs = 100_000L)
         val bracketed = id(title = "Song (Live)", artist = "Artist", durationMs = 100_000L)

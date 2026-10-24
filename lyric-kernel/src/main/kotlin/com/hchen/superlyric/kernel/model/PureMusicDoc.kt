@@ -21,11 +21,12 @@ package com.hchen.superlyric.kernel.model
 /**
  * 纯音乐占位文档
  *
- * 只有在**所有可用来源都一致确认该曲目没有歌词**时才允许构造并下发，即
- * [com.hchen.superlyric.kernel.outcome.LyricOutcome.NoLyrics] 或
- * [com.hchen.superlyric.kernel.outcome.LyricOutcome.Unsupported]。
+ * 只有在**平台或宿主明确表态该曲目没有歌词**时才允许构造并下发，即
+ * [com.hchen.superlyric.kernel.outcome.LyricOutcome.NoLyrics]。
  * 取词失败（[com.hchen.superlyric.kernel.outcome.LyricOutcome.TransientFailure]）
- * **绝不允许**落到这里 —— 那会让一次网络抖动被永久钉死为纯音乐
+ * 与"来源不可用"（[com.hchen.superlyric.kernel.outcome.LyricOutcome.Unsupported]）
+ * **绝不允许**落到这里 —— 前者会让一次网络抖动被永久钉死为纯音乐，
+ * 后者是在替对方编造"这首没有歌词"的结论
  *
  * @author 焕晨HChen
  */

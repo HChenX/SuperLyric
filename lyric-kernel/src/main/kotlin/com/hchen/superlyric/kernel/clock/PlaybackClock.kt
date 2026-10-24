@@ -44,8 +44,9 @@ enum class PlaybackStatus {
  * 时间源可注入，因此漂移、seek、重播、speed=0、暂停等场景均可确定性复现
  *
  * @param durationMs 曲目总时长；未知时为 0（表示不做上界钳制）
- * @param timeSource 单调时间源（毫秒）。默认取纳秒时钟换算，与 Android 的
- *                   `SystemClock.elapsedRealtime()` 同基
+ * @param timeSource 单调时间源（毫秒）。默认取纳秒时钟换算（CLOCK_MONOTONIC，
+ *                   不含深睡），**与 Android 的 `elapsedRealtime()`（CLOCK_BOOTTIME，含深睡）
+ *                   并不同基**。调用方必须注入与宿主 `lastPositionUpdateTime` 同基的时间源。
  *
  * @author 焕晨HChen
  */
@@ -85,7 +86,15 @@ class PlaybackClock(
     ) {
         this.status = status
         this.anchorPosition = max(0L, positionMs)
-        this.anchorTime = if (positionUpdateTimeMs > 0L) positionUpdateTimeMs else timeSource()
+        val now = timeSource()
+        // 锚点在“未来”通常意味着宿主用了另一个时间基（如 uptimeMillis/currentTimeMillis），
+        // 若照单全收，positionAt 的 elapsed 会长期为负，位置整首冻结。宁可退回当前时刻，
+        // 以宿主上报的 position 作为本次锚点。
+        this.anchorTime = when {
+            positionUpdateTimeMs <= 0L -> now
+            positionUpdateTimeMs > now -> now
+            else -> positionUpdateTimeMs
+        }
         this.speed = if (speed.isFinite()) speed else 1f
     }
 
