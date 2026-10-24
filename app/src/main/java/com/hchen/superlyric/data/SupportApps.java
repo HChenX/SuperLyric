@@ -57,7 +57,7 @@ public final class SupportApps {
             // add("com.oppo.music"); // OPPO 音乐
             add("com.maxmpz.audioplayer"); // Poweramp
             // add("com.xuncorp.qinalt.music"); // 青盐音乐
-            // add("com.luna.music"); // 汽水音乐
+            add("com.luna.music"); // 汽水音乐
             add("com.tencent.qqmusic"); // QQ 音乐
             // add("com.r.rplayer"); // RPlayer
             add("com.salt.music"); // 椒盐音乐
@@ -95,7 +95,7 @@ public final class SupportApps {
             // put("com.oppo.music", R.string.oppo_music);
             put("com.maxmpz.audioplayer", R.string.poweramp_music);
             // put("com.xuncorp.qinalt.music", R.string.qingyan_music);
-            // put("com.luna.music", R.string.qishui_music);
+            put("com.luna.music", R.string.qishui_music);
             put("com.tencent.qqmusic", R.string.qq_music);
             // put("com.r.rplayer", R.string.rplayer_music);
             put("com.salt.music", R.string.jiaoyan_music);

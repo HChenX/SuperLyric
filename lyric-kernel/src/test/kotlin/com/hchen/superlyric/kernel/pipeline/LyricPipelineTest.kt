@@ -83,6 +83,25 @@ class LyricPipelineTest {
     }
 
     @Test
+    fun `plaintext krc from the text channel keeps per-word timing`() {
+        // 汽水音乐交给歌词模型的正文就是这个形态：行头是「起始,时长」毫秒对，
+        // 词标签是「行内偏移,时长,0」三元组。它走 text 通道，没有 krc1 头也不加密
+        val plain = "[1000,2000]<0,500,0>Hello <500,400,0>world\n[3000,1500]<0,800,0>Second"
+
+        val doc = LyricPipeline.parse(LyricRequest(format = LyricFormat.KRC, text = plain))
+
+        assertNotNull(doc)
+        assertEquals(2, doc!!.lines.size)
+        assertEquals("Hello world", doc.lines[0].text)
+        assertEquals(1000L, doc.lines[0].startMs)
+        assertEquals(2, doc.lines[0].words.size)
+        // 词偏移是相对行首的，不是绝对毫秒
+        assertEquals(1000L, doc.lines[0].words[0].startMs)
+        assertEquals(1500L, doc.lines[0].words[1].startMs)
+        assertEquals("Second", doc.lines[1].text)
+    }
+
+    @Test
     fun `qrc payload carries its embedded translation through`() {
         val xml = """
             <QrcInfos>

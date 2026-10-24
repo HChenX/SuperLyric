@@ -34,6 +34,7 @@
 - Poweramp (com.maxmpz.audioplayer) -> Hook 获取（本地 LRC / 歌词缓存）
 - QQ 音乐 (com.tencent.qqmusic) -> Hook 获取
 - 椒盐音乐 (com.salt.music) -> Hook 获取
+- 汽水音乐 (com.luna.music) -> Hook 获取
 - Spotify (com.spotify.music) -> 网络获取
 - Flamingo (unknown) -> Api 原生支持
 - [光锥音乐](https://coneplayer.trantor.ink) (ink.trantor.coneplayer) -> Api 原生支持
@@ -55,7 +56,6 @@
 - MusicFree (fun.upup.musicfree) -> 桌面歌词
 - OPPO 音乐 (com.oppo.music) -> 蓝牙歌词
 - 青盐音乐 (com.xuncorp.qinalt.music) -> 魅族状态栏歌词
-- 汽水音乐 (com.luna.music) -> 蓝牙歌词
 - RPlayer (com.r.rplayer) -> 蓝牙歌词
 - 糖醋音乐 (com.xuncorp.suvine.music) -> 魅族状态栏歌词
 - Symfonium (app.symfonik.music.player) -> Hook 获取

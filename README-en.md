@@ -37,6 +37,7 @@
 - Poweramp (com.maxmpz.audioplayer) -> Hook Acquisition (local LRC / lyric cache)
 - QQ Music (com.tencent.qqmusic) -> Hook Acquisition
 - Salt Music (com.salt.music) -> Hook Acquisition
+- Soda Music (com.luna.music) -> Hook Acquisition
 - Spotify (com.spotify.music) -> Network
 - Flamingo (unknown) -> Native API Support
 - [Cone Player](https://coneplayer.trantor.ink) (ink.trantor.coneplayer) -> Native API Support
@@ -58,7 +59,6 @@
 - MusicFree (fun.upup.musicfree) -> Desktop Lyrics
 - OPPO Music (com.oppo.music) -> Bluetooth Lyrics
 - QingYan Music (com.xuncorp.qinalt.music) -> Meizu Status Bar Lyrics
-- Soda Music (com.luna.music) -> Bluetooth Lyrics
 - RPlayer (com.r.rplayer) -> Bluetooth Lyrics
 - Suvine Music (com.xuncorp.suvine.music) -> Meizu Status Bar Lyrics
 - Symfonium (app.symfonik.music.player) -> Hook Acquisition
