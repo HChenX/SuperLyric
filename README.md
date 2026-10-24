@@ -1,21 +1,17 @@
 <div align="center">
-<h1>SuperLyric-Poweramp</h1>
+<h1>SuperLyric</h1>
 
-![stars](https://img.shields.io/github/stars/BlueEve04/SuperLyric-Poweramp?style=flat)
-![downloads](https://img.shields.io/github/downloads/BlueEve04/SuperLyric-Poweramp/total)
-![Github repo size](https://img.shields.io/github/repo-size/BlueEve04/SuperLyric-Poweramp)
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/BlueEve04/SuperLyric-Poweramp)](https://github.com/BlueEve04/SuperLyric-Poweramp/releases)
-[![GitHub Release Date](https://img.shields.io/github/release-date/BlueEve04/SuperLyric-Poweramp)](https://github.com/BlueEve04/SuperLyric-Poweramp/releases)
-![last commit](https://img.shields.io/github/last-commit/BlueEve04/SuperLyric-Poweramp?style=flat)
+![stars](https://img.shields.io/github/stars/HChenX/SuperLyric?style=flat)
+![downloads](https://img.shields.io/github/downloads/HChenX/SuperLyric/total)
+![Github repo size](https://img.shields.io/github/repo-size/HChenX/SuperLyric)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/HChenX/SuperLyric)](https://github.com/HChenX/SuperLyric/releases)
+[![GitHub Release Date](https://img.shields.io/github/release-date/HChenX/SuperLyric)](https://github.com/HChenX/SuperLyric/releases)
+![last commit](https://img.shields.io/github/last-commit/HChenX/SuperLyric?style=flat)
 ![language](https://img.shields.io/badge/language-java%2Fkotlin-purple)
 
 <p><b><a href="README-en.md">English</a> | <a href="README.md">简体中文</a></b></p>
-<p>Poweramp 适配分支 | SuperLyric</p>
+<p>歌词获取器 | Super Lyric</p>
 </div>
-
-> 本仓库基于 [HChenX/SuperLyric](https://github.com/HChenX/SuperLyric) 4.1，
-> 新增 Poweramp（`com.maxmpz.audioplayer`）歌词 Provider：切歌时直接读取本地 LRC
-> 或宿主歌词缓存，无需打开 Poweramp 歌词界面。原始项目版权归 HChenX 所有。
 
 ---
 
@@ -24,17 +20,6 @@
 - 基于 Binder 数据传递的音乐软件歌词获取与发布模块！
 - 完全抛弃传统的广播模式，全面拥抱更高性能更低延迟的 Binder 跨进程能力！
 - 支持 Hook / 网络双路径获取歌词：网易云、荣耀音乐可按应用切换获取方式，Spotify 走网络获取，在线歌词带本地缓存。
-
----
-
-## 🎧 Poweramp 适配
-
-- 支持版本：Poweramp `build-1031-uni`（versionCode `1031009`）实测通过
-- **切歌自动取词**：读取宿主数据库里的 `cached_lyrics.content` / `lrc_files`，无需打开歌词界面
-- 混淆类通过 DexKit 字符串锚点定位，调用 Poweramp 自己的 `LrcParser` 读取 LRC，绕过 scoped storage
-- LRC 原始字节按 UTF-8 严格解码，失败自动回退 GBK
-- 仅支持本地 LRC 或已缓存歌词；只有内嵌标签歌词的曲目仍需打开一次歌词界面
-- **更新模块 APK 后需重启手机**，让 system_server 重新加载模块，否则系统服务仍为旧版，服务不正常
 
 ---
 
