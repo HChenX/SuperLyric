@@ -133,10 +133,26 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
     private final PublisherRegistry publishers = new PublisherRegistry();
 
-    private final SystemPlaybackCoordinator playback = new SystemPlaybackCoordinator();
+    private final SystemPlaybackCoordinator playback;
 
     public SuperLyricService(@NonNull Object ams) {
         this.mAms = ams;
+        this.playback = new SystemPlaybackCoordinator(
+            publishers,
+            new SystemPlaybackCoordinator.Host() {
+                @Override
+                public void onLyric(@NonNull String packageName, @NonNull SuperLyricData data) {
+                    notifyReceiver(packageName, data,
+                        (receiver, publisher, payload) -> receiver.onLyric(publisher, payload));
+                }
+
+                @Override
+                public void onStop(@NonNull String packageName, @NonNull SuperLyricData data) {
+                    notifyReceiver(packageName, data,
+                        (receiver, publisher, payload) -> receiver.onStop(publisher, payload));
+                }
+            },
+            (delayMs, task) -> mStopConfirmer.schedule(task, delayMs, TimeUnit.MILLISECONDS));
         this.playback.tracker.setOnProgressAdvanceListener((newIndex, progress) -> {
             SuperLyricData cleanProgress = LyricSanitizer.sanitizeData(progress);
             if (cleanProgress == null) return;
@@ -556,8 +572,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
                 publishers.sessions.remove(packageName);
                 // 包已彻底没有发布进程：停止判定/证据计数也一并回收，避免按包名无界增长。
                 // 若有新进程重新注册，computeIfAbsent 会重建。
-                playback.stopGates.remove(packageName);
-                playback.stopEvidence.remove(packageName);
+                playback.remove(packageName);
             }
             if (TextUtils.equals(publishers.activePublisher, packageName)) {
                 publishers.activePublisher = null;
@@ -615,48 +630,6 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
      * 应用数量所限，而一个 StopGate 只有几个字段。回收反而会引入竞态：删掉后重建的新实例
      * 令牌从头开始，旧实例上仍在排期的任务会重新对上号
      */
-    @NonNull
-    private StopGate stopGate(@NonNull String packageName) {
-        return playback.gate(
-            packageName,
-            (delayMs, task) -> mStopConfirmer.schedule(task, delayMs, TimeUnit.MILLISECONDS),
-            this::confirmStop);
-    }
-
-    /**
-     * 把播放状态喂给停止判定，并按判定留痕
-     *
-     * 调用方须持有 {@link #publishers.lock}
-     */
-    private void applyStopSignalLocked(@NonNull String packageName, int state) {
-        PlaybackSignal signal = PlaybackSignals.of(state);
-
-        // 非终态即"播放仍在继续"的证据，且必须在判定**之前**记：判定为 `IGNORED` 的那一半
-        // （令牌已被确认消费）正是要拦的情形——此时 StopGate 已经放行，只有这笔账拦得住。
-        // `UNKNOWN` 不记（"不知道不是证据"），与服务端另一处证据来源（歌词/元数据）合起来，
-        // 与宿主侧的 `MusicProvider#stopEvidence` 口径一致
-        if (signal != PlaybackSignal.STOPPED && signal != PlaybackSignal.ERROR
-            && signal != PlaybackSignal.SESSION_GONE && signal != PlaybackSignal.UNKNOWN) {
-            stopEvidence(packageName).record();
-        }
-
-        StopGate gate = stopGate(packageName);
-        switch (gate.onSignal(signal)) {
-            case ARMED -> {
-                stopEvidence(packageName).snapshot();
-                XposedLog.logD(TAG, signal + " for " + packageName + "; awaiting confirmation");
-            }
-            case CANCELLED ->
-                XposedLog.logD(TAG, "Pending stop for " + packageName + " cancelled by " + signal);
-            case IGNORED -> {
-                // UNKNOWN 在过渡期会成串出现，无差别输出会刷屏；只在确实有停止悬着时留痕
-                if (gate.isPending()) {
-                    XposedLog.logD(TAG, signal + " for " + packageName + " ignored while a stop is pending");
-                }
-            }
-        }
-    }
-
     /**
      * 每包的"播放仍在继续"证据计数（见 {@link StopEvidence}）
      *
@@ -679,13 +652,6 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         }
     }
 
-    /** 窗口内无人撤销，停止成立：清空会话并通知消费者。 */
-    private void confirmStop(@NonNull String packageName) {
-        playback.confirmStop(packageName, publishers, publisher ->
-            notifyReceiver(publisher, new SuperLyricData(),
-                (receiver, pkg, data) -> receiver.onStop(pkg, data)));
-    }
-
     /**
      * 宿主的 MediaSession 被销毁
      *
@@ -694,143 +660,15 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
      * 任何通知：`publishers.activePublisher` 一直挂着、时钟继续插值，界面就停在最后一句上
      */
     public void onSystemSessionDestroyed(@NonNull String packageName) {
-        if (!isPublisher(packageName)) {
-            return;
-        }
-
-        XposedLog.logI(TAG, "System session destroyed: " + packageName);
-        // 排期与证据计数的读取必须和确认、发布互斥，否则记下的就是别处的时刻
-        boolean armed;
-        synchronized (publishers.lock) {
-            armed = stopGate(packageName).onSignal(PlaybackSignal.SESSION_GONE) == StopGate.Decision.ARMED;
-            if (armed) {
-                stopEvidence(packageName).snapshot();
-            }
-        }
-        if (armed) {
-            XposedLog.logD(TAG, "Session gone for " + packageName + "; awaiting confirmation");
-        }
+        playback.onSessionDestroyed(packageName);
     }
 
     public void onSystemPlaybackStateChanged(@NonNull String packageName, @NonNull PlaybackState state) {
-        if (!isPublisher(packageName)) {
-            return;
-        }
-
-        XposedLog.logD(TAG, "onSystemPlaybackStateChanged: pkg=" + packageName
-            + ", state=" + state.getState()
-            + ", pos=" + state.getPosition() + "ms"
-            + ", speed=" + state.getPlaybackSpeed());
-
-        boolean notifyLyric = false;
-        SuperLyricData lyricToNotify = null;
-
-        synchronized (publishers.lock) {
-            PublisherRegistry.Session session = getOrCreateSessionLocked(packageName);
-            session.playbackState = state;
-
-            // 停止判定与下面的副作用分开：判定统一在内核（与宿主侧同一套），
-            // 这里只负责"入播放状态后该做什么"
-            applyStopSignalLocked(packageName, state.getState());
-
-            switch (state.getState()) {
-                case PlaybackState.STATE_PLAYING -> {
-                    if (!TextUtils.equals(publishers.activePublisher, packageName)) {
-                        String prevPublisher = publishers.activePublisher;
-                        XposedLog.logI(TAG, "Active publisher switched to playing " + packageName + " (previous: " + prevPublisher + ")");
-                        publishers.activePublisher = packageName;
-                        playback.tracker.stop();
-
-                        if (session.latestLyric != null) {
-                            playback.tracker.setLyrics(session.latestLyric);
-                            playback.tracker.onPlaybackStateChanged(state);
-                            SuperLyricData currentData = session.latestLyric;
-                            if (currentData.hasLyric()) {
-                                notifyLyric = true;
-                                lyricToNotify = currentData;
-                            }
-                        } else {
-                            playback.tracker.setLyrics(null);
-                            // 若之前存在其他发布者，停止上一发布者的歌词显示；绝不向正在起播的新应用发送 onStop
-                            if (!TextUtils.isEmpty(prevPublisher)) {
-                                notifyReceiver(prevPublisher, new SuperLyricData(), (receiver, publisher, payload) -> receiver.onStop(publisher, payload));
-                            }
-                        }
-                    } else {
-                        playback.tracker.onPlaybackStateChanged(state);
-                    }
-                }
-                case PlaybackState.STATE_PAUSED -> {
-                    if (TextUtils.equals(publishers.activePublisher, packageName)) {
-                        playback.tracker.onPlaybackStateChanged(state);
-                    }
-                }
-                // 这三个状态一律**不推进时钟**，但含义并不相同：STOPPED / ERROR 是终态，
-                // 要等窗口确认；NONE 是"不知道"，既不该确认也不该拿它的位置去推进进度。
-                // 分支合并只是因为这个副作用相同，判定已在上面的 applyStopSignalLocked 里做完
-                case PlaybackState.STATE_STOPPED, PlaybackState.STATE_NONE,
-                     PlaybackState.STATE_ERROR -> {
-                }
-                default -> {
-                    if (TextUtils.equals(publishers.activePublisher, packageName)) {
-                        playback.tracker.onPlaybackStateChanged(state);
-                    }
-                }
-            }
-        }
-
-        if (notifyLyric && lyricToNotify != null) {
-            notifyReceiver(packageName, lyricToNotify, (receiver, publisher, payload) -> receiver.onLyric(publisher, payload));
-        }
+        playback.onPlaybackStateChanged(packageName, state);
     }
 
     public void onSystemMetadataChanged(@NonNull String packageName, @Nullable MediaMetadata metadata) {
-        if (!isPublisher(packageName) || metadata == null) {
-            return;
-        }
-
-        String title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE);
-        String artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST);
-        long duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION);
-        XposedLog.logD(TAG, "onSystemMetadataChanged: pkg=" + packageName + ", title=" + title + ", artist=" + artist + ", duration=" + duration);
-
-        // 宿主还在宣布曲目，就说明播放没停
-        cancelPendingStop(packageName);
-
-        synchronized (publishers.lock) {
-            PublisherRegistry.Session session = publishers.sessions.get(packageName);
-            if (session == null) {
-                return;
-            }
-            // 元数据与歌词一样是"播放仍在继续"的证据，计数必须在锁内自增：
-            // 排期之后到达的元数据要能否决那次确认（见 confirmStop）
-            stopEvidence(packageName).record();
-
-            // 仅在当前会话已存在歌词但缺失时长时做安全元数据增强，绝不依据易变的 title 判定切歌或清空歌词。
-            // **不能原地改**：这个实例可能正被另一个线程（框架侧序列化 Parcel）持有，
-            // 原地改等于让它读到改到一半的值。这里构造副本，与进度包的写法一致
-            SuperLyricData base = session.latestLyric;
-            if (base != null && base.getDuration() <= 0 && duration > 0) {
-                SuperLyricData enriched = new SuperLyricData()
-                    .setTitle(base.getTitle())
-                    .setArtist(base.getArtist())
-                    .setAlbum(base.getAlbum())
-                    .setLyricId(base.getLyricId())
-                    .setDuration(duration)
-                    .setAllLyrics(base.getAllLyrics())
-                    .setCurrentLyricIndex(base.getCurrentLyricIndex())
-                    .setPosition(base.getPosition())
-                    .setLyric(base.getLyric())
-                    .setExtra(base.getExtra());
-                if (base.hasTranslation()) {
-                    enriched.setTranslation(base.getTranslation());
-                }
-                if (base.hasSecondary()) {
-                    enriched.setSecondary(base.getSecondary());
-                }
-                session.latestLyric = enriched;
-            }
-        }
+        playback.onMetadataChanged(packageName, metadata);
     }
 
     private void broadcastToReceivers(@NonNull String action,
@@ -874,8 +712,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
             }
             if (lastPid) {
                 publishers.sessions.remove(packageName);
-                playback.stopGates.remove(packageName);
-                playback.stopEvidence.remove(packageName);
+                playback.remove(packageName);
             }
             if (TextUtils.equals(publishers.activePublisher, packageName)) {
                 publishers.activePublisher = null;
