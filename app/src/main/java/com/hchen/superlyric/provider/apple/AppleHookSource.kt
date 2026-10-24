@@ -121,14 +121,14 @@ class AppleHookSource : HookLyricSource {
             TrackVerdict.UNVERIFIABLE -> AndroidLog.logW(
                 sourceName,
                 "$what has no comparable track id (reported=$reported, current=$current); " +
-                    if (admit) "delivering anyway" else "not adopting the verdict",
+                        if (admit) "delivering anyway" else "not adopting the verdict",
             )
 
             TrackVerdict.DIFFERENT -> AndroidLog.logW(
                 sourceName,
                 if (admit) {
                     "$what is for $reported but the current track is $current; delivering anyway " +
-                        "(the two id schemes are unverified — see judgeTrack)"
+                            "(the two id schemes are unverified — see judgeTrack)"
                 } else {
                     "Dropping $what for $reported: the current track is $current"
                 },

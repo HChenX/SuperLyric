@@ -63,10 +63,14 @@ public final class SaltAnchors {
 
     private static final String DOCUMENT_CACHE_KEY = "salt_lyrics_document_class_v1";
 
-    /** 锚点：{@code LyricsDocument} 的 toString 格式串。 */
+    /**
+     * 锚点：{@code LyricsDocument} 的 toString 格式串。
+     */
     private static final String DOCUMENT_ANCHOR = "LyricsDocument(sourceText=";
 
-    /** 宿主的曲目模型类；带 {@code @Keep}，类名与 getter 名都是稳定的。 */
+    /**
+     * 宿主的曲目模型类；带 {@code @Keep}，类名与 getter 名都是稳定的。
+     */
     private static final String SONG_CLASS = "com.salt.music.data.entry.Song";
 
     private static final String CONTROLLER_CLASS = "com.salt.music.service.MusicController";
@@ -76,7 +80,9 @@ public final class SaltAnchors {
     private SaltAnchors() {
     }
 
-    /** 宿主设置歌词时的回调。 */
+    /**
+     * 宿主设置歌词时的回调。
+     */
     public interface LyricsListener {
         /**
          * @param sourceText 原始歌词文本
@@ -228,7 +234,9 @@ public final class SaltAnchors {
         }
     }
 
-    /** 按精确参数序列挂载静态 void 方法。 */
+    /**
+     * 按精确参数序列挂载静态 void 方法。
+     */
     private static int hookSongCallback(
         @NonNull Class<?> controllerClass,
         @NonNull LyricsListener listener,
@@ -275,7 +283,9 @@ public final class SaltAnchors {
         });
     }
 
-    /** 已转储过的曲目标识，避免热路径刷屏。 */
+    /**
+     * 已转储过的曲目标识，避免热路径刷屏。
+     */
     private static volatile String sLastDumpedSongId;
 
     private static void reportSong(@Nullable Object song, @NonNull LyricsListener listener) {
@@ -339,7 +349,9 @@ public final class SaltAnchors {
         }
     }
 
-    /** 反射调用无参 getter；失败时返回标记串（含异常类型）而不是抛出。仅供诊断转储。 */
+    /**
+     * 反射调用无参 getter；失败时返回标记串（含异常类型）而不是抛出。仅供诊断转储。
+     */
     @NonNull
     private static String invoke(@NonNull Object target, @NonNull String method) {
         try {

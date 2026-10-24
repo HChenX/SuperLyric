@@ -41,6 +41,7 @@ import com.hchen.hooktool.log.AndroidLog;
 public final class HotfixDisabler {
     private static final String TAG = "HotfixDisabler";
     private static volatile boolean sDisabled;
+
     /**
      * 禁用宿主应用热更新服务。
      *

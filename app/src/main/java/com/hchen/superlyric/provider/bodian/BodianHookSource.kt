@@ -142,7 +142,7 @@ class BodianHookSource : HookLyricSource {
                 AndroidLog.logW(
                     sourceName,
                     "Discarding no-lyric verdict without a matching rid: rid=\"$rid\", " +
-                        "verdict=${identity.stableId}, pending=${base.stableId}",
+                            "verdict=${identity.stableId}, pending=${base.stableId}",
                 )
                 return
             }

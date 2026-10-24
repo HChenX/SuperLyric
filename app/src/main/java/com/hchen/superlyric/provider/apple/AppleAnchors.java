@@ -50,7 +50,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 其余六个平台都能拿到<b>协议级</b>的原始报文（KRC / QRC / LRCX / JSON / TTML / YRC），
  * 因此模块可以自行解析。Apple Music 的歌词由 <b>JNI 侧</b>解析完成后通过裸指针
  * （{@code SongInfo$SongInfoPtr}）交给 Java 层，不存在可直接读取的明文报文。
- *
+ * <p>
  * 因此这一家必须走宿主模型：在 {@code buildTimeRangeToLyricsMap} 的入参上遍历
  * {@code LyricsSectionVector → LyricsWordVector} 取出文本、译文与逐字时戳。
  * 这是经过权衡后<b>有意保留</b>的例外，不是遗漏。
@@ -74,15 +74,17 @@ public final class AppleAnchors {
 
     private static final String PM_CACHE_KEY = "apple_pm_class_v1";
 
-    /** 锚点：MediaPlaybackManager 中的固定日志串。 */
+    /**
+     * 锚点：MediaPlaybackManager 中的固定日志串。
+     */
     private static final String PM_ANCHOR = "Unrecognized PlayerTimedTextItem.AnchorType: ";
 
     /**
      * 请求歌词的去抖窗口
-     *
+     * <p>
      * 宿主切歌时会连着发几次队列变化，逐个去请求会让它重复加载歌词；350ms 是实测够覆盖
      * 这一串、又不至于让人察觉延迟的值。
-     *
+     * <p>
      * 去抖任务跑在<b>宿主主线程</b>：宿主的 ViewModel 必须在主线程触碰，不能挪到我们自己的线程
      */
     private static final long REQUEST_DEBOUNCE_MS = 350L;
@@ -91,17 +93,21 @@ public final class AppleAnchors {
 
     private static volatile Object sLyricViewModel;
     private static volatile String sLastRequestedItemId;
-    /** 最近一次**成功**发起请求的 itemId；去重只看它，失败后允许同一曲目重试 */
+    /**
+     * 最近一次**成功**发起请求的 itemId；去重只看它，失败后允许同一曲目重试
+     */
     private static volatile String sLastCompletedItemId;
     private static volatile Runnable sPendingRequest;
-    /** 队列触发路径第一次死亡时打一条 W；后续静默，避免每次回调刷屏 */
+    /**
+     * 队列触发路径第一次死亡时打一条 W；后续静默，避免每次回调刷屏
+     */
     private static final AtomicBoolean sQueueTriggerDeadReported = new AtomicBoolean();
     private static volatile LyricsListener sListener;
     private static volatile boolean sInstalled;
 
     /**
      * {@code PlaybackItem.setId} 兜底锚点的插桩计数
-     *
+     * <p>
      * 这条兜底靠匹配调用栈里的字符串（{@code getItemAtIndex} / {@code .accept}），
      * 宿主混淆改名后它就再也命中不了——而"从未命中"与"根本没插桩"在日志里长得一模一样。
      * 计数放在这里，正是为了让这两者能被区分开
@@ -112,7 +118,7 @@ public final class AppleAnchors {
 
     /**
      * 兜底锚点已死的告警是否已经打过
-     *
+     * <p>
      * 判据必须是"跨过阈值"而不是"恰好等于阈值"：计数由 Hook 回调并发自增，
      * {@code get() == 200} 可能被整个跳过去，那行告警就再也不会出现
      */
@@ -121,7 +127,9 @@ public final class AppleAnchors {
     private AppleAnchors() {
     }
 
-    /** 逐字切片。 */
+    /**
+     * 逐字切片。
+     */
     public static final class AppleWord {
         public final String text;
         public final long startMs;
@@ -134,7 +142,9 @@ public final class AppleAnchors {
         }
     }
 
-    /** 单行歌词；文本保留宿主给出的**原始 HTML**，由上层统一净化。 */
+    /**
+     * 单行歌词；文本保留宿主给出的**原始 HTML**，由上层统一净化。
+     */
     public static final class AppleLine {
         public final String text;
         public final String translation;
@@ -152,7 +162,9 @@ public final class AppleAnchors {
         }
     }
 
-    /** 抽取结果回调。 */
+    /**
+     * 抽取结果回调。
+     */
     public interface LyricsListener {
         /**
          * @param itemId 本次结果所属的曲目标识（宿主 {@code PlaybackItem} 的 id）；
@@ -323,7 +335,8 @@ public final class AppleAnchors {
                             boolean fromCallback = false;
                             for (StackTraceElement element : Thread.currentThread().getStackTrace()) {
                                 String frame = element.toString();
-                                if (!fromQueueBuild && frame.contains("getItemAtIndex")) fromQueueBuild = true;
+                                if (!fromQueueBuild && frame.contains("getItemAtIndex"))
+                                    fromQueueBuild = true;
                                 if (!fromCallback && frame.contains(".accept")) fromCallback = true;
                                 if (fromQueueBuild && fromCallback) break;
                             }
@@ -407,7 +420,7 @@ public final class AppleAnchors {
 
     /**
      * @return 是否已经把请求交出去（或已得到“无歌词”的确定结论）。失败返回 false，
-     *         调用方不写去重键，让同一曲目的下一次宿主回调还能重试。
+     * 调用方不写去重键，让同一曲目的下一次宿主回调还能重试。
      */
     private static boolean requestLyrics(@NonNull Object playbackItem) {
         try {

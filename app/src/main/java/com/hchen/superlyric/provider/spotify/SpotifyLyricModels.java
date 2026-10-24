@@ -20,7 +20,9 @@ package com.hchen.superlyric.provider.spotify;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+
 import com.hchen.superlyricapi.SuperLyricWord;
+
 import java.io.IOException;
 import java.util.List;
 

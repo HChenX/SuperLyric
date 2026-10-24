@@ -269,8 +269,8 @@ class ParserTest {
     @Test
     fun `untagged line sharing a timestamp becomes the translation of that line`() {
         val text = "$lrcxHeader\n" +
-            "[00:01.00]<1000,500>Hello\n" +
-            "[00:01.00]你好"
+                "[00:01.00]<1000,500>Hello\n" +
+                "[00:01.00]你好"
 
         val doc = KuwoLrcxParser.parse(text)
 
@@ -285,8 +285,8 @@ class ParserTest {
         // 这是旧实现最严重的缺陷：它把任何无标签行都当成译文，
         // 导致这条独立主行要么被挂到别的行上，要么被静默丢弃。
         val text = "$lrcxHeader\n" +
-            "[00:01.00]<1000,500>Hello\n" +
-            "[00:05.00]A line without verbatim data"
+                "[00:01.00]<1000,500>Hello\n" +
+                "[00:05.00]A line without verbatim data"
 
         val doc = KuwoLrcxParser.parse(text)
 
@@ -303,10 +303,10 @@ class ParserTest {
         // 内容为空**，被解析器丢弃。丢弃时若不留下时间戳痕迹，这条译文就找不到主行，
         // 会被当成"无逐字数据的独立主行"提升 —— 实测整首歌的最后一行变成了一句译文
         val text = "$lrcxHeader\n" +
-            "[00:01.00]<0,0>梦想成真\n" +
-            "[00:01.00]<1000,500>And we'll dream it possible\n" +
-            "[00:05.00]<0,0>我们期盼梦想成真\n" +
-            "[00:05.00]"
+                "[00:01.00]<0,0>梦想成真\n" +
+                "[00:01.00]<1000,500>And we'll dream it possible\n" +
+                "[00:05.00]<0,0>我们期盼梦想成真\n" +
+                "[00:05.00]"
 
         val doc = KuwoLrcxParser.parse(text)
 
@@ -477,7 +477,7 @@ class ParserTest {
         // 被拆出去，split() 直接返回 null —— 整份载荷退回通用解析库，
         // 而库正是会把译文留成独立歌词行的那个（见 CompanionSplitter 的类注释）。
         val text = "[00:20.699]第一次参观卢浮宫\n" +
-            "[00:20.699]<00:20.699>初<00:21.133>め<00:22.298>は <00:23.011>"
+                "[00:20.699]<00:20.699>初<00:21.133>め<00:22.298>は <00:23.011>"
 
         val split = CompanionSplitter.split(text)
 

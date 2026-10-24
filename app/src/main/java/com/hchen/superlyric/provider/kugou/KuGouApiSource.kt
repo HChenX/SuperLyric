@@ -96,8 +96,8 @@ class KuGouApiSource : LyricSource {
         }
 
         val searchedHash = searchBestHash(identity)
-            // 检索落空 ≠ 平台确定没有歌词：可能只是没匹配上，或报文结构变了。
-            // NoLyrics 允许下发纯音乐占位，误判一次就把有歌词的曲目钉死了
+        // 检索落空 ≠ 平台确定没有歌词：可能只是没匹配上，或报文结构变了。
+        // NoLyrics 允许下发纯音乐占位，误判一次就把有歌词的曲目钉死了
             ?: return LyricOutcome.TransientFailure(null)
 
         attempt(searchedHash, identity)?.let { return it }
@@ -173,7 +173,7 @@ class KuGouApiSource : LyricSource {
 
         val keyword = if (identity.artist.isBlank()) identity.title else "${identity.title} ${identity.artist}"
         val url = "http://mobilecdn.kugou.com/api/v3/search/song?format=json&page=1&pagesize=5&keyword=" +
-            URLEncoder.encode(keyword, StandardCharsets.UTF_8.name())
+                URLEncoder.encode(keyword, StandardCharsets.UTF_8.name())
 
         val json = get(url)
         val info = JSONObject(json).optJSONObject("data")?.optJSONArray("info") ?: return null
@@ -202,7 +202,7 @@ class KuGouApiSource : LyricSource {
                 candidateDurationMs,
             )
             candidates += "\"$candidateTitle\"/\"$candidateArtist\"/${candidateDurationMs / 1000}s" +
-                "=${score.roundTo1()} hash=$hash"
+                    "=${score.roundTo1()} hash=$hash"
             // 用 `>` 而不是 `>=`：同分时**采纳检索的排序首位**。
             // 酷狗曲库里同一首歌的不同版本会登记成完全相同的歌名/歌手/时长
             // （实测 NIGHT DANCER 的韩语版与日语原版三项逐字相同），打分器无从区分，
@@ -219,7 +219,7 @@ class KuGouApiSource : LyricSource {
         AndroidLog.logD(
             sourceName,
             "Candidates for \"$keyword\" (target \"${identity.title}\"/\"${identity.artist}\"/" +
-                "${identity.durationMs / 1000}s): ${candidates.joinToString(" | ").ifEmpty { "none" }}",
+                    "${identity.durationMs / 1000}s): ${candidates.joinToString(" | ").ifEmpty { "none" }}",
         )
 
         if (bestHash == null) {
@@ -241,9 +241,9 @@ class KuGouApiSource : LyricSource {
         if (id.isEmpty() || accessKey.isEmpty()) return null
 
         val downloadUrl = "http://krcs.kugou.com/download?ver=1&client=mobi" +
-            "&id=${URLEncoder.encode(id, StandardCharsets.UTF_8.name())}" +
-            "&accesskey=${URLEncoder.encode(accessKey, StandardCharsets.UTF_8.name())}" +
-            "&fmt=krc&charset=utf8"
+                "&id=${URLEncoder.encode(id, StandardCharsets.UTF_8.name())}" +
+                "&accesskey=${URLEncoder.encode(accessKey, StandardCharsets.UTF_8.name())}" +
+                "&fmt=krc&charset=utf8"
         val downloadJson = get(downloadUrl)
 
         return JSONObject(downloadJson).optString("content", "").ifEmpty { null }

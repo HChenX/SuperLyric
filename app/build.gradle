@@ -14,7 +14,7 @@ android {
     def hasReleaseSigning = signingPropertyNames.every { properties.getProperty(it)?.trim() }
     if (!hasReleaseSigning) {
         logger.warn('Release signing credentials are incomplete or local.properties is missing; release APKs will be built unsigned. ' +
-            'Define keyStoreFile, keyStorePassword, keyAlias, and keyAliasPassword to sign release builds.')
+                'Define keyStoreFile, keyStorePassword, keyAlias, and keyAliasPassword to sign release builds.')
     }
 
     signingConfigs {

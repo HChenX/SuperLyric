@@ -77,10 +77,14 @@ public final class LyricCacheStore {
     private static final String FRAME_SEPARATOR = ",\"d\":";
     private static final byte[] FRAME_HEAD_BYTES = FRAME_HEAD.getBytes(StandardCharsets.UTF_8);
     private static final byte[] FRAME_SEPARATOR_BYTES = FRAME_SEPARATOR.getBytes(StandardCharsets.UTF_8);
-    /** 帧的最小可能字节数：帧头 + 至少一位长度 + 分隔符 + 一个载荷字节 + 收尾 '}' */
+    /**
+     * 帧的最小可能字节数：帧头 + 至少一位长度 + 分隔符 + 一个载荷字节 + 收尾 '}'
+     */
     private static final long FRAME_MIN_BYTES =
         FRAME_HEAD_BYTES.length + 1L + FRAME_SEPARATOR_BYTES.length + 1L + 1L;
-    /** {@link #MAX_PAYLOAD_BYTES} 的十进制位数 */
+    /**
+     * {@link #MAX_PAYLOAD_BYTES} 的十进制位数
+     */
     private static final int MAX_LENGTH_DIGITS = String.valueOf(MAX_PAYLOAD_BYTES).length();
     /**
      * 帧的最大可能字节数：帧头 + 长度字段的最大位数 + 分隔符 + 上限载荷 + 收尾 '}'
@@ -287,15 +291,18 @@ public final class LyricCacheStore {
         while (cursor < data.length && data[cursor] >= '0' && data[cursor] <= '9') {
             declared = declared * 10 + (data[cursor] - '0');
             // 边解析边设界：定长读取，绝不会因为长度字段本身很长而溢出
-            if (declared > MAX_PAYLOAD_BYTES) return invalidFrame(reason, "declared length too large");
+            if (declared > MAX_PAYLOAD_BYTES)
+                return invalidFrame(reason, "declared length too large");
             cursor++;
             digits++;
         }
         if (digits == 0) return invalidFrame(reason, "missing length");
 
-        if (data.length - cursor < FRAME_SEPARATOR_BYTES.length) return invalidFrame(reason, "truncated separator");
+        if (data.length - cursor < FRAME_SEPARATOR_BYTES.length)
+            return invalidFrame(reason, "truncated separator");
         for (int i = 0; i < FRAME_SEPARATOR_BYTES.length; i++) {
-            if (data[cursor + i] != FRAME_SEPARATOR_BYTES[i]) return invalidFrame(reason, "bad separator");
+            if (data[cursor + i] != FRAME_SEPARATOR_BYTES[i])
+                return invalidFrame(reason, "bad separator");
         }
         cursor += FRAME_SEPARATOR_BYTES.length;
 

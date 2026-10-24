@@ -206,7 +206,7 @@ abstract class MusicProvider : AbsPublisher() {
         AndroidLog.logD(
             providerTag,
             "Provider ready for ${param.packageName}: hook=${hookSource?.sourceName ?: "none"}, " +
-                "api=${apiSource?.sourceName ?: "none"}",
+                    "api=${apiSource?.sourceName ?: "none"}",
         )
     }
 
@@ -343,7 +343,7 @@ abstract class MusicProvider : AbsPublisher() {
             AndroidLog.logD(
                 providerTag,
                 "Metadata changed: id=${identity.stableId}, title=\"${identity.title}\", " +
-                    "artist=\"${identity.artist}\", duration=${identity.durationMs}ms",
+                        "artist=\"${identity.artist}\", duration=${identity.durationMs}ms",
             )
         }
 
@@ -412,7 +412,7 @@ abstract class MusicProvider : AbsPublisher() {
             AndroidLog.logW(
                 providerTag,
                 "Seek simulator reached a process without host session/state " +
-                    "(session=${session != null}, state=${current != null})",
+                        "(session=${session != null}, state=${current != null})",
             )
             return
         }

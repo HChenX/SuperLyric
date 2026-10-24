@@ -146,9 +146,9 @@ class NeteaseApiSource : LyricSource {
         AndroidLog.logI(
             sourceName,
             "Fetched lyric for id=$songId, lines=${doc.lines.size}, " +
-                "wordTimed=${doc.lines.any { it.hasWords }}, " +
-                "translation=${doc.lines.any { it.hasTranslation }}, " +
-                "phonetic=${doc.lines.any { it.hasPhonetic }}"
+                    "wordTimed=${doc.lines.any { it.hasWords }}, " +
+                    "translation=${doc.lines.any { it.hasTranslation }}, " +
+                    "phonetic=${doc.lines.any { it.hasPhonetic }}"
         )
         return LyricOutcome.Success(doc)
     }
@@ -390,7 +390,7 @@ class NeteaseApiSource : LyricSource {
 
         const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
         val FORM_MEDIA_TYPE = "application/x-www-form-urlencoded; charset=utf-8".toMediaType()
 

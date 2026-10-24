@@ -159,7 +159,9 @@ public abstract class AbsPublisher extends AbsModule {
         }
     }
 
-    /** 发布失败后置位；下一次发布前重试注册，避免整轮歌词永久丢失。 */
+    /**
+     * 发布失败后置位；下一次发布前重试注册，避免整轮歌词永久丢失。
+     */
     private static void ensureRegistered() {
         if (!sNeedsReRegister) return;
         try {

@@ -116,7 +116,7 @@ object QrcParser {
     ) {
         override fun toString(): String =
             "long=$skippedLongLines, unmatched=$skippedUnmatchedLines, " +
-                "emptyWords=$emptyWords, xmlTags=$skippedXmlTags, truncated=$truncatedLines"
+                    "emptyWords=$emptyWords, xmlTags=$skippedXmlTags, truncated=$truncatedLines"
     }
 
     fun parse(text: String?, stats: ParseStats? = null): LyricDoc? {

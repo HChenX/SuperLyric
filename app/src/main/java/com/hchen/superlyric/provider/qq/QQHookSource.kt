@@ -134,7 +134,7 @@ class QQHookSource : HookLyricSource {
             AndroidLog.logD(
                 sourceName,
                 "Anchor for $songMid predates the track change (current $baseMid); " +
-                    "capturedMid updated, deferring the fetch to start()",
+                        "capturedMid updated, deferring the fetch to start()",
             )
             return
         }
@@ -178,7 +178,8 @@ class QQHookSource : HookLyricSource {
 
             if (outcome is LyricOutcome.Success ||
                 outcome is LyricOutcome.NoLyrics ||
-                outcome is LyricOutcome.Unsupported) {
+                outcome is LyricOutcome.Unsupported
+            ) {
                 // 终态也登记：宿主重建 LyricLoadBean 时不再重打一轮接口。
                 // TransientFailure 不登记，保留重试机会。
                 markDelivered(mid)

@@ -72,7 +72,9 @@ public final class MobileMusicAnchors {
     private static final String PLAYER_ANCHOR = "PlayerController initialize";
     private static final String VIEW_CACHE_KEY = "migu_lyric_view_v2";
 
-    /** 末尾空格是宿主字符串常量的一部分，精确匹配时必须保留 */
+    /**
+     * 末尾空格是宿主字符串常量的一部分，精确匹配时必须保留
+     */
     private static final String VIEW_ANCHOR = "treasure song Normal lyrics view apply skin mApplySkinChange = ";
 
     /**
@@ -179,7 +181,9 @@ public final class MobileMusicAnchors {
         }
     }
 
-    /** 取词会话可能晚于歌词回调建立，故还要允许主动读取当前完整快照 */
+    /**
+     * 取词会话可能晚于歌词回调建立，故还要允许主动读取当前完整快照
+     */
     @Nullable
     public Capture readCurrent() throws ReflectiveOperationException {
         if (!installed) return null;
@@ -324,7 +328,9 @@ public final class MobileMusicAnchors {
         }
     }
 
-    /** 按 Song 实例缓存首次选中的 getter，避免宿主分步填充时 stableId 在两种表示法之间抖动 */
+    /**
+     * 按 Song 实例缓存首次选中的 getter，避免宿主分步填充时 stableId 在两种表示法之间抖动
+     */
     private static final Map<Object, String> STABLE_IDS =
         Collections.synchronizedMap(new WeakHashMap<>());
 
@@ -371,7 +377,8 @@ public final class MobileMusicAnchors {
         if (song == other) return true;
         for (String getter : List.of("getSongId", "getContentId", "getLocalPathMd5")) {
             String value = string(invoke(song, getter));
-            if (!value.trim().isEmpty() && Objects.equals(value, invoke(other, getter))) return true;
+            if (!value.trim().isEmpty() && Objects.equals(value, invoke(other, getter)))
+                return true;
         }
         return false;
     }
@@ -385,7 +392,8 @@ public final class MobileMusicAnchors {
             return found;
         });
         Method method = methods.get(getter);
-        if (method == null) throw new NoSuchMethodException(target.getClass().getName() + "." + getter);
+        if (method == null)
+            throw new NoSuchMethodException(target.getClass().getName() + "." + getter);
         return method.invoke(target);
     }
 

@@ -66,7 +66,7 @@ public final class LyricScorer {
     );
     /**
      * 标题<b>末尾</b>的括号段（中英文四种括号），捕获组为括号内容。
-     *
+     * <p>
      * 版本标记（伴奏 / Live / remix …）<b>不在这里剥离</b>：它们决定“这是另一版”，
      * 见 {@link #variantMismatch}。中文曲库里更常见的是<b>译名</b>：
      * 宿主上报 {@code 未来へ (向着未来)}，平台曲库却是 {@code 未来へ}。
@@ -300,14 +300,14 @@ public final class LyricScorer {
 
     /**
      * 歌名维度权重
-     *
+     * <p>
      * 最高的一档：它是最强的判据，也是<b>版本判别的唯一依据</b>（见 {@link #stripTranslatedSuffix}）。
      */
     private static final double TITLE_WEIGHT = 50.0;
 
     /**
      * 歌手维度权重
-     *
+     * <p>
      * 低于歌名：宿主上报的歌手字段既可能为空、也可能被写进歌词行之类的内容，
      * 真正可用的机会本就更少。
      */
@@ -315,18 +315,20 @@ public final class LyricScorer {
 
     /**
      * 时长维度权重
-     *
+     * <p>
      * 最低的一档：它最客观，但也最容易被"试听片段 / 流的长度"带偏，
      * 因此只该作为旁证，不该能否决另一侧的证据。
      */
     private static final double DURATION_WEIGHT = 20.0;
 
-    /** 歌名相似度下限；低于它直接判 0，不再看其它维度 */
+    /**
+     * 歌名相似度下限；低于它直接判 0，不再看其它维度
+     */
     private static final double MIN_TITLE_SIMILARITY = 0.3;
 
     /**
      * 目标侧可用维度不足两个时的得分上限
-     *
+     * <p>
      * 刻意压在采纳线之下：一个维度定不了身份（`Intro`、`Interlude` 这类同名曲目遍地都是），
      * 这正是 §3.5「不得只凭歌名推断曲目身份」在打分器里的落点。
      */

@@ -38,6 +38,7 @@ class LyricOrchestratorTest {
 
     private class FakeScheduler : Scheduler {
         private class Entry(val task: () -> Unit)
+
         private val entries = ArrayList<Entry>()
 
         override fun schedule(delayMs: Long, task: () -> Unit): Cancellable {

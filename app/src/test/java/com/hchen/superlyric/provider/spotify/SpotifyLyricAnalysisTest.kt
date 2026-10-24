@@ -107,7 +107,7 @@ class SpotifyLyricAnalysisTest {
     fun `byte entry honours UTF-8 BOM before the JSON branch`() {
         val json = """{"lyrics":{"lines":[{"startTimeMs":"1000","words":"hello","syllables":[]}]}}"""
         val withBom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) +
-            json.toByteArray(Charsets.UTF_8)
+                json.toByteArray(Charsets.UTF_8)
 
         val lines = SpotifyLyricAnalysis.parseLyrics(withBom)
 
@@ -115,8 +115,6 @@ class SpotifyLyricAnalysisTest {
         assertEquals(1, lines!!.size)
         assertEquals(1_000L, lines[0].startTimeMs)
     }
-
-
 
 
     @Test

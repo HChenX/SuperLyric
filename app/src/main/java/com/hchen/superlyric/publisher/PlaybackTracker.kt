@@ -231,7 +231,7 @@ class PlaybackTracker @JvmOverloads constructor(
         AndroidLog.logD(
             TAG,
             "Advance line [$index/${current.lines.size}] at ${positionMs}ms: " +
-                "\"${current.lines[index].text}\""
+                    "\"${current.lines[index].text}\""
         )
         listener?.onProgressAdvance(index, payload)
     }

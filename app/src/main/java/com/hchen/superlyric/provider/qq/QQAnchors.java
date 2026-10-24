@@ -47,7 +47,7 @@ import java.util.regex.Pattern;
  * QQ 音乐 20.9+ 的歌词行/词模型位于 {@code com.lyricengine.base.*}，深度混淆且结构随版本变动，
  * 是"末端反射"路线的典型陷阱。但无论模型怎么改，宿主都必须先把
  * {@code LyricLoadBean}（含 {@code SongInfo}）交给歌词引擎——这个构造入口是稳定的。
- *
+ * <p>
  * 因此本层<b>只做一件事</b>：拦截该构造器，取出 {@code songMID} / {@code songID}。
  * 歌词本身由模块自行向官方接口拉取原生 QRC 报文并解密，
  * 与宿主内部模型彻底解耦——宿主改一次模型，本层不受影响。
@@ -63,7 +63,9 @@ public final class QQAnchors {
 
     private static final String CACHE_KEY = "qqmusic_lyric_load_bean_class";
 
-    /** 锚点：该构造器 {@code toString()} 的固定格式串。 */
+    /**
+     * 锚点：该构造器 {@code toString()} 的固定格式串。
+     */
     private static final String ANCHOR = "LyricLoadBean(songInfo=";
 
     private static final String TARGET_PROCESS_SUFFIX = ":QQPlayerService";
@@ -72,14 +74,18 @@ public final class QQAnchors {
     private static final Pattern ID_PATTERN = Pattern.compile("id=(\\d+)");
     private static final Pattern NAME_PATTERN = Pattern.compile("name=([^,]+)");
 
-    /** {@code shortMessage()} 中的紧凑格式：id=… name=… singer=… tmpPlayKey=… */
+    /**
+     * {@code shortMessage()} 中的紧凑格式：id=… name=… singer=… tmpPlayKey=…
+     */
     private static final Pattern SHORT_MESSAGE_PATTERN = Pattern.compile(
         "id\\s*=\\s*(\\d+).*?name\\s*=\\s*(.*?)\\s+singer\\s*=\\s*(.*?)\\s+tmpPlayKey\\s*="
     );
 
     private static volatile boolean sInstalled;
 
-    /** 上一次已输出的原始串，用于抑制宿主的重复构造刷屏。 */
+    /**
+     * 上一次已输出的原始串，用于抑制宿主的重复构造刷屏。
+     */
     private static volatile String sLastRawToString;
     private static volatile String sLastRawShortMessage;
     private static volatile String sLastExtracted;
@@ -87,7 +93,9 @@ public final class QQAnchors {
     private QQAnchors() {
     }
 
-    /** 取回当前曲目标识时的回调。 */
+    /**
+     * 取回当前曲目标识时的回调。
+     */
     public interface SongInfoListener {
         void onSongInfo(@NonNull String songMid, long songId, @NonNull String title, @NonNull String artist);
     }
@@ -153,7 +161,7 @@ public final class QQAnchors {
 
     /**
      * 首参是否为宿主曲目信息类型。
-     *
+     * <p>
      * 这里出现的 {@code SongInfo} 是宿主的<b>业务类名</b>（非混淆产物），跨版本稳定；
      * 判据用后缀匹配以容忍包路径调整。
      */
@@ -163,7 +171,9 @@ public final class QQAnchors {
         return "SongInfo".equals(name) || name.endsWith(".SongInfo");
     }
 
-    /** 输出候选构造器清单，用于核对"到底挂了哪一个"。 */
+    /**
+     * 输出候选构造器清单，用于核对"到底挂了哪一个"。
+     */
     private static void dumpConstructors(@NonNull Class<?> beanClass) {
         StringBuilder builder = new StringBuilder();
         for (Constructor<?> constructor : beanClass.getDeclaredConstructors()) {
@@ -281,7 +291,8 @@ public final class QQAnchors {
         if (text.isEmpty() || text.length() > 80) return false;
         if (text.startsWith("http://") || text.startsWith("https://")) return false;
         if (text.contains("\n") || text.contains("\r") || text.contains("\t")) return false;
-        if ("未知歌手".equals(text) || "未知专辑".equals(text) || "null".equalsIgnoreCase(text)) return false;
+        if ("未知歌手".equals(text) || "未知专辑".equals(text) || "null".equalsIgnoreCase(text))
+            return false;
         if (text.length() >= 16 && text.matches("^[0-9A-Fa-f]+$")) return false;
         char first = text.charAt(0);
         return first != '{' && first != '[' && first != '<';

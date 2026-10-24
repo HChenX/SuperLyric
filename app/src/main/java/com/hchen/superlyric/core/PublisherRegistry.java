@@ -34,7 +34,9 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
-/** 发布者进程、世代与按包会话的状态仓库。 */
+/**
+ * 发布者进程、世代与按包会话的状态仓库。
+ */
 final class PublisherRegistry {
 
     static final int NO_PID = 0;
@@ -182,7 +184,9 @@ final class PublisherRegistry {
         }
     }
 
-    /** 单个应用的最新歌词与播放状态。 */
+    /**
+     * 单个应用的最新歌词与播放状态。
+     */
     static final class Session {
         @NonNull
         final String packageName;

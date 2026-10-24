@@ -67,8 +67,8 @@ class QQApiSource : LyricSource {
         }
 
         val candidate = QQNetwork.searchBest(identity)
-            // 检索落空 ≠ 平台确定没有歌词：可能只是没匹配上，或报文结构变了。
-            // NoLyrics 允许下发纯音乐占位，误判一次就把有歌词的曲目钉死了
+        // 检索落空 ≠ 平台确定没有歌词：可能只是没匹配上，或报文结构变了。
+        // NoLyrics 允许下发纯音乐占位，误判一次就把有歌词的曲目钉死了
             ?: return LyricOutcome.TransientFailure(null)
 
         AndroidLog.logI(sourceName, "Matched candidate mid=${candidate.first}")

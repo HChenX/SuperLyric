@@ -27,7 +27,7 @@ class PowerampTextDecoderTest {
     @Test
     fun `utf8 bom is stripped`() {
         val bytes = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) +
-            "你好".toByteArray(Charsets.UTF_8)
+                "你好".toByteArray(Charsets.UTF_8)
 
         assertEquals("你好", PowerampTextDecoder.decode(bytes))
     }
@@ -42,7 +42,7 @@ class PowerampTextDecoderTest {
     @Test
     fun `utf16le bom is honoured`() {
         val bytes = byteArrayOf(0xFF.toByte(), 0xFE.toByte()) +
-            "hello".toByteArray(Charsets.UTF_16LE)
+                "hello".toByteArray(Charsets.UTF_16LE)
 
         assertEquals("hello", PowerampTextDecoder.decode(bytes))
     }

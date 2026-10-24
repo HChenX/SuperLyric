@@ -57,7 +57,9 @@ public final class BodianAnchors {
 
     private static final String CACHE_KEY = "bodian_lyrics_runner_class_v1";
 
-    /** 锚点：Flutter 桥接层的类名，跨版本稳定。 */
+    /**
+     * 锚点：Flutter 桥接层的类名，跨版本稳定。
+     */
     private static final String ANCHOR = "LyricsRunner4Flutter";
 
     private static volatile boolean sInstalled;
@@ -65,7 +67,9 @@ public final class BodianAnchors {
     private BodianAnchors() {
     }
 
-    /** 截获到歌词文件路径（或确认没有）时的回调。 */
+    /**
+     * 截获到歌词文件路径（或确认没有）时的回调。
+     */
     public interface LyricFileListener {
         /**
          * @param filePath 本地歌词文件路径；为空表示宿主本次没有歌词

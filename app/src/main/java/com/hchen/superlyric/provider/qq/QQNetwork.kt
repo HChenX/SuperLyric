@@ -243,8 +243,10 @@ internal object QQNetwork {
             json = runCatching { post(url, payload.toString(), ANDROID_UA) }.getOrNull()
             if (json != null) break
         }
-        val body = json?.let { JSONObject(it).optJSONObject("req_0")?.optJSONObject("data")
-            ?.optJSONObject("body") } ?: return null
+        val body = json?.let {
+            JSONObject(it).optJSONObject("req_0")?.optJSONObject("data")
+                ?.optJSONObject("body")
+        } ?: return null
 
         val songs: JSONArray = body.optJSONArray("item_song")
             ?: body.optJSONObject("song")?.optJSONArray("list")
@@ -342,8 +344,8 @@ internal object QQNetwork {
         AndroidLog.logI(
             TAG,
             "Fetched QRC: lines=${doc.lines.size}, " +
-                "translation=${doc.lines.any { it.hasTranslation }}, " +
-                "phonetic=${doc.lines.any { it.hasPhonetic }}"
+                    "translation=${doc.lines.any { it.hasTranslation }}, " +
+                    "phonetic=${doc.lines.any { it.hasPhonetic }}"
         )
         return LyricOutcome.Success(doc)
     }

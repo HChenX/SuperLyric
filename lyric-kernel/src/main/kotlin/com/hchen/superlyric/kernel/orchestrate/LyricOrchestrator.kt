@@ -158,31 +158,45 @@ class LyricOrchestrator(
 
     private var epoch: Long
         get() = track.epoch
-        set(value) { track.epoch = value }
+        set(value) {
+            track.epoch = value
+        }
 
     private var currentIdentity: TrackIdentity?
         get() = track.identity
-        set(value) { track.identity = value }
+        set(value) {
+            track.identity = value
+        }
 
     private var currentSinceMs: Long
         get() = track.startedAtMs
-        set(value) { track.startedAtMs = value }
+        set(value) {
+            track.startedAtMs = value
+        }
 
     private var apiAttempts: Int
         get() = track.apiAttempts
-        set(value) { track.apiAttempts = value }
+        set(value) {
+            track.apiAttempts = value
+        }
 
     private var hookDelivered: Boolean
         get() = track.hookDelivered
-        set(value) { track.hookDelivered = value }
+        set(value) {
+            track.hookDelivered = value
+        }
 
     private var apiDelivered: Boolean
         get() = track.apiDelivered
-        set(value) { track.apiDelivered = value }
+        set(value) {
+            track.apiDelivered = value
+        }
 
     private var hookTimeout: Cancellable?
         get() = track.hookTimeout
-        set(value) { track.hookTimeout = value }
+        set(value) {
+            track.hookTimeout = value
+        }
 
     @Volatile
     var state: State = State.IDLE
@@ -349,7 +363,7 @@ class LyricOrchestrator(
         if (age < 0L || age > config.provisionalGraceMs) return false
 
         return TrackIdentity.artistCompatible(current.artist, next.artist) &&
-            TrackIdentity.durationCompatible(current.durationMs, next.durationMs)
+                TrackIdentity.durationCompatible(current.durationMs, next.durationMs)
     }
 
     private fun planHookCaptured(capturedEpoch: Long, outcome: LyricOutcome): Plan? {

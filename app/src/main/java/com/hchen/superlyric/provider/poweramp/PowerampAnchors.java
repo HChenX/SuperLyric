@@ -70,14 +70,18 @@ public final class PowerampAnchors {
 
     private static final String ENGINE_CACHE_KEY = "poweramp_lrc_engine_v1";
 
-    /** LrcParser 打开文件失败时的日志串，跨版本稳定。 */
+    /**
+     * LrcParser 打开文件失败时的日志串，跨版本稳定。
+     */
     private static final String ENGINE_ANCHOR = "Failed to open or read LRC path=";
 
     private static final String TAG_AND_META = "com.maxmpz.audioplayer.scanner.TagAndMeta";
     private static final String LYRICS_ACTIVITY = "com.maxmpz.audioplayer.dialogs.LyricsActivity";
     private static final String REST_PROVIDER = "com.maxmpz.audioplayer.rest.RestProvider";
 
-    /** 单份歌词的捕获上限；超过它多半不是歌词文本。 */
+    /**
+     * 单份歌词的捕获上限；超过它多半不是歌词文本。
+     */
     private static final int MAX_LYRIC_BYTES = 2 * 1024 * 1024;
 
     private static final Set<String> sSeen = ConcurrentHashMap.newKeySet();
@@ -120,13 +124,17 @@ public final class PowerampAnchors {
      * 预加载的下一首歌词算到当前曲目头上。
      */
     private static final ThreadLocal<Boolean> sHostParse = new ThreadLocal<>();
-    /** 本次主动调用宿主解析器时，open 钩子是否真的交付了文本 */
+    /**
+     * 本次主动调用宿主解析器时，open 钩子是否真的交付了文本
+     */
     private static final ThreadLocal<Boolean> sCaptureDelivered = ThreadLocal.withInitial(() -> false);
 
     private PowerampAnchors() {
     }
 
-    /** 取到候选歌词文本时的回调。 */
+    /**
+     * 取到候选歌词文本时的回调。
+     */
     public interface LyricsListener {
         /**
          * @param source     命中点，仅用于诊断
@@ -155,7 +163,9 @@ public final class PowerampAnchors {
         retryAnchors();
     }
 
-    /** 逐个点位重试；已成功的点位不会重复挂。 */
+    /**
+     * 逐个点位重试；已成功的点位不会重复挂。
+     */
     public static void retryAnchors() {
         LyricsListener listener = sListener;
         if (listener == null) return;
@@ -194,7 +204,9 @@ public final class PowerampAnchors {
         }
     }
 
-    /** 宿主当前打开的数据库连接；未就绪时为 null。 */
+    /**
+     * 宿主当前打开的数据库连接；未就绪时为 null。
+     */
     @Nullable
     public static SQLiteDatabase getDatabase() {
         return sDatabase;
@@ -317,7 +329,9 @@ public final class PowerampAnchors {
         }
     }
 
-    /** 读尽输入流；超过上限返回 null。**不关闭**入参：宿主之后还要用它。 */
+    /**
+     * 读尽输入流；超过上限返回 null。**不关闭**入参：宿主之后还要用它。
+     */
     @Nullable
     private static byte[] readAll(@NonNull InputStream input) {
         try {
@@ -530,7 +544,9 @@ public final class PowerampAnchors {
             fieldString(tag, "album"), fieldLong(tag, "durationMS"), "");
     }
 
-    /** 把 SYLT 的两个平行数组还原成标准 LRC，复用内核已有的 LRC 解析器。 */
+    /**
+     * 把 SYLT 的两个平行数组还原成标准 LRC，复用内核已有的 LRC 解析器。
+     */
     @NonNull
     private static String buildLrcFromSync(@Nullable Object tag) {
         Object linesValue = field(tag, "syncLyricsLines");
@@ -556,7 +572,9 @@ public final class PowerampAnchors {
 
     // ---------------------------------------------------------------- 工具
 
-    /** 任何探测异常都必须留在本模块内，绝不能传进宿主进程。 */
+    /**
+     * 任何探测异常都必须留在本模块内，绝不能传进宿主进程。
+     */
     private static void safe(@NonNull Runnable action) {
         try {
             action.run();

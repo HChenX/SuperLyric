@@ -48,11 +48,20 @@ class MobileMusicAnchorsTest {
     private val retainedViews = ArrayList<OffsetView>()
 
     class Manager {
-        @JvmField var song = Song("A")
-        @JvmField var parser: Parser? = null
-        @JvmField var mrc = false
-        @JvmField val lines = emptyList<Any>()
-        @JvmField val translations = emptyList<Any>()
+        @JvmField
+        var song = Song("A")
+
+        @JvmField
+        var parser: Parser? = null
+
+        @JvmField
+        var mrc = false
+
+        @JvmField
+        val lines = emptyList<Any>()
+
+        @JvmField
+        val translations = emptyList<Any>()
 
         fun isStaticLrc() = false
     }
@@ -60,8 +69,11 @@ class MobileMusicAnchorsTest {
     companion object {
         private lateinit var manager: Manager
 
-        @JvmStatic fun getManager() = manager
-        @JvmStatic fun getSong() = manager.song
+        @JvmStatic
+        fun getManager() = manager
+
+        @JvmStatic
+        fun getSong() = manager.song
     }
 
     private fun anchors(): MobileMusicAnchors {

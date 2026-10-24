@@ -40,7 +40,9 @@ public final class LauncherIconController {
     private LauncherIconController() {
     }
 
-    /** 桌面图标当前是否被隐藏。 */
+    /**
+     * 桌面图标当前是否被隐藏。
+     */
     public static boolean isHidden(@NonNull Context context) {
         ComponentName alias = new ComponentName(context, ALIAS_CLASS);
         return context.getPackageManager().getComponentEnabledSetting(alias)

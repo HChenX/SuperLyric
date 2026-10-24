@@ -49,7 +49,7 @@ class LyricPublishBridge : LyricOrchestrator.Listener {
         AndroidLog.logI(
             TAG,
             "Track changed: id=${identity.stableId}, title=\"${identity.title}\", " +
-                "artist=\"${identity.artist}\", duration=${identity.durationMs}ms"
+                    "artist=\"${identity.artist}\", duration=${identity.durationMs}ms"
         )
         // 旧歌词立刻作废，空窗期由客户端自行呈现
         AndroidLog.logI(TAG, "Clearing previous lyric for the new track")
@@ -61,9 +61,9 @@ class LyricPublishBridge : LyricOrchestrator.Listener {
         AndroidLog.logI(
             TAG,
             "Publishing full lyric: lyricId=${doc.lyricId}, lines=${doc.lines.size}, " +
-                "span=[${doc.firstStartMs}ms..${doc.lastEndMs}ms], " +
-                "hasWords=${doc.lines.any { it.hasWords }}, " +
-                "hasTranslation=${doc.lines.any { it.hasTranslation }}"
+                    "span=[${doc.firstStartMs}ms..${doc.lastEndMs}ms], " +
+                    "hasWords=${doc.lines.any { it.hasWords }}, " +
+                    "hasTranslation=${doc.lines.any { it.hasTranslation }}"
         )
         AbsPublisher.publishFullLyric(LyricDocAdapter.toFullData(doc).also {
             LyricDiag.dumpData("Publish", it)
@@ -75,7 +75,7 @@ class LyricPublishBridge : LyricOrchestrator.Listener {
         AndroidLog.logI(
             TAG,
             "Platform/host reported no lyric; publishing instrumental placeholder for " +
-                "id=${identity?.stableId}"
+                    "id=${identity?.stableId}"
         )
         val doc = PureMusicDoc.create(
             title = identity?.title.orEmpty(),
@@ -93,7 +93,7 @@ class LyricPublishBridge : LyricOrchestrator.Listener {
         AndroidLog.logW(
             TAG,
             "Lyric fetch failed and retries are exhausted for id=${identity?.stableId}; " +
-                "keeping the current display untouched"
+                    "keeping the current display untouched"
         )
     }
 

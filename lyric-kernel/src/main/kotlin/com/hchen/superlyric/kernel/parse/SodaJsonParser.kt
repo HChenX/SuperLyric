@@ -269,6 +269,7 @@ object SodaJsonParser {
                     depth++
                     if (depth > MAX_JSON_DEPTH) return true
                 }
+
                 '}', ']' -> if (depth > 0) depth--
             }
         }

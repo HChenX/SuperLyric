@@ -116,8 +116,8 @@ class SpotifyApiSource : LyricSource {
                 AndroidLog.logI(
                     sourceName,
                     "Fetched lyric for $trackId, lines=${doc.lines.size}, " +
-                        "wordTimed=${doc.lines.any { it.hasWords }}, " +
-                        "phonetic=${doc.lines.any { it.hasPhonetic }}"
+                            "wordTimed=${doc.lines.any { it.hasWords }}, " +
+                            "phonetic=${doc.lines.any { it.hasPhonetic }}"
                 )
                 return LyricOutcome.Success(doc)
             } catch (e: LyricNotFoundException) {

@@ -167,7 +167,7 @@ class MainActivity : ComponentActivity() {
                 // 不要用 registerPublisher() 当探针：API 3.7 内部会吞掉异常并直接返回，
                 // 既拿不到原因，还会把 UI 进程注册成 publisher。
                 unavailableReason = "SuperLyric service is not available. " +
-                    "Install/enable the module and reboot the device."
+                        "Install/enable the module and reboot the device."
                 showUnavailable = true
             }
         }
@@ -364,4 +364,4 @@ class MainActivity : ComponentActivity() {
         NavigationItemData(UIConstants.API_PAGE_INDEX, R.string.api, MiuixIcons.Music),
         NavigationItemData(UIConstants.ABOUT_PAGE_INDEX, R.string.about, MiuixIcons.Info)
     )
-}
+}

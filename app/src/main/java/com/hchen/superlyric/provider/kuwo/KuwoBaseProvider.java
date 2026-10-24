@@ -58,7 +58,9 @@ import com.hchen.superlyric.provider.kugou.KuGouApiSource;
  */
 abstract class KuwoBaseProvider extends MusicProvider {
 
-    /** 稳定标识的命名空间；两个变体共用，rid 在平台内唯一 */
+    /**
+     * 稳定标识的命名空间；两个变体共用，rid 在平台内唯一
+     */
     private static final String NAMESPACE = "kuwo";
 
     private final String providerTag;

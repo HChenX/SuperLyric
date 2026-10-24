@@ -42,6 +42,6 @@ object UIConstants {
     fun isWideScreen(widthDp: Float, heightDp: Float): Boolean {
         if (widthDp >= WIDE_SCREEN_THRESHOLD.value) return true
         return widthDp >= MEDIUM_WIDTH_THRESHOLD.value &&
-            (heightDp / widthDp) < PORTRAIT_ASPECT_RATIO_THRESHOLD
+                (heightDp / widthDp) < PORTRAIT_ASPECT_RATIO_THRESHOLD
     }
 }

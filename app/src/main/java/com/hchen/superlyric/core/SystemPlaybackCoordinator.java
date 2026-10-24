@@ -35,7 +35,9 @@ import com.hchen.superlyricapi.SuperLyricData;
 
 import java.util.concurrent.ConcurrentHashMap;
 
-/** 系统播放时钟、监听器、停止判定与回调编排。 */
+/**
+ * 系统播放时钟、监听器、停止判定与回调编排。
+ */
 final class SystemPlaybackCoordinator {
 
     private static final String TAG = "SuperLyricService";

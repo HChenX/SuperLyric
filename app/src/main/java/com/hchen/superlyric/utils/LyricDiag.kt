@@ -141,8 +141,8 @@ object LyricDiag {
         log(
             source,
             "DOC-SUMMARY lines=${doc.lines.size} span=[${doc.firstStartMs}..${doc.lastEndMs}] " +
-                "words=${doc.lines.count { it.hasWords }} trans=${doc.lines.count { it.hasTranslation }} " +
-                "phon=${doc.lines.count { it.hasPhonetic }} head=[$head]",
+                    "words=${doc.lines.count { it.hasWords }} trans=${doc.lines.count { it.hasTranslation }} " +
+                    "phon=${doc.lines.count { it.hasPhonetic }} head=[$head]",
         )
     }
 
@@ -156,10 +156,10 @@ object LyricDiag {
         log(
             source,
             "=== REQUEST === format=${request.format} bytes=${request.bytes?.size ?: 0} " +
-                "text=${request.text?.length ?: 0} trans=${request.translationText?.length ?: 0} " +
-                "phon=${request.phoneticText?.length ?: 0} title=\"${request.title}\" " +
-                "artist=\"${request.artist}\" album=\"${request.album}\" " +
-                "duration=${request.durationMs} lyricId=${request.lyricId}",
+                    "text=${request.text?.length ?: 0} trans=${request.translationText?.length ?: 0} " +
+                    "phon=${request.phoneticText?.length ?: 0} title=\"${request.title}\" " +
+                    "artist=\"${request.artist}\" album=\"${request.album}\" " +
+                    "duration=${request.durationMs} lyricId=${request.lyricId}",
         )
 
         request.bytes?.takeIf { it.isNotEmpty() }?.let { dumpBytes(source, "RAW-BYTES", it) }
@@ -185,11 +185,11 @@ object LyricDiag {
         log(
             source,
             "=== DOC === title=\"${doc.title}\" artist=\"${doc.artist}\" album=\"${doc.album}\" " +
-                "duration=${doc.durationMs} lyricId=${doc.lyricId} lines=${doc.lines.size} " +
-                "span=[${doc.firstStartMs}..${doc.lastEndMs}] " +
-                "anyWords=${doc.lines.any { it.hasWords }} " +
-                "anyTrans=${doc.lines.any { it.hasTranslation }} " +
-                "anyPhon=${doc.lines.any { it.hasPhonetic }}",
+                    "duration=${doc.durationMs} lyricId=${doc.lyricId} lines=${doc.lines.size} " +
+                    "span=[${doc.firstStartMs}..${doc.lastEndMs}] " +
+                    "anyWords=${doc.lines.any { it.hasWords }} " +
+                    "anyTrans=${doc.lines.any { it.hasTranslation }} " +
+                    "anyPhon=${doc.lines.any { it.hasPhonetic }}",
         )
 
         val builder = StringBuilder(64 * doc.lines.size)
@@ -215,10 +215,10 @@ object LyricDiag {
         log(
             source,
             "=== PUBLISH DATA === title=\"${data.title}\" artist=\"${data.artist}\" " +
-                "album=\"${data.album}\" lyricId=${data.lyricId} duration=${data.duration} " +
-                "position=${data.position} index=${data.currentLyricIndex} " +
-                "allLyrics=${lines?.size ?: 0} fullPayload=${data.isFullPayload} " +
-                "deltaPayload=${data.isDeltaPayload}",
+                    "album=\"${data.album}\" lyricId=${data.lyricId} duration=${data.duration} " +
+                    "position=${data.position} index=${data.currentLyricIndex} " +
+                    "allLyrics=${lines?.size ?: 0} fullPayload=${data.isFullPayload} " +
+                    "deltaPayload=${data.isDeltaPayload}",
         )
 
         val builder = StringBuilder(64 * (lines?.size ?: 0))
@@ -328,7 +328,7 @@ object LyricDiag {
     private fun textOf(metadata: android.media.MediaMetadata, key: String): String? {
         val bundle = BUNDLE_FIELD
             ?.let { field -> runCatching { field.get(metadata) }.getOrNull() }
-            as? android.os.Bundle
+                as? android.os.Bundle
         if (bundle == null) return runCatching { metadata.getText(key)?.toString() }.getOrNull()
         return (bundle.get(key) as? CharSequence)?.toString()
     }
@@ -445,10 +445,10 @@ object LyricDiag {
         }
         // krc1 魔数：密文前 4 字节为 'krc1'
         val krc = bytes.size >= 4 &&
-            bytes[0] == 'k'.code.toByte() &&
-            bytes[1] == 'r'.code.toByte() &&
-            bytes[2] == 'c'.code.toByte() &&
-            bytes[3] == '1'.code.toByte()
+                bytes[0] == 'k'.code.toByte() &&
+                bytes[1] == 'r'.code.toByte() &&
+                bytes[2] == 'c'.code.toByte() &&
+                bytes[3] == '1'.code.toByte()
         return "head=\"$magic\" looksLikeKrc=$krc"
     }
 

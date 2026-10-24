@@ -100,7 +100,9 @@ public final class KuwoAnchors {
      */
     private static final String KEY_PARSER_METHODS = "kuwo_parser_methods_v2";
 
-    /** 解密入口的缓存键 */
+    /**
+     * 解密入口的缓存键
+     */
     private static final String KEY_DECRYPT_METHODS = "kuwo_decrypt_methods_v2";
 
     /**
@@ -112,7 +114,9 @@ public final class KuwoAnchors {
      */
     private static final String KEY_LYRIC_PACKAGE = "kuwo_lyric_module_anchor_v1";
 
-    /** 包内类列表的缓存键前缀；后接包名，避免不同包共用同一键 */
+    /**
+     * 包内类列表的缓存键前缀；后接包名，避免不同包共用同一键
+     */
     private static final String KEY_PACKAGE_CLASSES = "kuwo_pkg_classes_";
 
     /**
@@ -141,7 +145,9 @@ public final class KuwoAnchors {
     private KuwoAnchors() {
     }
 
-    /** 取到明文歌词时的回调。 */
+    /**
+     * 取到明文歌词时的回调。
+     */
     public interface LyricTextListener {
         /**
          * @param lyricText 明文歌词全文；LRCX 或普通 LRC
@@ -149,7 +155,9 @@ public final class KuwoAnchors {
         void onLyricText(@NonNull String lyricText);
     }
 
-    /** 宿主当前曲目回调。 */
+    /**
+     * 宿主当前曲目回调。
+     */
     public interface TrackListener {
         /**
          * @param rid    宿主曲目标识
@@ -475,7 +483,9 @@ public final class KuwoAnchors {
         return found;
     }
 
-    /** 是否为取词入口：参数形如 {@code (Music, boolean, Music)} */
+    /**
+     * 是否为取词入口：参数形如 {@code (Music, boolean, Music)}
+     */
     private static boolean isTrackEntry(@NonNull Executable member) {
         Class<?>[] params = member.getParameterTypes();
         if (params.length != 3) return false;

@@ -81,15 +81,15 @@ data class LyricRequest @JvmOverloads constructor(
         if (this === other) return true
         if (other !is LyricRequest) return false
         return format == other.format &&
-            bytes.contentEquals(other.bytes) &&
-            text == other.text &&
-            translationText == other.translationText &&
-            phoneticText == other.phoneticText &&
-            title == other.title &&
-            artist == other.artist &&
-            album == other.album &&
-            durationMs == other.durationMs &&
-            lyricId == other.lyricId
+                bytes.contentEquals(other.bytes) &&
+                text == other.text &&
+                translationText == other.translationText &&
+                phoneticText == other.phoneticText &&
+                title == other.title &&
+                artist == other.artist &&
+                album == other.album &&
+                durationMs == other.durationMs &&
+                lyricId == other.lyricId
     }
 
     override fun hashCode(): Int {

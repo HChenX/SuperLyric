@@ -224,25 +224,25 @@ public final class HookEntrance extends ModuleEntrance {
         }
         List<String> systemModules = HookMaps.ON_SYSTEM_STARTING.get("system");
         if (systemModules != null) for (String path : systemModules) {
-                AbsModule module;
-                try {
-                    module = (AbsModule) HookEntrance.class.getClassLoader()
-                        .loadClass(path)
-                        .getDeclaredConstructor()
-                        .newInstance();
-                } catch (Throwable t) {
-                    // 同 packageReady：静态初始化失败抛的是 Error，只接反射异常会漏掉它
-                    AndroidLog.logE(TAG, "Failed to load module " + path + "; skipping it", t);
-                    continue;
-                }
-
-                try {
-                    module.handleSystemServerStarting(param);
-                } catch (Throwable t) {
-                    // 同 packageReady：模块自己的代码抛什么都不能把异常抛回框架
-                    AndroidLog.logE(TAG, "Module " + path + " failed during system start; skipping it", t);
-                }
+            AbsModule module;
+            try {
+                module = (AbsModule) HookEntrance.class.getClassLoader()
+                    .loadClass(path)
+                    .getDeclaredConstructor()
+                    .newInstance();
+            } catch (Throwable t) {
+                // 同 packageReady：静态初始化失败抛的是 Error，只接反射异常会漏掉它
+                AndroidLog.logE(TAG, "Failed to load module " + path + "; skipping it", t);
+                continue;
             }
+
+            try {
+                module.handleSystemServerStarting(param);
+            } catch (Throwable t) {
+                // 同 packageReady：模块自己的代码抛什么都不能把异常抛回框架
+                AndroidLog.logE(TAG, "Module " + path + " failed during system start; skipping it", t);
+            }
+        }
     }
 
     @Override

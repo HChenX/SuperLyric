@@ -133,16 +133,16 @@ class PowerampHookSource : HookLyricSource {
         AndroidLog.logD(
             sourceName,
             "track=\"${identity.title}\" id=$trackId rows=${rows.size} " +
-                rows.take(3).joinToString { row ->
-                    "row(id=${row.id},title=${row.title},artist=${row.artist}," +
-                        "content=${row.content?.length ?: 0},lrc=${row.lrcPath})"
-                },
+                    rows.take(3).joinToString { row ->
+                        "row(id=${row.id},title=${row.title},artist=${row.artist}," +
+                                "content=${row.content?.length ?: 0},lrc=${row.lrcPath})"
+                    },
         )
         if (rows.isEmpty() || !requests.isCurrent(request)) return
 
         val matching = rows.filter { row ->
             TrackIdentity.artistCompatible(identity.artist, row.artist) &&
-                TrackIdentity.durationCompatible(identity.durationMs, row.durationMs)
+                    TrackIdentity.durationCompatible(identity.durationMs, row.durationMs)
         }
         val withContent = matching.firstOrNull { !it.content.isNullOrBlank() }
         if (withContent != null && deliverParsed(withContent.content!!, "db.cached", identity)) {
@@ -166,7 +166,7 @@ class PowerampHookSource : HookLyricSource {
         AndroidLog.logD(
             sourceName,
             "Host row(s) found for \"${identity.title}\" but no usable lyric " +
-                "(matching=${matching.size})",
+                    "(matching=${matching.size})",
         )
     }
 
@@ -238,11 +238,11 @@ class PowerampHookSource : HookLyricSource {
         }
 
         val hasCached = hasColumn(database, table, "cached_lyrics_id")
-            && hasColumn(database, "cached_lyrics", "content")
+                && hasColumn(database, "cached_lyrics", "content")
         val hasLrc = hasColumn(database, table, "lrc_files_id")
-            && hasColumn(database, "lrc_files", "folder_path")
+                && hasColumn(database, "lrc_files", "folder_path")
         val hasArtistId = hasColumn(database, table, "artist_id")
-            && hasColumn(database, "artists", "artist")
+                && hasColumn(database, "artists", "artist")
         val hasArtistTag = hasColumn(database, table, "artist_tag")
         val hasDuration = hasColumn(database, table, "duration")
 
@@ -309,7 +309,7 @@ class PowerampHookSource : HookLyricSource {
         try {
             database.rawQuery(
                 "SELECT name FROM sqlite_master WHERE type='table' " +
-                    "AND (name LIKE '%raw%file%' OR name LIKE '%folder%file%')",
+                        "AND (name LIKE '%raw%file%' OR name LIKE '%folder%file%')",
                 null,
             ).use { cursor ->
                 while (cursor.moveToNext()) {
@@ -568,7 +568,7 @@ class PowerampHookSource : HookLyricSource {
     private fun identityToken(identity: TrackIdentity): String =
         identity.stableId?.takeIf { it.isNotBlank() }
             ?: ("title:" + TrackIdentity.normalizeTitle(identity.title) + "|" +
-                TrackIdentity.normalizeTitle(identity.artist))
+                    TrackIdentity.normalizeTitle(identity.artist))
 
     /**
      * 有界读取：content:// 可能返回无限流，先读到内存再判大小已经太晚。
