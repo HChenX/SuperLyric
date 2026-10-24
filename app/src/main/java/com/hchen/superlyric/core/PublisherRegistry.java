@@ -20,6 +20,7 @@ package com.hchen.superlyric.core;
 
 import android.media.session.PlaybackState;
 import android.os.SystemClock;
+import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -41,6 +42,16 @@ final class PublisherRegistry {
     static final Set<String> disabledPackages = ConcurrentHashMap.newKeySet();
 
     private static final int MAX_CACHED_SESSIONS = 5;
+
+    static final class DeathResult {
+        final boolean lastPid;
+        final boolean wasActive;
+
+        DeathResult(boolean lastPid, boolean wasActive) {
+            this.lastPid = lastPid;
+            this.wasActive = wasActive;
+        }
+    }
 
     final ConcurrentHashMap<String, Session> sessions = new ConcurrentHashMap<>();
     final Object lock = new Object();
@@ -85,6 +96,37 @@ final class PublisherRegistry {
 
     Session session(@NonNull String packageName) {
         return sessions.get(packageName);
+    }
+
+    @Nullable
+    DeathResult onProcessDied(@NonNull String packageName, int pid,
+                              @NonNull SystemPlaybackCoordinator playback) {
+        if (!isPublisherProcess(packageName, pid)) return null;
+        boolean lastPid = removeProcess(packageName, pid);
+        boolean wasActive = false;
+        synchronized (lock) {
+            Session session = sessions.get(packageName);
+            boolean wasPublishing = session != null
+                && (session.publishingPid == pid || !session.published);
+            if (!lastPid && !wasPublishing) {
+                return new DeathResult(false, false);
+            }
+            if (session != null) {
+                session.publishingPid = NO_PID;
+                session.clear();
+            }
+            if (lastPid) {
+                sessions.remove(packageName);
+                playback.remove(packageName);
+            }
+            if (TextUtils.equals(activePublisher, packageName)) {
+                activePublisher = null;
+                playback.tracker.stop();
+                playback.tracker.setLyrics(null);
+                wasActive = true;
+            }
+        }
+        return new DeathResult(lastPid, wasActive);
     }
 
     Session getOrCreateSession(@NonNull String packageName) {

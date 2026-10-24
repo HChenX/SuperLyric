@@ -533,88 +533,29 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     }
 
     public void onProcessDied(@NonNull String packageName, int pid) {
-        if (!PublisherRegistry.isPublisherProcess(packageName, pid)) {
+        PublisherRegistry.DeathResult result = publishers.onProcessDied(packageName, pid, playback);
+        if (result == null) return;
+
+        if (!result.lastPid && !result.wasActive) {
+            XposedLog.logD(TAG, "Non-publishing process died for " + packageName
+                + ", pid=" + pid + "; " + PublisherRegistry.processCount(packageName)
+                + " publisher process(es) remain");
             return;
-        }
-        boolean lastPid = PublisherRegistry.removeProcess(packageName, pid);
-
-        boolean wasActive = false;
-        synchronized (publishers.lock) {
-            PublisherRegistry.Session session = publishers.sessions.get(packageName);
-            // 死的这个是不是**本会话的驱动者**。一个宿主会有多个进程注册成发布者
-            // （子进程也会走到 AbsPublisher#onPackageReady），但只有其中一个在真正发布。
-            // 只看"包还有没有进程注册"不够：QQ 的播放进程本身就是 `:QQPlayerService` 子进程，
-            // 它死了而主进程还活着时，会话与 publishers.activePublisher 会一直挂着，
-            // 时钟继续在没人播放的曲目上往前爬
-            //
-            // 两半缺一不可：
-            // - 发布过内容的会话只认发布它的那个 pid：别的进程死了不动它，否则一次无关的
-            //   子进程死亡就会把正在播的显示清掉
-            // - **从未发布过内容的会话任何人都可以回收**：它没有任何内容可丢，而留着它会
-            //   钉住一个"播放中"的会话（trimSessionsLocked 不淘汰播放中的会话），
-            //   于是会话槽位与 publishers.activePublisher 一起泄漏
-            boolean wasPublishing = session != null
-                && (session.publishingPid == pid || !session.published);
-
-            if (!lastPid && !wasPublishing) {
-                // 无关子进程：注册痕迹上面已经摘掉了，显示与会话一概不动
-                XposedLog.logD(TAG, "Non-publishing process died for " + packageName
-                    + ", pid=" + pid + "; " + PublisherRegistry.processCount(packageName)
-                    + " publisher process(es) remain");
-                return;
-            }
-
-            if (session != null) {
-                session.publishingPid = NO_PID;
-                session.clear();
-            }
-            if (lastPid) {
-                publishers.sessions.remove(packageName);
-                // 包已彻底没有发布进程：停止判定/证据计数也一并回收，避免按包名无界增长。
-                // 若有新进程重新注册，computeIfAbsent 会重建。
-                playback.remove(packageName);
-            }
-            if (TextUtils.equals(publishers.activePublisher, packageName)) {
-                publishers.activePublisher = null;
-                playback.tracker.stop();
-                playback.tracker.setLyrics(null);
-                wasActive = true;
-            }
         }
 
         XposedLog.logI(TAG, "Publisher process died: " + packageName + ", pid=" + pid
-            + " (lastPid=" + lastPid + ", wasActive=" + wasActive + ")");
-
-        if (!wasActive) {
-            return;
-        }
+            + " (lastPid=" + result.lastPid + ", wasActive=" + result.wasActive + ")");
+        if (!result.wasActive) return;
 
         mDeathNotifier.execute(() -> {
-            // 期间这个包又有人接管了就不发：消费方刚要清空，新歌词马上补上，
-            // 再补一次停止只会让它闪一下。
-            //
-            // 两种情形必须分开判：
-            // - 整个包都没进程了（lastPid）：只要它重新注册过就别发
-            // - 只是发布进程死了、同包还留着子进程（!lastPid）：这时 isPublisher 恒为真，
-            //   拿它当判据会把通知**永远**吞掉，只该看"现在还有没有人在发布"
-            //
-            // 也不能拿"移除前捕获的世代"与"移除后的取值"相比：移除后取到的恒为 0
-            // （未注册），与捕获值必然不等，守卫会恒真、通知永远发不出去
-            boolean superseded = lastPid ? isPublisher(packageName) : isStillPublishing(packageName);
-            if (superseded) {
-                return;
-            }
-
-            broadcastToReceivers("onProcessDied", receiver -> receiver.onStop(packageName, new SuperLyricData()));
+            boolean superseded = result.lastPid
+                ? isPublisher(packageName) : isStillPublishing(packageName);
+            if (superseded) return;
+            broadcastToReceivers("onProcessDied",
+                receiver -> receiver.onStop(packageName, new SuperLyricData()));
         });
     }
 
-    /**
-     * 这个包当前是否有进程<b>正在发布</b>
-     *
-     * <p>与 {@link #isPublisher} 的区别：后者只回答"还有没有进程注册过"，
-     * 而一个包可以有多个注册进程，其中只有一两个在真正发布
-     */
     private boolean isStillPublishing(@NonNull String packageName) {
         return publishers.isStillPublishing(packageName);
     }
@@ -690,52 +631,16 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     }
 
     private void removePublisherProcess(@NonNull String packageName, int pid) {
-        boolean lastPid = PublisherRegistry.removeProcess(packageName, pid);
+        PublisherRegistry.DeathResult result = publishers.onProcessDied(packageName, pid, playback);
+        if (result == null || !result.wasActive) return;
 
-        boolean wasActive = false;
-        synchronized (publishers.lock) {
-            PublisherRegistry.Session session = publishers.sessions.get(packageName);
-            // 与 onProcessDied 同一判据：未发布过内容的会话任何人都能回收；
-            // 已发布内容的会话只认发布它的 pid，避免无关子进程反注册误清当前歌词。
-            boolean wasPublishing = session != null
-                && (session.publishingPid == pid || !session.published);
-            if (!lastPid && !wasPublishing) {
-                XposedLog.logD(TAG, "Non-publishing process unregistered for " + packageName
-                    + ", pid=" + pid + "; " + PublisherRegistry.processCount(packageName)
-                    + " publisher process(es) remain");
-                return;
-            }
-
-            if (session != null) {
-                session.publishingPid = NO_PID;
-                session.clear();
-            }
-            if (lastPid) {
-                publishers.sessions.remove(packageName);
-                playback.remove(packageName);
-            }
-            if (TextUtils.equals(publishers.activePublisher, packageName)) {
-                publishers.activePublisher = null;
-                playback.tracker.stop();
-                playback.tracker.setLyrics(null);
-                wasActive = true;
-            }
-        }
-
-        if (wasActive) {
-            mDeathNotifier.execute(() -> {
-                // 反注册与死亡对消费方是同一件事，守卫也必须一致：这个包在我们排队期间
-                // 重新注册的话，这次 onStop 会误杀新会话，而它此时可能已经在播了。
-                if (isPublisher(packageName)) {
-                    return;
-                }
-
-                broadcastToReceivers("removePublisherProcess", receiver -> receiver.onStop(packageName, new SuperLyricData()));
-            });
-        }
+        mDeathNotifier.execute(() -> {
+            if (isPublisher(packageName)) return;
+            broadcastToReceivers("removePublisherProcess",
+                receiver -> receiver.onStop(packageName, new SuperLyricData()));
+        });
     }
 
-    @NonNull
     private PublisherRegistry.Session getOrCreateSessionLocked(@NonNull String packageName) {
         PublisherRegistry.Session session = publishers.getOrCreateSession(packageName);
         session.touch();
