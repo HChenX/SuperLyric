@@ -11,7 +11,7 @@
 
     <application
         android:name=".ui.Application"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:description="@string/app_details"
         android:enableOnBackInvokedCallback="false"
         android:icon="@mipmap/ic_launcher"

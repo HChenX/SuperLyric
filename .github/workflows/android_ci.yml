@@ -50,6 +50,9 @@ jobs:
       - name: Build with Gradle
         run: ./gradlew assembleRelease assembleDebug --stacktrace
 
+      - name: Run unit tests
+        run: ./gradlew :lyric-kernel:test :app:testDebugUnitTest --stacktrace
+
       - name: Upload Release Apk
         uses: actions/upload-artifact@v4
         with:

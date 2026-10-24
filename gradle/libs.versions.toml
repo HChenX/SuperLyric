@@ -19,6 +19,7 @@ hooktool = "3.2.2"
 dexkit = "2.3.0"
 dexkitcache = "1.1"
 gson = "2.14.0"
+json = "20240303"
 mmkv = "2.4.2"
 # okhttp
 okhttp = "5.5.0"
@@ -67,6 +68,10 @@ lyrics-core = { module = "com.mocharealm.accompanist:lyrics-core", version.ref =
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junitBom" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+
+# 单元测试里的 org.json：android.jar 那份是"返回默认值"的桩，JSONObject 全是空实现，
+# 断言不了任何解析行为。宿主运行时用系统的实现，测试用这一份
+json = { module = "org.json:json", version.ref = "json" }
 
 auto-service = { module = "com.google.auto.service:auto-service", version.ref = "autoService" }
 javapoet = { module = "com.squareup:javapoet", version.ref = "javapoet" }
