@@ -82,7 +82,7 @@ interface LyricSource {
  *
  * ## 并发模型
  * 所有共享状态由 [lock] 保护，但**锁内只做决策，不做执行**：每个公开入口在锁内构造一份
- * [Dispatch]，随后在锁外执行它。这样既不在持锁时做 Binder 发布或来源启动，
+ * [Plan]，随后在锁外执行它。这样既不在持锁时做 Binder 发布或来源启动，
  * 也不存在"多个线程在锁外争抢清理同一份待发通知"的竞态
  *
  * @author 焕晨HChen
@@ -154,14 +154,35 @@ class LyricOrchestrator(
     )
 
     private val lock = Any()
+    private val track = TrackSession()
 
-    private var epoch: Long = 0L
-    private var currentIdentity: TrackIdentity? = null
-    private var currentSinceMs: Long = 0L
-    private var apiAttempts: Int = 0
-    private var hookDelivered: Boolean = false
-    private var apiDelivered: Boolean = false
-    private var hookTimeout: Cancellable? = null
+    private var epoch: Long
+        get() = track.epoch
+        set(value) { track.epoch = value }
+
+    private var currentIdentity: TrackIdentity?
+        get() = track.identity
+        set(value) { track.identity = value }
+
+    private var currentSinceMs: Long
+        get() = track.startedAtMs
+        set(value) { track.startedAtMs = value }
+
+    private var apiAttempts: Int
+        get() = track.apiAttempts
+        set(value) { track.apiAttempts = value }
+
+    private var hookDelivered: Boolean
+        get() = track.hookDelivered
+        set(value) { track.hookDelivered = value }
+
+    private var apiDelivered: Boolean
+        get() = track.apiDelivered
+        set(value) { track.apiDelivered = value }
+
+    private var hookTimeout: Cancellable?
+        get() = track.hookTimeout
+        set(value) { track.hookTimeout = value }
 
     @Volatile
     var state: State = State.IDLE
@@ -172,27 +193,24 @@ class LyricOrchestrator(
     var activeIdentity: TrackIdentity? = null
         private set
 
-    /**
-     * 锁内构造、锁外执行的动作清单。
-     */
-    private class Dispatch {
+    /** 锁内生成、锁外执行的动作。 */
+    private sealed interface Action {
+        data class StartHook(val epoch: Long, val identity: TrackIdentity) : Action
+        data class StartApi(val epoch: Long, val identity: TrackIdentity) : Action
+        data class Resolve(val outcome: LyricOutcome.Success) : Action
+        data object NoLyrics : Action
+        data object Unavailable : Action
+        data object Idle : Action
+        data object CancelHook : Action
+        data object CancelApi : Action
+    }
+
+    /** 一次状态迁移计划；epoch/identity 是计划时的快照。 */
+    private class Plan {
         var newTrack: TrackIdentity? = null
-        var startHookEpoch: Long? = null
-        var startHookIdentity: TrackIdentity? = null
-        var startApiEpoch: Long? = null
-        var startApiIdentity: TrackIdentity? = null
         var stateChanged: State? = null
-        var resolved: LyricOutcome.Success? = null
-        var noLyrics = false
-        var unavailable = false
-        var idle = false
-        var cancelHookSource = false
-        var cancelApiSource = false
-
-        /** 计划这次 dispatch 时的 epoch；执行前必须与当前 epoch 一致 */
+        val actions = ArrayList<Action>()
         var plannedEpoch: Long = -1L
-
-        /** 计划这次 dispatch 时的曲目；发布占位/不可用时用它，不能用执行时的 activeIdentity */
         var identity: TrackIdentity? = null
     }
 
@@ -228,12 +246,12 @@ class LyricOrchestrator(
             hookDelivered = false
             apiDelivered = false
 
-            Dispatch().apply {
+            Plan().apply {
                 plannedEpoch = epoch
                 transitionLocked(State.IDLE, this)
-                idle = true
-                cancelHookSource = true
-                cancelApiSource = true
+                actions += Action.Idle
+                actions += Action.CancelHook
+                actions += Action.CancelApi
             }
         }
         execute(dispatch)
@@ -257,18 +275,12 @@ class LyricOrchestrator(
     /**
      * @return 待执行的动作；判定为同一首曲目时返回 null。
      */
-    private fun planTrackChanged(identity: TrackIdentity): Dispatch? {
+    private fun planTrackChanged(identity: TrackIdentity): Plan? {
         val current = currentIdentity
         if (current != null) {
             if (current.matches(identity)) {
-                // 同一首曲目：只刷新元数据，**绝不重启取词**。
-                //
-                // 这里刻意不区分状态。早期实现只在 ACTIVE / RESOLVING_HOOK / FETCHING_API
-                // 时按"同一首"处理，NO_LYRICS 与 UNAVAILABLE 会落到下面重启一次——
-                // 那正是"事件 → 取词 → 无歌词 → 事件"死循环的成因：
-                // 宿主若高频改写元数据（椒盐开启蓝牙歌词后会把当前歌词行写进 TITLE），
-                // 同一个稳定标识会每几秒触发一次全新取词，并且**每次都下发纯音乐占位**。
-                // 而 NO_LYRICS 在架构上本就是终态，重启不可能得到不同结果。
+                // 同一首曲目只刷新元数据，不重启取词。NO_LYRICS 与 UNAVAILABLE 是终态；
+                // 宿主高频改写标题/歌手时重启会反复取词，并重复下发占位。
                 currentIdentity = identity
                 activeIdentity = identity
                 return null
@@ -292,7 +304,7 @@ class LyricOrchestrator(
         hookDelivered = false
         apiDelivered = false
 
-        val dispatch = Dispatch().apply {
+        val dispatch = Plan().apply {
             newTrack = identity
             plannedEpoch = startedEpoch
             this.identity = identity
@@ -301,8 +313,7 @@ class LyricOrchestrator(
         if (hookSource != null) {
             transitionLocked(State.RESOLVING_HOOK, dispatch)
             hookTimeout = scheduler.schedule(config.hookTimeoutMs) { onHookTimedOut(startedEpoch) }
-            dispatch.startHookEpoch = startedEpoch
-            dispatch.startHookIdentity = identity
+            dispatch.actions += Action.StartHook(startedEpoch, identity)
         } else {
             planStartApi(identity, startedEpoch, null, dispatch)
         }
@@ -341,7 +352,7 @@ class LyricOrchestrator(
             TrackIdentity.durationCompatible(current.durationMs, next.durationMs)
     }
 
-    private fun planHookCaptured(capturedEpoch: Long, outcome: LyricOutcome): Dispatch? {
+    private fun planHookCaptured(capturedEpoch: Long, outcome: LyricOutcome): Plan? {
         // 丢弃必须留痕：静默丢弃过一次真实的取词成果，排查时完全看不出它到过这里
         if (capturedEpoch != epoch) {
             diagnostics("dropping hook outcome ${outcome.label}: epoch $capturedEpoch != $epoch")
@@ -354,14 +365,14 @@ class LyricOrchestrator(
         hookDelivered = true
         cancelHookTimeoutLocked()
 
-        val dispatch = Dispatch().apply {
+        val dispatch = Plan().apply {
             plannedEpoch = capturedEpoch
             identity = currentIdentity
         }
 
         if (outcome is LyricOutcome.Success) {
             transitionLocked(State.ACTIVE, dispatch)
-            dispatch.resolved = outcome
+            dispatch.actions += Action.Resolve(outcome)
             return dispatch
         }
 
@@ -375,8 +386,8 @@ class LyricOrchestrator(
         identity: TrackIdentity,
         startEpoch: Long,
         hookOutcome: LyricOutcome?,
-        dispatch: Dispatch = Dispatch(),
-    ): Dispatch {
+        dispatch: Plan = Plan(),
+    ): Plan {
         dispatch.plannedEpoch = startEpoch
         dispatch.identity = identity
         if (apiDelivered) return dispatch
@@ -386,7 +397,7 @@ class LyricOrchestrator(
         if (apiSource == null && hookSource == null) {
             diagnostics("no lyric source configured; refusing to conclude 'no lyrics'")
             transitionLocked(State.UNAVAILABLE, dispatch)
-            dispatch.unavailable = true
+            dispatch.actions += Action.Unavailable
             return dispatch
         }
 
@@ -397,17 +408,16 @@ class LyricOrchestrator(
             // 而且"清洗后一行不剩"这种情形恰恰说明宿主**给了**歌词行
             if (hookOutcome is LyricOutcome.NoLyrics) {
                 transitionLocked(State.NO_LYRICS, dispatch)
-                dispatch.noLyrics = true
+                dispatch.actions += Action.NoLyrics
             } else {
                 transitionLocked(State.UNAVAILABLE, dispatch)
-                dispatch.unavailable = true
+                dispatch.actions += Action.Unavailable
             }
             return dispatch
         }
 
         transitionLocked(State.FETCHING_API, dispatch)
-        dispatch.startApiEpoch = startEpoch
-        dispatch.startApiIdentity = identity
+        dispatch.actions += Action.StartApi(startEpoch, identity)
         return dispatch
     }
 
@@ -429,7 +439,7 @@ class LyricOrchestrator(
         dispatch?.let(::execute)
     }
 
-    private fun planApiCaptured(capturedEpoch: Long, outcome: LyricOutcome): Dispatch? {
+    private fun planApiCaptured(capturedEpoch: Long, outcome: LyricOutcome): Plan? {
         if (capturedEpoch != epoch) {
             diagnostics("dropping api outcome ${outcome.label}: epoch $capturedEpoch != $epoch")
             return null
@@ -441,7 +451,7 @@ class LyricOrchestrator(
             return null
         }
 
-        val dispatch = Dispatch().apply {
+        val dispatch = Plan().apply {
             plannedEpoch = capturedEpoch
             identity = currentIdentity
         }
@@ -450,14 +460,14 @@ class LyricOrchestrator(
             is LyricOutcome.Success -> {
                 apiDelivered = true
                 transitionLocked(State.ACTIVE, dispatch)
-                dispatch.resolved = outcome
+                dispatch.actions += Action.Resolve(outcome)
             }
 
             is LyricOutcome.NoLyrics -> {
                 // 平台明确说"这首没有歌词"——**这是允许下发纯音乐占位的唯一来源**
                 apiDelivered = true
                 transitionLocked(State.NO_LYRICS, dispatch)
-                dispatch.noLyrics = true
+                dispatch.actions += Action.NoLyrics
             }
 
             is LyricOutcome.Unsupported -> {
@@ -465,7 +475,7 @@ class LyricOrchestrator(
                 // 请求要么根本没发出去，要么服务端没说这句话。据此下发占位等于替平台编结论
                 apiDelivered = true
                 transitionLocked(State.UNAVAILABLE, dispatch)
-                dispatch.unavailable = true
+                dispatch.actions += Action.Unavailable
             }
 
             is LyricOutcome.TransientFailure -> {
@@ -474,7 +484,7 @@ class LyricOrchestrator(
                     // 重试耗尽：失败不等于"没有歌词"，绝不下发纯音乐占位
                     apiDelivered = true
                     transitionLocked(State.UNAVAILABLE, dispatch)
-                    dispatch.unavailable = true
+                    dispatch.actions += Action.Unavailable
                 } else {
                     val identity = currentIdentity
                     if (identity != null) {
@@ -496,11 +506,10 @@ class LyricOrchestrator(
         val dispatch = synchronized(lock) {
             if (retryEpoch != epoch) return@synchronized null
             if (state != State.FETCHING_API || apiDelivered) return@synchronized null
-            Dispatch().apply {
+            Plan().apply {
                 plannedEpoch = retryEpoch
                 this.identity = identity
-                startApiEpoch = retryEpoch
-                startApiIdentity = identity
+                actions += Action.StartApi(retryEpoch, identity)
             }
         }
         dispatch?.let(::execute)
@@ -508,7 +517,7 @@ class LyricOrchestrator(
 
     // ------------------------------------------------------------ 锁外执行
 
-    private fun execute(dispatch: Dispatch) {
+    private fun execute(dispatch: Plan) {
         // 计划与执行之间可能已经切歌/停止：所有发布与来源启动都必须以计划时的 epoch 为准。
         // 少了这一条，旧曲目的 resolved/noLyrics 会在 stop 之后照常发布，占位还会挂到新曲目上。
         if (dispatch.plannedEpoch >= 0L && dispatch.plannedEpoch != epoch) {
@@ -516,53 +525,50 @@ class LyricOrchestrator(
             return
         }
 
-        if (dispatch.cancelHookSource) hookSource?.cancel()
-        if (dispatch.cancelApiSource) apiSource?.cancel()
+        if (dispatch.actions.any { it is Action.CancelHook }) hookSource?.cancel()
+        if (dispatch.actions.any { it is Action.CancelApi }) apiSource?.cancel()
 
         dispatch.newTrack?.let(listener::onTrackChanged)
 
-        // 状态迁移必须**先于**启动来源回调：来源可以在 start() 里**同步**回投
-        // （例如按稳定标识暂存后的补投），那样它会把状态一路推到 ACTIVE。
-        // 若此时才发出先前捕获的 RESOLVING_HOOK，监听者就会看到
-        // ACTIVE 之后又回到 RESOLVING_HOOK——内部 state 是对的，但对外回报的顺序错了。
+        // 状态迁移必须先于来源回调：来源可以在 start() 里同步回投并把状态推到 ACTIVE。
         dispatch.stateChanged?.let(listener::onStateChanged)
 
-        dispatch.startHookEpoch?.let { hookEpoch ->
-            val identity = dispatch.startHookIdentity
-            if (identity != null) {
-                runCatching {
-                    hookSource?.start(identity) { outcome -> onHookCaptured(hookEpoch, outcome) }
-                }.onFailure {
-                    diagnostics("hook source failed to start: ${it.message}")
-                    onHookCaptured(hookEpoch, LyricOutcome.TransientFailure(it))
-                }
+        for (action in dispatch.actions) {
+            if (action !is Action.StartHook) continue
+            runCatching {
+                hookSource?.start(action.identity) { outcome -> onHookCaptured(action.epoch, outcome) }
+            }.onFailure {
+                diagnostics("hook source failed to start: ${it.message}")
+                onHookCaptured(action.epoch, LyricOutcome.TransientFailure(it))
             }
         }
 
-        dispatch.startApiEpoch?.let { apiEpoch ->
-            val identity = dispatch.startApiIdentity
-            if (identity != null) {
-                runCatching {
-                    apiSource?.start(identity) { outcome -> onApiCaptured(apiEpoch, outcome) }
-                }.onFailure {
-                    diagnostics("api source failed to start: ${it.message}")
-                    onApiCaptured(apiEpoch, LyricOutcome.TransientFailure(it))
-                }
+        for (action in dispatch.actions) {
+            if (action !is Action.StartApi) continue
+            runCatching {
+                apiSource?.start(action.identity) { outcome -> onApiCaptured(action.epoch, outcome) }
+            }.onFailure {
+                diagnostics("api source failed to start: ${it.message}")
+                onApiCaptured(action.epoch, LyricOutcome.TransientFailure(it))
             }
         }
 
-        // stateChanged 或来源 start 都可能同步重入 stop/切歌；发布前再复核一次 epoch，
-        // 否则上面那次检查只能挡住“进入 execute 之前”的变化。
+        // 来源 start 可能同步重入 stop/切歌；发布前再次校验计划 epoch。
         if (dispatch.plannedEpoch >= 0L && dispatch.plannedEpoch != epoch) {
             diagnostics("dropping planned dispatch after callbacks: epoch " + dispatch.plannedEpoch + " != " + epoch)
             return
         }
 
-        // 下游回调一律在锁外，避免持锁进行 Binder 发布；identity 用计划时的，不用执行时的 activeIdentity
-        dispatch.resolved?.let(listener::onLyricResolved)
-        if (dispatch.noLyrics) listener.onNoLyrics(dispatch.identity)
-        if (dispatch.unavailable) listener.onUnavailable(dispatch.identity)
-        if (dispatch.idle) listener.onIdle()
+        // 下游回调在锁外执行；identity 使用计划时快照，不读 activeIdentity。
+        for (action in dispatch.actions) {
+            when (action) {
+                is Action.Resolve -> listener.onLyricResolved(action.outcome)
+                Action.NoLyrics -> listener.onNoLyrics(dispatch.identity)
+                Action.Unavailable -> listener.onUnavailable(dispatch.identity)
+                Action.Idle -> listener.onIdle()
+                is Action.StartHook, is Action.StartApi, Action.CancelHook, Action.CancelApi -> Unit
+            }
+        }
     }
 
     // ------------------------------------------------------------ 工具
@@ -572,7 +578,7 @@ class LyricOrchestrator(
         hookTimeout = null
     }
 
-    private fun transitionLocked(next: State, dispatch: Dispatch) {
+    private fun transitionLocked(next: State, dispatch: Plan) {
         if (state == next) return
         state = next
         dispatch.stateChanged = next
