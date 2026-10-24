@@ -178,7 +178,8 @@
     <string name="oppo_music">Enable the "Bluetooth lyrics" feature</string>
     <string name="rplayer_music">Enable the "Bluetooth lyrics" feature</string>
     <string name="qishui_music">Enable the "Bluetooth lyrics" feature</string>
-    <string name="kuwo_music">Enable the "Bluetooth lyrics" feature</string>
+    <string name="kuwo_music">No additional setup required, play normally</string>
+    <string name="kuwo_car_music">No additional setup required, play normally</string>
     <string name="nisheng_music">Enable the "Bluetooth lyrics" feature</string>
     <string name="huawei_music">Enable the "Bluetooth lyrics" feature</string>
     <string name="kde_music">Enable the "Bluetooth lyrics" feature</string>
