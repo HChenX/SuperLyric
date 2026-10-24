@@ -37,7 +37,7 @@ import com.hchen.superlyric.utils.LyricDiag
  * - 以该会话头拉取 `color-lyrics/v2`（protobuf）
  * - 解析结果（含逐字与音译）映射为内核模型
  *
- * <p>本模块**不持有任何 Spotify 凭证**，只是复用宿主已经发出的请求头；
+ * 本模块**不持有任何 Spotify 凭证**，只是复用宿主已经发出的请求头；
  * 会话头失效时返回可重试失败，由编排器退避重试。
  *
  * ## 结果语义
@@ -70,8 +70,16 @@ class SpotifyApiSource : LyricSource {
     }
 
     private fun resolve(identity: TrackIdentity, token: Long): LyricOutcome {
-        val trackId = TrackIdentity.normalizeStableId(identity.stableId)
+        val rawId = TrackIdentity.normalizeStableId(identity.stableId)
             ?: return LyricOutcome.Unsupported("spotify: no track id")
+        // 这个 id 来自宿主上报的 MEDIA_ID，会被直接拼进请求 URL 的**路径段**。必须过一道
+        // 格式闸：否则含 `/`、`..` 的值能改变请求路径（同域路径注入）。Spotify 的 track id
+        // 是 base62，这里按字符集与长度区间收紧，与酷狗/网易的 HASH/NUMERIC 闸同一目的
+        if (!TRACK_ID_PATTERN.matches(rawId)) {
+            AndroidLog.logW(sourceName, "Rejecting malformed track id")
+            return LyricOutcome.Unsupported("spotify: malformed track id")
+        }
+        val trackId = rawId
 
         val cacheKey = "${LyricCacheStore.currentLocaleTag()}/$trackId"
         readCached(cacheKey, identity)?.let { return it }
@@ -125,12 +133,11 @@ class SpotifyApiSource : LyricSource {
             }
         }
 
-        return if (lastError is AuthenticationException) {
+        // 会话头可能尚未捕获到，或网络/解析异常：都属"这次没查成"，返回可重试失败
+        if (lastError is AuthenticationException) {
             AndroidLog.logW(sourceName, "Session headers were never captured; retry later")
-            LyricOutcome.TransientFailure(lastError)
-        } else {
-            LyricOutcome.TransientFailure(lastError)
         }
+        return LyricOutcome.TransientFailure(lastError)
     }
 
     /**
@@ -193,5 +200,12 @@ class SpotifyApiSource : LyricSource {
 
         const val MAX_ATTEMPTS = 3
         const val HEADER_WAIT_MS = 400L
+
+        /**
+         * Spotify track id：base62。标准长度 22，但历史/迁移期可能略有出入，
+         * 因此只约束字符集与一个宽松的长度区间——目的是挡住路径字符（`/`、`.`），
+         * 不是在断言精确长度
+         */
+        val TRACK_ID_PATTERN = Regex("^[A-Za-z0-9]{16,32}$")
     }
 }

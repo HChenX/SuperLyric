@@ -114,8 +114,10 @@ class KuwoHookSource : HookLyricSource {
 
     /** 记录宿主上报的当前曲目 */
     private fun handleTrack(rid: String, title: String, artist: String) {
-        if (rid.isEmpty()) return
-        if (rid.isEmpty()) return
+        if (rid.isEmpty()) {
+            AndroidLog.logW(sourceName, "Track probe returned an empty rid; identity falls back to metadata")
+            return
+        }
         // 必须在此写入：歌词回调要拿它构造与宿主一致的稳定标识。缺了它，
         // 歌词侧只能回退到 MediaSession 的身份，而切歌瞬间两者会短暂错配，
         // 表现为同一份歌词配上了另一个 rid
@@ -205,7 +207,13 @@ class KuwoHookSource : HookLyricSource {
                     return@execute
                 }
                 AndroidLog.logW(sourceName, "Parsed no lines from lyric text (len=${text.length})")
-                session?.deliver(LyricOutcome.Unsupported("kuwo: parsed empty"))
+                val target = session
+                val current = pendingIdentity
+                if (target != null && (stableId == null || stableId == current?.stableId)) {
+                    target.deliver(LyricOutcome.Unsupported("kuwo: parsed empty"))
+                } else {
+                    AndroidLog.logW(sourceName, "Dropping stale parse failure for ${stableId}")
+                }
                 return@execute
             }
 

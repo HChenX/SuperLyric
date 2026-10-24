@@ -42,11 +42,14 @@ class AppleHookSource : HookLyricSource {
 
     override val sourceName: String = "AppleHook"
 
-    @Volatile
-    private var session: LyricSource.Session? = null
+    /**
+     * 会话与身份必须作为**一个快照**发布：两次独立 volatile 写会让回调读到
+     * “新 session + 旧 identity”，从而把旧曲目的载荷用新代际投出去。
+     */
+    private data class Pending(val session: LyricSource.Session, val identity: TrackIdentity)
 
     @Volatile
-    private var pendingIdentity: TrackIdentity? = null
+    private var pending: Pending? = null
 
     override fun install() {
         AppleAnchors.install(object : AppleAnchors.LyricsListener {
@@ -61,13 +64,11 @@ class AppleHookSource : HookLyricSource {
     }
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
-        this.session = session
-        this.pendingIdentity = identity
+        pending = Pending(session, identity)
     }
 
     override fun cancel() {
-        session = null
-        pendingIdentity = null
+        pending = null
     }
 
     /**
@@ -76,11 +77,10 @@ class AppleHookSource : HookLyricSource {
      * 采纳前必须确认它说的就是**当前**这一首——见 [trackGuard]
      */
     private fun onNoLyricVerdict(itemId: String?) {
-        val activeSession = session ?: return
-        if (pendingIdentity == null) return
-        if (!trackGuard(itemId, "no-lyric verdict", enforce = true)) return
+        val current = pending ?: return
+        if (!trackGuard(itemId, current.identity.stableId, "no-lyric verdict", enforce = true)) return
 
-        activeSession.deliver(LyricOutcome.NoLyrics("apple: host reports no lyric"))
+        current.session.deliver(LyricOutcome.NoLyrics("apple: host reports no lyric"))
     }
 
     /**
@@ -108,8 +108,12 @@ class AppleHookSource : HookLyricSource {
      * @param enforce 对不上时是否丢弃（投递载荷时传 false）
      * @return 调用方是否可以继续采纳这次回调
      */
-    private fun trackGuard(itemId: String?, what: String, enforce: Boolean): Boolean {
-        val stableId = pendingIdentity?.stableId
+    private fun trackGuard(
+        itemId: String?,
+        stableId: String?,
+        what: String,
+        enforce: Boolean,
+    ): Boolean {
         val verdict = judgeTrack(itemId, stableId)
         val admit = admits(verdict, enforce)
         val reported = TrackIdentity.normalizeStableId(itemId)
@@ -186,9 +190,9 @@ class AppleHookSource : HookLyricSource {
     }
 
     private fun onExtracted(lines: List<AppleLine>, itemId: String?) {
-        val activeSession = session ?: return
-        val identity = pendingIdentity ?: return
-        trackGuard(itemId, "lyric payload", enforce = false)
+        val current = pending ?: return
+        val identity = current.identity
+        trackGuard(itemId, identity.stableId, "lyric payload", enforce = false)
 
         // 宿主原始模型（含 HTML 标记）——Apple 没有协议报文，这就是"未解析数据"
         LyricDiag.dumpPayload(sourceName, "RAW-HOST-MODEL", dumpHostLines(lines))
@@ -211,7 +215,7 @@ class AppleHookSource : HookLyricSource {
         }.sortedBy { it.startMs }
 
         if (mapped.isEmpty()) {
-            activeSession.deliver(LyricOutcome.Unsupported("apple: no usable line"))
+            current.session.deliver(LyricOutcome.Unsupported("apple: no usable line"))
             return
         }
 
@@ -225,7 +229,7 @@ class AppleHookSource : HookLyricSource {
         LyricDiag.dumpDoc(sourceName, doc)
 
         AndroidLog.logI(sourceName, "Extracted ${mapped.size} lines from host model")
-        activeSession.deliver(LyricOutcome.Success(doc))
+        current.session.deliver(LyricOutcome.Success(doc))
     }
 
     private fun dumpHostLines(lines: List<AppleLine>): String {

@@ -34,7 +34,7 @@ import io.github.libxposed.api.XposedModuleInterface;
  *
  * <h3>为什么是纯网络取词</h3>
  * Spotify 的歌词不经过任何 Java 侧模型（由原生播放器渲染），没有可 Hook 的歌词载体。
- * 唯一可行的路径是拉取官方 {@code color-lyrics/v2} 接口——这条路径本身是**稳定**的，
+ * 唯一可行的路径是拉取官方 {@code color-lyrics/v2} 接口——这条路径本身是<b>稳定</b>的，
  * 需要解决的只是鉴权：复用宿主自己已经发出的会话头即可，模块不持有任何凭证。
  *
  * @author 焕晨HChen

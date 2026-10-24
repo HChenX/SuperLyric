@@ -41,7 +41,7 @@ import java.util.List;
  *
  * <h3>为什么需要它</h3>
  * {@code color-lyrics/v2} 接口需要 Bearer 鉴权，而令牌只存在于宿主自己的网络请求里。
- * 本模块不发起登录、也不持有任何凭证，而是从宿主**已经发出**的
+ * 本模块不发起登录、也不持有任何凭证，而是从宿主<b>已经发出</b>的
  * {@code okhttp3.Headers} 中旁路复制最新的一份会话头。
  *
  * <h3>为什么锚构造器而不是请求方法</h3>
@@ -52,7 +52,7 @@ import java.util.List;
  * <ol>
  *   <li>能直接引用到 {@code okhttp3.Headers} 时走明文快速通道；</li>
  *   <li>否则用 DexKit 按
- *       "含 {@code <init>(String[])} 且实现 {@code Iterable}" 的**结构指纹**定位，
+ *       "含 {@code <init>(String[])} 且实现 {@code Iterable}" 的<b>结构指纹</b>定位，
  *       这正是 {@code okhttp3.Headers} 的结构特征，
  *       即便类名被混淆也能命中。</li>
  * </ol>
@@ -137,6 +137,11 @@ public final class SpotifyAnchors {
         }
 
         // 宽松指纹：仅含 <init>(String[])
+        //
+        // 这个判据会命中**所有**带 `String[]` 构造器的类，而其中绝大多数与 okhttp 无关。
+        // 给它们逐个挂构造器钩子会平白抬高宿主开销，与 L1"绝不广撒网"相悖。
+        // 因此在 DexKit 结果之上再收一道：只保留"像 Headers 的类"——非接口、非注解、
+        // 非抽象、非枚举，且**自带字段**（Headers 持有 `String[] namesAndValues`）
         Class<?>[] loose = DexkitCache.findMember("spotify$headers_ctor",
             new IDexkit<ClassDataList>() {
                 @NonNull
@@ -152,6 +157,18 @@ public final class SpotifyAnchors {
                     );
                 }
             });
-        return loose == null ? Collections.emptyList() : new ArrayList<>(List.of(loose));
+        if (loose == null) return Collections.emptyList();
+
+        List<Class<?>> filtered = new ArrayList<>(loose.length);
+        for (Class<?> candidate : loose) {
+            int modifiers = candidate.getModifiers();
+            if (candidate.isInterface() || candidate.isAnnotation() || candidate.isEnum()) continue;
+            if (java.lang.reflect.Modifier.isAbstract(modifiers)) continue;
+            if (candidate.getDeclaredFields().length == 0) continue;
+            filtered.add(candidate);
+        }
+        AndroidLog.logI(TAG, "Loose fingerprint matched " + loose.length
+            + " class(es), narrowed to " + filtered.size() + " header-like candidate(s)");
+        return filtered;
     }
 }

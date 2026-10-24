@@ -212,7 +212,7 @@ public final class SpotifyLyricAnalysis {
                 throw new LyricNotFoundException(id, "No lyric found for " + id);
             }
             if (!response.isSuccessful()) {
-                throw new HttpStatusException(code, code == 429 || code >= 500);
+                throw new HttpStatusException(code);
             }
 
             if (response.body() == null) {
@@ -550,7 +550,10 @@ public final class SpotifyLyricAnalysis {
             if (i + 1 < validLines.size()) {
                 endTimeMs = Math.min(endTimeMs, validLines.get(i + 1).startTimeMs);
             }
-            if (endTimeMs <= line.startTimeMs) continue;
+            if (endTimeMs < line.startTimeMs) continue;
+            // 同一时间戳的多行（对唱/双语）不能因为 end == start 被整行丢弃；
+            // 给 1ms 的可渲染区间，消费方按 start 切行。
+            if (endTimeMs == line.startTimeMs) endTimeMs = line.startTimeMs + 1L;
 
             result.add(new SpotifyLine(
                 line.words,

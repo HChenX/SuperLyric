@@ -102,12 +102,111 @@ class SpotifyLyricAnalysisTest {
         assertEquals(3_500L, lines[0].endTimeMs, "末位未知时应收口到下一行起始")
     }
 
+
+    @Test
+    fun `byte entry honours UTF-8 BOM before the JSON branch`() {
+        val json = """{"lyrics":{"lines":[{"startTimeMs":"1000","words":"hello","syllables":[]}]}}"""
+        val withBom = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) +
+            json.toByteArray(Charsets.UTF_8)
+
+        val lines = SpotifyLyricAnalysis.parseLyrics(withBom)
+
+        assertNotNull(lines)
+        assertEquals(1, lines!!.size)
+        assertEquals(1_000L, lines[0].startTimeMs)
+    }
+
+
+
+
+    @Test
+    fun `syllables that go backwards drop words`() {
+        // line: start=1, words="hello", syllable1 [100,200], syllable2 [50,300]
+        val bytes = byteArrayOf(
+            0x0A, 0x1D,
+            0x12, 0x1B,
+            0x08, 0x01,
+            0x12, 0x05, 'h'.code.toByte(), 'e'.code.toByte(), 'l'.code.toByte(), 'l'.code.toByte(), 'o'.code.toByte(),
+            0x1A, 0x07, 0x08, 0x64, 0x10, 0x02, 0x18, 0xC8.toByte(), 0x01,
+            0x1A, 0x07, 0x08, 0x32, 0x10, 0x03, 0x18, 0xAC.toByte(), 0x02,
+        )
+
+        val lines = SpotifyLyricAnalysis.parseLyrics(bytes)
+
+        assertNotNull(lines)
+        assertNull(lines!![0].words)
+    }
+
+    @Test
+    fun `syllable count mismatch drops words but keeps the line`() {
+        // field1 lyrics -> field2 line -> { start=1, words="hello", syllable{count=4} }
+        val bytes = byteArrayOf(
+            0x0A, 0x13,
+            0x12, 0x11,
+            0x08, 0x01,
+            0x12, 0x05, 'h'.code.toByte(), 'e'.code.toByte(), 'l'.code.toByte(), 'l'.code.toByte(), 'o'.code.toByte(),
+            0x1A, 0x06, 0x08, 0x00, 0x10, 0x04, 0x18, 0x0A,
+        )
+
+        val lines = SpotifyLyricAnalysis.parseLyrics(bytes)
+
+        assertNotNull(lines)
+        assertEquals("hello", lines!![0].text)
+        assertNull(lines[0].words)
+    }
+
+
+    private fun varint(value: Int): ByteArray {
+        var v = value
+        val out = java.io.ByteArrayOutputStream()
+        while (v and 0x7F.inv() != 0) {
+            out.write((v and 0x7F) or 0x80)
+            v = v ushr 7
+        }
+        out.write(v)
+        return out.toByteArray()
+    }
+
+    @Test
+    fun `a protobuf string over the 64K limit is rejected`() {
+        val huge = ByteArray(64 * 1024 + 1) { 'a'.code.toByte() }
+        val line = byteArrayOf(0x12) + varint(huge.size) + huge
+        val lyrics = byteArrayOf(0x12) + varint(line.size) + line
+        val top = byteArrayOf(0x0A) + varint(lyrics.size) + lyrics
+
+        assertNull(SpotifyLyricAnalysis.parseLyrics(top))
+    }
+
+    @Test
+    fun `truncated protobuf frames are rejected without throwing`() {
+        // field 1, length-delimited, declared 5 bytes but only 1 present
+        assertNull(SpotifyLyricAnalysis.parseLyrics(byteArrayOf(0x0A, 0x05, 0x01)))
+        // field 1 with invalid wire type 7
+        assertNull(SpotifyLyricAnalysis.parseLyrics(byteArrayOf(0x0F)))
+        // length varint exceeds the parse budget
+        assertNull(
+            SpotifyLyricAnalysis.parseLyrics(
+                byteArrayOf(0x0A, 0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(), 0x7F),
+            ),
+        )
+    }
+
+    @Test
+    fun `empty and non-lyric protobuf bytes do not throw`() {
+        assertNull(SpotifyLyricAnalysis.parseLyrics(ByteArray(0)))
+        // field 1 是 varint，不是 lyrics 的 length-delimited；应被 skip 后返回 null
+        assertNull(SpotifyLyricAnalysis.parseLyrics(byteArrayOf(0x08, 0x01)))
+        // 空 lyrics 容器：结构合法但没有行，返回空列表而不是崩溃
+        assertTrue(SpotifyLyricAnalysis.parseLyrics(byteArrayOf(0x0A, 0x00)).isNullOrEmpty())
+    }
+
     @Test
     fun `malformed or empty payloads yield no lines instead of throwing`() {
         assertNull(SpotifyLyricAnalysis.parseLyrics("not json at all"))
         assertNull(SpotifyLyricAnalysis.parseLyrics("{}"))
         assertNull(SpotifyLyricAnalysis.parseLyrics("""{"lyrics":{}}"""))
-        // 结构合法但没有内容：返回空列表而非 null，调用方按"无歌词"处理
+        // 结构合法但没有内容：返回空列表而非 null；调用方 SpotifyApiSource 把
+        // lines.isEmpty() 归为 TransientFailure，绝不能据此下发纯音乐占位。
         assertTrue(SpotifyLyricAnalysis.parseLyrics("""{"lyrics":{"lines":[]}}""").isNullOrEmpty())
     }
 }

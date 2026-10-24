@@ -39,21 +39,17 @@ import java.util.regex.Pattern;
  *   <li><b>时长偏差分档：</b>1 秒内满分、3 秒内 80、5 秒内 50、更远 0 分。它只影响时长那一栏
  *       （20 分），不会归零整条结果。</li>
  *   <li><b>缺失字段按"哪一侧缺"分别处理：</b>目标侧缺则该维度不可用并从分母中去掉，
- *       候选侧缺则该维度给 0 分但保留在分母里。详见 [scoreCandidate]。</li>
+ *       候选侧缺则该维度给 0 分但保留在分母里。详见 {@link #scoreCandidate}。</li>
  * </ul>
  *
- * <p>三档权重与采纳线的定法、以及它们各自守住的样本，都写在 [scoreCandidate] 与
- * [MIN_ACCEPT_SCORE] 上，并已固化成单测。
+ * <p>三档权重与采纳线的定法、以及它们各自守住的样本，都写在 {@link #scoreCandidate} 与
+ * {@link #MIN_ACCEPT_SCORE} 上，并已固化成单测。
  *
  * @author 焕晨HChen
  */
 public final class LyricScorer {
     private static final Pattern CLEAN_TRACK_NO_PATTERN = Pattern.compile(
         "^\\s*(?:track\\s*)?\\d{1,3}\\s*[-._\\s]\\s*",
-        Pattern.CASE_INSENSITIVE
-    );
-    private static final Pattern CLEAN_BRACKETS_PATTERN = Pattern.compile(
-        "\\s*[\\[\\(（【].*?(?:伴奏|Live|remix|Remix|现场|纯音乐|Instrumental|Cover|翻唱|官方|Remaster|重制|原声|ver\\.|Version|试听|VIP|vip|片段|Clip|clip|Preview|preview|Audition|audition|铃声|DJ版|高潮版).*?[\\]\\)）】]",
         Pattern.CASE_INSENSITIVE
     );
     private static final Pattern CLEAN_SUFFIX_PATTERN = Pattern.compile(
@@ -69,12 +65,12 @@ public final class LyricScorer {
         Pattern.CASE_INSENSITIVE
     );
     /**
-     * 标题**末尾**的括号段（中英文四种括号），捕获组为括号内容。
+     * 标题<b>末尾</b>的括号段（中英文四种括号），捕获组为括号内容。
      *
-     * 白名单式的 {@link #CLEAN_BRACKETS_PATTERN} 只认得「这不是你要的那首歌」的标记
-     * （伴奏 / Live / remix …），而中文曲库里更常见的是**译名**：
+     * 版本标记（伴奏 / Live / remix …）<b>不在这里剥离</b>：它们决定“这是另一版”，
+     * 见 {@link #variantMismatch}。中文曲库里更常见的是<b>译名</b>：
      * 宿主上报 {@code 未来へ (向着未来)}，平台曲库却是 {@code 未来へ}。
-     * 这类括号必须另做一次「去掉后再比」的比较，详见 [calculateTitleSimilarity]。
+     * 这类括号必须另做一次「去掉后再比」的比较，详见 {@link #calculateTitleSimilarity}。
      */
     private static final Pattern TRAILING_BRACKET_PATTERN = Pattern.compile(
         "\\s*[\\(（\\[【]([^\\)）\\]】]*)[\\)）\\]】]\\s*$"
@@ -82,12 +78,12 @@ public final class LyricScorer {
     /**
      * 版本 / 语言 / 演出标记。
      * <p>
-     * 末尾括号里出现这些，说明它标的是「**这是同一首歌的另一版**」而不是译名：
+     * 末尾括号里出现这些，说明它标的是「<b>这是同一首歌的另一版</b>」而不是译名：
      * {@code (Korean Ver.)}、{@code (DJ豪大大版)}、{@code (2025 巡回演唱会合肥站)}、
-     * {@code (双语版)}。带这类标记的括号**绝不能**被剥离——一剥，韩语版、演唱会版
+     * {@code (双语版)}。带这类标记的括号<b>绝不能</b>被剥离——一剥，韩语版、演唱会版
      * 就会和原版同分，然后靠候选顺序随机胜出。
      * <p>
-     * 含**数字**也一并视为标记：日期、{@code 1.1x版}、{@code 32秒片段} 都落在这一类。
+     * 含<b>数字</b>也一并视为标记：日期、{@code 1.1x版}、{@code 32秒片段} 都落在这一类。
      */
     private static final Pattern VARIANT_MARKER_PATTERN = Pattern.compile(
         "\\d|ver\\.?|version|remaster|original|remix|live|acoustic|demo|"
@@ -96,7 +92,7 @@ public final class LyricScorer {
         Pattern.CASE_INSENSITIVE
     );
     /**
-     * 中日韩文字（含假名、谚文）。见 [stripTranslatedSuffix]：只有它们才会带「原名 (译名)」括号。
+     * 中日韩文字（含假名、谚文）。见 {@link #stripTranslatedSuffix}：只有它们才会带「原名 (译名)」括号。
      */
     private static final Pattern CJK_PATTERN = Pattern.compile(
         "[\\u3040-\\u30ff\\u3400-\\u4dbf\\u4e00-\\u9fff\\uac00-\\ud7af\\uf900-\\ufaff]"
@@ -114,7 +110,6 @@ public final class LyricScorer {
         String s = raw.trim();
         s = CLEAN_EXT_PATTERN.matcher(s).replaceAll("");
         s = CLEAN_TRACK_NO_PATTERN.matcher(s).replaceAll("");
-        s = CLEAN_BRACKETS_PATTERN.matcher(s).replaceAll("");
         s = CLEAN_SUFFIX_PATTERN.matcher(s).replaceAll("");
         s = CLEAN_FEAT_PATTERN.matcher(s).replaceAll("");
         return s.trim().toLowerCase(Locale.ROOT);
@@ -141,21 +136,47 @@ public final class LyricScorer {
     }
 
     /**
+     * 两侧末尾括号都带版本标记且内容不同，或只有一侧带标记时，判为不同的版本。
+     *
+     * <p>版本标记必须在清洗之前判断：一旦先被括号清洗剥掉，后面的相似度就没有可比较的
+     * 对象，韩语版/Live/伴奏会与原版同分。
+     */
+    private static boolean variantMismatch(@Nullable String target, @Nullable String candidate) {
+        if (target == null || candidate == null) return false;
+        String left = trailingBracket(target);
+        String right = trailingBracket(candidate);
+        if (left == null && right == null) return false;
+
+        boolean leftVariant = left != null && VARIANT_MARKER_PATTERN.matcher(left).find();
+        boolean rightVariant = right != null && VARIANT_MARKER_PATTERN.matcher(right).find();
+        if (!leftVariant && !rightVariant) return false;
+        if (left == null || right == null) return true;
+        return !left.trim().equalsIgnoreCase(right.trim());
+    }
+
+    @Nullable
+    private static String trailingBracket(@NonNull String raw) {
+        Matcher matcher = TRAILING_BRACKET_PATTERN.matcher(raw.trim());
+        return matcher.find() ? matcher.group(1) : null;
+    }
+
+    /**
      * 计算歌名相似度 [0.0, 1.0]。
      *
-     * <p>取「原样比较」与「去掉末尾**译名**括号后比较」两者中的**较高值**。
+     * <p>取「原样比较」与「去掉末尾<b>译名</b>括号后比较」两者中的<b>较高值</b>。
      * 中文曲库里 {@code 原名 (译名)} 是常态，而平台曲库的标题往往只有原名；
      * 若把译名一并计入长度，同一首歌的相似度会被稀释到门槛之下
      * （实测 {@code 未来へ (向着未来)} vs {@code 未来へ} 只得 0.3，综合 82.2 分而落选）。
      *
-     * <p>取 max 是刻意的：它**只会抬高**相似度，不会让原本可采纳的候选反被拒。
+     * <p>取 max 是刻意的：它<b>只会抬高</b>相似度，不会让原本可采纳的候选反被拒。
      *
      * <p><b>但括号不能无条件剥离</b>：实测把 {@code (Korean Ver.)}、{@code (DJ豪大大版)}、
-     * {@code (2025 巡回演唱会合肥站)} 这类**版本标记**一并剥掉后，它们会从"勉强过线或被否决"
+     * {@code (2025 巡回演唱会合肥站)} 这类<b>版本标记</b>一并剥掉后，它们会从"勉强过线或被否决"
      * 直接顶到满分，与原版同分后靠候选顺序随机胜出——日语歌会配上韩语歌词。
-     * 因此只在括号内容**不像版本标记**时才剥离，见 {@link #stripTranslatedSuffix}。
+     * 因此只在括号内容<b>不像版本标记</b>时才剥离，见 {@link #stripTranslatedSuffix}。
      */
     public static double calculateTitleSimilarity(@Nullable String target, @Nullable String candidate) {
+        if (variantMismatch(target, candidate)) return 0.0;
         String t1 = cleanTitle(target);
         String t2 = cleanTitle(candidate);
         if (t1.isEmpty() || t2.isEmpty()) return 0.0;
@@ -165,7 +186,7 @@ public final class LyricScorer {
     }
 
     /**
-     * 两份**已清洗**标题之间的相似度 [0.0, 1.0]。
+     * 两份<b>已清洗</b>标题之间的相似度 [0.0, 1.0]。
      */
     private static double similarityOf(@NonNull String t1, @NonNull String t2) {
         if (t1.isEmpty() || t2.isEmpty()) return 0.0;
@@ -181,9 +202,9 @@ public final class LyricScorer {
     }
 
     /**
-     * 剥离末尾**译名**括号，可连续剥多段。
+     * 剥离末尾<b>译名</b>括号，可连续剥多段。
      *
-     * <p>只有**中日韩文字的标题**才会带「原名 (译名)」这种括号——这是中文曲库的编排惯例。
+     * <p>只有<b>中日韩文字的标题</b>才会带「原名 (译名)」这种括号——这是中文曲库的编排惯例。
      * 纯拉丁标题里的括号（{@code (From THE FIRST TAKE)}、{@code (BIG Naughty Remix)}、
      * {@code (English Ver.)}）标的是"另一版"，一律不剥。实测若不设这道判据，
      * {@code NIGHT DANCER (From THE FIRST TAKE)} 会从"被否决"直接顶到 100 分。
@@ -212,7 +233,7 @@ public final class LyricScorer {
     /**
      * 计算歌手相似度 [0.0, 1.0]。
      *
-     * <p>任一侧歌手缺失时返回 0.0——"缺失"与"不匹配"在这里**必须同值**。
+     * <p>任一侧歌手缺失时返回 0.0——"缺失"与"不匹配"在这里<b>必须同值</b>。
      * 原实现在缺失时给 0.5 的"中性分"，于是"两个歌手里只对一个"（1/3 ≈ 0.33）
      * 反而比如实缺失得分更低：缺字段成了加分项。
      *
@@ -243,9 +264,9 @@ public final class LyricScorer {
     /**
      * 计算音频时长偏差匹配分 [0, 100]。
      *
-     * <p>只接受**两侧都是真实时长**的输入；任一侧缺失返回 0。缺失该怎么算由
-     * {@link #scoreCandidate} 定，本函数不该有自己的"缺失分"——那正是历史上
-     * "不知道时长"（70）反而比"差了 4 秒"（50）得分更高的来源。
+     * <p>只接受<b>两侧都是真实时长</b>的输入；任一侧缺失返回 0。缺失该怎么算由
+     * {@link #scoreCandidate} 定，本函数不该有自己的"缺失分"：否则"不知道时长"（70）
+     * 会反而比"差了 4 秒"（50）得分更高。
      *
      * <p>误差 &lt;= 1000ms: 100分
      * 误差 &lt;= 3000ms: 80分
@@ -280,7 +301,7 @@ public final class LyricScorer {
     /**
      * 歌名维度权重
      *
-     * 最高的一档：它是最强的判据，也是**版本判别的唯一依据**（见 {@link #stripTranslatedSuffix}）。
+     * 最高的一档：它是最强的判据，也是<b>版本判别的唯一依据</b>（见 {@link #stripTranslatedSuffix}）。
      */
     private static final double TITLE_WEIGHT = 50.0;
 
@@ -312,12 +333,12 @@ public final class LyricScorer {
     private static final double THIN_TARGET_CAP = 60.0;
 
     /**
-     * 采纳线：检索阶段的得分必须**严格大于**本值才会被采纳
+     * 采纳线：检索阶段的得分必须<b>严格大于</b>本值才会被采纳
      *
      * <p>定在 75 的依据是两侧样本的实测得分（均已固化成单测）：
      * <ul>
-     *   <li>必须被**采纳**的最低档：歌名相似度 0.8 + 歌手完全一致 + 时长差 4 秒 = <b>80</b></li>
-     *   <li>必须被**拒绝**的最高档：歌名完全一致但歌手完全不同 = <b>70</b></li>
+     *   <li>必须被<b>采纳</b>的最低档：歌名相似度 0.8 + 歌手完全一致 + 时长差 4 秒 = <b>80</b></li>
+     *   <li>必须被<b>拒绝</b>的最高档：歌名完全一致但歌手完全不同 = <b>70</b></li>
      * </ul>
      * 采纳线落在 70 与 80 之间，两侧各余 5 分。改动权重或时长分档时必须重跑那组单测——
      * 它们就是这条线的定义。
@@ -330,10 +351,10 @@ public final class LyricScorer {
     /**
      * 综合评定候选歌曲得分 [0, 100]。
      *
-     * <p>三个维度按权重加权平均，分母只算**可用**的维度。
+     * <p>三个维度按权重加权平均，分母只算<b>可用</b>的维度。
      *
      * <h3>缺失字段按"哪一侧缺"分别处理</h3>
-     * 目标侧（宿主上报）与候选侧（平台检索结果）的可信度**不对称**：
+     * 目标侧（宿主上报）与候选侧（平台检索结果）的可信度<b>不对称</b>：
      * <ul>
      *   <li><b>目标侧缺失 ⇒ 该维度不可用</b>，直接从分母里去掉（重新归一）。绝不补一个常数分——
      *       常数分对所有候选一视同仁，等于把采纳线悄悄往下挪一截，而"缺失"看起来就像"匹配上了"</li>
@@ -345,7 +366,7 @@ public final class LyricScorer {
      * 原实现"双方时长都 &gt; 0 且差 &gt; 5 秒"直接判 0，于是弱信号能抹掉强信号：
      * 歌名歌手完全一致、只差 6 秒的候选被判 0，而"只有歌名对、其余全缺"的候选反而过线。
      * 现在时长超差只把时长那一栏打成 0（丢 20 分），不归零整条结果——宿主上报的时长常常是
-     * **流的长度**而非录音长度，"差 6 秒"未必是另一首歌。版本判别由歌名一栏负责。
+     * <b>流的长度</b>而非录音长度，"差 6 秒"未必是另一首歌。版本判别由歌名一栏负责。
      *
      * <h3>目标侧只剩歌名时不给结论</h3>
      * 只用歌名无法确定身份，得分被压在 {@link #THIN_TARGET_CAP}——采纳线之下。

@@ -33,7 +33,7 @@ import com.hchen.superlyric.provider.base.MusicProvider;
  * 同时其歌词接口需要 Apple 的 Music-User-Token，模块不持有、也不应持有用户凭证。
  * 因此本 Provider 只实现 Hook 路径。
  *
- * <p>另一个后果是**没有网络兜底**：一旦宿主结构变动导致抽取失败，本 Provider 会静默失效，
+ * <p>另一个后果是<b>没有网络兜底</b>：一旦宿主结构变动导致抽取失败，本 Provider 会静默失效，
  * 而不是退化成"从别的平台拉一首同名歌"——后者在跨语言曲库上错配率很高。
  *
  * @author 焕晨HChen

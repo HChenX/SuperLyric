@@ -68,12 +68,10 @@ final class OversizeException extends IOException {
 
 final class HttpStatusException extends IOException {
     public final int code;
-    public final boolean retryable;
 
-    HttpStatusException(int code, boolean retryable) {
+    HttpStatusException(int code) {
         super("Spotify HTTP " + code);
         this.code = code;
-        this.retryable = retryable;
     }
 }
 
