@@ -20,7 +20,6 @@ package com.hchen.superlyric.ui.screen
 
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.app.ActivityManager
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -63,17 +62,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.edit
 import com.hchen.hooktool.data.AppData
-import com.hchen.hooktool.utils.PrefsTool
 import com.hchen.superlyric.R
-import com.hchen.superlyric.data.PrefsKey
 import com.hchen.superlyric.data.SupportApps
 import com.hchen.superlyric.data.apps.ApiAppData
-import com.hchen.superlyric.ui.Application
 import com.hchen.superlyric.ui.data.LocalViewModel
 import com.hchen.superlyric.ui.effect.BlurredBar
 import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
+import com.hchen.superlyric.ui.screen.settings.HomeSettingsController
+import com.hchen.superlyric.ui.screen.settings.HomeSettingsState
 import com.hchen.superlyric.ui.viewmodel.MainUiAction
 import com.hchen.superlyric.utils.LauncherIconController
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -136,6 +133,7 @@ fun HomeLayout(
     }
 
     var launcherHidden by remember { mutableStateOf(LauncherIconController.isHidden(context)) }
+    val settingsState = HomeSettingsState(logLevel, launcherHidden)
 
     val settingsEntries = remember(logLevel, launcherHidden) {
         listOf(
@@ -145,35 +143,26 @@ fun HomeLayout(
                         text = context.getString(R.string.clear_dexkit_cache),
                         selected = false,
                         onClick = {
-                            val remotePrefs = Application.getRemotePreferences()
-                            if (remotePrefs != null) {
-                                var version = remotePrefs.getInt("super_lyric_dexkit_cache_version", 0)
-                                remotePrefs.edit { putInt("super_lyric_dexkit_cache_version", ++version) }
-                                Toast.makeText(context, context.getString(R.string.cleared), Toast.LENGTH_SHORT).show()
-                            } else {
-                                Toast.makeText(context, context.getString(R.string.clear_failed), Toast.LENGTH_SHORT).show()
-                            }
+                            val ok = HomeSettingsController.clearCache(context)
+                            Toast.makeText(
+                                context,
+                                context.getString(if (ok) R.string.cleared else R.string.clear_failed),
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
                     ),
                     DropdownItem(
                         text = context.getString(
-                            if (launcherHidden) R.string.show_icon else R.string.hide_icon
+                            HomeSettingsController.launcherLabelRes(settingsState.launcherHidden)
                         ),
                         selected = false,
                         onClick = {
                             val next = !launcherHidden
-                            if (LauncherIconController.setHidden(context, next)) {
-                                // DONT_KILL_APP：组件状态立即持久化，桌面通过 package-changed
-                                // 刷新图标，当前进程不需要重启。隐藏时把任务移出最近任务，
-                                // 否则用户仍能从 recents 回到这个已经隐藏的入口。
+                            if (HomeSettingsController.setLauncherHidden(context, next)) {
+                                // DONT_KILL_APP 使组件状态立即持久化；隐藏时结束本应用全部 task，
+                                // 避免从最近任务回到已隐藏的入口。
                                 launcherHidden = next
-                                if (next) {
-                                    // 从桌面和 LSPosed 进入会形成两个 task；只结束当前 task
-                                    // 会留下另一个可回到的入口。这里结束本应用的全部 task。
-                                    val activityManager = context.getSystemService(ActivityManager::class.java)
-                                    activityManager?.appTasks?.forEach { it.finishAndRemoveTask() }
-                                    (context as? Activity)?.finishAndRemoveTask()
-                                }
+                                if (next) (context as? Activity)?.finishAndRemoveTask()
                             } else {
                                 Toast.makeText(
                                     context,
@@ -191,7 +180,7 @@ fun HomeLayout(
                                 selected = logLevel == index,
                                 onClick = {
                                     viewModel.handleAction(MainUiAction.UpdateLogLevel(index))
-                                    PrefsTool.prefs(context).edit { putInt(PrefsKey.LOG_LEVEL, index) }
+                                    HomeSettingsController.setLogLevel(context, index)
                                 }
                             )
                         }
