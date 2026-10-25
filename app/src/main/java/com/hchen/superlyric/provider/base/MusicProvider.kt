@@ -77,10 +77,16 @@ abstract class MusicProvider : AbsPublisher() {
     @Volatile
     private var hookSource: HookLyricSource? = null
 
-    /** 上一次已输出日志的元数据；宿主会高频重发同一份，用它降噪。 */
+    /**
+     * 上一次已输出日志的元数据；宿主会高频重发同一份，用它降噪。
+     *
+     * `@Volatile`：与 [hookSource] 同理，在宿主 `MediaSession` 回调线程上读写
+     */
+    @Volatile
     private var lastSeenIdentity: TrackIdentity? = null
 
-    /** 上一次已转储全部元数据键的稳定标识。 */
+    /** 上一次已转储全部元数据键的稳定标识。同样在回调线程上读写 */
+    @Volatile
     private var lastDumpedStableId: String? = null
 
     /** 宿主自己的 MediaSession；仅诊断期用于模拟跳转播放位置 */
@@ -119,7 +125,14 @@ abstract class MusicProvider : AbsPublisher() {
      */
     private val stopGate = StopGate(
         scheduler = StopGate.Scheduler { delayMs, task ->
-            stopConfirmer.schedule(task, delayMs, TimeUnit.MILLISECONDS)
+            stopConfirmer.schedule({
+                try {
+                    task.run()
+                } catch (t: Throwable) {
+                    // stopConfirmer 丢弃 Future 的异常；不在这里留痕，停止确认失败就是静默的。
+                    AndroidLog.logE(providerTag, "Stop confirmation task failed", t)
+                }
+            }, delayMs, TimeUnit.MILLISECONDS)
         },
         onConfirmed = Runnable {
             // 与证据的记账互斥地判定：StopGate 的令牌那一关证明不了"确认成立之后没人发布"
@@ -193,7 +206,7 @@ abstract class MusicProvider : AbsPublisher() {
         AndroidLog.logD(
             providerTag,
             "Provider ready for ${param.packageName}: hook=${hookSource?.sourceName ?: "none"}, " +
-                "api=${apiSource?.sourceName ?: "none"}",
+                    "api=${apiSource?.sourceName ?: "none"}",
         )
     }
 
@@ -275,6 +288,21 @@ abstract class MusicProvider : AbsPublisher() {
                     AndroidLog.logD(providerTag, "$signal ignored while a stop is pending")
                 }
         }
+
+        // 停止确认会清空 currentIdentity 并让编排器回到 IDLE。宿主 resume 时通常只发
+        // setPlaybackState(PLAYING)、不会重发同一份 metadata；只靠 onMetadataChanged
+        // 重启取词会让界面一直停在停止包清空后的空白态，直到下一次切歌。
+        if ((signal == PlaybackSignal.PLAYING || signal == PlaybackSignal.ACTIVE) &&
+            !stopGate.isPending &&
+            this::orchestrator.isInitialized &&
+            orchestrator.state == LyricOrchestrator.State.IDLE
+        ) {
+            val identity = lastSeenIdentity
+            if (identity != null) {
+                AndroidLog.logD(providerTag, "Playback resumed after stop; restarting resolution")
+                orchestrator.onTrackChanged(identity)
+            }
+        }
     }
 
     /**
@@ -315,13 +343,16 @@ abstract class MusicProvider : AbsPublisher() {
             AndroidLog.logD(
                 providerTag,
                 "Metadata changed: id=${identity.stableId}, title=\"${identity.title}\", " +
-                    "artist=\"${identity.artist}\", duration=${identity.durationMs}ms",
+                        "artist=\"${identity.artist}\", duration=${identity.durationMs}ms",
             )
         }
 
-        // 每首曲目只转储一次全部元数据键，用于排查"曲名被宿主改写"这类问题
-        if (identity.stableId != lastDumpedStableId) {
-            lastDumpedStableId = identity.stableId
+        // 每首曲目只转储一次全部元数据键，用于排查"曲名被宿主改写"这类问题。
+        // 没有 stableId 的宿主不能退化成 null==null：否则整个进程只转储第一首。
+        val dumpKey = identity.stableId
+            ?: (identity.title + "|" + identity.artist + "|" + identity.durationMs)
+        if (dumpKey != lastDumpedStableId) {
+            lastDumpedStableId = dumpKey
             LyricDiag.dumpMetadata(providerTag, metadata)
         }
 
@@ -381,7 +412,7 @@ abstract class MusicProvider : AbsPublisher() {
             AndroidLog.logW(
                 providerTag,
                 "Seek simulator reached a process without host session/state " +
-                    "(session=${session != null}, state=${current != null})",
+                        "(session=${session != null}, state=${current != null})",
             )
             return
         }

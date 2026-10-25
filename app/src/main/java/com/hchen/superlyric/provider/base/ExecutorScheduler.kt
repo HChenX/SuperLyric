@@ -30,7 +30,7 @@ import java.util.concurrent.TimeUnit
  * 编排器的超时与退避任务量极小（每首歌至多几次），单线程足够，
  * 且能保证同一首歌内的定时任务按序执行。
  */
-class ExecutorScheduler(threadName: String = "SuperLyric-Scheduler") : Scheduler {
+class ExecutorScheduler(private val threadName: String = "SuperLyric-Scheduler") : Scheduler {
 
     private val executor = Executors.newSingleThreadScheduledExecutor { runnable ->
         Thread(runnable, threadName).apply { isDaemon = true }
@@ -39,7 +39,11 @@ class ExecutorScheduler(threadName: String = "SuperLyric-Scheduler") : Scheduler
     override fun schedule(delayMs: Long, task: () -> Unit): Cancellable {
         val future: ScheduledFuture<*> = executor.schedule(
             {
-                runCatching { task() }
+                runCatching { task() }.onFailure {
+                    // 定时任务里包含编排器的重试/停止发布；异常被 ScheduledFuture 吞掉时
+                    // 表现为“重试链断了/停止包没发出去”，必须留痕。
+                    com.hchen.hooktool.log.AndroidLog.logE(threadName, "Scheduled task failed", it)
+                }
             },
             delayMs.coerceAtLeast(0L),
             TimeUnit.MILLISECONDS,

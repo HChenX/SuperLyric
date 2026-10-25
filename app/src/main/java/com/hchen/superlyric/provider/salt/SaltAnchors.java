@@ -40,20 +40,20 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 
 /**
- * 椒盐音乐 Hook 锚点：从 {@code MusicController} 的歌词设置入口取回**原始歌词文本**。
+ * 椒盐音乐 Hook 锚点：从 {@code MusicController} 的歌词设置入口取回<b>原始歌词文本</b>。
  *
  * <h3>为什么只取 {@code sourceText}</h3>
- * {@code LyricsDocument} 里保存着宿主收到的**原始歌词文本** {@code sourceText}
+ * {@code LyricsDocument} 里保存着宿主收到的<b>原始歌词文本</b> {@code sourceText}
  * （宿主用它渲染，也用它导出）。它尚未经过宿主内部
  * {@code VerbatimLyricsParserImpl.e()} 对相邻词元的重叠裁切，
  * 因此逐字时戳不会出现 0ms 坍缩。
  *
- * <p>反过来说，只要拿到了 {@code sourceText}，就**不需要**再去反射
+ * <p>反过来说，只要拿到了 {@code sourceText}，就<b>不需要</b>再去反射
  * {@code LyricsLine} / {@code LyricsCell} 那套行/词模型——那正是本项目要根除的末端反射。
- * 本实现只读取 {@code LyricsDocument} 上的**一个 String 字段**。
+ * 本实现只读取 {@code LyricsDocument} 上的<b>一个 String 字段</b>。
  *
  * <h3>字段如何定位</h3>
- * 不硬编码字段名（R8 会重命名），而是在 {@code LyricsDocument} 内按**类型唯一性**取字符串字段。
+ * 不硬编码字段名（R8 会重命名），而是在 {@code LyricsDocument} 内按<b>类型唯一性</b>取字符串字段。
  * 这个类只有一个非静态 String 字段。
  *
  * @author 焕晨HChen
@@ -63,10 +63,14 @@ public final class SaltAnchors {
 
     private static final String DOCUMENT_CACHE_KEY = "salt_lyrics_document_class_v1";
 
-    /** 锚点：{@code LyricsDocument} 的 toString 格式串。 */
+    /**
+     * 锚点：{@code LyricsDocument} 的 toString 格式串。
+     */
     private static final String DOCUMENT_ANCHOR = "LyricsDocument(sourceText=";
 
-    /** 宿主的曲目模型类；带 {@code @Keep}，类名与 getter 名都是稳定的。 */
+    /**
+     * 宿主的曲目模型类；带 {@code @Keep}，类名与 getter 名都是稳定的。
+     */
     private static final String SONG_CLASS = "com.salt.music.data.entry.Song";
 
     private static final String CONTROLLER_CLASS = "com.salt.music.service.MusicController";
@@ -76,7 +80,9 @@ public final class SaltAnchors {
     private SaltAnchors() {
     }
 
-    /** 宿主设置歌词时的回调。 */
+    /**
+     * 宿主设置歌词时的回调。
+     */
     public interface LyricsListener {
         /**
          * @param sourceText 原始歌词文本
@@ -85,7 +91,7 @@ public final class SaltAnchors {
         void onLyrics(@NonNull String sourceText, @NonNull String songId);
 
         /**
-         * 宿主的**真实曲目信息**。
+         * 宿主的<b>真实曲目信息</b>。
          *
          * <p>椒盐在开启蓝牙歌词后会把 {@code METADATA_KEY_TITLE} 写成当前歌词行或制作人名单、
          * 把 {@code ARTIST} 拼成 {@code "歌手 - 曲名"}——元数据完全不可信。
@@ -185,11 +191,11 @@ public final class SaltAnchors {
      * 挂载宿主那一个"曲目已切换"回调，取回 {@code com.salt.music.data.entry.Song}。
      *
      * <h3>为什么是这条路</h3>
-     * 先试过 {@code LyriconSongSnapshot} 的构造器，真机实测**切歌时零触发**——
-     * 那是 Lyricon 歌词渲染器的快照，只有歌词页面订阅时才会生成，不能作为取数依据。
+     * 不能从 {@code LyriconSongSnapshot} 的构造器取数：它是歌词渲染器的快照，
+     * 只有歌词页面订阅时才生成，切歌时零触发。
      * 而 {@code MusicController} 内部以 {@code Song} 为参数的回调稳定触发，
      * 且 {@code Song} 带 {@code @Keep}、{@code Song.getId()} 与
-     * {@link LyricsListener#onLyrics} 的 songId **完全一致**，可精确关联。
+     * {@link LyricsListener#onLyrics} 的 songId <b>完全一致</b>，可精确关联。
      *
      * <h3>为什么按签名而不是按名字</h3>
      * 触发的方法名是混淆产物（实测为单个生僻字符），无法跨版本硬编码；
@@ -228,7 +234,9 @@ public final class SaltAnchors {
         }
     }
 
-    /** 按精确参数序列挂载静态 void 方法。 */
+    /**
+     * 按精确参数序列挂载静态 void 方法。
+     */
     private static int hookSongCallback(
         @NonNull Class<?> controllerClass,
         @NonNull LyricsListener listener,
@@ -275,7 +283,9 @@ public final class SaltAnchors {
         });
     }
 
-    /** 已转储过的曲目标识，避免热路径刷屏。 */
+    /**
+     * 已转储过的曲目标识，避免热路径刷屏。
+     */
     private static volatile String sLastDumpedSongId;
 
     private static void reportSong(@Nullable Object song, @NonNull LyricsListener listener) {
@@ -283,8 +293,8 @@ public final class SaltAnchors {
 
         String songId = invokeOrNull(song, "getId");
         if (songId == null || songId.isEmpty()) {
-            // 取不到宿主标识就没法把歌词与曲目关联起来。曾经失败时返回 "<XXXException>" 这类
-            // 标记串并当成真实值传下去，songStore 以标记为键、永远查不中，真曲名丢失后退回
+            // 取不到宿主标识就没法把歌词与曲目关联起来。不能返回 "<XXXException>" 这类
+            // 标记串并当成真实值传下去：songStore 以标记为键、永远查不中，真曲名丢失后退回
             // 被歌词污染的 MediaMetadata——宁可这一轮不报，也不能报一个假标识
             AndroidLog.logW(TAG, "Song.getId() unavailable; skipping track info for this callback");
             return;
@@ -326,7 +336,7 @@ public final class SaltAnchors {
     /**
      * 反射调用无参 getter；失败或返回 {@code null} 时返回 {@code null}。
      *
-     * <p>给**语义路径**用：取不到就得是"取不到"，不能用一个字符串冒充真实值。
+     * <p>给<b>语义路径</b>用：取不到就得是"取不到"，不能用一个字符串冒充真实值。
      * 诊断转储请用 {@link #invoke}。
      */
     @Nullable
@@ -339,7 +349,9 @@ public final class SaltAnchors {
         }
     }
 
-    /** 反射调用无参 getter；失败时返回标记串（含异常类型）而不是抛出。仅供诊断转储。 */
+    /**
+     * 反射调用无参 getter；失败时返回标记串（含异常类型）而不是抛出。仅供诊断转储。
+     */
     @NonNull
     private static String invoke(@NonNull Object target, @NonNull String method) {
         try {

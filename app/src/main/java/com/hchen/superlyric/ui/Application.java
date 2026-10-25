@@ -45,6 +45,7 @@ import io.github.libxposed.service.XposedServiceHelper;
  */
 public class Application extends android.app.Application implements XposedServiceHelper.OnServiceListener {
     private static final Object PREFS_LOCK = new Object();
+    private static volatile android.content.Context sAppContext;
     private static volatile boolean isXposedActive = false;
     private static volatile XposedService mXposedService;
     private static volatile SharedPreferences mRemotePreferences;
@@ -53,6 +54,7 @@ public class Application extends android.app.Application implements XposedServic
     @Override
     public void onCreate() {
         super.onCreate();
+        sAppContext = this;
 
         ModuleConfig.setLogTag("SuperLyric");
         ModuleConfig.setPrefsName("super_lyric_prefs");
@@ -64,6 +66,21 @@ public class Application extends android.app.Application implements XposedServic
         if (SuperLyricHelper.isAvailable()) {
             SuperLyricHelper.registerPublisher();
         }
+    }
+
+    /**
+     * 进程级 Application context。
+     *
+     * <p>供生命周期长于 Activity 的对象（例如 ViewModel 的 lambda）使用，避免把 Activity
+     * 闭包进 ViewModel；不要用它做短生命周期 UI 操作。
+     */
+    @NonNull
+    public static android.content.Context getAppContext() {
+        android.content.Context context = sAppContext;
+        if (context == null) {
+            throw new IllegalStateException("Application.onCreate has not run yet");
+        }
+        return context;
     }
 
     public static boolean isXposedActive() {
@@ -91,22 +108,33 @@ public class Application extends android.app.Application implements XposedServic
 
     @Override
     public void onServiceBind(@NonNull XposedService service) {
-        isXposedActive = true;
-        SharedPreferences remotePreferences = service.getRemotePreferences(ModuleConfig.getPrefsName());
-        List<Consumer<SharedPreferences>> listenersSnapshot;
-        synchronized (PREFS_LOCK) {
-            mXposedService = service;
-            mRemotePreferences = remotePreferences;
-            listenersSnapshot = List.copyOf(listeners);
-        }
+        try {
+            SharedPreferences remotePreferences = service.getRemotePreferences(ModuleConfig.getPrefsName());
+            List<Consumer<SharedPreferences>> listenersSnapshot;
+            synchronized (PREFS_LOCK) {
+                mXposedService = service;
+                mRemotePreferences = remotePreferences;
+                listenersSnapshot = List.of(listeners.toArray(new Consumer[0]));
+            }
 
-        PrefsTool.prefs(this)
-            .edit()
-            .putInt(PrefsKey.LOG_LEVEL, remotePreferences.getInt(PrefsKey.LOG_LEVEL, 0))
-            .apply();
+            PrefsTool.prefs(this)
+                .edit()
+                .putInt(PrefsKey.LOG_LEVEL, remotePreferences.getInt(PrefsKey.LOG_LEVEL, 0))
+                .apply();
 
-        for (Consumer<SharedPreferences> listener : listenersSnapshot) {
-            listener.accept(remotePreferences);
+            for (Consumer<SharedPreferences> listener : listenersSnapshot) {
+                try {
+                    listener.accept(remotePreferences);
+                } catch (Throwable t) {
+                    // 一个监听器失败不能连坐后面的监听器；否则界面会静默停在旧配置。
+                    android.util.Log.w("SuperLyric", "Prefs-ready listener failed", t);
+                }
+            }
+            isXposedActive = true;
+        } catch (Throwable t) {
+            // 远程 prefs 读取失败时不要抛出 XposedServiceHelper 的回调线程；界面应继续可用，
+            // 只是拿不到远程配置。
+            android.util.Log.w("SuperLyric", "Failed to bind Xposed service", t);
         }
     }
 
@@ -120,5 +148,6 @@ public class Application extends android.app.Application implements XposedServic
             mXposedService = null;
             mRemotePreferences = null;
         }
+        android.util.Log.i("SuperLyric", "Xposed service died");
     }
 }

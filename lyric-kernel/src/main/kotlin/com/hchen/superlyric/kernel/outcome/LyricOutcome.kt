@@ -25,7 +25,8 @@ import com.hchen.superlyric.kernel.model.LyricDoc
  *
  * 三种语义必须分开，编排器才能做出正确决策：
  * - [Success] → 直接激活
- * - [NoLyrics] / [Unsupported] → **终态**，可下发纯音乐占位
+ * - [NoLyrics] → **终态**，是唯一可下发纯音乐占位的结论
+ * - [Unsupported] → **终态**，但归因于"来源不可用"，**绝不可**下发占位
  * - [TransientFailure] → **可重试**，绝不据此下发占位
  *
  * 若把它们压成同一个"失败"，编排器就无从区分"确实没有歌词"与"这次请求失败了"，

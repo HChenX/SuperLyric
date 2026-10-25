@@ -78,7 +78,7 @@ object LyricText {
     fun fallbackWordDuration(text: String): Long =
         maxOf(MIN_WORD_DURATION_MS, text.length.toLong() * MS_PER_CHAR)
 
-    private val ENTITY_PATTERN = Regex("&(#x?[0-9a-fA-F]+|[a-zA-Z]+);")
+    private val ENTITY_PATTERN = Regex("&(#x?[0-9a-fA-F]+|[a-zA-Z]+);", RegexOption.IGNORE_CASE)
 
     private val NAMED_ENTITIES = mapOf(
         "amp" to "&",

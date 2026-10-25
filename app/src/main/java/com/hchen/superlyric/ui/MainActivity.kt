@@ -110,7 +110,9 @@ class MainActivity : ComponentActivity() {
             removePrefsReadyListener = Application::removePrefsReadyListener,
             addAppLoadedListener = PackageLoader::addPackageLoadedListener,
             removeAppLoadedListener = PackageLoader::removePackageLoadedListener,
-            reloadApps = { PackageLoader.loadPackages(applicationContext) }
+            // 用进程级 Application context，而不是 Activity 的 applicationContext getter：
+            // 后者会让 lambda 捕获 MainActivity，而 ViewModel 在配置变更后仍然存活。
+            reloadApps = { PackageLoader.loadPackages(Application.getAppContext()) }
         )
     }
 
@@ -162,9 +164,10 @@ class MainActivity : ComponentActivity() {
         var unavailableReason by remember { mutableStateOf("") }
         LaunchedEffect(Unit) {
             if (!SuperLyricHelper.isAvailable()) {
-                val errorMsg = runCatching { SuperLyricHelper.registerPublisher() }
-                    .exceptionOrNull()?.message ?: "Unknown"
-                unavailableReason = errorMsg
+                // 不要用 registerPublisher() 当探针：API 3.7 内部会吞掉异常并直接返回，
+                // 既拿不到原因，还会把 UI 进程注册成 publisher。
+                unavailableReason = "SuperLyric service is not available. " +
+                        "Install/enable the module and reboot the device."
                 showUnavailable = true
             }
         }
@@ -176,8 +179,7 @@ class MainActivity : ComponentActivity() {
         ) {
             MiuixTheme(controller = ThemeController(ColorSchemeMode.System)) {
                 BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-                    val isWideScreen = maxWidth > UIConstants.WIDE_SCREEN_THRESHOLD ||
-                            (maxWidth > UIConstants.MEDIUM_WIDTH_THRESHOLD && (maxHeight.value / maxWidth.value < UIConstants.PORTRAIT_ASPECT_RATIO_THRESHOLD))
+                    val isWideScreen = UIConstants.isWideScreen(maxWidth.value, maxHeight.value)
                     if (isWideScreen) {
                         WideScreenLayout()
                     } else {
@@ -362,4 +364,4 @@ class MainActivity : ComponentActivity() {
         NavigationItemData(UIConstants.API_PAGE_INDEX, R.string.api, MiuixIcons.Music),
         NavigationItemData(UIConstants.ABOUT_PAGE_INDEX, R.string.about, MiuixIcons.Info)
     )
-}
+}

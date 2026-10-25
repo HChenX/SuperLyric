@@ -20,7 +20,9 @@ package com.hchen.superlyric.provider.spotify;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+
 import com.hchen.superlyricapi.SuperLyricWord;
+
 import java.io.IOException;
 import java.util.List;
 
@@ -68,12 +70,10 @@ final class OversizeException extends IOException {
 
 final class HttpStatusException extends IOException {
     public final int code;
-    public final boolean retryable;
 
-    HttpStatusException(int code, boolean retryable) {
+    HttpStatusException(int code) {
         super("Spotify HTTP " + code);
         this.code = code;
-        this.retryable = retryable;
     }
 }
 

@@ -36,13 +36,13 @@ import com.hchen.superlyric.provider.kugou.KuGouApiSource;
  * <h3>取词路径</h3>
  * <ul>
  *   <li><b>Hook 路径（准确优先）</b>：单锚点读取 {@code MusicController} 设置歌词时携带的
- *       {@code LyricsDocument.sourceText}——宿主的**原始歌词文本**，未经任何内部裁切。
+ *       {@code LyricsDocument.sourceText}——宿主的<b>原始歌词文本</b>，未经任何内部裁切。
  *       不需要反射 {@code LyricsLine} / {@code LyricsCell}。</li>
  *   <li><b>API 路径（兜底）</b>：复用酷狗开放接口做跨源检索。</li>
  * </ul>
  *
  * <h3>关于标题污染</h3>
- * 椒盐音乐的状态栏歌词功能会**把当前歌词行写进 {@code MediaMetadata.METADATA_KEY_TITLE}**，
+ * 椒盐音乐的状态栏歌词功能会<b>把当前歌词行写进 {@code MediaMetadata.METADATA_KEY_TITLE}</b>，
  * 使标题高频变动、无法用于标识曲目。本实现因此优先采用 Hook 侧捕获的显式曲目标识；
  * 只有在完全没有标识时才退回标题比对，并依赖 {@link TrackIdentity} 的时长约束降低误判。
  *
@@ -63,7 +63,7 @@ public class SaltProvider extends MusicProvider {
      *
      * <p>{@code volatile} 是必需的：在 {@code onPackageReady} 的线程上写，在宿主
      * {@code MediaSession} 回调线程上经 {@link #buildIdentity} 读。可见性失败时读到 null，
-     * 会静默退化为使用**宿主元数据**——而椒盐会把当前歌词行写进 TITLE，元数据完全不可信。
+     * 会静默退化为使用<b>宿主元数据</b>——而椒盐会把当前歌词行写进 TITLE，元数据完全不可信。
      * 基类的 {@code hookSource} 出于同一原因也是 volatile。
      */
     @Nullable

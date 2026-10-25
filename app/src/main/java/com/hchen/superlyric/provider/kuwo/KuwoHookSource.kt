@@ -26,6 +26,8 @@ import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
 import com.hchen.superlyric.provider.base.HookLyricSource
+import com.hchen.superlyric.provider.base.SourceRequestGate
+import com.hchen.superlyric.provider.base.withMetadata
 import com.hchen.superlyric.utils.LyricDiag
 
 import java.util.concurrent.Executors
@@ -59,11 +61,7 @@ class KuwoHookSource : HookLyricSource {
         Thread(runnable, "SuperLyric-KuwoHook").apply { isDaemon = true }
     }
 
-    @Volatile
-    private var session: LyricSource.Session? = null
-
-    @Volatile
-    private var pendingIdentity: TrackIdentity? = null
+    private val requests = SourceRequestGate()
 
     /**
      * 最近一次由宿主上报的 rid
@@ -165,8 +163,7 @@ class KuwoHookSource : HookLyricSource {
         // 首要补救时机：切歌那一刻宿主已跑起来、dex 必然加载完毕，是首轮定位失败后
         // 最自然的第二次机会。内部已限流封顶，重复调用不会白烧 DexKit 检索
         KuwoAnchors.retryInstallIfNeeded()
-        this.session = session
-        this.pendingIdentity = identity
+        requests.open(identity, session)
         // 补投：宿主的歌词回调可能早于元数据更新到达，成果必须还给刚刚建立的新会话。
         //
         // 按**完整标识**取槽，不做 rid 级模糊匹配：暂存槽是按 rid + 标题归的，而同专辑
@@ -180,14 +177,18 @@ class KuwoHookSource : HookLyricSource {
         if (stashed != null && canReplay(stashed, identity)) {
             // 只取走刚刚读到的那一份：解析线程可能在两步之间把同一 rid 换成了新正文
             synchronized(stashByRid) { if (stashByRid[key] === stashed) stashByRid.remove(key) }
+            val rid = TrackIdentity.normalizeStableId(identity.stableId).orEmpty()
             AndroidLog.logD(sourceName, "Replaying stashed lyric for id=${identity.stableId}")
-            session.deliver(LyricOutcome.Success(stashed.doc.withMetadata(identity)))
+            session.deliver(
+                LyricOutcome.Success(
+                    stashed.doc.withMetadata(identity, trackTitle(rid), trackArtist(rid))
+                )
+            )
         }
     }
 
     override fun cancel() {
-        session = null
-        pendingIdentity = null
+        requests.invalidate()
         synchronized(stashByRid) { stashByRid.clear() }
         lastDelivered = null
         lastAttempted = null
@@ -203,7 +204,7 @@ class KuwoHookSource : HookLyricSource {
     private fun handleLyricText(text: String, rid: String) {
         // 与 Provider 侧同一套组合规则：rid + 标题。酷我的 rid 在有声书上是专辑级 ID，
         // 同一部书各集共用，只用 rid 会让新一集被当成同一首而丢弃
-        val entryIdentity = pendingIdentity
+        val entryIdentity = requests.current()?.identity
         val stableId = stableIdOf(rid) ?: entryIdentity?.stableId
         // 已经成功交付过的同一份正文才跳过。判定放在这里只是快速路径，
         // 真正的写入在解析成功之后（见下方 lastDelivered = ...）。
@@ -226,9 +227,8 @@ class KuwoHookSource : HookLyricSource {
                     LyricRequest(
                         format = LyricFormat.AUTO,
                         text = text,
-                        // 不在此处带曲目元数据：解析可能发生在切歌之前，那时 pendingIdentity
-                        // 还是上一首的，带进来就会把旧曲名/旧时长烤进文档、事后无法纠正。
-                        // 元数据一律在投递时由 withMetadata 按当时的身份回填。
+                        // 解析可能早于切歌完成；这里只带稳定标识，元数据在投递时
+                        // 由当前请求身份回填，避免把上一首的曲名/时长写进文档。
                         lyricId = stableId,
                     )
                 )
@@ -268,11 +268,13 @@ class KuwoHookSource : HookLyricSource {
                     return@execute
                 }
                 AndroidLog.logW(sourceName, "Parsed no lines from lyric text (len=${text.length})")
-                session?.deliver(LyricOutcome.Unsupported("kuwo: parsed empty"))
+                requests.current()?.session?.deliver(
+                    LyricOutcome.Unsupported("kuwo: parsed empty")
+                )
                 return@execute
             }
 
-            stashPut(stashKey(stableId), Stashed(parsed, stableId, session == null))
+            stashPut(stashKey(stableId), Stashed(parsed, stableId, requests.current() == null))
             // 解析成功才写 lastDelivered：这份正文确实能出歌词，才值得挡重复回调。
             // 若在解析之前就写，一次失败（线程池被占、宿主这次给的是残包）会让同一份
             // 正文永远命中去重分支而再也进不来，而宿主随后可能不再回调。
@@ -282,8 +284,9 @@ class KuwoHookSource : HookLyricSource {
 
             // 只有当这份结果确实属于当前会话时才直接投递；否则留给 start() 补投。
             // 绝不能投给一个属于别的曲目的会话——那会被当成新曲目的歌词发布出去。
-            val target = session
-            val current = pendingIdentity
+            val activeAtDelivery = requests.current()
+            val target = activeAtDelivery?.session
+            val current = activeAtDelivery?.identity
             // 同样走 sameTrack：解析期间若宿主标题才到位，stableId 会从 `kuwo:<rid>`
             // 变成 `kuwo:<rid>#<标题>`，用严格相等会判成"不是当前曲目"而白白转进 stash。
             //
@@ -297,7 +300,11 @@ class KuwoHookSource : HookLyricSource {
                 entryIdentity == current
             }
             if (target != null && sameSession) {
-                target.deliver(LyricOutcome.Success(parsed.withMetadata(current)))
+                target.deliver(
+                    LyricOutcome.Success(
+                        parsed.withMetadata(current, trackTitle(rid), trackArtist(rid))
+                    )
+                )
             } else {
                 AndroidLog.logD(
                     sourceName,
@@ -394,32 +401,6 @@ class KuwoHookSource : HookLyricSource {
         } else {
             TrackIdentity.stableId(NAMESPACE, "$rid#$title")
         }
-    }
-
-    /**
-     * 用音轨身份补齐曲目信息
-     *
-     * **身份优先，而不是"仅在为空时补齐"**：酷我的歌词回调可能早于元数据到达，
-     * 解析时用的也许是上一首的身份。若只在字段为空时才覆盖，那些错误值就永远纠不过来。
-     * 因此只要身份里有值就一律以身份为准。
-     *
-     * 身份没有稳定标识时（车机版读不到 rid）仍然要补：标题、歌手、时长与标识无关，
-     * 早退会让车机版的文档永远停在歌词自带的 [ti:]/[ar:] 上、时长恒为 0。
-     */
-    private fun LyricDoc.withMetadata(
-        identity: TrackIdentity?
-    ): LyricDoc {
-        if (identity == null) return this
-        // 只有拿得到 rid 才查得到宿主侧的真实曲名，查不到就退到身份里的值
-        val rid = TrackIdentity.normalizeStableId(identity.stableId)
-        val hostTitle = if (rid != null) trackTitle(rid) else ""
-        val hostArtist = if (rid != null) trackArtist(rid) else ""
-        return copy(
-            title = identity.title.ifBlank { hostTitle }.ifBlank { title },
-            artist = identity.artist.ifBlank { hostArtist }.ifBlank { artist },
-            durationMs = if (identity.durationMs > 0L) identity.durationMs else durationMs,
-            lyricId = identity.stableId ?: lyricId,
-        )
     }
 
     /**

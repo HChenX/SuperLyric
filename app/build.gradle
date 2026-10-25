@@ -14,7 +14,7 @@ android {
     def hasReleaseSigning = signingPropertyNames.every { properties.getProperty(it)?.trim() }
     if (!hasReleaseSigning) {
         logger.warn('Release signing credentials are incomplete or local.properties is missing; release APKs will be built unsigned. ' +
-            'Define keyStoreFile, keyStorePassword, keyAlias, and keyAliasPassword to sign release builds.')
+                'Define keyStoreFile, keyStorePassword, keyAlias, and keyAliasPassword to sign release builds.')
     }
 
     signingConfigs {
@@ -42,7 +42,7 @@ android {
         minSdk 30
         targetSdk 37
         // noinspection HighAppVersionCode
-        versionCode 2026101101
+        versionCode 2026101200
         versionName "4.1"
 
         ndk {
@@ -80,8 +80,10 @@ android {
     }
 
     lint {
-        abortOnError false
-        checkReleaseBuilds false
+        // NewApi 是运行时崩溃级问题：minSdk 30 上调用 31+ 的 API 不会在编译期报错，
+        // 单测跑在 JDK 21 上也发现不了，只有 lint 能挡住。
+        abortOnError true
+        checkReleaseBuilds true
     }
 
     testOptions {
@@ -149,5 +151,7 @@ dependencies {
 
     testImplementation platform(libs.junit.bom)
     testImplementation libs.junit.jupiter
+    // android.jar 里的 org.json 是"返回默认值"的桩，断言不了任何解析行为
+    testImplementation libs.json
     testRuntimeOnly libs.junit.platform.launcher
 }

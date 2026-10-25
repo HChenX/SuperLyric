@@ -36,11 +36,11 @@ import com.hchen.processor.HookMaps;
 import com.hchen.superlyric.data.LocalConfig;
 import com.hchen.superlyric.utils.LyricCacheStore;
 
-import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -86,11 +86,11 @@ public final class HookEntrance extends ModuleEntrance {
         };
     }
 
-    private final HashMap<String, List<AbsModule>> modules = new HashMap<>();
-    private final HashMap<String, ClassLoader> moduleClassLoaders = new HashMap<>();
+    private final ConcurrentHashMap<String, List<AbsModule>> modules = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ClassLoader> moduleClassLoaders = new ConcurrentHashMap<>();
     private final ExecutorService cacheMigrationExecutor = Executors.newSingleThreadExecutor();
     @Nullable
-    private Context lastApplicationContext;
+    private volatile Context lastApplicationContext;
 
     @Override
     public void handlePackageReady(@NonNull PackageReadyParam param) {
@@ -136,11 +136,12 @@ public final class HookEntrance extends ModuleEntrance {
                             .loadClass(path)
                             .getDeclaredConstructor()
                             .newInstance();
-                    } catch (IllegalAccessException | InstantiationException |
-                             InvocationTargetException | NoSuchMethodException |
-                             ClassNotFoundException e) {
+                    } catch (Throwable t) {
+                        // 接 Throwable 而不只是反射异常：`newInstance()` 会执行模块类的静态初始化，
+                        // 那里失败抛的是 ExceptionInInitializerError（Error 而非 Exception）。
+                        // 只接反射异常会让它逃出去，中断该包其余模块的注册并抛回 Xposed 加载路径。
                         // 常见成因：增量构建残留的 HookMaps 引用了已删除的类
-                        AndroidLog.logE(TAG, "Failed to load module " + path + "; skipping it", e);
+                        AndroidLog.logE(TAG, "Failed to load module " + path + "; skipping it", t);
                         continue;
                     }
 
@@ -173,7 +174,14 @@ public final class HookEntrance extends ModuleEntrance {
         List<AbsModule> packageModules = modules.get(context.getPackageName());
         if (packageModules != null) {
             for (AbsModule module : packageModules) {
-                module.handleApplicationCreated(context);
+                try {
+                    module.handleApplicationCreated(context);
+                } catch (Throwable t) {
+                    // 与 handlePackageReady 同一纪律：模块自己的代码抛什么都不能穿透到
+                    // 宿主的 Application.attach，否则一个 Provider 的初始化异常就让宿主启动崩溃。
+                    AndroidLog.logE(TAG, "Module " + module.getClass().getName()
+                        + " failed during application created; skipping it", t);
+                }
             }
         }
         lastApplicationContext = context;
@@ -207,27 +215,32 @@ public final class HookEntrance extends ModuleEntrance {
         super.handleSystemServerStarting(param);
 
         ModuleData.setClassLoader(param.getClassLoader());
-        for (List<String> value : HookMaps.ON_SYSTEM_STARTING.values()) {
-            for (String path : value) {
-                AbsModule module;
-                try {
-                    module = (AbsModule) HookEntrance.class.getClassLoader()
-                        .loadClass(path)
-                        .getDeclaredConstructor()
-                        .newInstance();
-                } catch (IllegalAccessException | InstantiationException |
-                         InvocationTargetException | NoSuchMethodException |
-                         ClassNotFoundException e) {
-                    AndroidLog.logE(TAG, "Failed to load module " + path + "; skipping it", e);
-                    continue;
-                }
+        // 只允许 "system" 这个 key；@HookThis(onSystemStarting=true) 误标到音乐应用时
+        // 不能把该 Provider 实例化进 system_server（L1 作用域最小化）。
+        for (String key : HookMaps.ON_SYSTEM_STARTING.keySet()) {
+            if (!"system".equals(key)) {
+                AndroidLog.logE(TAG, "Ignoring ON_SYSTEM_STARTING entry for non-system package: " + key);
+            }
+        }
+        List<String> systemModules = HookMaps.ON_SYSTEM_STARTING.get("system");
+        if (systemModules != null) for (String path : systemModules) {
+            AbsModule module;
+            try {
+                module = (AbsModule) HookEntrance.class.getClassLoader()
+                    .loadClass(path)
+                    .getDeclaredConstructor()
+                    .newInstance();
+            } catch (Throwable t) {
+                // 同 packageReady：静态初始化失败抛的是 Error，只接反射异常会漏掉它
+                AndroidLog.logE(TAG, "Failed to load module " + path + "; skipping it", t);
+                continue;
+            }
 
-                try {
-                    module.handleSystemServerStarting(param);
-                } catch (Throwable t) {
-                    // 同 packageReady：模块自己的代码抛什么都不能把异常抛回框架
-                    AndroidLog.logE(TAG, "Module " + path + " failed during system start; skipping it", t);
-                }
+            try {
+                module.handleSystemServerStarting(param);
+            } catch (Throwable t) {
+                // 同 packageReady：模块自己的代码抛什么都不能把异常抛回框架
+                AndroidLog.logE(TAG, "Module " + path + " failed during system start; skipping it", t);
             }
         }
     }

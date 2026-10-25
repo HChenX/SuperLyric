@@ -104,8 +104,7 @@ parsing layer unit-testable — the whole point of the module. Anything needing 
 | `TransientFailure` | the fetch failed — we do not know anything | **never** |
 
 A failed fetch is not evidence of anything. Publishing a placeholder from a `TransientFailure` pins
-a track that has lyrics to "instrumental" forever after a single network hiccup. This is the most
-persistent bug class in this project's history; do not reintroduce it.
+a track that has lyrics to "instrumental" forever after a single network hiccup.
 
 `Unsupported` is not evidence either: "this source cannot serve it" (no copyright, no usable id)
 and "we could not read what the host handed us" are both statements about **us**, not about the
@@ -137,10 +136,8 @@ The provider inside the host process and the service inside system_server each h
 instance and feed it their own observations — the *observations* are not merged, the *decision* is
 shared.
 
-Two implementations of this decision already existed once, and they disagreed on the single most
-important cell: one side read `STATE_NONE` as "not stopped", the other as "stopped". Never re-derive
-it per side, and never treat "we don't know" as a terminal signal — an unconfirmed stop clears
-published content, and clearing is not reversible.
+Never re-derive this decision per side, and never treat "we don't know" as a terminal signal — an
+unconfirmed stop clears published content, and clearing is not reversible.
 
 ---
 
@@ -187,8 +184,7 @@ publishing are all handled by `MusicProvider` and `LyricOrchestrator`.
 
 This project's defining rule: **a claim is not true until it has been observed.**
 
-- Never conclude from reading code alone that something works. "The code looks right" has been
-  wrong here repeatedly.
+- Never conclude from reading code alone that something works.
 - Separate what you measured from what you inferred, in the comment as well as in the report.
 - When a guard exists, log **both** sides — the block and the pass-through. Otherwise "never
   triggered" and "triggered and suppressed every time" look identical in the log. A conclusion of
@@ -212,7 +208,8 @@ install → kill the music app → clear logcat → launch and play
 ```
 
 `adb` here is non-root and read-only: install the module, read logs, kill the music app. **Do not
-modify anything on the device** — no deleting, no editing, no reading private app directories. If a
+modify anything on the device** — no deleting, no editing, no reading private app directories. Do
+not operate the user's test phone unless explicitly asked; hand device commands to the user. If a
 check needs root, hand the command to the user and ask for the output.
 
 ### What a finished change looks like
@@ -249,10 +246,16 @@ HTML written into KDoc renders as literal text in the IDE. One summary line, no 
 ### Layout
 
 - `provider/<app>/` — one directory per app: anchors, sources, provider.
-- `provider/base/` — `MusicProvider`, `HookLyricSource`, `ExecutorScheduler`.
+- `provider/base/` — `MusicProvider`, `HookLyricSource`, `ExecutorScheduler`, `FetchSlot`, and
+  the shared `SourceRequestGate` / `KeyedStash` / metadata helpers.
 - `bridge/` — the only place that touches `SuperLyricApi`'s `Parcelable` types.
+- `core/` — `SuperLyricService`, `PublisherRegistry`, `ReceiverBroadcaster`,
+  `SystemPlaybackCoordinator`, `SuperLyricProxy`, `SystemPlayStateListener`.
+- `ui/screen/settings/` — settings state/actions; platform side effects stay out of Compose bodies.
 - `lyric-kernel/.../kernel/<area>/` — `model`, `decode`, `parse`, `merge`, `pipeline`, `outcome`,
-  `identity`, `clock`, `orchestrate`, `text`.
+  `identity`, `clock`, `orchestrate`, `text`. `pipeline/ParserRegistry` selects the parser;
+  `SidecarMerger` and `LineNormalizer` own sidecar/normalization; `orchestrate/TrackSession`
+  holds per-track state and `Plan`/`Action` describe one orchestration transition.
 
 ---
 

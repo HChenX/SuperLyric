@@ -25,11 +25,11 @@ import androidx.annotation.NonNull;
 import com.hchen.superlyric.kernel.orchestrate.PlaybackSignal;
 
 /**
- * 宿主播放状态常量到内核语义信号的**唯一**映射。
+ * 宿主播放状态常量到内核语义信号的<b>唯一</b>映射。
  *
- * <p>两侧共用这一份：宿主进程内的 Provider 与 system_server 内的服务。此前两侧各写一套，
- * 而 {@link PlaybackState#STATE_NONE} 在两套里被映射成了相反的含义（一侧"没停"、一侧"停了"），
- * 那正是分叉的起点。
+ * <p>两侧共用这一份：宿主进程内的 Provider 与 system_server 内的服务。若各写一套，
+ * {@link PlaybackState#STATE_NONE} 会被映射成相反的含义（一侧"没停"、一侧"停了"），
+ * 分叉就从这里开始。
  *
  * <p>映射与判定分开是有意的：内核只认语义（见 {@link PlaybackSignal}），
  * android 的常量解码留在 {@code :app}。

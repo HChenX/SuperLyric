@@ -32,9 +32,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -44,19 +43,29 @@ internal object ApiReceiverManager {
     val receiverFlow = MutableStateFlow(ApiReceiverState())
     val pausedFlow = MutableStateFlow(false)
 
-    private var isRegistered = false
-
     /**
      * 收包计数
      *
      * 必须原子：[mReceiver] 的回调由 Binder 线程池并发进入，`++` 会丢更新，
      * 让"全量/增量"的统计与展示用的 `packetSeq` 一起失真
      */
+    private val TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
+
     private val totalPackets = AtomicInteger(0)
     private val fullPackets = AtomicInteger(0)
     private val progressPackets = AtomicInteger(0)
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    /**
+     * 收包计数与状态赋值的临界区
+     *
+     * 计数（`incrementAndGet`）与随后的 `receiverFlow.value = …` 必须是**一步**：
+     * 回调由 Binder 线程池并发进入，若两者之间没有互斥，T1 取到 seq=5、T2 取到 seq=6
+     * 而 T2 先赋值时，看板上的 `packetSeq` 会从 6 退回 5。锁只包住这两步，
+     * 不包 JSON 解析等耗时操作
+     */
+    private val publishLock = Any()
 
     val mReceiver = object : ISuperLyricReceiver.Stub() {
         override fun onLyric(publisher: String?, data: SuperLyricData?) {
@@ -71,18 +80,20 @@ internal object ApiReceiverManager {
     }
 
     fun ensureRegistered() {
+        var registeredNow = false
         try {
             if (!SuperLyricHelper.isAvailable()) return
             val currentlyRegistered = SuperLyricHelper.isReceiverRegistered(mReceiver)
             if (!currentlyRegistered) {
                 SuperLyricHelper.registerReceiver(mReceiver)
+                registeredNow = true
             }
-            isRegistered = true
         } catch (e: Throwable) {
             android.util.Log.e("ApiReceiverManager", "Failed to register receiver", e)
-            isRegistered = false
         }
-        if (receiverFlow.value.data == null) {
+        // 服务端 registerReceiver 不会重放 session.latestLyric；后台期间切歌/暂停的包已经丢了。
+        // 每次（重新）注册都必须主动拉一次，否则回前台仍显示上一首。
+        if (registeredNow || receiverFlow.value.data == null) {
             pullLatest()
         }
     }
@@ -94,49 +105,53 @@ internal object ApiReceiverManager {
             }
         } catch (e: Throwable) {
             android.util.Log.e("ApiReceiverManager", "Failed to unregister receiver", e)
-        } finally {
-            isRegistered = false
         }
     }
 
     private fun handleIncomingLyric(publisher: String?, data: SuperLyricData?) {
-        val seq = totalPackets.incrementAndGet()
         val isFull = data != null && data.hasAllLyrics()
-        if (isFull) {
-            fullPackets.incrementAndGet()
-        } else {
-            progressPackets.incrementAndGet()
-        }
-
-        // 使用官方 SuperLyricCache 统一解析增量与全量歌词
+        // 解析耗时，放锁外
         val effectiveData = SuperLyricCache.resolve(data) ?: data
-        val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
-        receiverFlow.value = ApiReceiverState(
-            publisher = publisher,
-            data = effectiveData,
-            eventType = "ON_LYRIC",
-            receiveTime = time,
-            packetSeq = seq,
-            fullCount = fullPackets.get(),
-            progressCount = progressPackets.get(),
-            allLyricsCache = effectiveData?.allLyrics
-        )
+        val time = LocalTime.now().format(TIME_FORMAT)
+
+        // 计数与状态赋值在同一个临界区内，见 [publishLock]
+        synchronized(publishLock) {
+            val seq = totalPackets.incrementAndGet()
+            if (isFull) {
+                fullPackets.incrementAndGet()
+            } else {
+                progressPackets.incrementAndGet()
+            }
+            receiverFlow.value = ApiReceiverState(
+                publisher = publisher,
+                data = effectiveData,
+                eventType = "ON_LYRIC",
+                receiveTime = time,
+                packetSeq = seq,
+                fullCount = fullPackets.get(),
+                progressCount = progressPackets.get(),
+                allLyricsCache = effectiveData?.allLyrics
+            )
+        }
     }
 
     private fun handleIncomingStop(publisher: String?, data: SuperLyricData?) {
-        val seq = totalPackets.incrementAndGet()
-        val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
         val effectiveData = SuperLyricCache.resolve(data) ?: data
-        receiverFlow.value = ApiReceiverState(
-            publisher = publisher,
-            data = effectiveData,
-            eventType = "ON_STOP",
-            receiveTime = time,
-            packetSeq = seq,
-            fullCount = fullPackets.get(),
-            progressCount = progressPackets.get(),
-            allLyricsCache = effectiveData?.allLyrics
-        )
+        val time = LocalTime.now().format(TIME_FORMAT)
+
+        synchronized(publishLock) {
+            val seq = totalPackets.incrementAndGet()
+            receiverFlow.value = ApiReceiverState(
+                publisher = publisher,
+                data = effectiveData,
+                eventType = "ON_STOP",
+                receiveTime = time,
+                packetSeq = seq,
+                fullCount = fullPackets.get(),
+                progressCount = progressPackets.get(),
+                allLyricsCache = effectiveData?.allLyrics
+            )
+        }
     }
 
     fun pullLatest(onComplete: ((Boolean) -> Unit)? = null) {
@@ -145,19 +160,21 @@ internal object ApiReceiverManager {
                 val latest = SuperLyricHelper.getLatestLyric()
                 if (latest != null) {
                     val effectiveData = SuperLyricCache.resolve(latest) ?: latest
-                    val seq = totalPackets.incrementAndGet()
-                    if (latest.hasAllLyrics()) fullPackets.incrementAndGet() else progressPackets.incrementAndGet()
-                    val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
-                    receiverFlow.value = ApiReceiverState(
-                        publisher = "SuperLyricService",
-                        data = effectiveData,
-                        eventType = "PULL_LATEST",
-                        receiveTime = time,
-                        packetSeq = seq,
-                        fullCount = fullPackets.get(),
-                        progressCount = progressPackets.get(),
-                        allLyricsCache = effectiveData.allLyrics
-                    )
+                    val time = LocalTime.now().format(TIME_FORMAT)
+                    synchronized(publishLock) {
+                        val seq = totalPackets.incrementAndGet()
+                        if (latest.hasAllLyrics()) fullPackets.incrementAndGet() else progressPackets.incrementAndGet()
+                        receiverFlow.value = ApiReceiverState(
+                            publisher = "SuperLyricService",
+                            data = effectiveData,
+                            eventType = "PULL_LATEST",
+                            receiveTime = time,
+                            packetSeq = seq,
+                            fullCount = fullPackets.get(),
+                            progressCount = progressPackets.get(),
+                            allLyricsCache = effectiveData.allLyrics
+                        )
+                    }
                     withContext(Dispatchers.Main) {
                         onComplete?.invoke(true)
                     }
@@ -167,6 +184,9 @@ internal object ApiReceiverManager {
                     }
                 }
             } catch (e: Throwable) {
+                // 必须留痕：否则"服务端确实没有数据"与"IPC 抛异常"在日志里完全一样，
+                // 而两者对这一层的含义不同——前者是正常空态，后者是我们的调用没打通
+                android.util.Log.w("ApiReceiverManager", "Failed to pull the latest lyric", e)
                 withContext(Dispatchers.Main) {
                     onComplete?.invoke(false)
                 }

@@ -52,6 +52,9 @@ data class TrackIdentity(
      */
     fun matches(other: TrackIdentity?): Boolean {
         if (other == null) return false
+        // 同一实例/完全相同的数据必须判等；否则标题归一化为空（[Music]、(间奏) 等）
+        // 时连自己都不匹配，编排器会把同一首歌反复判成切歌。
+        if (this === other || this == other) return true
 
         val thisId = normalizeStableId(stableId)
         val otherId = normalizeStableId(other.stableId)

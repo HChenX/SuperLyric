@@ -53,7 +53,10 @@ import com.hchen.superlyricapi.SuperLyricData
  *
  * @author 焕晨HChen
  */
-class PlaybackTracker(threadName: String) {
+class PlaybackTracker @JvmOverloads constructor(
+    threadName: String,
+    private val timeSource: () -> Long = { SystemClock.elapsedRealtime() },
+) {
 
     /** 进度推进回调；在追踪线程上调用。 */
     fun interface OnProgressAdvanceListener {
@@ -63,7 +66,7 @@ class PlaybackTracker(threadName: String) {
     private val thread = HandlerThread(threadName).apply { start() }
     private val handler = Handler(thread.looper)
 
-    private val clock = PlaybackClock { SystemClock.elapsedRealtime() }
+    private val clock = PlaybackClock { timeSource() }
 
     @Volatile
     private var listener: OnProgressAdvanceListener? = null
@@ -81,7 +84,7 @@ class PlaybackTracker(threadName: String) {
     /**
      * 绑定当前曲目的全量歌词。传入 null 表示清空。
      *
-     * <p>换歌时必须调用本方法；它会重置行索引并重新开始推演。
+     * 换歌时必须调用本方法；它会重置行索引并重新开始推演。
      */
     fun setLyrics(data: SuperLyricData?) {
         val converted = LyricDocAdapter.toDoc(data).takeIf { !it.isEmpty }
@@ -100,7 +103,7 @@ class PlaybackTracker(threadName: String) {
     /**
      * 同步宿主上报的播放状态。
      *
-     * <p>位置回退（seek / 重播）会被识别为新锚点并立即重推行索引，
+     * 位置回退（seek / 重播）会被识别为新锚点并立即重推行索引，
      * **不做任何"虚假 0ms"抑制**。
      */
     fun onPlaybackStateChanged(state: PlaybackState?) {
@@ -112,17 +115,26 @@ class PlaybackTracker(threadName: String) {
         val status = toStatus(state.state)
 
         handler.post {
-            val previous = clock.positionAt(SystemClock.elapsedRealtime())
+            val now = timeSource()
+            val previous = clock.positionAt(now)
             val jumpedBackwards = position < previous - JUMP_BACK_TOLERANCE_MS
 
-            clock.sync(status, position, speed, updateTime)
+            // 宿主给的锚点可能陈旧到没有参考价值；钳到 [now-MAX, now]，避免把
+            // “几分钟前的快照”当成当前位置，直接把进度推到曲尾。
+            val anchorTime = when {
+                updateTime <= 0L -> now
+                updateTime > now -> now
+                now - updateTime > MAX_ANCHOR_AGE_MS -> now - MAX_ANCHOR_AGE_MS
+                else -> updateTime
+            }
+            clock.sync(status, position, speed, anchorTime)
 
             if (jumpedBackwards) {
                 // 位置回退是合法事件：重置行索引，让下一行立即重推
                 shownIndex = -1
             }
 
-            dispatchIfNeeded(clock.positionAt(SystemClock.elapsedRealtime()))
+            dispatchIfNeeded(clock.positionAt(timeSource()))
             updateLoop()
         }
     }
@@ -132,7 +144,7 @@ class PlaybackTracker(threadName: String) {
      */
     fun onPositionSynced(positionMs: Long) {
         handler.post {
-            val now = SystemClock.elapsedRealtime()
+            val now = timeSource()
             if (positionMs < clock.positionAt(now) - JUMP_BACK_TOLERANCE_MS) {
                 shownIndex = -1
             }
@@ -175,7 +187,7 @@ class PlaybackTracker(threadName: String) {
     private fun runLoop(token: Long) {
         if (!running || token != loopToken) return
 
-        dispatchIfNeeded(clock.positionAt(SystemClock.elapsedRealtime()))
+        dispatchIfNeeded(clock.positionAt(timeSource()))
 
         if (running && token == loopToken) {
             handler.postDelayed({ runLoop(token) }, delayUntilNextLine())
@@ -192,17 +204,19 @@ class PlaybackTracker(threadName: String) {
      * 只能在追踪线程上调用。
      */
     private fun delayUntilNextLine(): Long {
-        val lines = doc?.lines ?: return LOOP_INTERVAL_MS
-        val position = clock.positionAt(SystemClock.elapsedRealtime())
+        val lines = doc?.lines ?: return MAX_LOOP_SLEEP_MS
+        val position = clock.positionAt(timeSource())
         val index = PlaybackClock.lineIndexAt(lines, position)
-        val nextStart = lines.getOrNull(index + 1)?.startMs ?: return LOOP_INTERVAL_MS
+        // 末行之后没有可推的内容；位置跳转有 onPositionSynced/onPlaybackStateChanged
+        // 专用入口，不需要 20Hz 空转。
+        val nextStart = lines.getOrNull(index + 1)?.startMs ?: return MAX_LOOP_SLEEP_MS
         return (nextStart - position).coerceIn(LOOP_INTERVAL_MS, MAX_LOOP_SLEEP_MS)
     }
 
     /**
      * 若当前位置落在新的行上，则构造极轻量的增量包并回调。
      *
-     * <p>本方法**只能**在追踪线程上调用。
+     * 本方法**只能**在追踪线程上调用。
      */
     private fun dispatchIfNeeded(positionMs: Long) {
         val current = doc ?: return
@@ -217,7 +231,7 @@ class PlaybackTracker(threadName: String) {
         AndroidLog.logD(
             TAG,
             "Advance line [$index/${current.lines.size}] at ${positionMs}ms: " +
-                "\"${current.lines[index].text}\""
+                    "\"${current.lines[index].text}\""
         )
         listener?.onProgressAdvance(index, payload)
     }
@@ -257,5 +271,8 @@ class PlaybackTracker(threadName: String) {
 
         /** 超过该幅度的位置回退才判定为 seek / 重播，避免抖动误判。 */
         const val JUMP_BACK_TOLERANCE_MS = 1_000L
+
+        /** 宿主锚点超过该年龄就不再可信，钳到 now-MAX。 */
+        const val MAX_ANCHOR_AGE_MS = 5 * 60 * 1000L
     }
 }

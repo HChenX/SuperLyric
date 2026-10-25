@@ -42,11 +42,8 @@ class AppleHookSource : HookLyricSource {
 
     override val sourceName: String = "AppleHook"
 
-    @Volatile
-    private var session: LyricSource.Session? = null
-
-    @Volatile
-    private var pendingIdentity: TrackIdentity? = null
+    /** session 与 identity 作为一个快照发布，避免回调读到跨代际组合。 */
+    private val requests = com.hchen.superlyric.provider.base.SourceRequestGate()
 
     override fun install() {
         AppleAnchors.install(object : AppleAnchors.LyricsListener {
@@ -61,13 +58,11 @@ class AppleHookSource : HookLyricSource {
     }
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
-        this.session = session
-        this.pendingIdentity = identity
+        requests.open(identity, session)
     }
 
     override fun cancel() {
-        session = null
-        pendingIdentity = null
+        requests.invalidate()
     }
 
     /**
@@ -76,21 +71,19 @@ class AppleHookSource : HookLyricSource {
      * 采纳前必须确认它说的就是**当前**这一首——见 [trackGuard]
      */
     private fun onNoLyricVerdict(itemId: String?) {
-        val activeSession = session ?: return
-        if (pendingIdentity == null) return
-        if (!trackGuard(itemId, "no-lyric verdict", enforce = true)) return
+        val current = requests.current() ?: return
+        if (!trackGuard(itemId, current.identity.stableId, "no-lyric verdict", enforce = true)) return
 
-        activeSession.deliver(LyricOutcome.NoLyrics("apple: host reports no lyric"))
+        current.session.deliver(LyricOutcome.NoLyrics("apple: host reports no lyric"))
     }
 
     /**
      * 判定这个回调说的是不是**当前**这一首，并按 [enforce] 决定对不上时的后果
      *
      * ## 为什么需要
-     * [AppleAnchors] 的取词有 350ms 去抖，因此 `requestLyrics(item)` 可能在**切歌之后**
-     * 才跑完：那时 [session] 与 [pendingIdentity] 已经换成新曲目，而回调说的是上一首。
-     * 歌词挂错会显示别的歌的词，无词结论更狠——它允许下发纯音乐占位，
-     * 把一首**有歌词**的曲目永久钉死。这正是 `bc14d49` 给波点修掉的那一类。
+     * [AppleAnchors] 的取词有 350ms 去抖，`requestLyrics(item)` 可能在切歌后才完成；
+     * 回调携带的 itemId 可能属于上一首。必须用当前请求身份校验，否则旧歌词会挂到新曲目，
+     * 无词结论还会错误下发纯音乐占位。
      *
      * ## 为什么两条路的后果不同
      * 判等依赖"两套 id 可比"这个**未在真机确认**的前提（见 [judgeTrack]）。
@@ -108,8 +101,12 @@ class AppleHookSource : HookLyricSource {
      * @param enforce 对不上时是否丢弃（投递载荷时传 false）
      * @return 调用方是否可以继续采纳这次回调
      */
-    private fun trackGuard(itemId: String?, what: String, enforce: Boolean): Boolean {
-        val stableId = pendingIdentity?.stableId
+    private fun trackGuard(
+        itemId: String?,
+        stableId: String?,
+        what: String,
+        enforce: Boolean,
+    ): Boolean {
         val verdict = judgeTrack(itemId, stableId)
         val admit = admits(verdict, enforce)
         val reported = TrackIdentity.normalizeStableId(itemId)
@@ -124,14 +121,14 @@ class AppleHookSource : HookLyricSource {
             TrackVerdict.UNVERIFIABLE -> AndroidLog.logW(
                 sourceName,
                 "$what has no comparable track id (reported=$reported, current=$current); " +
-                    if (admit) "delivering anyway" else "not adopting the verdict",
+                        if (admit) "delivering anyway" else "not adopting the verdict",
             )
 
             TrackVerdict.DIFFERENT -> AndroidLog.logW(
                 sourceName,
                 if (admit) {
                     "$what is for $reported but the current track is $current; delivering anyway " +
-                        "(the two id schemes are unverified — see judgeTrack)"
+                            "(the two id schemes are unverified — see judgeTrack)"
                 } else {
                     "Dropping $what for $reported: the current track is $current"
                 },
@@ -161,10 +158,9 @@ class AppleHookSource : HookLyricSource {
      * 判定一个回调说的曲目与当前曲目是否同一首（纯函数，便于单测）
      *
      * ## 为什么需要
-     * [AppleAnchors] 的取词有 350ms 去抖，因此 `requestLyrics(item)` 可能在**切歌之后**
-     * 才跑完：那时 [session] 与 [pendingIdentity] 已经换成新曲目，而回调说的是上一首。
-     * 歌词挂错会显示别的歌的词；无词结论更狠——它允许下发纯音乐占位，
-     * 把一首**有歌词**的曲目永久钉死。这正是 `bc14d49` 给波点修掉的那一类。
+     * [AppleAnchors] 的取词有 350ms 去抖，`requestLyrics(item)` 可能在切歌后才完成；
+     * 回调携带的 itemId 可能属于上一首。必须用当前请求身份校验，否则旧歌词会挂到新曲目，
+     * 无词结论还会错误下发纯音乐占位。
      *
      * ## 判等为什么用"相等或互相包含"
      * 曲目标识在这一层有两个来源：本来源的 [TrackIdentity]（来自基类 `buildIdentity`，
@@ -186,9 +182,9 @@ class AppleHookSource : HookLyricSource {
     }
 
     private fun onExtracted(lines: List<AppleLine>, itemId: String?) {
-        val activeSession = session ?: return
-        val identity = pendingIdentity ?: return
-        trackGuard(itemId, "lyric payload", enforce = false)
+        val current = requests.current() ?: return
+        val identity = current.identity
+        trackGuard(itemId, identity.stableId, "lyric payload", enforce = false)
 
         // 宿主原始模型（含 HTML 标记）——Apple 没有协议报文，这就是"未解析数据"
         LyricDiag.dumpPayload(sourceName, "RAW-HOST-MODEL", dumpHostLines(lines))
@@ -211,7 +207,7 @@ class AppleHookSource : HookLyricSource {
         }.sortedBy { it.startMs }
 
         if (mapped.isEmpty()) {
-            activeSession.deliver(LyricOutcome.Unsupported("apple: no usable line"))
+            current.session.deliver(LyricOutcome.Unsupported("apple: no usable line"))
             return
         }
 
@@ -225,7 +221,7 @@ class AppleHookSource : HookLyricSource {
         LyricDiag.dumpDoc(sourceName, doc)
 
         AndroidLog.logI(sourceName, "Extracted ${mapped.size} lines from host model")
-        activeSession.deliver(LyricOutcome.Success(doc))
+        current.session.deliver(LyricOutcome.Success(doc))
     }
 
     private fun dumpHostLines(lines: List<AppleLine>): String {

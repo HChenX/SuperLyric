@@ -36,12 +36,12 @@ import org.luckypray.dexkit.result.ClassDataList;
 import java.lang.reflect.Constructor;
 
 /**
- * 波点音乐 Hook 锚点：在歌词引擎的构造入口截获**本地原生歌词文件路径**
+ * 波点音乐 Hook 锚点：在歌词引擎的构造入口截获<b>本地原生歌词文件路径</b>
  *
  * <h3>为什么锚在这里</h3>
  * {@code LyricsRunner4Flutter} 是波点把歌词交给 Flutter 渲染层的唯一咽喉，
  * 其构造参数 {@code (Music, int, String lyricPath)} 中的第三个参数就是
- * 宿主自己下载好的歌词文件路径。这是**未经宿主任何加工**的原始载荷。
+ * 宿主自己下载好的歌词文件路径。这是<b>未经宿主任何加工</b>的原始载荷。
  *
  * <p>相对地，从宿主的行/词模型里反射抠数据要走
  * {@code VerbatimLyricsParserImpl.e()}，而该实现会对相邻词元做重叠裁切，
@@ -57,7 +57,9 @@ public final class BodianAnchors {
 
     private static final String CACHE_KEY = "bodian_lyrics_runner_class_v1";
 
-    /** 锚点：Flutter 桥接层的类名，跨版本稳定。 */
+    /**
+     * 锚点：Flutter 桥接层的类名，跨版本稳定。
+     */
     private static final String ANCHOR = "LyricsRunner4Flutter";
 
     private static volatile boolean sInstalled;
@@ -65,7 +67,9 @@ public final class BodianAnchors {
     private BodianAnchors() {
     }
 
-    /** 截获到歌词文件路径（或确认没有）时的回调。 */
+    /**
+     * 截获到歌词文件路径（或确认没有）时的回调。
+     */
     public interface LyricFileListener {
         /**
          * @param filePath 本地歌词文件路径；为空表示宿主本次没有歌词
@@ -92,7 +96,14 @@ public final class BodianAnchors {
             }
 
             for (Constructor<?> constructor : runnerClass.getDeclaredConstructors()) {
-                if (constructor.getParameterCount() != 3) continue;
+                // 按**签名**选，而不是只数参数个数：该类可能另有 3 参的合成/重载构造器，
+                // 一旦先命中，`getArg(2)` 就不是文件路径（asString 返回 ""），
+                // 上层会把"路径为空"当成"宿主没有歌词"从而下发纯音乐占位。
+                // 判据：第 1 参是曲目对象（非基本类型/String），第 3 参是 String 文件路径
+                Class<?>[] parameterTypes = constructor.getParameterTypes();
+                if (parameterTypes.length != 3) continue;
+                if (parameterTypes[0].isPrimitive() || parameterTypes[0] == String.class) continue;
+                if (parameterTypes[2] != String.class) continue;
 
                 constructor.setAccessible(true);
                 CoreTool.hook(constructor, new AbsHook() {
@@ -116,7 +127,7 @@ public final class BodianAnchors {
                 AndroidLog.logI(TAG, "Hooked LyricsRunner4Flutter constructor");
                 return;
             }
-            AndroidLog.logW(TAG, "No 3-parameter constructor found on LyricsRunner4Flutter");
+            AndroidLog.logW(TAG, "No matching (Object, *, String) constructor found on LyricsRunner4Flutter");
         } catch (Throwable t) {
             AndroidLog.logE(TAG, "Failed to install Bodian anchors", t);
         }
