@@ -29,4 +29,19 @@ object UIConstants {
     val WIDE_SCREEN_THRESHOLD = 840.dp
     val MEDIUM_WIDTH_THRESHOLD = 600.dp
     const val PORTRAIT_ASPECT_RATIO_THRESHOLD = 1.2f
+
+    /**
+     * 是否按宽屏（分屏 / 横屏）布局呈现
+     *
+     * 判定只有这一份：主布局与背景效果共用它，避免在 840dp / 600dp 边界上
+     * 因 `>` 与 `>=` 的差异给出相反结论
+     *
+     * @param widthDp  可用宽度（dp）
+     * @param heightDp 可用高度（dp）
+     */
+    fun isWideScreen(widthDp: Float, heightDp: Float): Boolean {
+        if (widthDp >= WIDE_SCREEN_THRESHOLD.value) return true
+        return widthDp >= MEDIUM_WIDTH_THRESHOLD.value &&
+                (heightDp / widthDp) < PORTRAIT_ASPECT_RATIO_THRESHOLD
+    }
 }

@@ -127,8 +127,10 @@ object LyricDocAdapter {
                 startMs = line.startMs,
                 endMs = line.endMs,
                 text = line.text,
-                translation = data.translation?.text?.takeIf { it.isNotEmpty() },
-                phonetic = data.secondary?.text?.takeIf { it.isNotEmpty() },
+                // 顶层通道为空时保留行内值：SuperLyricLine 也支持承载译文/音译，
+                // 直接用顶层覆盖会把它们丢成 null。
+                translation = data.translation?.text?.takeIf { it.isNotEmpty() } ?: line.translation,
+                phonetic = data.secondary?.text?.takeIf { it.isNotEmpty() } ?: line.phonetic,
                 words = line.words,
             )
         )

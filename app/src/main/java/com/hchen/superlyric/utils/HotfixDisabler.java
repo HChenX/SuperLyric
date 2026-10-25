@@ -22,7 +22,11 @@ import static com.hchen.hooktool.core.CoreTool.findClassIfExists;
 import static com.hchen.hooktool.core.CoreTool.hookMethodIfExists;
 import static com.hchen.hooktool.core.CoreTool.returnResult;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+
 import com.hchen.hooktool.hook.AbsHook;
+import com.hchen.hooktool.log.AndroidLog;
 
 /**
  * 禁用宿主应用热更新框架的工具类。
@@ -35,6 +39,9 @@ import com.hchen.hooktool.hook.AbsHook;
  * @author 焕晨HChen
  */
 public final class HotfixDisabler {
+    private static final String TAG = "HotfixDisabler";
+    private static volatile boolean sDisabled;
+
     /**
      * 禁用宿主应用热更新服务。
      *
@@ -42,6 +49,9 @@ public final class HotfixDisabler {
      * 防止宿主在运行期替换自身字节码导致 Hook 点失配、目标类被补丁换掉。</p>
      */
     public static void disableAllHotfixes() {
+        if (sDisabled) return;
+        sDisabled = true;
+        AndroidLog.logD(TAG, "Disabling host hotfix frameworks");
         disableTencentTinker();
         disableBytedanceHotfix();
         disableTencentSword();
@@ -51,30 +61,38 @@ public final class HotfixDisabler {
      * 禁用腾讯 Tinker（dex 类加载器替换）热更新。
      */
     private static void disableTencentTinker() {
-        hookMethodIfExists("com.tencent.tinker.loader.shareutil.ShareTinkerInternals",
-            "isTinkerEnableWithSharedPreferences",
-            new AbsHook() {
-                @Override
-                public void before() {
-                    setResult(false);
+        if (findClassIfExists("com.tencent.tinker.loader.shareutil.ShareTinkerInternals") == null) {
+            AndroidLog.logD(TAG, "Tinker not present");
+            return;
+        }
+        AndroidLog.logD(TAG, "Tinker present; disabling");
+        logHook("Tinker.isTinkerEnableWithSharedPreferences",
+            hookMethodIfExists("com.tencent.tinker.loader.shareutil.ShareTinkerInternals",
+                "isTinkerEnableWithSharedPreferences",
+                new AbsHook() {
+                    @Override
+                    public void before() {
+                        setResult(false);
+                    }
                 }
-            }
-        );
+            ));
 
         Class<?> tinkerApplication = findClassIfExists("com.tencent.tinker.loader.app.TinkerApplication");
         if (tinkerApplication == null) {
+            AndroidLog.logD(TAG, "TinkerApplication not present; only preferences hook installed");
             return;
         }
-        hookMethodIfExists("com.tencent.tinker.loader.TinkerLoader",
-            "tryLoad",
-            tinkerApplication,
-            new AbsHook() {
-                @Override
-                public void before() {
-                    setResult(null);
+        logHook("Tinker.TinkerLoader.tryLoad",
+            hookMethodIfExists("com.tencent.tinker.loader.TinkerLoader",
+                "tryLoad",
+                tinkerApplication,
+                new AbsHook() {
+                    @Override
+                    public void before() {
+                        setResult(null);
+                    }
                 }
-            }
-        );
+            ));
     }
 
     /**
@@ -83,20 +101,35 @@ public final class HotfixDisabler {
     private static void disableBytedanceHotfix() {
         Class<?> frankieConfig = findClassIfExists("com.bytedance.frankie.IFrankieConfig");
         Class<?> frankieListener = findClassIfExists("com.bytedance.frankie.IFrankieListener");
+        if (frankieConfig == null) {
+            AndroidLog.logD(TAG, "Frankie not present");
+            return;
+        }
+        AndroidLog.logD(TAG, "Frankie present; disabling");
         if (frankieConfig != null) {
-            hookMethodIfExists("com.bytedance.frankie.Frankie",
-                "init",
-                frankieConfig,
-                returnResult(null)
-            );
-            if (frankieListener != null) {
+            logHook("Frankie.init(config)",
                 hookMethodIfExists("com.bytedance.frankie.Frankie",
                     "init",
                     frankieConfig,
-                    frankieListener,
                     returnResult(null)
-                );
+                ));
+            if (frankieListener != null) {
+                logHook("Frankie.init(config, listener)",
+                    hookMethodIfExists("com.bytedance.frankie.Frankie",
+                        "init",
+                        frankieConfig,
+                        frankieListener,
+                        returnResult(null)
+                    ));
             }
+        }
+    }
+
+    private static void logHook(@NonNull String name, @Nullable Object handle) {
+        if (handle == null) {
+            AndroidLog.logW(TAG, name + " hook not installed (method/class missing)");
+        } else {
+            AndroidLog.logD(TAG, name + " hooked");
         }
     }
 
@@ -104,10 +137,16 @@ public final class HotfixDisabler {
      * 禁用腾讯剑（Sword）热更新。
      */
     private static void disableTencentSword() {
-        hookMethodIfExists("com.tencent.qqmusic.sword.cmd.CmdManager",
-            "init",
-            String.class,
-            returnResult(null)
-        );
+        if (findClassIfExists("com.tencent.qqmusic.sword.cmd.CmdManager") == null) {
+            AndroidLog.logD(TAG, "Sword not present");
+            return;
+        }
+        AndroidLog.logD(TAG, "Sword present; disabling");
+        logHook("Sword.CmdManager.init",
+            hookMethodIfExists("com.tencent.qqmusic.sword.cmd.CmdManager",
+                "init",
+                String.class,
+                returnResult(null)
+            ));
     }
 }

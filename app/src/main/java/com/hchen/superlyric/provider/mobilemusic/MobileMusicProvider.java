@@ -59,7 +59,9 @@ public final class MobileMusicProvider extends MusicProvider {
     @Override
     protected LyricOrchestrator.Config orchestratorConfig() {
         // 加固 SDK 挂载与首次歌词下载都可能晚于 MediaSession，留出原生取词窗口。
-        return new LyricOrchestrator.Config(5_000L, 0, 0L, 3_000L);
+        // maxApiAttempts/retryBase 目前没有 API 源，仍取可用默认值：以后添加 API 源时
+        // 不会因为“0 次尝试”在第一次失败就进入终态。
+        return new LyricOrchestrator.Config(5_000L, 3, 500L, 3_000L);
     }
 
     @NonNull

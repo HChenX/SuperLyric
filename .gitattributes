@@ -1,0 +1,15 @@
+# Keep the repository LF; the working tree on Windows may have CRLF from local tools.
+* text=auto
+.gitattributes text eol=lf
+*.kt text eol=lf
+*.kts text eol=lf
+*.java text eol=lf
+*.gradle text eol=lf
+*.md text eol=lf
+*.xml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.pro text eol=lf
+*.toml text eol=lf
+*.list text eol=lf
+*.properties text eol=lf

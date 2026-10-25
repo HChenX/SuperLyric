@@ -42,7 +42,10 @@ class LyricCacheStoreFrameTest {
         invoke("wrap", payload) as ByteArray
 
     private fun unpack(frame: ByteArray): ByteArray? =
-        invoke("unpack", frame) as ByteArray?
+        LyricCacheStore::class.java
+            .getDeclaredMethod("unpack", ByteArray::class.java, StringBuilder::class.java)
+            .apply { isAccessible = true }
+            .invoke(null, frame, StringBuilder()) as ByteArray?
 
     private fun invoke(name: String, frame: ByteArray): Any? =
         LyricCacheStore::class.java

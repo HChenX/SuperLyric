@@ -59,6 +59,9 @@
     <string name="clear_dexkit_cache_summary">May fix some apps not working properly</string>
     <string name="cleared">Cleared</string>
     <string name="clear_failed">Clear failed</string>
+    <string name="hide_icon">Hide icon</string>
+    <string name="show_icon">Show icon</string>
+    <string name="icon_toggle_failed">Could not change icon</string>
     <string name="api_test">API Test</string>
     <string name="service_not_started">SuperLyric service is not started</string>
 

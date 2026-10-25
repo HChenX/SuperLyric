@@ -89,7 +89,9 @@ fun BgEffectBackground(
 
             var targetStage = floor(colorStage.value) + 1f
             while (isActive) {
-                delay((preset.colorInterpPeriod * 500).toLong())
+                // `colorInterpPeriod` 是预设里的周期刻度，×500 换算成毫秒
+                // （各预设取值 5~100，对应 2.5s~50s）
+                delay((preset.colorInterpPeriod * MILLIS_PER_PERIOD_UNIT).toLong())
                 colorStage.animateTo(
                     targetValue = targetStage,
                     animationSpec = spring(dampingRatio = 0.9f, stiffness = 35f),
@@ -124,9 +126,7 @@ private fun shouldShowSplitPane(): Boolean {
     return with(density) {
         val widthDp = windowInfo.containerSize.width.toDp()
         val heightDp = windowInfo.containerSize.height.toDp()
-        val ratio = heightDp / widthDp
-        widthDp >= UIConstants.WIDE_SCREEN_THRESHOLD ||
-                (widthDp >= UIConstants.MEDIUM_WIDTH_THRESHOLD && ratio < UIConstants.PORTRAIT_ASPECT_RATIO_THRESHOLD)
+        UIConstants.isWideScreen(widthDp.value, heightDp.value)
     }
 }
 
@@ -169,6 +169,9 @@ fun BlurredBar(
         content()
     }
 }
+
+/** `colorInterpPeriod` 刻度换算为毫秒的系数 */
+private const val MILLIS_PER_PERIOD_UNIT = 500f
 
 @Composable
 fun Modifier.cardBlur(

@@ -30,6 +30,7 @@ import com.squareup.javapoet.TypeSpec;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -44,6 +45,7 @@ import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
+import javax.tools.Diagnostic;
 
 /**
  * 注解处理
@@ -55,23 +57,44 @@ import javax.lang.model.element.TypeElement;
 @SupportedSourceVersion(SourceVersion.RELEASE_21)
 public class HookProcessor extends AbstractProcessor {
     private final Map<String, List<HookData>> maps = new HashMap<>();
+    private final Set<String> seenTypes = new HashSet<>();
+
+    /**
+     * 是否已经生成过 {@code HookMaps}
+     *
+     * <p>注解处理器可能被调用多轮。{@code JavaFile.writeTo(filer)} 对同一个类名写第二次会抛
+     * {@code FilerException: Attempt to recreate a file}——而报错与真正的根因（"有元素出现在
+     * 后续轮"）毫无关系，极难定位。因此只写一次
+     */
+    private boolean generated;
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment env) {
         if (env.processingOver()) return true;
 
-        for (Element element : env.getElementsAnnotatedWith(HookThis.class)) {
+        Set<? extends Element> annotated = env.getElementsAnnotatedWith(HookThis.class);
+        for (Element element : annotated) {
             if (!(element instanceof TypeElement typeElement)) {
                 throw new RuntimeException("Element can't cast to TypeElement.");
             }
 
+            String typeName = typeElement.getQualifiedName().toString();
+            boolean newType = seenTypes.add(typeName);
+            if (generated && newType) {
+                // javac 不允许在最后一轮写新的 class 文件，第一轮之后出现的
+                // @HookThis 无法再并入已有的 HookMaps；显式报错，不能静默漏 Provider。
+                processingEnv.getMessager().printMessage(
+                    Diagnostic.Kind.ERROR,
+                    "@HookThis element appeared after HookMaps was generated: " + typeName
+                );
+            }
             HookThis hook = element.getAnnotation(HookThis.class);
             if (hook != null) {
                 maps
                     .computeIfAbsent(hook.targetPackage(), k -> new ArrayList<>())
                     .add(
                         new HookData(
-                            typeElement.getQualifiedName().toString(),
+                            typeName,
                             hook.onPackageLoaded(),
                             hook.onSystemStarting()
                         )
@@ -79,9 +102,10 @@ public class HookProcessor extends AbstractProcessor {
             }
         }
 
-        if (!env.getElementsAnnotatedWith(HookThis.class).isEmpty()) {
+        if (!generated && !annotated.isEmpty()) {
             try {
                 generateHookData();
+                generated = true;
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }

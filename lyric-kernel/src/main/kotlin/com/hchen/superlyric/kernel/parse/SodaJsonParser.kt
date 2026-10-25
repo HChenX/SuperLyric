@@ -86,16 +86,24 @@ object SodaJsonParser {
      */
     fun parse(text: String?): LyricDoc? {
         if (!canParse(text)) return null
+        val body = text ?: return null
+        // Gson 的 JsonParser 会在进入 findSentencesContainer 之前递归物化整棵树；
+        // 深度上限只保护自家搜索，保护不了建树阶段的 StackOverflowError。
+        if (exceedsMaxDepth(body)) return null
 
         // 只接**解析失败**这一类（JSON 语法错、形状不是对象），不接 Error：
         // 把 StackOverflowError / OutOfMemoryError 一起吞成 null，等于把"读不出来"
         // 伪装成"解析结果为空"，而下层把它当终态结论用
         val root = try {
-            JsonParser.parseString(text).asJsonObject
+            JsonParser.parseString(body).asJsonObject
         } catch (e: RuntimeException) {
             null
         } ?: return null
-        val sentences = findSentencesArray(root, 0) ?: return null
+        // 主歌词与译文必须取自**同一个容器**：载荷可能把二者一起放在
+        // `lyrics` / `track_page` 等嵌套层下（见类注释）。只在根节点找译文，
+        // 嵌套形态的译文会整段丢失，且无任何痕迹
+        val container = findSentencesContainer(root, 0) ?: return null
+        val sentences = container.array("sentences") ?: return null
         if (sentences.size() == 0) return null
 
         val limit = sentences.size().coerceAtMost(MAX_SENTENCES)
@@ -108,7 +116,10 @@ object SodaJsonParser {
         if (lines.isEmpty()) return null
         lines.sortBy { it.startMs }
 
-        val translations = parseTranslations(root)
+        // 译文优先与 `sentences` 同容器；该层没有时再回落根节点。两条路都查，
+        // 才能既不丢"二者同在嵌套层"的译文、也不丢"主歌词嵌套但译文在根"的排布
+        val translations = parseTranslations(container)
+            .ifEmpty { if (container === root) emptyList() else parseTranslations(root) }
         val doc = LyricDoc(lines = lines)
         return if (translations.isEmpty()) {
             doc
@@ -236,12 +247,47 @@ object SodaJsonParser {
      */
     private const val MAX_CONTAINER_DEPTH = 4
 
-    private fun findSentencesArray(root: JsonObject, depth: Int): JsonArray? {
-        root.array("sentences")?.let { return it }
+    /** Gson 建树前的嵌套深度上限；正常歌词 JSON 远小于此值 */
+    private const val MAX_JSON_DEPTH = 64
+
+    private fun exceedsMaxDepth(text: String): Boolean {
+        var depth = 0
+        var inString = false
+        var escaped = false
+        for (ch in text) {
+            if (inString) {
+                when {
+                    escaped -> escaped = false
+                    ch == '\\' -> escaped = true
+                    ch == '"' -> inString = false
+                }
+                continue
+            }
+            when (ch) {
+                '"' -> inString = true
+                '{', '[' -> {
+                    depth++
+                    if (depth > MAX_JSON_DEPTH) return true
+                }
+
+                '}', ']' -> if (depth > 0) depth--
+            }
+        }
+        return false
+    }
+
+    /**
+     * 定位**持有** `sentences` 的那个对象
+     *
+     * 返回容器本身而非数组：主歌词与译文常并列放在同一层，调用方需要从同一个容器里
+     * 分别取 `sentences` 与 `translations`，否则嵌套形态的译文会整段丢失
+     */
+    private fun findSentencesContainer(root: JsonObject, depth: Int): JsonObject? {
+        if (root.get("sentences") is JsonArray) return root
         if (depth >= MAX_CONTAINER_DEPTH) return null
         for (key in NESTED_CONTAINERS) {
             val nested = root.get(key) as? JsonObject ?: continue
-            findSentencesArray(nested, depth + 1)?.let { return it }
+            findSentencesContainer(nested, depth + 1)?.let { return it }
         }
         return null
     }

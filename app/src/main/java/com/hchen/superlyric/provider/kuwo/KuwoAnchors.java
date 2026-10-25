@@ -52,7 +52,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * 酷我音乐 Hook 锚点：取回**解密后的 LRCX 全文**（含逐字时间戳）。
+ * 酷我音乐 Hook 锚点：取回<b>解密后的 LRCX 全文</b>（含逐字时间戳）。
  *
  * <h3>两个分发变体</h3>
  * 手机版（{@code cn.kuwo.player}）与车机版（{@code cn.kuwo.kwmusiccar}）的歌词管线
@@ -63,7 +63,7 @@ import java.util.List;
  * 宿主一次升级就可能全变。流程是：
  * <ol>
  *   <li>用 LRCX 协议固有的参数名 {@code lrcx=} 反查歌词模块内的一个类，
- *       再由类名推出包名（见 [locateLyricPackage]）</li>
+ *       再由类名推出包名（见 {@link #locateLyricPackage()}）</li>
  *   <li>在该包内按签名检索解析入口与取词入口</li>
  * </ol>
  * 各步骤的检索条件与实测坑见对应方法的注释。
@@ -82,7 +82,7 @@ import java.util.List;
  * Provider 只发布全量歌词。
  *
  * <h3>还挂了一个曲目探针</h3>
- * 见 [installTrackProbe]。它不参与取词，只为拿到宿主的 {@code Music.rid} 作为
+ * 见 {@link #installTrackProbes(TrackListener)}。它不参与取词，只为拿到宿主的 {@code Music.rid} 作为
  * 稳定标识 —— 酷我的 {@code MediaMetadata} 不可信。
  *
  * @author 焕晨HChen
@@ -95,12 +95,14 @@ public final class KuwoAnchors {
     /**
      * 解析入口的缓存键
      *
-     * <p>按**方法**而不是按类缓存：类名会随混淆变，而"单 String 入参、返回歌词实现"
+     * <p>按<b>方法</b>而不是按类缓存：类名会随混淆变，而"单 String 入参、返回歌词实现"
      * 这个签名由宿主接口决定，跨版本稳定。宿主升级后缓存失效会自动重新检索。
      */
     private static final String KEY_PARSER_METHODS = "kuwo_parser_methods_v2";
 
-    /** 解密入口的缓存键 */
+    /**
+     * 解密入口的缓存键
+     */
     private static final String KEY_DECRYPT_METHODS = "kuwo_decrypt_methods_v2";
 
     /**
@@ -112,7 +114,9 @@ public final class KuwoAnchors {
      */
     private static final String KEY_LYRIC_PACKAGE = "kuwo_lyric_module_anchor_v1";
 
-    /** 包内类列表的缓存键前缀；后接包名，避免不同包共用同一键 */
+    /**
+     * 包内类列表的缓存键前缀；后接包名，避免不同包共用同一键
+     */
     private static final String KEY_PACKAGE_CLASSES = "kuwo_pkg_classes_";
 
     /**
@@ -141,7 +145,9 @@ public final class KuwoAnchors {
     private KuwoAnchors() {
     }
 
-    /** 取到明文歌词时的回调。 */
+    /**
+     * 取到明文歌词时的回调。
+     */
     public interface LyricTextListener {
         /**
          * @param lyricText 明文歌词全文；LRCX 或普通 LRC
@@ -149,7 +155,9 @@ public final class KuwoAnchors {
         void onLyricText(@NonNull String lyricText);
     }
 
-    /** 宿主当前曲目回调。 */
+    /**
+     * 宿主当前曲目回调。
+     */
     public interface TrackListener {
         /**
          * @param rid    宿主曲目标识
@@ -261,7 +269,7 @@ public final class KuwoAnchors {
     /**
      * 检索解密入口的方法（车机版）
      *
-     * <p>签名取 {@code ([B, LyricsType) → String}。取**返回值**：入参是密文字节，
+     * <p>签名取 {@code ([B, LyricsType) → String}。取<b>返回值</b>：入参是密文字节，
      * 解密后的明文只在返回值里。
      *
      * <p>第二个参数校验为 LyricsType：只按「两参 + 首参 byte[]」会命中一批无关的
@@ -303,7 +311,7 @@ public final class KuwoAnchors {
     /**
      * 检索取词入口的方法
      *
-     * <p>与 [locateTrackConstructors] 同路：DexKit 的 {@code findMethod} 配
+     * <p>与 {@link #locateTrackConstructors()} 同路：DexKit 的 {@code findMethod} 配
      * {@code searchPackages} 在本版本实测也匹配不到，改用包内反射扫。
      */
     @NonNull
@@ -360,7 +368,7 @@ public final class KuwoAnchors {
     /**
      * 从解析入口抽取明文歌词
      *
-     * <p>取**入参**：调用时宿主手里就是解密后的全文。宿主随后才会做
+     * <p>取<b>入参</b>：调用时宿主手里就是解密后的全文。宿主随后才会做
      * {@code replaceAll} 与逐行裁切，我们拿的是那之前的原始形态。
      */
     private static void handleParse(@Nullable Object rawArg, @NonNull LyricTextListener listener) {
@@ -371,7 +379,7 @@ public final class KuwoAnchors {
     /**
      * 由 DexKit 直接定位解密入口并挂载
      *
-     * <p>取**返回值**：入参是密文字节，解密后的明文只在返回值里。
+     * <p>取<b>返回值</b>：入参是密文字节，解密后的明文只在返回值里。
      */
     private static void installDecryptors(@NonNull LyricTextListener listener) {
         List<Method> located = locateDecryptMethods();
@@ -459,7 +467,7 @@ public final class KuwoAnchors {
      *
      * <p>不用 DexKit：{@code ClassMatcher.methods} 这个匹配器在本版本实测匹配不到构造器
      * （{@code lyric/i} 的 {@code (Music, boolean, Music)} 明明存在）。包名已经由
-     * [locateLyricPackage] 推出，直接在包内反射扫更可靠 —— 歌词包内类数量有限，
+     * {@link #locateLyricPackage()} 推出，直接在包内反射扫更可靠 —— 歌词包内类数量有限，
      * 一次性枚举的成本可以忽略，且完全不依赖 DexKit 匹配器的具体行为。
      */
     @NonNull
@@ -475,7 +483,9 @@ public final class KuwoAnchors {
         return found;
     }
 
-    /** 是否为取词入口：参数形如 {@code (Music, boolean, Music)} */
+    /**
+     * 是否为取词入口：参数形如 {@code (Music, boolean, Music)}
+     */
     private static boolean isTrackEntry(@NonNull Executable member) {
         Class<?>[] params = member.getParameterTypes();
         if (params.length != 3) return false;
@@ -500,9 +510,12 @@ public final class KuwoAnchors {
                     @Override
                     public ClassDataList dexkit(@NonNull DexKitBridge bridge)
                         throws ReflectiveOperationException {
-                        return bridge.findClass(FindClass.create()
+                        ClassDataList found = bridge.findClass(FindClass.create()
                             .searchPackages(packageName)
                         );
+                        // 空列表必须返回 null：DexkitCache 会把空列表当有效结果落盘，
+                        // 之后每次命中都反序列化出空数组，探针永久失效。
+                        return (found == null || found.isEmpty()) ? null : found;
                     }
                 });
             if (classes != null) Collections.addAll(result, classes);

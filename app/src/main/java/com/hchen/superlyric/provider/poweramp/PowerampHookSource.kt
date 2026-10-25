@@ -31,14 +31,16 @@ import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
 import com.hchen.superlyric.provider.base.HookLyricSource
+import com.hchen.superlyric.provider.base.KeyedStash
+import com.hchen.superlyric.provider.base.SourceRequest
+import com.hchen.superlyric.provider.base.SourceRequestGate
+import com.hchen.superlyric.provider.base.withMetadata
 import com.hchen.superlyric.publisher.AbsPublisher
 import com.hchen.superlyric.utils.LyricDiag
 
+import java.io.ByteArrayOutputStream
 import java.io.File
-import java.nio.ByteBuffer
-import java.nio.charset.CharacterCodingException
-import java.nio.charset.Charset
-import java.nio.charset.CodingErrorAction
+import java.io.InputStream
 import java.util.concurrent.Executors
 
 /**
@@ -64,22 +66,14 @@ class PowerampHookSource : HookLyricSource {
 
     override val sourceName: String = "PowerampHook"
 
-    private val executor = Executors.newSingleThreadExecutor { runnable ->
+    // 两路而不是一路：宿主 LRC 解析可能在 engine.fileMethod.invoke 里同步跑很久，
+    // 单线程会让下一首的 fetch 排在它后面；两路至少保证“慢的上一首”不会独占所有取词。
+    private val executor = Executors.newFixedThreadPool(2) { runnable ->
         Thread(runnable, "SuperLyric-PowerampHook").apply { isDaemon = true }
     }
 
-    @Volatile
-    private var session: LyricSource.Session? = null
-
-    @Volatile
-    private var pendingIdentity: TrackIdentity? = null
-
-    /** 已解析但当前会话尚未建立的结果；键是归一化后的 `title|artist`。 */
-    @Volatile
-    private var stashedDoc: LyricDoc? = null
-
-    @Volatile
-    private var stashedKey: String? = null
+    private val requests = SourceRequestGate()
+    private val docStash = KeyedStash<LyricDoc>()
 
     override fun install() {
         PowerampAnchors.install(object : PowerampAnchors.LyricsListener {
@@ -100,36 +94,32 @@ class PowerampHookSource : HookLyricSource {
     override fun currentStableId(): String? = null
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
-        this.session = session
-        this.pendingIdentity = identity
-
-        val stashed = stashedDoc
-        val key = stashedKey
-        if (stashed != null && key != null && key == identityToken(identity)) {
-            stashedDoc = null
-            stashedKey = null
+        val request = requests.open(identity, session)
+        val key = identityToken(identity)
+        docStash.takeIf(key)?.let { stashed ->
             AndroidLog.logD(sourceName, "Replaying stashed lyric for $key")
             session.deliver(LyricOutcome.Success(stashed.withMetadata(identity)))
             return
         }
 
         // 切歌就查库；不依赖歌词界面是否打开
-        executor.execute { fetchFromHost(identity) }
+        executor.execute { fetchFromHost(identity, request) }
     }
 
     override fun cancel() {
-        session = null
-        pendingIdentity = null
-        stashedDoc = null
-        stashedKey = null
+        requests.invalidate()
+        docStash.clear()
     }
 
     // ---------------------------------------------------------------- 宿主数据库
 
-    private fun fetchFromHost(identity: TrackIdentity) {
+    private fun fetchFromHost(identity: TrackIdentity, request: SourceRequest) {
+        if (!requests.isCurrent(request)) return
         val database = PowerampAnchors.getDatabase()
         if (database == null) {
-            AndroidLog.logD(sourceName, "Host database not ready for \"${identity.title}\"")
+            // DB 连接由 RestProvider.getWritableDatabase 钩子填充；首次切歌时可能还没打开。
+            // 记 W 让“没查成”与“查了没歌词”可区分，下一次 start/retryAnchors 会再试。
+            AndroidLog.logW(sourceName, "Host database not ready for \"${identity.title}\"")
             return
         }
 
@@ -143,22 +133,23 @@ class PowerampHookSource : HookLyricSource {
         AndroidLog.logD(
             sourceName,
             "track=\"${identity.title}\" id=$trackId rows=${rows.size} " +
-                rows.take(3).joinToString { row ->
-                    "row(id=${row.id},title=${row.title},artist=${row.artist}," +
-                        "content=${row.content?.length ?: 0},lrc=${row.lrcPath})"
-                },
+                    rows.take(3).joinToString { row ->
+                        "row(id=${row.id},title=${row.title},artist=${row.artist}," +
+                                "content=${row.content?.length ?: 0},lrc=${row.lrcPath})"
+                    },
         )
-        if (rows.isEmpty()) return
+        if (rows.isEmpty() || !requests.isCurrent(request)) return
 
         val matching = rows.filter { row ->
             TrackIdentity.artistCompatible(identity.artist, row.artist) &&
-                TrackIdentity.durationCompatible(identity.durationMs, row.durationMs)
+                    TrackIdentity.durationCompatible(identity.durationMs, row.durationMs)
         }
         val withContent = matching.firstOrNull { !it.content.isNullOrBlank() }
         if (withContent != null && deliverParsed(withContent.content!!, "db.cached", identity)) {
             return
         }
 
+        if (!requests.isCurrent(request)) return
         val withFile = matching.firstOrNull { it.lrcPath.isNotEmpty() }
         if (withFile != null) {
             val text = readLrcFile(withFile)
@@ -169,12 +160,13 @@ class PowerampHookSource : HookLyricSource {
             if (PowerampAnchors.parseLrcViaHost(withFile.lrcPath)) {
                 return
             }
+            AndroidLog.logW(sourceName, "Host LRC parse returned without delivering text: ${withFile.lrcPath}")
         }
 
         AndroidLog.logD(
             sourceName,
             "Host row(s) found for \"${identity.title}\" but no usable lyric " +
-                "(matching=${matching.size})",
+                    "(matching=${matching.size})",
         )
     }
 
@@ -246,11 +238,11 @@ class PowerampHookSource : HookLyricSource {
         }
 
         val hasCached = hasColumn(database, table, "cached_lyrics_id")
-            && hasColumn(database, "cached_lyrics", "content")
+                && hasColumn(database, "cached_lyrics", "content")
         val hasLrc = hasColumn(database, table, "lrc_files_id")
-            && hasColumn(database, "lrc_files", "folder_path")
+                && hasColumn(database, "lrc_files", "folder_path")
         val hasArtistId = hasColumn(database, table, "artist_id")
-            && hasColumn(database, "artists", "artist")
+                && hasColumn(database, "artists", "artist")
         val hasArtistTag = hasColumn(database, table, "artist_tag")
         val hasDuration = hasColumn(database, table, "duration")
 
@@ -317,7 +309,7 @@ class PowerampHookSource : HookLyricSource {
         try {
             database.rawQuery(
                 "SELECT name FROM sqlite_master WHERE type='table' " +
-                    "AND (name LIKE '%raw%file%' OR name LIKE '%folder%file%')",
+                        "AND (name LIKE '%raw%file%' OR name LIKE '%folder%file%')",
                 null,
             ).use { cursor ->
                 while (cursor.moveToNext()) {
@@ -376,50 +368,13 @@ class PowerampHookSource : HookLyricSource {
         return decodeLyric(bytes)
     }
 
-    /**
-     * UTF-8 严格解码，失败再退回 GBK。
-     *
-     * <p>`String(bytes, UTF_8)` 会把非法序列替换成 U+FFFD，于是乱码也能
-     * "成功"解码、永远走不到 GBK；必须用 REPORT 模式判断。
-     */
-    private fun decodeLyric(bytes: ByteArray): String {
-        var offset = 0
-        if (bytes.size >= 3 && bytes[0] == 0xEF.toByte() &&
-            bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte()
-        ) {
-            offset = 3
-        } else if (bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte()) {
-            return String(bytes, offset + 2, bytes.size - 2, Charsets.UTF_16LE)
-        } else if (bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte()) {
-            return String(bytes, offset + 2, bytes.size - 2, Charsets.UTF_16BE)
-        }
-
-        val start = offset
-        val length = bytes.size - offset
-        return try {
-            Charsets.UTF_8.newDecoder()
-                .onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT)
-                .decode(ByteBuffer.wrap(bytes, start, length))
-                .toString()
-        } catch (ignored: CharacterCodingException) {
-            try {
-                Charset.forName("GBK").newDecoder()
-                    .onMalformedInput(CodingErrorAction.REPLACE)
-                    .onUnmappableCharacter(CodingErrorAction.REPLACE)
-                    .decode(ByteBuffer.wrap(bytes, start, length))
-                    .toString()
-            } catch (t: CharacterCodingException) {
-                String(bytes, start, length, Charsets.UTF_8)
-            }
-        }
-    }
+    private fun decodeLyric(bytes: ByteArray): String = PowerampTextDecoder.decode(bytes)
 
     private fun readBytes(rawPath: String): ByteArray? {
         if (rawPath.startsWith("content://")) {
             return try {
                 AbsPublisher.getAppContext()?.contentResolver
-                    ?.openInputStream(Uri.parse(rawPath))?.use { it.readBytes() }
+                    ?.openInputStream(Uri.parse(rawPath))?.use { readBounded(it, MAX_LYRIC_BYTES) }
             } catch (t: Throwable) {
                 AndroidLog.logD(sourceName, "Failed to read $rawPath: ${t.message}")
                 null
@@ -500,7 +455,7 @@ class PowerampHookSource : HookLyricSource {
         durationMs: Long,
         extra: String,
     ) {
-        val identity = pendingIdentity ?: run {
+        val identity = requests.current()?.identity ?: run {
             AndroidLog.logD(sourceName, "$source: no session yet, ignoring")
             return
         }
@@ -569,12 +524,12 @@ class PowerampHookSource : HookLyricSource {
             return false
         }
 
-        stashedDoc = doc
-        stashedKey = key
+        docStash.put(key, doc)
         AndroidLog.logI(sourceName, "$source: parsed ${doc.lines.size} lines for $key")
 
-        val target = session
-        val current = pendingIdentity
+        val activeAtDelivery = requests.current()
+        val target = activeAtDelivery?.session
+        val current = activeAtDelivery?.identity
         if (target != null && current != null && key == identityToken(current)) {
             target.deliver(LyricOutcome.Success(doc.withMetadata(current)))
         } else {
@@ -590,6 +545,10 @@ class PowerampHookSource : HookLyricSource {
         val file = File(path.removePrefix("file:"))
         if (!file.isFile || file.length() == 0L) {
             AndroidLog.logD(sourceName, "Lyric file is missing or empty: ${file.absolutePath}")
+            return null
+        }
+        if (file.length() > MAX_LYRIC_BYTES) {
+            AndroidLog.logW(sourceName, "Lyric file too large: ${file.absolutePath}")
             return null
         }
         return try {
@@ -609,14 +568,27 @@ class PowerampHookSource : HookLyricSource {
     private fun identityToken(identity: TrackIdentity): String =
         identity.stableId?.takeIf { it.isNotBlank() }
             ?: ("title:" + TrackIdentity.normalizeTitle(identity.title) + "|" +
-                TrackIdentity.normalizeTitle(identity.artist))
+                    TrackIdentity.normalizeTitle(identity.artist))
 
-    private fun LyricDoc.withMetadata(identity: TrackIdentity): LyricDoc = copy(
-        title = identity.title.ifBlank { title },
-        artist = identity.artist.ifBlank { artist },
-        durationMs = if (identity.durationMs > 0L) identity.durationMs else durationMs,
-        lyricId = identity.stableId ?: lyricId,
-    )
+    /**
+     * 有界读取：content:// 可能返回无限流，先读到内存再判大小已经太晚。
+     */
+    private fun readBounded(input: InputStream, limit: Long): ByteArray? {
+        val output = ByteArrayOutputStream(8192)
+        val buffer = ByteArray(8192)
+        var total = 0L
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            total += read
+            if (total > limit) {
+                AndroidLog.logW(sourceName, "Lyric stream exceeds $limit bytes")
+                return null
+            }
+            output.write(buffer, 0, read)
+        }
+        return output.toByteArray()
+    }
 
     private companion object {
         const val MAX_LYRIC_BYTES = 2L * 1024 * 1024

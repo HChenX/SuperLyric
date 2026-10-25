@@ -22,8 +22,6 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,9 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -65,7 +61,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.graphics.drawable.toBitmap
 import androidx.core.net.toUri
 import com.hchen.superlyric.BuildConfig
 import com.hchen.superlyric.R
@@ -104,15 +99,6 @@ fun AboutLayout(
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
-    val iconPainter = remember(context) {
-        BitmapPainter(
-            context.packageManager
-                .getApplicationIcon(context.packageName)
-                .toBitmap()
-                .asImageBitmap()
-        )
-    }
-
     val contributor = remember {
         listOf(
             "ghhccghk",
@@ -179,6 +165,18 @@ fun AboutLayout(
 
     val backdrop = rememberBlurBackdrop()
     val barBackdrop = rememberBlurBackdrop()
+    val logoEffect = if (backdrop != null) {
+        Modifier.textureBlur(
+            backdrop = backdrop,
+            shape = RoundedCornerShape(24.dp),
+            blurRadius = 150f,
+            noiseCoefficient = BlurDefaults.NoiseCoefficient,
+            colors = BlurDefaults.blurColors(blendColors = logoBlend),
+            contentBlendMode = BlendMode.DstIn,
+        )
+    } else {
+        Modifier
+    }
     // Defer the frame-rate scroll read out of composition: these booleans only flip at the
     // single 1f threshold, so derivedStateOf recomposes the bar on flip rather than every frame.
     val collapsed by remember { derivedStateOf { scrollProgress == 1f } }
@@ -237,25 +235,19 @@ fun AboutLayout(
                         },
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Box(
-                        contentAlignment = Alignment.Center,
+                    Icon(
                         modifier = Modifier
-                            .size(88.dp)
+                            .size(132.dp)
                             .graphicsLayer {
-                                clip = true
-                                shape = RoundedCornerShape(16.dp)
                                 alpha = 1 - iconProgress
                                 scaleX = 1 - (iconProgress * 0.05f)
                                 scaleY = 1 - (iconProgress * 0.05f)
                             }
-                            .background(Color.White),
-                    ) {
-                        Image(
-                            modifier = Modifier.size(88.dp),
-                            painter = iconPainter,
-                            contentDescription = null,
-                        )
-                    }
+                            .then(logoEffect),
+                        painter = painterResource(R.drawable.ic_superlyric_logo),
+                        contentDescription = null,
+                        tint = if (backdrop != null) Color.White else MiuixTheme.colorScheme.onBackground,
+                    )
                     Text(
                         modifier = Modifier
                             .padding(top = 12.dp, bottom = 5.dp)
@@ -470,7 +462,7 @@ fun AboutLayout(
                 Spacer(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .size(12.dp)
+                        .height(12.dp)
                 )
 
                 Row(horizontalArrangement = Arrangement.Absolute.SpaceBetween) {
@@ -498,7 +490,10 @@ private fun openUrl(context: Context, url: String) {
         }
 
         context.startActivity(intent)
-    } catch (_: Exception) {
+    } catch (e: Exception) {
+        // 留痕：无浏览器可处理该 scheme、URI 非法、Activity 未导出都会抛，
+        // 只给用户一个 Toast 会把这些原因丢掉
+        android.util.Log.w("AboutLayout", "Failed to open url $url", e)
         Toast.makeText(context, R.string.no_activity, Toast.LENGTH_SHORT).show()
     }
 }

@@ -34,6 +34,9 @@ import com.hchen.superlyric.kernel.model.LyricWord
  */
 object MobileMusicLyricParser {
 
+    /** 允许丢弃的坏行比例（%）；超过则整首拒绝，避免修出一张错误时间轴 */
+    private const val MAX_BAD_LINE_PERCENT = 20
+
     data class NativeLine(
         val startMs: Long,
         val endMs: Long,
@@ -51,12 +54,14 @@ object MobileMusicLyricParser {
         offsetMs: Long,
     ): LyricDoc? {
         if (lines.isEmpty()) return null
-        if (lines.any { it.startMs < 0L } || lines.zipWithNext().any { (a, b) -> a.startMs > b.startMs }) {
-            return null
-        }
+        // 单行负时间/乱序不应拒绝整首：过滤坏行并按起始排序，只有坏行占比过高才判定
+        // 载荷不可用。阈值防止把“大部分时间轴都坏了”的载荷硬修成一张错图。
+        val usable = lines.filter { it.startMs >= 0L }.sortedBy { it.startMs }
+        if (usable.isEmpty()) return null
+        if ((lines.size - usable.size) * 100 > lines.size * MAX_BAD_LINE_PERCENT) return null
 
-        val mapped = lines.mapIndexed { index, line ->
-            val nextStart = lines.getOrNull(index + 1)?.startMs ?: (durationMs + offsetMs)
+        val mapped = usable.mapIndexed { index, line ->
+            val nextStart = usable.getOrNull(index + 1)?.startMs ?: (durationMs + offsetMs)
             val end = if (line.endMs > line.startMs) line.endMs else maxOf(line.startMs, nextStart)
             val text = clean(line.text)
             LyricLine(

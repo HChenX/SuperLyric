@@ -127,7 +127,7 @@ class MobileMusicHookSource internal constructor(
         val current = snapshot.identity()
         if ((!target.identity.hasStableId || !current.hasStableId) &&
             (target.identity.artist.isBlank() || current.artist.isBlank() ||
-                target.identity.durationMs <= 0L || current.durationMs <= 0L)
+                    target.identity.durationMs <= 0L || current.durationMs <= 0L)
         ) {
             AndroidLog.logD(sourceName, "Discarding a provisional snapshot without artist and duration evidence")
             return

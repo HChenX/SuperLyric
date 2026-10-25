@@ -19,6 +19,7 @@
 package com.hchen.superlyric.ui.screen
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -61,18 +62,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.edit
 import com.hchen.hooktool.data.AppData
-import com.hchen.hooktool.utils.PrefsTool
 import com.hchen.superlyric.R
-import com.hchen.superlyric.data.PrefsKey
 import com.hchen.superlyric.data.SupportApps
 import com.hchen.superlyric.data.apps.ApiAppData
-import com.hchen.superlyric.ui.Application
 import com.hchen.superlyric.ui.data.LocalViewModel
 import com.hchen.superlyric.ui.effect.BlurredBar
 import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
+import com.hchen.superlyric.ui.screen.settings.HomeSettingsController
+import com.hchen.superlyric.ui.screen.settings.HomeSettingsState
 import com.hchen.superlyric.ui.viewmodel.MainUiAction
+import com.hchen.superlyric.utils.LauncherIconController
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.DropdownEntry
@@ -132,7 +132,10 @@ fun HomeLayout(
         )
     }
 
-    val settingsEntries = remember(logLevel) {
+    var launcherHidden by remember { mutableStateOf(LauncherIconController.isHidden(context)) }
+    val settingsState = HomeSettingsState(logLevel, launcherHidden)
+
+    val settingsEntries = remember(logLevel, launcherHidden) {
         listOf(
             DropdownEntry(
                 items = listOf(
@@ -140,13 +143,32 @@ fun HomeLayout(
                         text = context.getString(R.string.clear_dexkit_cache),
                         selected = false,
                         onClick = {
-                            val remotePrefs = Application.getRemotePreferences()
-                            if (remotePrefs != null) {
-                                var version = remotePrefs.getInt("super_lyric_dexkit_cache_version", 0)
-                                remotePrefs.edit { putInt("super_lyric_dexkit_cache_version", ++version) }
-                                Toast.makeText(context, context.getString(R.string.cleared), Toast.LENGTH_SHORT).show()
+                            val ok = HomeSettingsController.clearCache(context)
+                            Toast.makeText(
+                                context,
+                                context.getString(if (ok) R.string.cleared else R.string.clear_failed),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    ),
+                    DropdownItem(
+                        text = context.getString(
+                            HomeSettingsController.launcherLabelRes(settingsState.launcherHidden)
+                        ),
+                        selected = false,
+                        onClick = {
+                            val next = !launcherHidden
+                            if (HomeSettingsController.setLauncherHidden(context, next)) {
+                                // DONT_KILL_APP 使组件状态立即持久化；隐藏时结束本应用全部 task，
+                                // 避免从最近任务回到已隐藏的入口。
+                                launcherHidden = next
+                                if (next) (context as? Activity)?.finishAndRemoveTask()
                             } else {
-                                Toast.makeText(context, context.getString(R.string.clear_failed), Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.icon_toggle_failed),
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             }
                         }
                     ),
@@ -158,7 +180,7 @@ fun HomeLayout(
                                 selected = logLevel == index,
                                 onClick = {
                                     viewModel.handleAction(MainUiAction.UpdateLogLevel(index))
-                                    PrefsTool.prefs(context).edit { putInt(PrefsKey.LOG_LEVEL, index) }
+                                    HomeSettingsController.setLogLevel(context, index)
                                 }
                             )
                         }
@@ -529,15 +551,18 @@ private fun AppDetailsDialog(
             TextButton(
                 text = stringResource(android.R.string.ok),
                 onClick = {
+                    val pkgName = appData.packageName.orEmpty()
                     try {
-                        val pkgName = appData.packageName.orEmpty()
                         val intent = context.packageManager.getLaunchIntentForPackage(pkgName)
                         if (intent != null) {
                             context.startActivity(intent)
                         } else {
                             Toast.makeText(context, R.string.no_activity, Toast.LENGTH_SHORT).show()
                         }
-                    } catch (_: Throwable) {
+                    } catch (e: Throwable) {
+                        // 留痕：`getLaunchIntentForPackage`/`startActivity` 抛错的原因
+                        // （包不存在、权限、Activity 未导出）各不相同，只给用户一个 Toast 会丢掉它们
+                        android.util.Log.w("HomeLayout", "Failed to launch app $pkgName", e)
                         Toast.makeText(context, R.string.no_activity, Toast.LENGTH_SHORT).show()
                     }
 

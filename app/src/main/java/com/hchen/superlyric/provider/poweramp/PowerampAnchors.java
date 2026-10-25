@@ -41,11 +41,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.nio.ByteBuffer;
-import java.nio.charset.CharacterCodingException;
-import java.nio.charset.Charset;
-import java.nio.charset.CodingErrorAction;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Set;
@@ -75,19 +70,30 @@ public final class PowerampAnchors {
 
     private static final String ENGINE_CACHE_KEY = "poweramp_lrc_engine_v1";
 
-    /** LrcParser 打开文件失败时的日志串，跨版本稳定。 */
+    /**
+     * LrcParser 打开文件失败时的日志串，跨版本稳定。
+     */
     private static final String ENGINE_ANCHOR = "Failed to open or read LRC path=";
 
     private static final String TAG_AND_META = "com.maxmpz.audioplayer.scanner.TagAndMeta";
     private static final String LYRICS_ACTIVITY = "com.maxmpz.audioplayer.dialogs.LyricsActivity";
     private static final String REST_PROVIDER = "com.maxmpz.audioplayer.rest.RestProvider";
 
-    /** 单份歌词的捕获上限；超过它多半不是歌词文本。 */
-    private static final int MAX_LYRIC_BYTES = 1_000_000;
+    /**
+     * 单份歌词的捕获上限；超过它多半不是歌词文本。
+     */
+    private static final int MAX_LYRIC_BYTES = 2 * 1024 * 1024;
 
     private static final Set<String> sSeen = ConcurrentHashMap.newKeySet();
 
     private static volatile boolean sInstalled;
+    private static volatile boolean sRestHookInstalled;
+    private static volatile boolean sLrcHookInstalled;
+    private static volatile boolean sTagSetTagsInstalled;
+    private static volatile boolean sTagUnsyncInstalled;
+    private static volatile boolean sActivityHookInstalled;
+    @Nullable
+    private static volatile LyricsListener sListener;
 
     /**
      * 宿主自己的可写数据库连接
@@ -114,15 +120,21 @@ public final class PowerampAnchors {
      * 当前线程是否正在执行本模块主动发起的宿主解析
      *
      * <p>宿主歌词界面也会走同一个解析器，且可能在切歌前预加载下一首。
-     * 只有本模块为**当前曲目**发起的调用才允许无标题投递，否则会把
+     * 只有本模块为<b>当前曲目</b>发起的调用才允许无标题投递，否则会把
      * 预加载的下一首歌词算到当前曲目头上。
      */
     private static final ThreadLocal<Boolean> sHostParse = new ThreadLocal<>();
+    /**
+     * 本次主动调用宿主解析器时，open 钩子是否真的交付了文本
+     */
+    private static final ThreadLocal<Boolean> sCaptureDelivered = ThreadLocal.withInitial(() -> false);
 
     private PowerampAnchors() {
     }
 
-    /** 取到候选歌词文本时的回调。 */
+    /**
+     * 取到候选歌词文本时的回调。
+     */
     public interface LyricsListener {
         /**
          * @param source     命中点，仅用于诊断
@@ -146,9 +158,17 @@ public final class PowerampAnchors {
      * 定位并挂载全部点位。幂等；单个点位失败不影响其它点位。
      */
     public static void install(@NonNull LyricsListener listener) {
-        if (sInstalled) return;
+        sListener = listener;
         sInstalled = true;
+        retryAnchors();
+    }
 
+    /**
+     * 逐个点位重试；已成功的点位不会重复挂。
+     */
+    public static void retryAnchors() {
+        LyricsListener listener = sListener;
+        if (listener == null) return;
         hookRestProvider();
         hookLrcStorage(listener);
         hookTagAndMeta(listener);
@@ -158,6 +178,7 @@ public final class PowerampAnchors {
     // ---------------------------------------------------------------- 数据库连接
 
     private static void hookRestProvider() {
+        if (sRestHookInstalled) return;
         Class<?> provider = CoreTool.findClassIfExists(REST_PROVIDER);
         if (provider == null) {
             AndroidLog.logW(TAG, REST_PROVIDER + " not found");
@@ -176,16 +197,29 @@ public final class PowerampAnchors {
                     });
                 }
             });
+            sRestHookInstalled = true;
             AndroidLog.logI(TAG, "Hooked RestProvider.getWritableDatabase");
         } catch (Throwable t) {
             AndroidLog.logW(TAG, "Hook getWritableDatabase failed: " + t);
         }
     }
 
-    /** 宿主当前打开的数据库连接；未就绪时为 null。 */
+    /**
+     * 宿主当前打开的数据库连接；未就绪时为 null。
+     */
     @Nullable
     public static SQLiteDatabase getDatabase() {
         return sDatabase;
+    }
+
+    /**
+     * Application 初始化后重试 LRC 存储钩子。
+     *
+     * <p>{@link #install} 在 packageReady 时可能拿不到宿主的 LrcParser engine；
+     * 不能把这一次失败当成永久失效。
+     */
+    public static void retryLrcHook() {
+        retryAnchors();
     }
 
     // ---------------------------------------------------------------- LRC 解析器
@@ -193,7 +227,7 @@ public final class PowerampAnchors {
     /**
      * 用宿主自己的 LRC 解析器读取一个歌词路径。
      *
-     * <p>调用链与 Poweramp 内部完全一致，因此 {@link #hookLrcParser} 挂上的
+     * <p>调用链与 Poweramp 内部完全一致，因此 {@link #hookLrcStorage(LyricsListener)} 挂上的
      * 解析流钩子会同步拿到原始文本。
      *
      * @param path Poweramp 数据库里的相对路径，例如 {@code primary/Music/x.lrc}
@@ -219,20 +253,24 @@ public final class PowerampAnchors {
                 sStorage = storage;
             }
             sHostParse.set(Boolean.TRUE);
+            sCaptureDelivered.set(Boolean.FALSE);
             // 字符集由本模块在流上按原始字节判断；宿主自己的解析结果不使用，
             // 传 true 只为让它的解析路径正常走完
             engine.fileMethod.invoke(parser, context, storage, path, true, false, false);
-            return true;
+            // “成功调用进宿主解析器”不等于“真的拿到了文本”：engine 未就绪、open 钩子
+            // 安装失败、宿主换线程读取都会让回调永不发生。调用方必须能区分。
+            return Boolean.TRUE.equals(sCaptureDelivered.get());
         } catch (Throwable t) {
             AndroidLog.logW(TAG, "Host lyric parse failed: " + t);
             return false;
         } finally {
             sHostParse.remove();
+            sCaptureDelivered.remove();
         }
     }
 
     /**
-     * 在宿主打开 LRC 输入流时截获**原始字节**
+     * 在宿主打开 LRC 输入流时截获<b>原始字节</b>
      *
      * <p>不能在 `LrcParser` 的 `BufferedReader` 上取文本：宿主用
      * `lrc_files.is_utf8` 选择字符集，而该标志实测不可靠（UTF-8 文件被按
@@ -240,8 +278,12 @@ public final class PowerampAnchors {
      * 再把同一份字节包回流里，宿主行为不变。
      */
     private static void hookLrcStorage(@NonNull LyricsListener listener) {
+        if (sLrcHookInstalled) return;
         Engine engine = engine();
-        if (engine == null) return;
+        if (engine == null) {
+            AndroidLog.logW(TAG, "LRC engine unavailable; will retry after Application init");
+            return;
+        }
 
         try {
             engine.openMethod.setAccessible(true);
@@ -259,29 +301,41 @@ public final class PowerampAnchors {
                         if (!(value instanceof InputStream stream)) return;
 
                         byte[] bytes = readAll(stream);
-                        if (bytes == null || bytes.length == 0) return;
+                        if (bytes == null) {
+                            // 读取失败时原流已被消费了一部分；给宿主一个空流，避免它读到半截。
+                            setResult(new ByteArrayInputStream(new byte[0]));
+                            return;
+                        }
+                        if (bytes.length == 0) {
+                            setResult(new ByteArrayInputStream(bytes));
+                            return;
+                        }
 
                         // 宿主接下来还要读这个流：用同一份字节重建
                         setResult(new ByteArrayInputStream(bytes));
 
                         String text = decodeLyric(bytes);
                         if (!text.isEmpty()) {
+                            sCaptureDelivered.set(Boolean.TRUE);
                             listener.onLyricText("lrc.own", text, "", "", "", 0, "");
                         }
                     });
                 }
             });
+            sLrcHookInstalled = true;
             AndroidLog.logI(TAG, "Hooked Poweramp LRC storage");
         } catch (Throwable t) {
             AndroidLog.logW(TAG, "Hook LRC storage failed: " + t);
         }
     }
 
-    /** 读尽输入流；超过上限返回 null。原流会被关闭。 */
+    /**
+     * 读尽输入流；超过上限返回 null。**不关闭**入参：宿主之后还要用它。
+     */
     @Nullable
-    private static byte[] readAll(@NonNull InputStream stream) {
-        try (InputStream input = stream;
-             ByteArrayOutputStream output = new ByteArrayOutputStream(8192)) {
+    private static byte[] readAll(@NonNull InputStream input) {
+        try {
+            ByteArrayOutputStream output = new ByteArrayOutputStream(8192);
             byte[] buffer = new byte[8192];
             int total = 0;
             int read;
@@ -300,41 +354,9 @@ public final class PowerampAnchors {
         }
     }
 
-    /**
-     * UTF-8 严格解码，失败再退回 GBK。
-     *
-     * <p>不能用 `new String(bytes, UTF_8)`：它会把非法序列替换成 U+FFFD，
-     * 于是乱码也能"成功"解码，永远走不到 GBK 分支。
-     */
     @NonNull
     private static String decodeLyric(@NonNull byte[] bytes) {
-        int offset = 0;
-        int length = bytes.length;
-        if (length >= 3 && bytes[0] == (byte) 0xEF && bytes[1] == (byte) 0xBB && bytes[2] == (byte) 0xBF) {
-            offset = 3;
-        } else if (length >= 2 && bytes[0] == (byte) 0xFF && bytes[1] == (byte) 0xFE) {
-            return new String(bytes, offset + 2, length - 2, StandardCharsets.UTF_16LE);
-        } else if (length >= 2 && bytes[0] == (byte) 0xFE && bytes[1] == (byte) 0xFF) {
-            return new String(bytes, offset + 2, length - 2, StandardCharsets.UTF_16BE);
-        }
-
-        try {
-            return StandardCharsets.UTF_8.newDecoder()
-                .onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT)
-                .decode(ByteBuffer.wrap(bytes, offset, length - offset))
-                .toString();
-        } catch (CharacterCodingException ignored) {
-            try {
-                return Charset.forName("GBK").newDecoder()
-                    .onMalformedInput(CodingErrorAction.REPLACE)
-                    .onUnmappableCharacter(CodingErrorAction.REPLACE)
-                    .decode(ByteBuffer.wrap(bytes, offset, length - offset))
-                    .toString();
-            } catch (CharacterCodingException e) {
-                return new String(bytes, offset, length - offset, StandardCharsets.UTF_8);
-            }
-        }
+        return PowerampTextDecoder.decode(bytes);
     }
 
     @Nullable
@@ -411,6 +433,7 @@ public final class PowerampAnchors {
     // ---------------------------------------------------------------- 标签歌词
 
     private static void hookTagAndMeta(@NonNull LyricsListener listener) {
+        if (sTagSetTagsInstalled && sTagUnsyncInstalled) return;
         Class<?> tagClass = CoreTool.findClassIfExists(TAG_AND_META);
         if (tagClass == null) {
             AndroidLog.logW(TAG, TAG_AND_META + " not found");
@@ -418,7 +441,7 @@ public final class PowerampAnchors {
         }
 
         // 扫描/读取标签时宿主会给出整首内嵌歌词（USLT/SYLT）
-        try {
+        if (!sTagSetTagsInstalled) try {
             Method setTags = tagClass.getDeclaredMethod("setTags",
                 String.class, String.class, String.class, String.class, String.class,
                 String.class, String.class, String.class, String.class,
@@ -430,13 +453,14 @@ public final class PowerampAnchors {
                     safe(() -> emitTagLyrics("tag", getThisObject(), listener));
                 }
             });
+            sTagSetTagsInstalled = true;
             AndroidLog.logI(TAG, "Hooked TagAndMeta.setTags");
         } catch (Throwable t) {
             AndroidLog.logW(TAG, "Hook setTags failed: " + t);
         }
 
         // 歌词界面打开时，宿主的内部解析结果也从这里经过
-        try {
+        if (!sTagUnsyncInstalled) try {
             Method unsync = tagClass.getDeclaredMethod("getUnsyncLyrics");
             unsync.setAccessible(true);
             CoreTool.hook(unsync, new AbsHook() {
@@ -451,6 +475,7 @@ public final class PowerampAnchors {
                     });
                 }
             });
+            sTagUnsyncInstalled = true;
             AndroidLog.logI(TAG, "Hooked TagAndMeta.getUnsyncLyrics");
         } catch (Throwable t) {
             AndroidLog.logW(TAG, "Hook getUnsyncLyrics failed: " + t);
@@ -460,6 +485,7 @@ public final class PowerampAnchors {
     // ---------------------------------------------------------------- 歌词界面兜底
 
     private static void hookLyricsActivity(@NonNull LyricsListener listener) {
+        if (sActivityHookInstalled) return;
         Class<?> activity = CoreTool.findClassIfExists(LYRICS_ACTIVITY);
         Class<?> tagClass = CoreTool.findClassIfExists(TAG_AND_META);
         if (activity == null || tagClass == null) return;
@@ -490,6 +516,7 @@ public final class PowerampAnchors {
                         });
                     }
                 });
+                sActivityHookInstalled = true;
                 AndroidLog.logI(TAG, "Hooked LyricsActivity lyric entry");
                 return;
             } catch (Throwable t) {
@@ -517,7 +544,9 @@ public final class PowerampAnchors {
             fieldString(tag, "album"), fieldLong(tag, "durationMS"), "");
     }
 
-    /** 把 SYLT 的两个平行数组还原成标准 LRC，复用内核已有的 LRC 解析器。 */
+    /**
+     * 把 SYLT 的两个平行数组还原成标准 LRC，复用内核已有的 LRC 解析器。
+     */
     @NonNull
     private static String buildLrcFromSync(@Nullable Object tag) {
         Object linesValue = field(tag, "syncLyricsLines");
@@ -543,7 +572,9 @@ public final class PowerampAnchors {
 
     // ---------------------------------------------------------------- 工具
 
-    /** 任何探测异常都必须留在本模块内，绝不能传进宿主进程。 */
+    /**
+     * 任何探测异常都必须留在本模块内，绝不能传进宿主进程。
+     */
     private static void safe(@NonNull Runnable action) {
         try {
             action.run();

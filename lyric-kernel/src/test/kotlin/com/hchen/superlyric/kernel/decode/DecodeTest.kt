@@ -106,6 +106,15 @@ class DecodeTest {
         assertThrows(DecodeException::class.java) { KrcCipher.decrypt(ByteArray(0)) }
     }
 
+
+    @Test
+    fun `qrc cipher rejects short and non-block-aligned ciphertext`() {
+        // 3DES 分组必须是 8 字节；截断的尾部不能静默丢掉，否则会把“缺了几行”解成 Success。
+        assertThrows(DecodeException::class.java) { QrcCipher.decrypt(ByteArray(0)) }
+        assertThrows(DecodeException::class.java) { QrcCipher.decrypt(ByteArray(7)) }
+        assertThrows(DecodeException::class.java) { QrcCipher.decrypt(ByteArray(9)) }
+    }
+
     // =========================================================================
     // ZLib 严格性
     // =========================================================================

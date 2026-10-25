@@ -86,8 +86,20 @@ internal object WordTagLrcParser {
 
             val words = ArrayList<LyricWord>(tags.size)
             val builder = StringBuilder()
-            var cursor = 0
             var lineEnd = startMs
+
+            // 第一个词标签之前的文字也是这一行：不追加会静默少一段
+            // （[00:01.00]Hello <00:02.00>world）。
+            val leadingRaw = decodeInline(body.substring(0, tags.first().range.first))
+            if (leadingRaw.isNotEmpty()) {
+                builder.append(leadingRaw)
+                val leading = leadingRaw.trim()
+                if (leading.isNotEmpty()) {
+                    val leadingEnd = CompanionSplitter.timestampOf(tags.first().value)
+                    words += LyricWord(leading, startMs, maxOf(startMs, leadingEnd))
+                    lineEnd = maxOf(lineEnd, leadingEnd)
+                }
+            }
 
             for (index in tags.indices) {
                 val tag = tags[index]
@@ -97,7 +109,6 @@ internal object WordTagLrcParser {
                 val wordEnd = tags.getOrNull(index + 1)
                     ?.let { CompanionSplitter.timestampOf(it.value) } ?: wordStart
 
-                cursor = textTo
                 lineEnd = maxOf(lineEnd, wordEnd)
 
                 val wordText = decodeInline(body.substring(textFrom, textTo))
@@ -107,14 +118,12 @@ internal object WordTagLrcParser {
                 // （`<00:00.106> <00:00.212>`），跳过它会把 `We don't talk` 拼成 `Wedon'ttalk`。
                 if (wordText.isEmpty()) continue
 
-                words += LyricWord(wordText, wordStart, maxOf(wordStart, wordEnd))
+                // 没有尾标签时末词不能是零时长：按字数给一个兜底。
+                val effectiveEnd = if (wordEnd > wordStart) wordEnd
+                else wordStart + LyricText.fallbackWordDuration(wordText)
+                lineEnd = maxOf(lineEnd, effectiveEnd)
+                words += LyricWord(wordText, wordStart, effectiveEnd)
                 builder.append(wordText)
-            }
-
-            // 末尾没有标签兜住的残余文字也属于本行
-            if (cursor < body.length) {
-                val tail = clean(body.substring(cursor))
-                if (tail.isNotEmpty()) builder.append(tail)
             }
 
             val lineText = builder.toString().trim()

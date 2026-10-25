@@ -54,7 +54,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
  *
  * 三者都经 [QrcCipher] 解密（腾讯改造版 3DES + ZLib）。
  *
- * <p>译文与罗马音分别送入翻译通道与音译通道，两者互不覆盖。
+ * 译文与罗马音分别送入翻译通道与音译通道，两者互不覆盖。
  *
  * @author 焕晨HChen
  */
@@ -97,7 +97,12 @@ internal object QQNetwork {
      *
      * 依次尝试"移动端 + 桌面端"两套入口与两套客户端标识，任一命中即返回。
      */
-    fun fetchByMid(songMid: String, songId: Long, identity: TrackIdentity): LyricOutcome {
+    fun fetchByMid(
+        songMid: String,
+        songId: Long,
+        identity: TrackIdentity,
+        isCurrent: () -> Boolean = { true },
+    ): LyricOutcome {
         // 没有标识就压根没查询过，谈不上"平台说没有歌词"：它是"我们查不了"。
         // 判成 NoLyrics 会为一次查不到下发纯音乐占位
         if (songMid.isBlank() && songId <= 0L) return LyricOutcome.Unsupported("qq: no identifier")
@@ -114,18 +119,32 @@ internal object QQNetwork {
 
         for (url in listOf(URL_PRIMARY, URL_FALLBACK)) {
             for ((ct, cv, userAgent) in clientProfiles) {
+                if (!isCurrent()) return LyricOutcome.TransientFailure(null)
                 try {
                     val body = buildLyricRequest(ct, cv, songMid, songId)
                     val json = post(url, body, userAgent)
                     reachedServer = true
 
-                    val data = JSONObject(json).optJSONObject("req_0")?.optJSONObject("data")
-                        ?: continue
+                    val root = JSONObject(json)
+                    val req0 = root.optJSONObject("req_0")
+                    val code = req0?.optInt("code", 0) ?: root.optInt("code", 0)
+                    val data = req0?.optJSONObject("data") ?: root.optJSONObject("data")
+                    if (code != 0) {
+                        // HTTP 200 不等于业务成功：风控、登录、参数错误都走这里。
+                        // 这不是“平台没有歌词”，只是这次没查成，必须可重试。
+                        lastFailure = IllegalStateException("qq code=$code")
+                        continue
+                    }
+                    if (data == null) {
+                        lastFailure = IllegalStateException("qq: response has no data")
+                        continue
+                    }
 
                     val lyricRaw = data.optString("lyric", "")
                     if (lyricRaw.isEmpty()) continue
                     sawLyricPayload = true
 
+                    if (!isCurrent()) return LyricOutcome.TransientFailure(null)
                     val outcome = parsePayloads(lyricRaw, data, identity)
                     if (outcome != null) {
                         // 只缓存**已成功解析**的响应（含 lyric / trans / roma 三路密文），
@@ -219,9 +238,15 @@ internal object QQNetwork {
             })
         }
 
-        val json = post(URL_PRIMARY, payload.toString(), ANDROID_UA)
-        val body = JSONObject(json).optJSONObject("req_0")?.optJSONObject("data")
-            ?.optJSONObject("body") ?: return null
+        var json: String? = null
+        for (url in listOf(URL_PRIMARY, URL_FALLBACK)) {
+            json = runCatching { post(url, payload.toString(), ANDROID_UA) }.getOrNull()
+            if (json != null) break
+        }
+        val body = json?.let {
+            JSONObject(it).optJSONObject("req_0")?.optJSONObject("data")
+                ?.optJSONObject("body")
+        } ?: return null
 
         val songs: JSONArray = body.optJSONArray("item_song")
             ?: body.optJSONObject("song")?.optJSONArray("list")
@@ -294,8 +319,13 @@ internal object QQNetwork {
 
         val mainText = decryptField(lyricRaw) ?: return null
 
-        val translationText = decryptField(data.optString("trans", ""))
-        val phoneticText = decryptField(data.optString("roma", ""))
+        // 译文/罗马音是可选通道：任一路解不开不应拖垮已经成功解出的主歌词。
+        val translationText = runCatching { decryptField(data.optString("trans", "")) }
+            .onFailure { AndroidLog.logW(TAG, "qq: trans channel undecodable: ${it.message}") }
+            .getOrNull()
+        val phoneticText = runCatching { decryptField(data.optString("roma", "")) }
+            .onFailure { AndroidLog.logW(TAG, "qq: roma channel undecodable: ${it.message}") }
+            .getOrNull()
 
         val doc = LyricDiag.parse(
             TAG,
@@ -314,8 +344,8 @@ internal object QQNetwork {
         AndroidLog.logI(
             TAG,
             "Fetched QRC: lines=${doc.lines.size}, " +
-                "translation=${doc.lines.any { it.hasTranslation }}, " +
-                "phonetic=${doc.lines.any { it.hasPhonetic }}"
+                    "translation=${doc.lines.any { it.hasTranslation }}, " +
+                    "phonetic=${doc.lines.any { it.hasPhonetic }}"
         )
         return LyricOutcome.Success(doc)
     }
@@ -337,17 +367,31 @@ internal object QQNetwork {
      * 取候选的歌手名
      *
      * 与 `title` 同样做多键兜底：只认一种键的形状，平台换一次 schema 就会让歌手分
-     * 静默退化成常量，而歌手是 35% 的权重
+     * 静默退化成常量，而歌手是 30% 的权重
+     *
+     * ## 值不是字符串时**绝不**落进字符串兜底
+     * `optString` 只在值本身是 String 时返回它；遇到数组/对象会走 `JSON.toString`，
+     * 返回一段**非空白**的 JSON 文本（`[{"name":"周杰伦"}]`）。因此判定必须按**值的类型**
+     * 分派，不能按"取出来的串空不空"分派——否则数组形状的候选会被 JSON 文本截住，
+     * 歌手分恒为 0，满分随之从 100 掉到 70、低于采纳线，合法的匹配全部不采纳
      */
     private fun readSingers(item: JSONObject): String {
-        item.optString("singer", "").takeIf { it.isNotBlank() }?.let { return it }
-        item.optString("singername", "").takeIf { it.isNotBlank() }?.let { return it }
+        val value = item.opt("singer")
+        if (value is JSONArray) return joinSingerArray(value)
 
-        val array = item.optJSONArray("singer") ?: item.optJSONArray("singers") ?: return ""
+        val fallback = item.optJSONArray("singers")
+        if (fallback != null) return joinSingerArray(fallback)
+
+        // 到这里值只可能是字符串（或压根没有）。平台也可能直接给一个歌手名
+        val single = if (value is String) value else item.optString("singername", "")
+        return single.takeIf { it.isNotBlank() } ?: ""
+    }
+
+    /** 数组形状的歌手：元素可能是 `{"name":…}` 对象，也可能是裸字符串 */
+    private fun joinSingerArray(array: JSONArray): String {
         val names = ArrayList<String>(array.length())
         for (index in 0 until array.length()) {
-            val element = array.opt(index)
-            val name = when (element) {
+            val name = when (val element = array.opt(index)) {
                 is JSONObject -> element.optString("name", "")
                 is String -> element
                 else -> ""
@@ -360,9 +404,8 @@ internal object QQNetwork {
     /**
      * 发起一次 POST
      *
-     * **传输层失败必须抛出**，不能返回 null：`null` 在本模块的含义是
-     * "服务端明确没有这条歌词"，把网络异常也压成 null 会让断网被误判为无歌词
-     * 并下发纯音乐占位。抛出后由调用方归类为可重试失败。
+     * **传输层失败必须抛出**：网络异常不是"服务端没有歌词"。抛出后由调用方归类为
+     * 可重试失败；只有业务响应里确实没有 lyric 字段，才由 `parsePayloads` 返回 null。
      */
     private fun post(url: String, body: String, userAgent: String): String {
         val request = Request.Builder()

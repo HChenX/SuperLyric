@@ -18,6 +18,8 @@
  */
 package com.hchen.superlyric.provider.base
 
+import okhttp3.Call
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
@@ -38,8 +40,8 @@ import java.util.concurrent.atomic.AtomicLong
  * 单线程还能顺带保证同曲目的处理顺序。
  *
  * ## 为什么需要令牌
- * "这次交付还算不算数"必须按**请求**判断。此前这些来源共用一个 `cancelled` 布尔：
- * 新的 `start()` 会把它重置为 false，于是一首旧曲目在途的请求会把自己**过期**的结果
+ * "这次交付还算不算数"必须按**请求**判断。若这些来源共用一个 `cancelled` 布尔，
+ * 新的 `start()` 会把它重置为 false，一首旧曲目在途的请求就会把自己**过期**的结果
  * 交付出去。编排器虽然按 epoch 丢弃，但 `LyricSource.cancel` 的约定是"取消后不再交付"，
  * 而且这条路径会让取消之后的线程继续做无用功。
  *
@@ -53,6 +55,7 @@ import java.util.concurrent.atomic.AtomicLong
 class FetchSlot(private val executor: Executor = FETCH_POOL) {
 
     private val sequence = AtomicLong()
+    private val calls = ConcurrentHashMap.newKeySet<Call>()
 
     /** 开始一次新请求，并作废此前所有请求。 */
     fun open(): Long = sequence.incrementAndGet()
@@ -60,6 +63,21 @@ class FetchSlot(private val executor: Executor = FETCH_POOL) {
     /** 作废当前请求（对应 `LyricSource.cancel`）。 */
     fun invalidate() {
         sequence.incrementAndGet()
+        // 取消在途 Call，而不是只丢掉结果：旧代际不再继续跑 2 URL × 2 profile。
+        for (call in calls) {
+            runCatching { call.cancel() }
+        }
+        calls.clear()
+    }
+
+    /** 登记一次 OkHttp 调用，使其可被 [invalidate] 取消。 */
+    fun <T> withCall(call: Call, block: () -> T): T {
+        calls.add(call)
+        try {
+            return block()
+        } finally {
+            calls.remove(call)
+        }
     }
 
     /** [token] 是否仍是最新的一次请求。 */
@@ -74,10 +92,11 @@ class FetchSlot(private val executor: Executor = FETCH_POOL) {
         /**
          * 所有来源共用的取词线程池
          *
-         * 线程空闲 60 秒即回收，因此稳态下没有常驻线程；每个任务都有 HTTP 超时兜底，
-         * 不会永久占用线程
+         * 固定 6 线程：cached 池没有上限，快速连切时每首歌都会各占一条线程跑完整条
+         * 网络链（KuGou 最坏 5×12s），线程与 FD 会短时堆积。队列仍然无界，但线程数
+         * 有上界；取词本身有 HTTP 超时，不会永久占用。
          */
-        val FETCH_POOL: Executor = Executors.newCachedThreadPool { runnable ->
+        val FETCH_POOL: Executor = Executors.newFixedThreadPool(6) { runnable ->
             Thread(runnable, "SuperLyric-Fetch").apply { isDaemon = true }
         }
     }

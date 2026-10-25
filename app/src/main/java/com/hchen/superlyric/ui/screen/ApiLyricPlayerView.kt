@@ -71,6 +71,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.unit.sp
 import com.hchen.superlyric.R
 import com.hchen.superlyricapi.SuperLyricLine
@@ -112,7 +115,9 @@ internal fun ApiLyricPlayerView(
     }
 
     // 判断当前正在播放的行是否在当前视口内可见
-    val isCurrentLineVisible by remember {
+    // 必须把 currentIndex/allLyrics 作为 remember 的键：无键的 remember 会捕获首帧参数，
+    // 数据到达后 derivedStateOf 仍按 null/0 判断，胶囊可能永远不出现。
+    val isCurrentLineVisible by remember(allLyrics, currentIndex) {
         derivedStateOf {
             if (allLyrics.isNullOrEmpty() || currentIndex !in allLyrics.indices) return@derivedStateOf true
             lyricListState.layoutInfo.visibleItemsInfo.any { it.index == currentIndex }
@@ -120,7 +125,7 @@ internal fun ApiLyricPlayerView(
     }
 
     // 严密的悬浮按钮显示条件：仅在用户主动浏览且当前播放行已滑出可视区域时才显示
-    val showBackToCurrentLine by remember {
+    val showBackToCurrentLine by remember(isUserBrowsing, isCurrentLineVisible) {
         derivedStateOf {
             isUserBrowsing && !isCurrentLineVisible
         }
@@ -128,38 +133,45 @@ internal fun ApiLyricPlayerView(
 
     // 真实毫秒时钟驱动：仅在真实处于动态播放流（ON_LYRIC 且非静态拉取）时才进行流逝插值计算；
     // 未播放、静态拉取（PULL_LATEST）、停止或暂停时保持静态固定在 basePos，绝不盲目空转或重置从头跑
-    var currentPlayPos by remember(data?.position) { mutableLongStateOf(data?.position ?: 0L) }
-    LaunchedEffect(data?.position, state.positionTimestamp, paused, state.eventType, state.publisher) {
-        val basePos = data?.position ?: 0L
-        val baseWall = state.positionTimestamp
-        val isStreamingPlaying = !paused &&
-                state.eventType == "ON_LYRIC" &&
-                state.publisher != "MockDebugPublisher" &&
-                data != null
+    // 位置 state 必须是**稳定对象**：如果 remember 的键包含 data.position，每次位置包都会
+    // 返回新的 MutableLongState，而派生状态仍捕获旧对象，逐字高亮会冻在首次组合的位置。
+    val playPos = remember { mutableLongStateOf(data?.position ?: 0L) }
+    var currentPlayPos by playPos
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(data?.position, state.positionTimestamp, paused, state.eventType, state.publisher, lifecycleOwner) {
+        // 只在 RESUMED 时跑：后台/锁屏时停掉 50Hz 唤醒，回前台由新的 position 包重新锚定。
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            val basePos = data?.position ?: 0L
+            val baseWall = state.positionTimestamp
+            val isStreamingPlaying = !paused &&
+                    state.eventType == "ON_LYRIC" &&
+                    state.publisher != "MockDebugPublisher" &&
+                    data != null
 
-        if (!isStreamingPlaying) {
-            currentPlayPos = basePos
-            return@LaunchedEffect
-        }
-
-        val currentLine = if (!allLyrics.isNullOrEmpty() && currentIndex in allLyrics.indices) {
-            allLyrics[currentIndex]
-        } else {
-            data.lyric
-        }
-        val lineEnd = currentLine?.endTime?.takeIf { it > basePos } ?: Long.MAX_VALUE
-
-        while (true) {
-            val elapsed = (SystemClock.elapsedRealtime() - baseWall).coerceAtLeast(0L)
-            val calculated = basePos + elapsed
-            if (calculated >= lineEnd) {
-                currentPlayPos = lineEnd
-                break
+            if (!isStreamingPlaying) {
+                playPos.longValue = basePos
+                return@repeatOnLifecycle
             }
-            currentPlayPos = calculated
-            // 这个节拍只决定**刷新密度**，不影响正确性——位置按墙上时钟算，与循环频率无关。
-            // 20ms ≈ 50Hz：比逐字高亮需要的密度高，又明显低于"每帧一次"的代价
-            delay(20)
+
+            val currentLine = if (!allLyrics.isNullOrEmpty() && currentIndex in allLyrics.indices) {
+                allLyrics[currentIndex]
+            } else {
+                data.lyric
+            }
+            val lineEnd = currentLine?.endTime?.takeIf { it > basePos } ?: (data.duration.takeIf { it > 0L } ?: Long.MAX_VALUE)
+
+            while (true) {
+                val elapsed = (SystemClock.elapsedRealtime() - baseWall).coerceAtLeast(0L)
+                val calculated = basePos + elapsed
+                if (calculated >= lineEnd) {
+                    playPos.longValue = lineEnd
+                    break
+                }
+                playPos.longValue = calculated
+                // 这个节拍只决定**刷新密度**，不影响正确性——位置按墙上时钟算，与循环频率无关。
+                // 20ms ≈ 50Hz：比逐字高亮需要的密度高，又明显低于"每帧一次"的代价
+                delay(20)
+            }
         }
     }
 
@@ -309,9 +321,15 @@ internal fun ApiLyricPlayerView(
                             val words = line.words
                             if (isActive && !words.isNullOrEmpty()) {
                                 // 正在演唱的当前行：
-                                // 计算当前句内唯一活跃字词索引：严格互斥，同一时刻最多仅有一个字词处于 singing 激活状态
-                                val activeWordIndex = remember(words, currentPlayPos) {
-                                    words.indexOfFirst { currentPlayPos in it.startTime until it.endTime }
+                                // 计算当前句内唯一活跃字词索引：严格互斥，同一时刻最多仅有一个字词处于 singing 激活状态。
+                                //
+                                // 读取的是**稳定的** playPos 对象，而不是被 remember 键替换掉的
+                                // 旧 delegate；`derivedStateOf` 只在被读取时按当前位置求值。
+                                val activeWordIndex by remember(words) {
+                                    derivedStateOf {
+                                        val pos = playPos.longValue
+                                        words.indexOfFirst { pos in it.startTime until it.endTime }
+                                    }
                                 }
 
                                 // A. 正文流式排版（紧凑自然字间距，绝不拉宽/撑大任何英文字母或汉字）

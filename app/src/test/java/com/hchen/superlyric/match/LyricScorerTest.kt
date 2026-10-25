@@ -77,6 +77,15 @@ class LyricScorerTest {
         assertTrue(LyricScorer.calculateTitleSimilarity("(Intro) Song", "Song") < 0.5)
     }
 
+
+    @Test
+    fun versionMarkersWithDotAreRejectedBeforeTitleCleaning() {
+        // 真实形态带点；cleanTitle 过去会先把整段括号删掉，导致 VARIANT 守卫永远看不到它。
+        assertTrue(LyricScorer.calculateTitleSimilarity("孤独患者 (Korean Ver.)", "孤独患者") < 0.5)
+        assertTrue(LyricScorer.calculateTitleSimilarity("NIGHT DANCER (Live)", "NIGHT DANCER") < 0.5)
+        assertTrue(LyricScorer.calculateTitleSimilarity("土坡上的狗尾草 (伴奏)", "土坡上的狗尾草") < 0.5)
+    }
+
     @Test
     fun `a version marker in the trailing bracket is never stripped`() {
         // 实测（酷狗概念版 5.2.9）：无条件剥离末尾括号后，这些"同一首歌的另一版"

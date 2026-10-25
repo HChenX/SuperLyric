@@ -42,9 +42,9 @@ import com.hchen.superlyric.provider.kugou.KuGouApiSource;
  * </ul>
  *
  * <h3>标识一致性</h3>
- * 覆写 [buildIdentity] 以宿主的 {@code rid} 作为稳定标识（前缀 {@code kuwo:}）。
- * 不覆写就会让 Hook 上报的数字 rid 与元数据上报的标题哈希永不相等，
- * Hook 捕获被当成过期数据丢弃，歌词加载事件整条丢失。
+ * 覆写 {@code buildIdentity}，以同一次 {@code setMetadata} 里的 {@code MEDIA_ID}
+ * 作为权威标识（前缀 {@code kuwo:}），{@code rid} 只在 {@code MEDIA_ID} 为空时兜底。
+ * 不能反过来：Hook 与元数据是两个独立更新源，预加载时 rid 会先翻、元数据还停在本首。
  *
  * @author 焕晨HChen
  */
@@ -73,13 +73,13 @@ public class BodianProvider extends MusicProvider {
     /**
      * 从元数据构建音轨身份
      *
-     * <p>标识取 {@code MEDIA_ID} 而不是 Hook 的 rid：Hook 回调与元数据是**两个独立更新**
+     * <p>标识取 {@code MEDIA_ID} 而不是 Hook 的 rid：Hook 回调与元数据是<b>两个独立更新</b>
      * 的来源，宿主预加载下一首时 rid 会先翻，而元数据还停在本首。混用二者会产出
      * 「上一首的 rid + 本首的曲名」这类交叉组合，于是本首元数据到达时被 {@code matches}
-     * 判为同一首歌、整首都不再重新解析，表现为**上一首的歌词一直跑**。
+     * 判为同一首歌、整首都不再重新解析，表现为<b>上一首的歌词一直跑</b>。
      * 同一次 {@code setMetadata} 里的标识与曲名则永远不会互相错位。
      *
-     * <p>Hook 的 rid 仍作为兜底，且它描述的是**歌词文件所属的曲目**，用于校验投递对象。
+     * <p>Hook 的 rid 仍作为兜底，且它描述的是<b>歌词文件所属的曲目</b>，用于校验投递对象。
      */
     @NonNull
     @Override

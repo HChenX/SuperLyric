@@ -25,7 +25,7 @@ import java.nio.charset.StandardCharsets;
  * <p>
  * <b>只做解密，不做解析。</b>解密后的明文（形如 {@code [start,duration]<rel,dur,0>word}）
  * 交由 {@code lyrics-core} 的 {@code KugouKrcParser} 解析。
- * 这一层与解析层的分离是本次重构的硬性接缝之一：解密是稳定的（协议级），解析是易错的。
+ * 解密与解析必须分层：解密是协议级的稳定逻辑，解析是随宿主格式变化的易错逻辑。
  * <p>
  * <b>格式：</b>
  * <ol>
@@ -72,8 +72,8 @@ public final class KrcCipher {
      * 将 KRC 载荷还原为明文。
      * <p>
      * 若载荷带 {@code krc1} 魔数，则执行「剥离魔数 → 异或 → ZLib 解压」；解压失败即抛
-     * {@link DecodeException}，**绝不**回退到未解密的密文缓冲区。
-     * 若载荷不带魔数，则按调用方的声明视为**已解密明文**直接返回。
+     * {@link DecodeException}，<b>绝不</b>回退到未解密的密文缓冲区。
+     * 若载荷不带魔数，则按调用方的声明视为<b>已解密明文</b>直接返回。
      *
      * @param krcBytes 原始载荷
      * @return 已解密的 KRC 明文

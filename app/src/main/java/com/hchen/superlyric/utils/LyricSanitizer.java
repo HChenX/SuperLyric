@@ -65,8 +65,9 @@ public final class LyricSanitizer {
      * 规则：
      * <ol>
      *   <li>标准化文本，剥离不可见零宽字符；</li>
-     *   <li>深度自检 {@code words} 数组：若存在 null 元素、时间倒错、字词累积长度超出行长、
-     *       或字词文本拼接与行文本严重失配（如重叠重复切片），则认定逐字数据损坏，安全降级置为 {@code null}；</li>
+     *   <li>丢弃条件：null 元素、字词累积长度超出行长、或字词文本拼接与行文本严重失配
+     *       （如重叠重复切片），此时认定逐字数据损坏并降级为 {@code null}；</li>
+     *   <li>修正条件：时间倒错、0ms、重叠由 {@code healWordTimings} 纠偏/顺推，不丢弃；</li>
      *   <li>校准行起止时间戳，确保 {@code endTime >= startTime >= 0}；</li>
      *   <li>递归清洗翻译与副歌词行。</li>
      * </ol>
@@ -314,6 +315,17 @@ public final class LyricSanitizer {
             }
         }
 
+        // 阶段 2 的顺推分支可能把后继词尾推到 lineEnd 之后；这里统一收口，
+        // 保证任何词的 end 都不越过行尾（start 已在线内时才截断）。
+        if (lineEnd > lineStart) {
+            for (int i = 0; i < size; i++) {
+                SuperLyricWord word = words.get(i);
+                if (word.getStartTime() < lineEnd && word.getEndTime() > lineEnd) {
+                    words.set(i, new SuperLyricWord(word.getWord(), word.getStartTime(), lineEnd));
+                }
+            }
+        }
+
         // 阶段 3：尾词与行末对齐
         SuperLyricWord last = words.get(size - 1);
         if (last.getEndTime() <= last.getStartTime()) {
@@ -325,7 +337,7 @@ public final class LyricSanitizer {
      * 对完整 SuperLyricData 数据包进行全量深度清洗。
      *
      * @param data 原始歌词数据包
-     * @return 经过安全校验与清洗的数据包；若原始为 null 则返回 null
+     * @return 经过安全校验与清洗的数据包；原始为 null 或清洗过程失败时返回 null
      */
     @Nullable
     public static SuperLyricData sanitizeData(@Nullable SuperLyricData data) {
@@ -352,10 +364,17 @@ public final class LyricSanitizer {
             // 4. 清洗全量歌词行列表
             if (data.hasAllLyrics() && data.getAllLyrics() != null) {
                 SuperLyricLine[] originalLines = data.getAllLyrics();
-                SuperLyricLine[] cleanLines = new SuperLyricLine[originalLines.length];
-                for (int i = 0; i < originalLines.length; i++) {
-                    cleanLines[i] = sanitizeLine(originalLines[i]);
+                List<SuperLyricLine> cleanList = new ArrayList<>(originalLines.length);
+                for (SuperLyricLine originalLine : originalLines) {
+                    SuperLyricLine clean = sanitizeLine(originalLine);
+                    // sanitizeLine 对 null 输入返回 null；null 元素留在数组里会让下游
+                    // （LyricDocAdapter 的 mapNotNull 参数、UI 逐行取 text）抛 NPE，
+                    // 打在发布或时钟线程上。直接剔除
+                    if (clean != null) {
+                        cleanList.add(clean);
+                    }
                 }
+                SuperLyricLine[] cleanLines = cleanList.toArray(new SuperLyricLine[0]);
                 data.setAllLyrics(cleanLines);
 
                 // 若缺少单行但有全量行，向下兼容补全第 0 行
@@ -378,7 +397,11 @@ public final class LyricSanitizer {
                 data.setCurrentLyricIndex(data.getAllLyricsCount() - 1);
             }
         } catch (Throwable t) {
-            AndroidLog.logE(TAG, "Error during lyric sanitization", t);
+            // 逐字段清洗是原地写回：失败时 data 里会留下“部分已清洗、部分未清洗”的混合体。
+            // 这道防线一旦放行，未清洗的逐字数据可能直接进入 SystemUI 的 drawTextRun。
+            // 调用方（sendLyric / publishFullLyric）本来就处理 null，宁可丢包也不能半净化发布。
+            AndroidLog.logE(TAG, "Dropping lyric packet: sanitization failed", t);
+            return null;
         }
 
         return data;
