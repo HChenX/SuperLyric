@@ -34,26 +34,25 @@ import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.result.ClassData;
 import org.luckypray.dexkit.result.ClassDataList;
 
-import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 
 /**
- * 椒盐音乐 Hook 锚点：从 {@code MusicController} 的歌词设置入口取回<b>原始歌词文本</b>。
- *
- * <h3>为什么只取 {@code sourceText}</h3>
- * {@code LyricsDocument} 里保存着宿主收到的<b>原始歌词文本</b> {@code sourceText}
+ * 椒盐音乐 Hook 锚点：从 {@code MusicController} 的歌词设置入口取回原始歌词文本。
+ * <p>
+ * 为什么只取 {@code sourceText}
+ * {@code LyricsDocument} 里保存着宿主收到的原始歌词文本 {@code sourceText}
  * （宿主用它渲染，也用它导出）。它尚未经过宿主内部
  * {@code VerbatimLyricsParserImpl.e()} 对相邻词元的重叠裁切，
  * 因此逐字时戳不会出现 0ms 坍缩。
  *
- * <p>反过来说，只要拿到了 {@code sourceText}，就<b>不需要</b>再去反射
+ * <p>反过来说，只要拿到了 {@code sourceText}，就不需要再去反射
  * {@code LyricsLine} / {@code LyricsCell} 那套行/词模型——那正是本项目要根除的末端反射。
- * 本实现只读取 {@code LyricsDocument} 上的<b>一个 String 字段</b>。
- *
- * <h3>字段如何定位</h3>
- * 不硬编码字段名（R8 会重命名），而是在 {@code LyricsDocument} 内按<b>类型唯一性</b>取字符串字段。
+ * 本实现只读取 {@code LyricsDocument} 上的一个 String 字段。
+ * <p>
+ * 字段如何定位
+ * 不硬编码字段名（R8 会重命名），而是在 {@code LyricsDocument} 内按类型唯一性取字符串字段。
  * 这个类只有一个非静态 String 字段。
  *
  * @author 焕晨HChen
@@ -91,7 +90,7 @@ public final class SaltAnchors {
         void onLyrics(@NonNull String sourceText, @NonNull String songId);
 
         /**
-         * 宿主的<b>真实曲目信息</b>。
+         * 宿主的真实曲目信息。
          *
          * <p>椒盐在开启蓝牙歌词后会把 {@code METADATA_KEY_TITLE} 写成当前歌词行或制作人名单、
          * 把 {@code ARTIST} 拼成 {@code "歌手 - 曲名"}——元数据完全不可信。
@@ -189,20 +188,20 @@ public final class SaltAnchors {
 
     /**
      * 挂载宿主那一个"曲目已切换"回调，取回 {@code com.salt.music.data.entry.Song}。
-     *
-     * <h3>为什么是这条路</h3>
+     * <p>
+     * 为什么是这条路
      * 不能从 {@code LyriconSongSnapshot} 的构造器取数：它是歌词渲染器的快照，
      * 只有歌词页面订阅时才生成，切歌时零触发。
      * 而 {@code MusicController} 内部以 {@code Song} 为参数的回调稳定触发，
      * 且 {@code Song} 带 {@code @Keep}、{@code Song.getId()} 与
-     * {@link LyricsListener#onLyrics} 的 songId <b>完全一致</b>，可精确关联。
-     *
-     * <h3>为什么按签名而不是按名字</h3>
+     * {@link LyricsListener#onLyrics} 的 songId 完全一致，可精确关联。
+     * <p>
+     * 为什么按签名而不是按名字
      * 触发的方法名是混淆产物（实测为单个生僻字符），无法跨版本硬编码；
      * 而参数类型序列 {@code (Song, long, long, Long)} 由 {@code @Keep} 的
      * {@code Song} 与基本类型构成，是稳定可辨的。
-     *
-     * <h3>签名失配时不退回"广撒网"</h3>
+     * <p>
+     * 签名失配时不退回"广撒网"
      * 宿主若改动了这个签名，本层就取不到真实曲目信息（退化为使用元数据），
      * 只记一条警告。刻意不去挂载"所有以 Song 为参数的方法"：
      * 那会牵进一批与曲目切换无关的方法，违背"最少最精准"。
@@ -336,7 +335,7 @@ public final class SaltAnchors {
     /**
      * 反射调用无参 getter；失败或返回 {@code null} 时返回 {@code null}。
      *
-     * <p>给<b>语义路径</b>用：取不到就得是"取不到"，不能用一个字符串冒充真实值。
+     * <p>给语义路径用：取不到就得是"取不到"，不能用一个字符串冒充真实值。
      * 诊断转储请用 {@link #invoke}。
      */
     @Nullable

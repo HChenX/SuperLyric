@@ -30,21 +30,21 @@ import com.hchen.superlyricapi.SuperLyricData
 import com.hchen.superlyricapi.SuperLyricLine
 
 /**
- * 真机联调期的**全量诊断输出**
+ * 真机联调期的全量诊断输出
  *
- * ## 为什么需要它
+ * 为什么需要它
  * 解析假设（例如 QQ 的标识正则、网易云的歌词版本参数）无法凭代码判别对错，
- * 唯一可靠的办法是**把原始载荷与解析结果原样打出来**，与预期逐条对照。
+ * 唯一可靠的办法是把原始载荷与解析结果原样打出来，与预期逐条对照。
  *
- * ## 为什么落在 `:app` 而不是内核
- * `:lyric-kernel` 是纯 JVM 模块，**严禁**依赖任何 `android.*` 类型，
+ * 为什么落在 `:app` 而不是内核
+ * `:lyric-kernel` 是纯 JVM 模块，严禁依赖任何 `android.*` 类型，
  * 因此不能调用 `AndroidLog`。所有诊断输出集中在 `:app` 侧。
  *
- * ## 输出量控制
+ * 输出量控制
  * logcat 单条消息上限约 4KB，超出会被截断。因此所有长文本一律按
- * [CHUNK] 字符**分块**并带 `[i/n]` 序号输出，可完整还原。
+ * [CHUNK] 字符分块并带 `[i/n]` 序号输出，可完整还原。
  *
- * ## 过滤命令
+ * 过滤命令
  * ```
  * adb logcat -v time -s SLDiag
  * ```
@@ -96,7 +96,7 @@ object LyricDiag {
     // ---------------------------------------------------------------- 解析包装
 
     /**
-     * 包装 [LyricPipeline.parse]：先完整输出请求（含**未解析的原始载荷**），
+     * 包装 [LyricPipeline.parse]：先完整输出请求（含未解析的原始载荷），
      * 再输出解析结果。异常原样抛出，不改变任何控制流。
      */
     @JvmStatic
@@ -123,7 +123,7 @@ object LyricDiag {
     }
 
     /**
-     * 源码级只出**摘要**。
+     * 源码级只出摘要。
      *
      * 完整正文由发布入口（[dumpDoc] / [dumpData]）负责输出一次即可；
      * 两处都出全文会让两股分块流在 logcat 中交错，既难读又浪费缓冲区。
@@ -245,7 +245,7 @@ object LyricDiag {
     }
 
     /**
-     * 输出一段**尚未解密**的原始字段：只给规模与前 96 字符预览。
+     * 输出一段尚未解密的原始字段：只给规模与前 96 字符预览。
      *
      * 加密载荷动辄数十 KB，全文输出会撑爆 logcat 缓冲区，而判断
      * "这个字段到底是什么形态"只需要看头部。
@@ -294,7 +294,7 @@ object LyricDiag {
         listOf("yrc", "lrc", "ytlrc", "tlyric", "yromalrc", "romalrc")
 
     /**
-     * 输出一条 `MediaMetadata` 的**全部键**与其中的文本值。
+     * 输出一条 `MediaMetadata` 的全部键与其中的文本值。
      *
      * `dumpsys media_session` 只渲染 title/artist/album 三项，而宿主可能把真正的曲名
      * 放在别的键上（例如 `DISPLAY_TITLE`），同时用歌词行污染 `TITLE`。
@@ -315,13 +315,13 @@ object LyricDiag {
     /**
      * 取某个键的文本值，非文本键返回 `null`
      *
-     * **不能直接调 `MediaMetadata.getText(key)`**：它内部是 `Bundle.getCharSequence`，
+     * 不能直接调 `MediaMetadata.getText(key)`：它内部是 `Bundle.getCharSequence`，
      * 撞上 `DURATION`（Long）或 `USER_RATING`（Rating）会抛 `ClassCastException`。
      * 异常虽被平台内部吞掉并返回 null，但 `BaseBundle` 会先以
      * "Attempt to cast generated internal exception" 打一条 W——元数据回调是高频的，
      * 于是每次切歌都会在宿主进程里刷屏。
      *
-     * `MediaMetadata` **没有**泛型取值器，所以这里反射取内部 `Bundle` 拿原始值，
+     * `MediaMetadata` 没有泛型取值器，所以这里反射取内部 `Bundle` 拿原始值，
      * 先判类型再转文本。反射失败时退回类型化取值器（此时会有上述噪声，但功能不受影响）。
      */
     @Suppress("DEPRECATION")
@@ -385,7 +385,7 @@ object LyricDiag {
     /**
      * 分块输出长文本。每块带 `[i/n]` 序号，可完整还原。
      *
-     * 换行会被替换为可见标记 `⏎`——logcat 会把消息里的 `\n` 拆成**独立的行**，
+     * 换行会被替换为可见标记 `⏎`——logcat 会把消息里的 `\n` 拆成独立的行，
      * 那样只有首块带序号、后续行无法归属，反而更难读。
      */
     private fun dumpText(source: String, label: String, text: String) {

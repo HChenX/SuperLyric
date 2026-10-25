@@ -139,7 +139,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        // 摘掉的必须是**本次注册的那个实例**：静态表是按实例移除的
+        // 摘掉的必须是本次注册的那个实例：静态表是按实例移除的
         prefsReadyListener?.let(Application::removePrefsReadyListener)
         super.onDestroy()
     }
@@ -343,11 +343,11 @@ class MainActivity : ComponentActivity() {
                 }
 
                 UIConstants.API_PAGE_INDEX -> {
-                    ApiLayout(paddingValues, isWideScreen)
+                    ApiLayout(paddingValues)
                 }
 
                 UIConstants.ABOUT_PAGE_INDEX -> {
-                    AboutLayout(paddingValues, isWideScreen)
+                    AboutLayout(paddingValues)
                 }
             }
         }

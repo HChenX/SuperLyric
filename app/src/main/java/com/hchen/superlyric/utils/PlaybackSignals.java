@@ -25,7 +25,7 @@ import androidx.annotation.NonNull;
 import com.hchen.superlyric.kernel.orchestrate.PlaybackSignal;
 
 /**
- * 宿主播放状态常量到内核语义信号的<b>唯一</b>映射。
+ * 宿主播放状态常量到内核语义信号的唯一映射。
  *
  * <p>两侧共用这一份：宿主进程内的 Provider 与 system_server 内的服务。若各写一套，
  * {@link PlaybackState#STATE_NONE} 会被映射成相反的含义（一侧"没停"、一侧"停了"），

@@ -42,17 +42,17 @@ import java.util.regex.Pattern;
 
 /**
  * QQ 音乐 Hook 锚点：从歌词加载请求的载体上取回当前曲目的官方标识。
- *
- * <h3>为什么锚在这里</h3>
+ * <p>
+ * 为什么锚在这里
  * QQ 音乐 20.9+ 的歌词行/词模型位于 {@code com.lyricengine.base.*}，深度混淆且结构随版本变动，
  * 是"末端反射"路线的典型陷阱。但无论模型怎么改，宿主都必须先把
  * {@code LyricLoadBean}（含 {@code SongInfo}）交给歌词引擎——这个构造入口是稳定的。
  * <p>
- * 因此本层<b>只做一件事</b>：拦截该构造器，取出 {@code songMID} / {@code songID}。
+ * 因此本层只做一件事：拦截该构造器，取出 {@code songMID} / {@code songID}。
  * 歌词本身由模块自行向官方接口拉取原生 QRC 报文并解密，
  * 与宿主内部模型彻底解耦——宿主改一次模型，本层不受影响。
- *
- * <h3>进程约束</h3>
+ * <p>
+ * 进程约束
  * 只在 {@code :QQPlayerService} 进程内挂载。QQ 音乐的多个子进程都会构造歌词相关对象，
  * 不设约束会引入与播放无关的噪声拦截。
  *
@@ -111,7 +111,7 @@ public final class QQAnchors {
 
         String process = currentProcessName();
         if (process != null && process.indexOf(':') >= 0 && !process.endsWith(TARGET_PROCESS_SUFFIX)) {
-            // I 级而非 D 级：判据写死了子进程名，宿主一旦改名这里就**永不挂载**且悄无声息，
+            // I 级而非 D 级：判据写死了子进程名，宿主一旦改名这里就永不挂载且悄无声息，
             // 必须能在默认日志级别下看见"没挂"
             AndroidLog.logI(TAG, "Skipping lyric anchor in non-player sub-process: " + process
                 + " (expected suffix: " + TARGET_PROCESS_SUFFIX + ")");
@@ -131,7 +131,7 @@ public final class QQAnchors {
             for (Constructor<?> constructor : beanClass.getDeclaredConstructors()) {
                 // Kotlin 会为一个 8 参主构造器额外合成一个 (…, int, DefaultConstructorMarker) 桥接。
                 // 按参数个数筛选是不可靠的：一旦选中桥接，而宿主实际走 8 参路径，
-                // Hook 就永远不会触发。此处按**首参类型**精确筛选。
+                // Hook 就永远不会触发。此处按首参类型精确筛选。
                 Class<?>[] parameterTypes = constructor.getParameterTypes();
                 if (parameterTypes.length == 0) continue;
                 if (!isSongInfo(parameterTypes[0])) continue;
@@ -162,7 +162,7 @@ public final class QQAnchors {
     /**
      * 首参是否为宿主曲目信息类型。
      * <p>
-     * 这里出现的 {@code SongInfo} 是宿主的<b>业务类名</b>（非混淆产物），跨版本稳定；
+     * 这里出现的 {@code SongInfo} 是宿主的业务类名（非混淆产物），跨版本稳定；
      * 判据用后缀匹配以容忍包路径调整。
      */
     private static boolean isSongInfo(@Nullable Class<?> type) {

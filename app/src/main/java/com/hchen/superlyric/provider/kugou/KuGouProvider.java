@@ -27,21 +27,21 @@ import com.hchen.superlyric.provider.base.HookLyricSource;
 import com.hchen.superlyric.provider.base.MusicProvider;
 
 /**
- * 酷狗音乐歌词提供者：<b>仅走官方 API 路径</b>。
- *
- * <h3>为什么没有 Hook 路径</h3>
+ * 酷狗音乐歌词提供者：仅走官方 API 路径。
+ * <p>
+ * 为什么没有 Hook 路径
  * 原设计锚定酷狗的跨进程 IPC 中枢 {@code @twin:GlobalVariate}，
  * 在宿主写入 {@code LyricData}（key=41）后读取宿主自己下载的本地 {@code .krc} 文件。
- * 实机验证（酷狗 20.8.2）证明该路径<b>完全不可用</b>：
+ * 实机验证（酷狗 20.8.2）证明该路径完全不可用：
  * <ul>
  *   <li>宿主根本不把 {@code .krc} 落盘——{@code filesDir}（194 项）与
  *       {@code externalFilesDir}（26 项）下均无任何 lyric 目录，8 个候选路径全部不存在；</li>
  *   <li>key=41 在整个播放期间每秒重发多次，每次都触发一轮无效的文件系统探测。</li>
  * </ul>
  * 因此该路径已整体删除，改由官方 KRC 接口直接取词。
- *
- * <h3>标识与检索</h3>
- * 酷狗在 {@code MediaMetadata.MEDIA_ID} 中对<b>同一首曲目</b>会上报<b>多个不同的哈希</b>
+ * <p>
+ * 标识与检索
+ * 酷狗在 {@code MediaMetadata.MEDIA_ID} 中对同一首曲目会上报多个不同的哈希
  * （实测 160~600ms 内出现 null → 甲 → 乙）。其中只有一个能直查到歌词，
  * 因此 {@link KuGouApiSource} 在直查落空时必须回退到「歌名 + 歌手」检索，
  * 否则会把有歌词的歌误判为无歌词并下发纯音乐占位。

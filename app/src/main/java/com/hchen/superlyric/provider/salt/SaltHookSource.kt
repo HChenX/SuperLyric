@@ -65,7 +65,7 @@ class SaltHookSource : HookLyricSource {
      *
      * 椒盐会把 `MediaMetadata` 的 TITLE/ARTIST 改写成歌词行与 `"歌手 - 曲名"`，
      * 元数据不可信；而宿主自己的 `Song` 对象带着干净的曲名、歌手与时长，
-     * 且其 `id` 与 `LyricsDocument` 一起给出的 songId **完全一致**，可精确关联。
+     * 且其 `id` 与 `LyricsDocument` 一起给出的 songId 完全一致，可精确关联。
      */
     private val songStore = ConcurrentHashMap<String, SongInfo>()
 

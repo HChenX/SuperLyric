@@ -26,12 +26,12 @@ import com.hchen.superlyricapi.SuperLyricLine
 import com.hchen.superlyricapi.SuperLyricWord
 
 /**
- * `:lyric-kernel` 的不可变模型与 `SuperLyricApi` 的可变 Parcelable 之间的**唯一**边界
+ * `:lyric-kernel` 的不可变模型与 `SuperLyricApi` 的可变 Parcelable 之间的唯一边界
  *
- * - **Parcelable 无法进入内核**：[SuperLyricData] 来自外部 Android 库，零依赖的不可变内核
+ * - Parcelable 无法进入内核：[SuperLyricData] 来自外部 Android 库，零依赖的不可变内核
  *   不能依赖它。本适配器是 `:app` 侧唯一 import 它的业务代码
- * - **深拷贝是硬性要求**：跨线程、跨 Binder 共享可变实例是诡异缺陷的温床。本适配器每次都
- *   从不可变模型**重新分配**全部 [SuperLyricLine] 与 [SuperLyricWord]，因此不可能出现共享实例
+ * - 深拷贝是硬性要求：跨线程、跨 Binder 共享可变实例是诡异缺陷的温床。本适配器每次都
+ *   从不可变模型重新分配全部 [SuperLyricLine] 与 [SuperLyricWord]，因此不可能出现共享实例
  *
  * 内核侧一律使用 [LyricDoc]，只有在跨 Binder 收发的那一刻才经过本适配器
  *
@@ -40,7 +40,7 @@ import com.hchen.superlyricapi.SuperLyricWord
 object LyricDocAdapter {
 
     /**
-     * 构造**全量**歌词包。
+     * 构造全量歌词包。
      *
      * 同时填充单行通道（首行 + 索引 0），以兼容只读 [SuperLyricData.getLyric] 的消费端。
      */
@@ -64,14 +64,14 @@ object LyricDocAdapter {
     }
 
     /**
-     * 构造**单行增量**包（服务端时钟推进时使用）。
+     * 构造单行增量包（服务端时钟推进时使用）。
      *
      * 不携带全量歌词，是本项目 IPC 开销最小的包型。
      *
-     * **译文与次歌词写两处，两条都在 wire 上**：每行的 [SuperLyricLine]（[toFullData] 带全量
+     * 译文与次歌词写两处，两条都在 wire 上：每行的 [SuperLyricLine]（[toFullData] 带全量
      * 数组时随行过线——`SuperLyricData.writeToParcel` 会把 `allLyrics` 每行的译文/次歌词写成
      * 并列数组），以及顶层 [SuperLyricData.setTranslation] / [SuperLyricData.setSecondary]
-     * （只带一行的增量包只有这一条通道）。消费端**两条都要读**，见 [toDoc]
+     * （只带一行的增量包只有这一条通道）。消费端两条都要读，见 [toDoc]
      *
      * @param index      行下标；越界时返回 null
      * @param positionMs 当前播放位置
@@ -100,7 +100,7 @@ object LyricDocAdapter {
      *
      * 读取时逐字段复制值，不做任何引用共享；接收方随后持有的是一个与 Binder 入参完全解耦的快照。
      *
-     * **全量行缺失时回退到单行通道**：只读 [SuperLyricData.getAllLyrics] 会让增量包解出空文档
+     * 全量行缺失时回退到单行通道：只读 [SuperLyricData.getAllLyrics] 会让增量包解出空文档
      * （行、译文、次歌词全丢）。当前仓内喂进来的都是全量包，但公开 API 允许增量包，
      * 这个回退让调用方不必先弄清包型
      */

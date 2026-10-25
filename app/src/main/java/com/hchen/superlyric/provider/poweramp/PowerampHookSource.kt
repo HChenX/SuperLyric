@@ -46,16 +46,16 @@ import java.util.concurrent.Executors
 /**
  * Poweramp Hook 取词来源
  *
- * ## 切歌时先查宿主自己的歌词缓存
+ * 切歌时先查宿主自己的歌词缓存
  * Poweramp 只在歌词界面打开时才走 UI 解析链，但它的数据库里长期保存着
  * `cached_lyrics.content` 与 `lrc_files` 路径。切歌时直接查这两处，
  * 可以在不打开界面的情况下拿到整首歌词；UI 钩子只作为补充来源。
  *
- * ## 为什么查询用宿主的数据库连接
+ * 为什么查询用宿主的数据库连接
  * `RestProvider.getWritableDatabase()` 返回的是宿主已经打开的连接。自行打开
  * WAL 数据库会与宿主争锁，且只读打开时可能因 `-shm` 缺失而失败。
  *
- * ## 为什么 LRC 文件要交给宿主解析
+ * 为什么 LRC 文件要交给宿主解析
  * Poweramp 的 LRC 路径是 `primary/...` 这类相对卷路径，模块直接读会被
  * scoped storage 拒绝（实测 EACCES）。调用宿主自己的 `LrcParser` 即可走它的
  * 存储通道，`LrcParser.A` 钩子会同步把原始文本交回来。
@@ -86,7 +86,7 @@ class PowerampHookSource : HookLyricSource {
                 durationMs: Long,
                 extra: String,
             ) {
-                handleText(source, text, title, artist, album, durationMs, extra)
+                handleText(source, text, title, artist, durationMs)
             }
         })
     }
@@ -451,9 +451,7 @@ class PowerampHookSource : HookLyricSource {
         raw: String,
         title: String,
         artist: String,
-        album: String,
         durationMs: Long,
-        extra: String,
     ) {
         val identity = requests.current()?.identity ?: run {
             AndroidLog.logD(sourceName, "$source: no session yet, ignoring")
@@ -562,8 +560,8 @@ class PowerampHookSource : HookLyricSource {
     /**
      * 暂存键优先用稳定标识；没有稳定标识才退回标题 + 歌手。
      *
-     * <p>只用标题会把同名的 Intro / Interlude 合并，这正是内核
-     * {TrackIdentity} 的判据；暂存不能比它更松。
+     * 只用标题会把同名的 Intro / Interlude 合并，这正是内核
+     * [TrackIdentity] 的判据；暂存不能比它更松。
      */
     private fun identityToken(identity: TrackIdentity): String =
         identity.stableId?.takeIf { it.isNotBlank() }

@@ -147,7 +147,6 @@ internal fun ApiPanelPeekHeader(
 @Composable
 internal fun ApiMonitorSummaryCard(
     state: ApiReceiverState,
-    paused: Boolean,
     backdrop: LayerBackdrop?,
     cardBlend: List<BlendColorEntry>
 ) {

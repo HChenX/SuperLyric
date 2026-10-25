@@ -33,20 +33,20 @@ import com.hchen.superlyricapi.SuperLyricData
 /**
  * 系统服务端的播放时钟与跨行推进器
  *
- * ## 职责归属
+ * 职责归属
  * 按项目核心理念「音乐软件仅负责发布完整歌词，系统框架负责分发」，
- * **这是整条链路上唯一的进度来源**。宿主侧不发布任何进度包。
+ * 这是整条链路上唯一的进度来源。宿主侧不发布任何进度包。
  *
- * ## 设计要点
- * - **漂移**：进度以宿主自报的 `lastPositionUpdateTime` 为锚（见 [PlaybackClock]）。
+ * 设计要点
+ * - 漂移：进度以宿主自报的 `lastPositionUpdateTime` 为锚（见 [PlaybackClock]）。
  *   若改以"收到回调的时刻"为锚，漂移会恒等于快照年龄。
- * - **速率为 0**：PLAYING 而速率为 0 时由 [PlaybackClock] 视为冻结；
+ * - 速率为 0：PLAYING 而速率为 0 时由 [PlaybackClock] 视为冻结；
  *   否则时钟会表现为"运行却停住"。
- * - **重播与拖回开头**：位置回退是合法事件（seek / 重播），据此重新锚定并重置行索引即可，
- *   **不做"虚假 0ms"抑制**——抑制会让合法的重播把时钟留在曲尾。
- * - **竞态**：**所有**对行索引与时钟的修改都收敛到内部 HandlerThread 上执行。
+ * - 重播与拖回开头：位置回退是合法事件（seek / 重播），据此重新锚定并重置行索引即可，
+ *   不做"虚假 0ms"抑制——抑制会让合法的重播把时钟留在曲尾。
+ * - 竞态：所有对行索引与时钟的修改都收敛到内部 HandlerThread 上执行。
  *
- * ## 时间源
+ * 时间源
  * 时钟必须与 `PlaybackState.getLastPositionUpdateTime()` 同基，因此显式使用
  * `SystemClock.elapsedRealtime()`——不能用内核的默认时间源（纳秒时钟），
  * 否则两者相减毫无意义。
@@ -104,7 +104,7 @@ class PlaybackTracker @JvmOverloads constructor(
      * 同步宿主上报的播放状态。
      *
      * 位置回退（seek / 重播）会被识别为新锚点并立即重推行索引，
-     * **不做任何"虚假 0ms"抑制**。
+     * 不做任何"虚假 0ms"抑制。
      */
     fun onPlaybackStateChanged(state: PlaybackState?) {
         if (state == null) return
@@ -197,7 +197,7 @@ class PlaybackTracker @JvmOverloads constructor(
     /**
      * 睡到下一行的起点，而不是固定间隔空转
      *
-     * 行边界是**已知的**，按它排程既准又省：一首 4 分钟的歌由约 4800 次唤醒降到与行数同量级。
+     * 行边界是已知的，按它排程既准又省：一首 4 分钟的歌由约 4800 次唤醒降到与行数同量级。
      * 到末行后退化为固定间隔——此时还可能变的只剩位置跳转，而跳转有自己的入口
      * （[onPositionSynced] / [onPlaybackStateChanged] 都会立即重推）。
      *
@@ -216,7 +216,7 @@ class PlaybackTracker @JvmOverloads constructor(
     /**
      * 若当前位置落在新的行上，则构造极轻量的增量包并回调。
      *
-     * 本方法**只能**在追踪线程上调用。
+     * 本方法只能在追踪线程上调用。
      */
     private fun dispatchIfNeeded(positionMs: Long) {
         val current = doc ?: return
@@ -240,10 +240,10 @@ class PlaybackTracker @JvmOverloads constructor(
      * `FAST_FORWARDING` / `REWINDING` / `SKIPPING_*` 属于"仍在播放、只是位置在动"，
      * 归为 PLAYING。把它们并进 `else` 会让时钟在快进/跳转期间冻结
      *
-     * ## 这里把 `NONE` 归为 STOPPED，与 `PlaybackSignals` 把它判为 `UNKNOWN` 并不冲突
+     * 这里把 `NONE` 归为 STOPPED，与 `PlaybackSignals` 把它判为 `UNKNOWN` 并不冲突
      * 两处回答的是不同的问题：这里决定"时钟要不要继续走"，那里决定"要不要清空并下发停止"。
-     * 冻结是**可逆**的（宿主随后报任何状态都会重新锚定），而清空不可逆——所以同一个
-     * "不知道"，在本层可以按停止处理，在停止判定里必须保持中性。**不要**为了"统一"把
+     * 冻结是可逆的（宿主随后报任何状态都会重新锚定），而清空不可逆——所以同一个
+     * "不知道"，在本层可以按停止处理，在停止判定里必须保持中性。不要为了"统一"把
      * 这里也改成中性：那会让时钟在宿主不再上报时一直往前爬
      */
     private fun toStatus(state: Int): PlaybackStatus = when (state) {

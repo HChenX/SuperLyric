@@ -22,10 +22,8 @@ import android.content.pm.ApplicationInfo;
 import android.media.MediaMetadata;
 import android.media.session.PlaybackState;
 import android.os.Binder;
-import android.os.IBinder;
 import android.os.RemoteCallbackList;
 import android.os.RemoteException;
-import android.os.SystemClock;
 import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
@@ -33,17 +31,12 @@ import androidx.annotation.Nullable;
 
 import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.log.XposedLog;
-import com.hchen.superlyric.kernel.orchestrate.PlaybackSignal;
 import com.hchen.superlyric.kernel.orchestrate.StopEvidence;
-import com.hchen.superlyric.publisher.PlaybackTracker;
 import com.hchen.superlyric.utils.LyricSanitizer;
-import com.hchen.superlyric.utils.PlaybackSignals;
 import com.hchen.superlyricapi.ISuperLyricManager;
 import com.hchen.superlyricapi.ISuperLyricReceiver;
 import com.hchen.superlyricapi.SuperLyricData;
 
-import java.util.List;
-import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -98,7 +91,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     /**
      * 停止确认的计时器
      * <p>
-     * 必须与广播线程分开：{@link #mBroadcastExecutor} 会<b>同步</b>调用每个接收者的 Binder 接口，
+     * 必须与广播线程分开：{@link #mBroadcastExecutor} 会同步调用每个接收者的 Binder 接口，
      * 一个卡住的或垂死的接收者足以把那一条线程堵住数秒，确认计时不能跟着一起被拖住
      */
     private final ScheduledExecutorService mStopConfirmer = Executors.newSingleThreadScheduledExecutor(
@@ -115,7 +108,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     /**
      * 发布者死亡 / 反注册时的停止通知专用线程
      * <p>
-     * 不能复用 {@link #mBroadcastExecutor}：那条线程会<b>同步</b>等待每个接收者的 Binder 返回，
+     * 不能复用 {@link #mBroadcastExecutor}：那条线程会同步等待每个接收者的 Binder 返回，
      * 一个卡住的消费者能把它堵住数秒，死亡通知便一直排在它后面发不出去，消费方会永远
      * 停在最后一句歌词上。两条线程并发广播是安全的（{@link RemoteCallbackList} 自身同步），
      * 而"先播出歌词、后播出停止"由世代守卫保证——死亡时世代已被移除，排队中的旧歌词
@@ -158,7 +151,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
             SuperLyricData cleanProgress = LyricSanitizer.sanitizeData(progress);
             if (cleanProgress == null) return;
 
-            // 活跃发布者与目标会话必须**在同一把锁内**读取：
+            // 活跃发布者与目标会话必须在同一把锁内读取：
             // 否则可能把进度写进 A 的会话，却按 B 的包名广播出去。
             String activePkg;
             synchronized (publishers.lock) {
@@ -352,7 +345,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
                     if (data.hasPosition()) {
                         playback.tracker.onPositionSynced(data.getPosition());
                     }
-                    // 只在有**明确**状态时用它重新锚定时钟：`NONE` 是"还没有状态"，喂给
+                    // 只在有明确状态时用它重新锚定时钟：`NONE` 是"还没有状态"，喂给
                     // tracker 会被映射成 STOPPED 并把时钟冻住，直到宿主下一次 PLAYING
                     if (session.playbackState != null
                         && session.playbackState.getState() != PlaybackState.STATE_NONE) {
@@ -370,8 +363,8 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
             }
         }
 
-        // 锁外调用：它会读 MediaController 的播放状态并可能注册回调——**是对第三方 App 的
-        // Binder 调用**；更要紧的是系统播放回调会再取 publishers.lock，
+        // 锁外调用：它会读 MediaController 的播放状态并可能注册回调——是对第三方 App 的
+        // Binder 调用；更要紧的是系统播放回调会再取 publishers.lock，
         // 而广播路径会持接收者锁走这条路，锁内调用即构成 AB-BA 死锁
         if (syncPlayState && playback.listener != null) {
             playback.listener.syncCurrentStateForPackage(packageName);
@@ -547,7 +540,9 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         return publishers.isStillPublishing(packageName);
     }
 
-    /** 每包的"播放仍在继续"证据计数。 */
+    /**
+     * 每包的"播放仍在继续"证据计数。
+     */
     @NonNull
     private StopEvidence stopEvidence(@NonNull String packageName) {
         return playback.evidence(packageName);
@@ -565,8 +560,8 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     /**
      * 宿主的 MediaSession 被销毁
      * <p>
-     * 这是"播放源已经不存在"的<b>确定</b>信号，不是"不知道"——与 `STATE_NONE` 截然不同。
-     * 宿主<b>释放了会话而进程仍在</b>时，这是服务端能收到的唯一通知
+     * 这是"播放源已经不存在"的确定信号，不是"不知道"——与 `STATE_NONE` 截然不同。
+     * 宿主释放了会话而进程仍在时，这是服务端能收到的唯一通知
      * 任何通知：`publishers.activePublisher` 一直挂着、时钟继续插值，界面就停在最后一句上
      */
     public void onSystemSessionDestroyed(@NonNull String packageName) {

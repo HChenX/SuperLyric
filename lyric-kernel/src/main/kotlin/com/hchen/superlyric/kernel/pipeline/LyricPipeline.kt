@@ -110,19 +110,19 @@ data class LyricRequest @JvmOverloads constructor(
 /**
  * 歌词解析管线门面
  *
- * ## 职责边界
- * - **解密**（[KrcCipher] / [QrcCipher]）—— 本模块自研，稳定且需字节级精确
- * - **解析** —— 库覆盖的格式走 [AutoParser]；库不覆盖的（QRC / LRCX / Soda JSON）
+ * 职责边界
+ * - 解密（[KrcCipher] / [QrcCipher]）—— 本模块自研，稳定且需字节级精确
+ * - 解析 —— 库覆盖的格式走 [AutoParser]；库不覆盖的（QRC / LRCX / Soda JSON）
  *   走本模块自研解析器，直接产出 [LyricDoc]
- * - **对齐** —— 所有译文 / 罗马音统一走 [TranslationMerger]
- * - **规范化** —— 排序、时序单调、丢弃空行，产出的 [LyricDoc] 保证可用
+ * - 对齐 —— 所有译文 / 罗马音统一走 [TranslationMerger]
+ * - 规范化 —— 排序、时序单调、丢弃空行，产出的 [LyricDoc] 保证可用
  *
- * ## 返回值语义（供上层归类为 LyricOutcome）
+ * 返回值语义（供上层归类为 LyricOutcome）
  * - 返回 [LyricDoc] → 解析成功
- * - 返回 `null` → **本层没能产出任何有效行**：载荷为空、格式不认识、或解析器一行都没读出来。
- *   它**不是**"平台确定没有歌词"——那句话只能由平台自身给出（如"无版权/无歌词"标记）。
+ * - 返回 `null` → 本层没能产出任何有效行：载荷为空、格式不认识、或解析器一行都没读出来。
+ *   它不是"平台确定没有歌词"——那句话只能由平台自身给出（如"无版权/无歌词"标记）。
  *   上层据此下发纯音乐占位前，必须自己确认这一点
- * - 抛出 [DecodeException] → 解码失败，属**可重试**情形，上层绝不可据此下发纯音乐占位
+ * - 抛出 [DecodeException] → 解码失败，属可重试情形，上层绝不可据此下发纯音乐占位
  *
  * @author 焕晨HChen
  */
@@ -143,7 +143,7 @@ object LyricPipeline {
         val format = if (request.format == LyricFormat.AUTO) sniff(content) else request.format
 
         // 走通用解析库的载荷，先剥掉"主行 + 同时间戳伴随行"里的伴随行。
-        // 库判定哪一行是哪一行的伴随用的是**时间区间重叠**，相邻主行会互相误配，
+        // 库判定哪一行是哪一行的伴随用的是时间区间重叠，相邻主行会互相误配，
         // 且配对后无法还原——必须在库拿到文本之前拆（详见 [CompanionSplitter]）。
         val split = when (format) {
             LyricFormat.GENERAL, LyricFormat.KRC -> CompanionSplitter.split(content)
@@ -192,7 +192,7 @@ object LyricPipeline {
     /**
      * 仅在格式未知时使用的特征嗅探。
      *
-     * 判据全部是**结构性强特征**（头部标签 / 根 JSON 键 / XML 根元素），
+     * 判据全部是结构性强特征（头部标签 / 根 JSON 键 / XML 根元素），
      * 不做"看起来像"的模糊判断。
      */
     private fun sniff(content: String): LyricFormat {
@@ -210,23 +210,23 @@ object LyricPipeline {
     }
 
     /**
-     * 网易云 YRC 行的结构特征：`[数字,数字]` 后跟**三元组** `(数字,数字,数字)` 词标签。
+     * 网易云 YRC 行的结构特征：`[数字,数字]` 后跟三元组 `(数字,数字,数字)` 词标签。
      *
-     * #### 为什么必须与 QRC 分开识别
-     * QRC 与 YRC 的词标签形态极像，词标签**分量个数**是二者唯一可靠的区分点：
+     * 为什么必须与 QRC 分开识别
+     * QRC 与 YRC 的词标签形态极像，词标签分量个数是二者唯一可靠的区分点：
      * YRC 恒为 `(a,b,flag)` 三元组，QRC 为 `(a,b)` 二元组。
      * 二者识别错误会让整段报文进错解析器。
      *
-     * #### 关于词起始的时间基准
-     * 词起始的时间基准**不能按格式名推断**：两种基准在两种格式里都出现过
+     * 关于词起始的时间基准
+     * 词起始的时间基准不能按格式名推断：两种基准在两种格式里都出现过
      * （QQ 的 QRC 实测就是绝对毫秒）。
      * [com.hchen.superlyric.kernel.parse.QrcParser] 因此按首词逐行自动判定基准，
-     * **不要**再依据格式名去假设时间基准。
+     * 不要再依据格式名去假设时间基准。
      */
     private val YRC_LINE_MARKER = Regex("""\[\d+,\d+][^\n]*\(\d+,\d+,\d+\)""")
 
     /**
-     * 裸 QRC 行的结构特征：`[数字,数字]` 后跟**二元组** `(数字,数字)` 词标签。
+     * 裸 QRC 行的结构特征：`[数字,数字]` 后跟二元组 `(数字,数字)` 词标签。
      * 要求闭合括号，因此三元组不会误入此分支。
      */
     private val QRC_LINE_MARKER = Regex("""\[\d+,\d+][^\n]*\(\d+,\d+\)""")

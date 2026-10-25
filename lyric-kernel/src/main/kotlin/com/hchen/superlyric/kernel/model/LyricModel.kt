@@ -21,7 +21,7 @@ package com.hchen.superlyric.kernel.model
 /**
  * 逐字切片时序。
  *
- * 时间单位一律为毫秒。三分量模型（[LyricDoc] / [LyricLine] / [LyricWord]）全部**不可变**，
+ * 时间单位一律为毫秒。三分量模型（[LyricDoc] / [LyricLine] / [LyricWord]）全部不可变，
  * 这是承重设计：它使解析结果可以安全地跨线程、跨 Binder 传递而无需深拷贝防御。
  *
  * @property text    切片文本
@@ -37,8 +37,8 @@ data class LyricWord(
 /**
  * 单行歌词。
  *
- * **翻译通道约定**：译文只允许通过 [translation] 承载，罗马音只允许通过 [phonetic] 承载。
- * 解析层**严禁**把译文行输出为独立的 [LyricLine]，否则界面会把翻译当成歌词显示
+ * 翻译通道约定：译文只允许通过 [translation] 承载，罗马音只允许通过 [phonetic] 承载。
+ * 解析层严禁把译文行输出为独立的 [LyricLine]，否则界面会把翻译当成歌词显示
  *
  * @property text        主歌词文本
  * @property translation 翻译文本；无翻译时为 null

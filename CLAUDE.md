@@ -223,25 +223,33 @@ check needs root, hand the command to the user and ask for the output.
 
 ## 6. Code and comment conventions
 
-### KDoc is Markdown. Javadoc is HTML.
+### KDoc and Javadoc
 
-| File | Syntax | Do not use |
+| File | Allowed | Do not use |
 | :--- | :--- | :--- |
-| `.kt` (KDoc) | `## heading`, `- list`, `**bold**`, `` `code` ``, `[link]` | `<h3>`, `<ul>`, `<li>`, `<b>`, `<pre>`, `{@code}`, `{@link}` |
-| `.java` (Javadoc) | `<h3>`, `<ul>`, `<li>`, `<b>`, `{@code}`, `{@link}` | Markdown headings |
+| `.kt` (KDoc) | plain paragraphs, `- ` lists, `` `code` ``, `[link]` | `#` headings, bold, italic, HTML, `{@code}`, `{@link}` |
+| `.java` (Javadoc) | `<p>`, `<ul>`/`<ol>` with `<li>`, `{@code}`, `{@link}` | `<b>`, `<i>`, `<h1>`–`<h6>`, Markdown headings, backticks |
 
-HTML written into KDoc renders as literal text in the IDE. One summary line, no trailing period.
+Use one summary line, then only the invariant or constraint a reader cannot infer from the code.
+No trailing period on the summary line. Separate the summary, paragraphs, lists, and code blocks
+with blank lines; split a long explanation at sentence boundaries instead of writing a dense block.
 
-### Comments explain why, never what, and never history
+### Comments explain the current code
 
-- Explain the non-obvious: an invariant, a constraint, why the naive approach fails. That is the
-  only content worth keeping.
-- Do not restate what the identifier already says.
-- Do not document implementation history. "The old implementation…", "before the rewrite…",
-  "early versions…" belong in the commit message, and they become lies the next time the code
-  moves. State the current rule and why it holds.
-- Exception: inside test files, "the old implementation did X" is the reason the case exists. Keep
-  it there.
+- Explain a non-obvious invariant, boundary, or failure mode. Do not restate the identifier.
+- Do not write history, changelogs, or "the old implementation" narratives. State the current rule.
+- Keep one copy of a rationale. If it belongs to a shared helper, link to it instead of repeating it.
+- Tests may name the regression the case protects; production comments may not.
+
+### Dead code, state, and imports
+
+- Remove unused imports, private declarations, constants, and parameters instead of leaving them
+  "for later".
+- Remove fields that are written but never read, or read but never written. For Compose, check state
+  reads in composition, effects, and callbacks before treating a state variable as unused.
+- Do not keep a second copy of a value as a field if it can be read from the owning object.
+- Public API, Binder interfaces, `@Keep` types, and reflection targets are exceptions; document
+  the reflective or external consumer instead of deleting them.
 
 ### Layout
 

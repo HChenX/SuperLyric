@@ -45,21 +45,21 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Apple Music Hook 锚点与歌词抽取。
- *
- * <h3>为什么 Apple 是唯一的例外</h3>
- * 其余六个平台都能拿到<b>协议级</b>的原始报文（KRC / QRC / LRCX / JSON / TTML / YRC），
- * 因此模块可以自行解析。Apple Music 的歌词由 <b>JNI 侧</b>解析完成后通过裸指针
+ * <p>
+ * 为什么 Apple 是唯一的例外
+ * 其余六个平台都能拿到协议级的原始报文（KRC / QRC / LRCX / JSON / TTML / YRC），
+ * 因此模块可以自行解析。Apple Music 的歌词由 JNI 侧解析完成后通过裸指针
  * （{@code SongInfo$SongInfoPtr}）交给 Java 层，不存在可直接读取的明文报文。
  * <p>
  * 因此这一家必须走宿主模型：在 {@code buildTimeRangeToLyricsMap} 的入参上遍历
  * {@code LyricsSectionVector → LyricsWordVector} 取出文本、译文与逐字时戳。
- * 这是经过权衡后<b>有意保留</b>的例外，不是遗漏。
- *
- * <h3>只读取，不改写</h3>
+ * 这是经过权衡后有意保留的例外，不是遗漏。
+ * <p>
+ * 只读取，不改写
  * 本层只从宿主对象上读值，不调用任何会改变宿主状态的 API（除了主动触发一次歌词加载），
  * 因此宿主内部结构的变动最多让本 Provider 失效，不会影响宿主稳定性。
- *
- * <h3>关于主动触发</h3>
+ * <p>
+ * 关于主动触发
  * {@code buildTimeRangeToLyricsMap} 只在宿主真正构建歌词时被调用。
  * 若用户没有打开歌词界面，歌词永远不会构建，因此本层需要主动调用
  * {@code PlayerLyricsViewModel.loadLyrics} 把歌词"叫醒"。
@@ -85,7 +85,7 @@ public final class AppleAnchors {
      * 宿主切歌时会连着发几次队列变化，逐个去请求会让它重复加载歌词；350ms 是实测够覆盖
      * 这一串、又不至于让人察觉延迟的值。
      * <p>
-     * 去抖任务跑在<b>宿主主线程</b>：宿主的 ViewModel 必须在主线程触碰，不能挪到我们自己的线程
+     * 去抖任务跑在宿主主线程：宿主的 ViewModel 必须在主线程触碰，不能挪到我们自己的线程
      */
     private static final long REQUEST_DEBOUNCE_MS = 350L;
 
@@ -94,7 +94,7 @@ public final class AppleAnchors {
     private static volatile Object sLyricViewModel;
     private static volatile String sLastRequestedItemId;
     /**
-     * 最近一次**成功**发起请求的 itemId；去重只看它，失败后允许同一曲目重试
+     * 最近一次成功发起请求的 itemId；去重只看它，失败后允许同一曲目重试
      */
     private static volatile String sLastCompletedItemId;
     private static volatile Runnable sPendingRequest;
@@ -143,7 +143,7 @@ public final class AppleAnchors {
     }
 
     /**
-     * 单行歌词；文本保留宿主给出的**原始 HTML**，由上层统一净化。
+     * 单行歌词；文本保留宿主给出的原始 HTML，由上层统一净化。
      */
     public static final class AppleLine {
         public final String text;
@@ -175,7 +175,7 @@ public final class AppleAnchors {
         /**
          * 宿主明确表示这首曲目没有歌词。
          *
-         * <p>{@code itemId} 是<b>被判定</b>的那一首，不是"现在正在播的那一首"：取词有 350ms
+         * <p>{@code itemId} 是被判定的那一首，不是"现在正在播的那一首"：取词有 350ms
          * 去抖，这个回调可能落在切歌窗口内。调用方必须拿它与当前曲目比对后再决定是否采纳——
          * 无词结论一旦被误采纳，会经由"纯音乐占位"把有歌词的曲目永久钉死。
          *
@@ -492,7 +492,7 @@ public final class AppleAnchors {
 
         Object sections = CoreTool.callMethodIfExists(songInfo, "getSections");
         if (sections == null) {
-            // 取不到 sections 说明**我们的反射没打通**（方法改名/类型不符），
+            // 取不到 sections 说明我们的反射没打通（方法改名/类型不符），
             // 而不是宿主说"这首没有歌词"。此处绝不能 notifyNoLyrics：那是一个允许下发
             // 纯音乐占位的确定性结论，会把一首有歌词的曲目永久钉成纯音乐。
             // 不投递任何结论，交给编排器超时兜底
@@ -512,7 +512,7 @@ public final class AppleAnchors {
 
             Object sectionLines = CoreTool.callMethodIfExists(section, "getLines");
             if (sectionLines == null) {
-                // 取不到 lines 与上面取不到 sections 是同一件事：**我们的反射没打通**
+                // 取不到 lines 与上面取不到 sections 是同一件事：我们的反射没打通
                 // （方法改名 / 类型不符），不是宿主说"这首没有歌词"。跳过本段、继续看其余段
                 AndroidLog.logW(TAG, "Cannot read lines of lyric section; skipping it");
                 continue;
@@ -537,7 +537,7 @@ public final class AppleAnchors {
                 return;
             }
             if (sectionsRead == 0) {
-                // **一段都没读到**：`sections.size()` 与 `getLines` 同样可能因宿主改名而
+                // 一段都没读到：`sections.size()` 与 `getLines` 同样可能因宿主改名而
                 // 返回 0/null，此时 attempted 恒为 0。这与"宿主说这首没有歌词"完全不是一回事，
                 // 绝不能据此下发纯音乐占位——那会把一首有歌词的曲目永久钉死。
                 // 不投递任何结论，交给编排器超时兜底

@@ -30,18 +30,18 @@ import com.hchen.superlyric.provider.base.MusicProvider;
 
 /**
  * QQ 音乐歌词提供者。
- *
- * <h3>取词路径</h3>
+ * <p>
+ * 取词路径
  * <ul>
- *   <li><b>Hook 路径（准确优先）</b>：只锚定 {@code LyricLoadBean} 的构造入口，
+ *   <li>Hook 路径（准确优先）：只锚定 {@code LyricLoadBean} 的构造入口，
  *       取回宿主自己解析出的官方 songMID / songID；歌词本体由模块向官方接口
- *       拉取原生 QRC 报文并自行解密，<b>不触碰</b> {@code com.lyricengine.base.*} 的混淆行/词模型。</li>
- *   <li><b>API 路径（兜底）</b>：歌名 + 歌手检索，采纳门槛已收紧。</li>
+ *       拉取原生 QRC 报文并自行解密，不触碰 {@code com.lyricengine.base.*} 的混淆行/词模型。</li>
+ *   <li>API 路径（兜底）：歌名 + 歌手检索，采纳门槛已收紧。</li>
  * </ul>
- *
- * <h3>为什么不做末端反射</h3>
+ * <p>
+ * 为什么不做末端反射
  * QQ 20.9+ 的歌词模型深度混淆且结构随版本变动，末端反射是最脆弱的一环。
- * 官方 QRC 接口返回的是<b>协议级</b>数据，跨版本稳定；宿主模型怎么改都不影响本实现。
+ * 官方 QRC 接口返回的是协议级数据，跨版本稳定；宿主模型怎么改都不影响本实现。
  *
  * @author 焕晨HChen
  */
@@ -75,7 +75,7 @@ public class QQMusicProvider extends MusicProvider {
         long duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION);
         String mediaId = readString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID).trim();
 
-        // 锚点捕获的 songMID 与 Hook 路径落在同一命名空间，两者才可比。但锚点**可能落后**：
+        // 锚点捕获的 songMID 与 Hook 路径落在同一命名空间，两者才可比。但锚点可能落后：
         // 切歌时它若没触发（宿主改名或走了别的路径），[capturedMid] 会一直停在上一首，
         // 于是新曲目被构造成上一首的 mid —— 编排器判为同一首、不触发切歌，旧歌词继续显示。
         // 取更可信的那个，判据见 QQIdentity#preferredMid

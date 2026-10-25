@@ -30,24 +30,24 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 
 /**
- * 汽水音乐 Hook 锚点：截获宿主的<b>原始歌词正文</b>与它的格式声明
- *
- * <h3>为什么锚在这里</h3>
+ * 汽水音乐 Hook 锚点：截获宿主的原始歌词正文与它的格式声明
+ * <p>
+ * 为什么锚在这里
  * 汽水的歌词模型 {@code com.luna.common.arch.db.entity.lyrics.Lyric} 的构造器签名是
  * {@code (NetLyricType type, String content, NetLyricsLanguage lang, ILunaQueueItem item,
  * boolean …, Function1 …)}。该构造器的字节码先把 {@code content} 按 {@code \n} 切行，
  * 再按 {@code type} 分派给 {@code KrcLyricParser} / {@code LrcLyricParser} ——
- * 也就是说，<b>入参就是宿主自己拿到的那份未加工的歌词文本</b>，格式（LRC / KRC / TEXT）
+ * 也就是说，入参就是宿主自己拿到的那份未加工的歌词文本，格式（LRC / KRC / TEXT）
  * 也由宿主一并给出。
  *
  * <p>相对地，宿主的 {@code Sentence} / {@code Word} 模型是解析之后的产物：字段名被混淆、
  * 译文被塞进 {@code translationMap}，从它反射抠数据等于跟着宿主的内部结构走。
  * 锚在解析之前，宿主改一次模型与本层无关。
  *
- * <p>类名与包名都<b>不是</b>混淆产物（{@code com.luna.*} 全部可读），因此这里按名字定位；
+ * <p>类名与包名都不是混淆产物（{@code com.luna.*} 全部可读），因此这里按名字定位；
  * 定位不到就明确报错，不硬编码"看起来能兜住"的备选类名。
- *
- * <h3>代价</h3>
+ * <p>
+ * 代价
  * 只挂一个构造器（含 Kotlin 为默认参数合成的桥接构造器），仅此一处。
  *
  * @author 焕晨HChen
@@ -55,27 +55,37 @@ import java.lang.reflect.Method;
 public final class SodaAnchors {
     private static final String TAG = "SodaAnchors";
 
-    /** 歌词实体：宿主解析歌词的入口。 */
+    /**
+     * 歌词实体：宿主解析歌词的入口。
+     */
     private static final String LYRIC_CLASS = "com.luna.common.arch.db.entity.lyrics.Lyric";
 
-    /** 格式枚举：{@code LRC} / {@code KRC} / {@code TEXT}。 */
+    /**
+     * 格式枚举：{@code LRC} / {@code KRC} / {@code TEXT}。
+     */
     private static final String TYPE_CLASS_SUFFIX = ".NetLyricType";
 
-    /** 语言枚举：区分主歌词与译文。 */
+    /**
+     * 语言枚举：区分主歌词与译文。
+     */
     private static final String LANGUAGE_CLASS_SUFFIX = ".NetLyricsLanguage";
 
-    /** 曲目歌词实体：{@code getTrackId()} 给出该份歌词所属的曲目。 */
+    /**
+     * 曲目歌词实体：{@code getTrackId()} 给出该份歌词所属的曲目。
+     */
     private static final String TRACK_LYRIC_CLASS = "com.luna.common.arch.db.entity.TrackLyric";
 
     private static volatile boolean sInstalled;
 
-    /** 数据入口上一次已上报的内容指纹，用于压掉构造 / setter / getter 的重复 */
+    /**
+     * 数据入口上一次已上报的内容指纹，用于压掉构造 / setter / getter 的重复
+     */
     private static volatile String sLastEntityKey;
 
     /**
      * 曲目歌词的取回方法（{@code ILunaQueueItem -> TrackLyric}）
      *
-     * <p>队列项是接口，方法名被混淆成数字串，只能按<b>返回类型</b>识别；
+     * <p>队列项是接口，方法名被混淆成数字串，只能按返回类型识别；
      * 同一个接口上返回 {@code TrackLyric} 的无参方法只有一个。
      */
     private static volatile Method sQueueTrackLyric;
@@ -83,7 +93,9 @@ public final class SodaAnchors {
     private SodaAnchors() {
     }
 
-    /** 截获到一份歌词正文时的回调。 */
+    /**
+     * 截获到一份歌词正文时的回调。
+     */
     public interface PayloadListener {
         /**
          * @param type     宿主的格式声明（{@code LRC} / {@code KRC} / {@code TEXT}）
@@ -158,14 +170,14 @@ public final class SodaAnchors {
 
     /**
      * 第二锚点：曲目歌词实体 {@code TrackLyric} 的数据入口
-     *
-     * <h3>为什么还需要它</h3>
-     * 汽水的歌词是<b>按需解析</b>的：宿主只在歌词界面活跃、或它自己预取队列时才构造
+     * <p>
+     * 为什么还需要它
+     * 汽水的歌词是按需解析的：宿主只在歌词界面活跃、或它自己预取队列时才构造
      * {@code Lyric}。后台播放、快速切歌、以及大量 UGC 视频条目下，解析入口整首都不触发 ——
      * 这不是本模块丢了数据，而是宿主根本没解析。而 {@code TrackLyric} 是宿主装载歌词的
-     * <b>数据</b>入口（网络回包写库、读库回放都经过它），与歌词界面是否可见无关。
-     *
-     * <h3>三处一起挂</h3>
+     * 数据入口（网络回包写库、读库回放都经过它），与歌词界面是否可见无关。
+     * <p>
+     * 三处一起挂
      * {@code lyric} 字段可能由 Room 直接写字段、也可能走 setter，两种都要覆盖；再补一个
      * getter —— 任何读取路径都会把内容带出来。三处都命中同一份内容时由去重键压掉。
      */
@@ -230,7 +242,9 @@ public final class SodaAnchors {
         }
     }
 
-    /** 从实体上读出正文与标识 */
+    /**
+     * 从实体上读出正文与标识
+     */
     private static void dispatchEntity(@Nullable Object entity, @NonNull PayloadListener listener) {
         if (entity == null) return;
         try {
@@ -304,7 +318,7 @@ public final class SodaAnchors {
     /**
      * 取该份歌词所属的曲目标识
      *
-     * <p>歌词可能先于元数据到达，也可能属于<b>预加载的下一首</b>；两种情形只能靠标识区分，
+     * <p>歌词可能先于元数据到达，也可能属于预加载的下一首；两种情形只能靠标识区分，
      * 拿不到标识时返回 {@code null}，由上层按"本代际内的载荷"处理。
      */
     @Nullable

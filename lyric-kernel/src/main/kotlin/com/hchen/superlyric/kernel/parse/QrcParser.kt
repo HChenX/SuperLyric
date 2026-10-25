@@ -29,29 +29,29 @@ import com.hchen.superlyric.kernel.text.LyricText
 /**
  * QQ 音乐 QRC 明文解析器
  *
- * ## 输入形态
- * 本解析器接收的是 [com.hchen.superlyric.kernel.decode.QrcCipher] 解密后的**明文**，有两种形态：
- * - **XML 包裹**：`<QrcInfos>` 内含 `<Lyric_1 LyricType="1" LyricContent="…"/>`
+ * 输入形态
+ * 本解析器接收的是 [com.hchen.superlyric.kernel.decode.QrcCipher] 解密后的明文，有两种形态：
+ * - XML 包裹：`<QrcInfos>` 内含 `<Lyric_1 LyricType="1" LyricContent="…"/>`
  *   与可选的 `<Lyric_2 LyricType="2" LyricContent="…"/>`。译文即内嵌于此
- * - **裸 QRC**：直接是 `[start,dur](wStart,wDur,flag)文字…` 行。
- *   此时译文通常由平台以**独立字段**下发（LRC 形态），由上层走伴随通道处理
+ * - 裸 QRC：直接是 `[start,dur](wStart,wDur,flag)文字…` 行。
+ *   此时译文通常由平台以独立字段下发（LRC 形态），由上层走伴随通道处理
  *
- * ## 译文识别
+ * 译文识别
  * 按标签名与 `LyricType` 属性双向识别，且不依赖属性顺序：平台既可能用 `<Lyric_2>`，
  * 也可能改用 `<Lyric_1 LyricType="2">` 排布，只认字面量 `<Lyric_2>` 会让后一种排布的译文
- * **整段丢失**。译文对齐统一走 [TranslationMerger] 的就近匹配——用时间戳精确匹配会因两段
+ * 整段丢失。译文对齐统一走 [TranslationMerger] 的就近匹配——用时间戳精确匹配会因两段
  * 载荷相差 1ms 而静默丢弃。XML 实体也必须还原，否则界面会出现 `&#39;` 之类的原始串。
  *
- * ## 已由真机证实的两种形态
+ * 已由真机证实的两种形态
  * 均已对真实报文核实：
- * - **文字位于时间标签之前**：`文字(start,dur)`，不是标签在前。
+ * - 文字位于时间标签之前：`文字(start,dur)`，不是标签在前。
  *   按"标签在前"解析会让每个词错配到前一个词的时间上，并丢掉每行第一个词
- * - **词起始有两种排布**：歌内**绝对毫秒**与行内**相对偏移**都真实存在
+ * - 词起始有两种排布：歌内绝对毫秒与行内相对偏移都真实存在
  *   （QQ 实测为绝对）。二者必须区分，否则整行逐字时间会整体偏移一个行起始的量。
  *   本解析器按首词逐行自动判定
  *
  * > [!WARNING]
- * > 判断某一批报文属于哪种排布时，务必看**第二个词**：首个词的原始值在两种排布下
+ * > 判断某一批报文属于哪种排布时，务必看第二个词：首个词的原始值在两种排布下
  * > 恰好相同，只有第二个词才能区分。
  *
  * @author 焕晨HChen
@@ -64,12 +64,12 @@ object QrcParser {
     /**
      * 词形式：`文字(start,dur)` 或 `文字(start,dur,flag)`
      *
-     * **文字位于时间标签之前**——这一点已由真机报文证实：
+     * 文字位于时间标签之前——这一点已由真机报文证实：
      * `[138621,3336]我(138621,384)把(139005,305)…` 中，行起始 138621
      * 与首词起始 138621 相等（行内相对偏移为 0）。
      *
      * 若按"标签在前、文字在后"捕获，会导致每个词错配到前一个词的时间上，
-     * 且**每行首个词被整段丢弃**（"后会无期" → "会无期"）。
+     * 且每行首个词被整段丢弃（"后会无期" → "会无期"）。
      */
     private val WORD_PATTERN = Regex("""([^(]*)\((\d+),(\d+)(?:,\d+)?\)""")
 
@@ -140,14 +140,14 @@ object QrcParser {
         if (translationContent.isNullOrBlank()) return doc
 
         val offset = OFFSET_PATTERN.find(mainContent)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
-        val translationEntries = parsePlainTimeText(translationContent, offset, stats)
+        val translationEntries = parsePlainTimeText(translationContent, offset)
         if (translationEntries.isEmpty()) return doc
 
         return TranslationMerger.attach(doc, translationEntries, SidecarChannel.TRANSLATION)
     }
 
     /**
-     * 解析**独立下发**的伴随载荷（平台以 LRC 形态给出的译文或罗马音）
+     * 解析独立下发的伴随载荷（平台以 LRC 形态给出的译文或罗马音）
      *
      * @param text    伴随载荷明文
      * @return 「时间戳 → 文本」列表；无有效记录时返回空列表
@@ -156,7 +156,7 @@ object QrcParser {
         if (text.isNullOrBlank()) return emptyList()
         val blocks = extractXmlBlocks(text, null)
         val content = if (blocks != null) (blocks.translation ?: blocks.main ?: return emptyList()) else text
-        return parsePlainTimeText(content, 0L, null)
+        return parsePlainTimeText(content, 0L)
     }
 
     private class XmlBlocks(val main: String?, val translation: String?)
@@ -255,7 +255,7 @@ object QrcParser {
             if (line.isEmpty()) continue
             if (TAG_PATTERN.matches(line)) continue
 
-            // 词标签正则以 `([^(]*)` 开头，在没有 `(` 的**超长行**上会逐位置回溯成 O(n²)，
+            // 词标签正则以 `([^(]*)` 开头，在没有 `(` 的超长行上会逐位置回溯成 O(n²)，
             // 把解析线程整个卡住。正常歌词行远小于此上限，超限只可能是畸形载荷。
             // 内核不能打日志（零 Android 依赖），这里只能静默跳过
             if (line.length > MAX_LINE_CHARS) {
@@ -302,11 +302,11 @@ object QrcParser {
 
         val matches = WORD_PATTERN.findAll(body).toList()
 
-        // 词起始有两种真实排布：**歌内绝对毫秒** 与 **行内相对偏移**。二者必须区分，
+        // 词起始有两种真实排布：歌内绝对毫秒 与 行内相对偏移。二者必须区分，
         // 否则整行逐字时间会整体偏移一个行起始的量。
         //
         // 判据取首词：绝对排布下首词原始值不会小于行起始；相对排布下它是个小偏移。
-        // 必须**逐行**判定而非逐词——同一行内混用两种解释会自相矛盾。
+        // 必须逐行判定而非逐词——同一行内混用两种解释会自相矛盾。
         // 用未加 offset 的行起始做判定：若拿 startMs（已加 offset）来比，
         // 正 offset 会把绝对排布误判成相对排布，词时间被二次叠加行起始。
         val absoluteTime = matches.firstOrNull()
@@ -360,7 +360,6 @@ object QrcParser {
     private fun parsePlainTimeText(
         content: String,
         offsetMs: Long = 0L,
-        stats: ParseStats? = null,
     ): List<TimeText> {
         val entries = ArrayList<TimeText>()
         for (raw in content.lineSequence()) {

@@ -41,15 +41,14 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.util.Arrays;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Poweramp Hook 锚点
- *
- * <h3>为什么只需要两个入口</h3>
+ * <p>
+ * 为什么只需要两个入口
  * Poweramp 的整首歌词最终只有两种形态：
  * <ul>
  * <li>{@code cached_lyrics.content} —— 插件或上次解析的结果；</li>
@@ -58,8 +57,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * 前者由 {@link PowerampHookSource} 直接查库；后者交给宿主自己的
  * {@code LrcParser} 解析，本类在解析流上截获原始文本。这样既不依赖歌词界面，
  * 也不需要触碰 Poweramp 的行/词模型。
- *
- * <h3>为什么调用宿主解析器而不是自己读文件</h3>
+ * <p>
+ * 为什么调用宿主解析器而不是自己读文件
  * Poweramp 通过它自己的存储通道读取 {@code primary/...} 相对路径；模块直接
  * {@code File} 读取会被 scoped storage 拒绝（实测 EACCES）。
  *
@@ -120,7 +119,7 @@ public final class PowerampAnchors {
      * 当前线程是否正在执行本模块主动发起的宿主解析
      *
      * <p>宿主歌词界面也会走同一个解析器，且可能在切歌前预加载下一首。
-     * 只有本模块为<b>当前曲目</b>发起的调用才允许无标题投递，否则会把
+     * 只有本模块为当前曲目发起的调用才允许无标题投递，否则会把
      * 预加载的下一首歌词算到当前曲目头上。
      */
     private static final ThreadLocal<Boolean> sHostParse = new ThreadLocal<>();
@@ -270,7 +269,7 @@ public final class PowerampAnchors {
     }
 
     /**
-     * 在宿主打开 LRC 输入流时截获<b>原始字节</b>
+     * 在宿主打开 LRC 输入流时截获原始字节
      *
      * <p>不能在 `LrcParser` 的 `BufferedReader` 上取文本：宿主用
      * `lrc_files.is_utf8` 选择字符集，而该标志实测不可靠（UTF-8 文件被按
@@ -330,7 +329,7 @@ public final class PowerampAnchors {
     }
 
     /**
-     * 读尽输入流；超过上限返回 null。**不关闭**入参：宿主之后还要用它。
+     * 读尽输入流；超过上限返回 null。不关闭入参：宿主之后还要用它。
      */
     @Nullable
     private static byte[] readAll(@NonNull InputStream input) {

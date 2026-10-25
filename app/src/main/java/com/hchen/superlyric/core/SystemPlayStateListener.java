@@ -67,7 +67,7 @@ public final class SystemPlayStateListener {
 
             long token = Binder.clearCallingIdentity();
             try {
-                // 锁内**只**做 map 维护，反注册、注册与初始状态同步一律放到锁外：
+                // 锁内只做 map 维护，反注册、注册与初始状态同步一律放到锁外：
                 // 这两个方法都会对宿主 App 做 Binder 调用，而 registerMediaControllerCallback
                 // 还会回调进 SuperLyricService，后者要取 mSnapshotLock —— 而 sendLyric 是
                 // 「先取 mSnapshotLock、再进本类的 mCallbacks」，锁内回调就构成 AB-BA 死锁
@@ -225,7 +225,7 @@ public final class SystemPlayStateListener {
         /**
          * 会话被销毁
          *
-         * <p>宿主<b>释放会话而进程仍在</b>时，这是唯一能到达本模块的通知：播放状态不会再变
+         * <p>宿主释放会话而进程仍在时，这是唯一能到达本模块的通知：播放状态不会再变
          * （已经没有会话了），而 `onActiveSessionsChanged` 只会把回调摘掉，不会告诉服务
          * "这个包停了"。少了这条路，界面会一直停在最后一句上。
          */

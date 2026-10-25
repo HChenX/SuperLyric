@@ -23,7 +23,7 @@ import com.hchen.superlyric.kernel.model.LyricLine
 import kotlin.math.abs
 
 /**
- * 伴随通道：译文与音译走**两条独立通道**，互不覆盖
+ * 伴随通道：译文与音译走两条独立通道，互不覆盖
  */
 enum class SidecarChannel {
     /** 译文，落位到 [LyricLine.translation] */
@@ -39,13 +39,13 @@ enum class SidecarChannel {
 data class TimeText(val startMs: Long, val text: String)
 
 /**
- * 翻译 / 音译行的**唯一**对齐机制
+ * 翻译 / 音译行的唯一对齐机制
  *
- * ## 对齐规则
- * 1. **就近匹配**：在 [TOLERANCE_MS] 窗口内取时间戳最接近的主行，不要求精确相等
- * 2. **一对一消费**：每条伴随记录至多被消费一次，杜绝同一译文重复挂载
- * 3. **不覆盖行内译文**：主行若已由解析器在行内给出该通道的内容，则跳过
- * 4. **未匹配即丢弃**：落空的伴随记录通常是乐器标记或占位符，绝**不**提升为独立歌词行
+ * 对齐规则
+ * 1. 就近匹配：在 [TOLERANCE_MS] 窗口内取时间戳最接近的主行，不要求精确相等
+ * 2. 一对一消费：每条伴随记录至多被消费一次，杜绝同一译文重复挂载
+ * 3. 不覆盖行内译文：主行若已由解析器在行内给出该通道的内容，则跳过
+ * 4. 未匹配即丢弃：落空的伴随记录通常是乐器标记或占位符，绝不提升为独立歌词行
  *
  * 规则 4 与"严禁把译文输出为主行"共同构成 Translation Track Rule
  *

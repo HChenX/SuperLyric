@@ -33,7 +33,7 @@ import com.hchen.superlyric.kernel.text.LyricText
 /**
  * 汽水音乐（Soda / Luna）与波点 JSON 分支的原生逐字歌词解析器
  *
- * ## 结构
+ * 结构
  * `sentences[]` 数组可能被包裹在多个层级下，逐层探测：
  * `sentences` → `lyrics.sentences` → `audioWithLyricsOption.*`
  * → `track_page.*` → `loaderData.*`。
@@ -43,13 +43,13 @@ import com.hchen.superlyric.kernel.text.LyricText
  * 译文位于:  translations.cn
  * ```
  *
- * ## 三条判据
- * - **译文来源**：`translations.cn` 支持两种实际形态——与 `sentences` 平行的对象数组，
+ * 三条判据
+ * - 译文来源：`translations.cn` 支持两种实际形态——与 `sentences` 平行的对象数组，
  *   或 LRC 形态的字符串——两种形态都归一为 [TimeText]，再统一走 [TranslationMerger] 对齐
- * - **相对时间判定**：以**逐句局部比较**判断词时间戳是否为行内相对值——仅当词的 `startMs`
- *   小于所属句的 `startMs` 时才视其为行内相对偏移。若改用 `lineStart > 1000` 这类**全局阈值**，
+ * - 相对时间判定：以逐句局部比较判断词时间戳是否为行内相对值——仅当词的 `startMs`
+ *   小于所属句的 `startMs` 时才视其为行内相对偏移。若改用 `lineStart > 1000` 这类全局阈值，
  *   曲目开头 1 秒内的行会全部误判，逐字时序坍缩到行首
- * - **句内插值**：词缺失时间戳时按句时长与字长比例插值，而不是一律堆到句首
+ * - 句内插值：词缺失时间戳时按句时长与字长比例插值，而不是一律堆到句首
  *
  * @author 焕晨HChen
  */
@@ -60,11 +60,11 @@ object SodaJsonParser {
     /**
      * 句数上限
      *
-     * 守的是**本层**的分配与逐句处理：`sentences` 的规模决定 `ArrayList` 的预分配，
+     * 守的是本层的分配与逐句处理：`sentences` 的规模决定 `ArrayList` 的预分配，
      * 也决定下面这一轮要跑多少次解析。报文的 JSON 早已被上游物化成对象树，这个上限拦不住
-     * 那一次分配——要防它得在**读取侧**设界（`ResponseBodies.readTextBounded`）。
+     * 那一次分配——要防它得在读取侧设界（`ResponseBodies.readTextBounded`）。
      *
-     * 正常曲目连千行都到不了，超限只可能是畸形载荷；代价是超过上限的**合法**载荷会被
+     * 正常曲目连千行都到不了，超限只可能是畸形载荷；代价是超过上限的合法载荷会被
      * 静默截断（内核没有日志出口，只能静默）
      */
     private const val MAX_SENTENCES = 4096
@@ -91,7 +91,7 @@ object SodaJsonParser {
         // 深度上限只保护自家搜索，保护不了建树阶段的 StackOverflowError。
         if (exceedsMaxDepth(body)) return null
 
-        // 只接**解析失败**这一类（JSON 语法错、形状不是对象），不接 Error：
+        // 只接解析失败这一类（JSON 语法错、形状不是对象），不接 Error：
         // 把 StackOverflowError / OutOfMemoryError 一起吞成 null，等于把"读不出来"
         // 伪装成"解析结果为空"，而下层把它当终态结论用
         val root = try {
@@ -99,7 +99,7 @@ object SodaJsonParser {
         } catch (e: RuntimeException) {
             null
         } ?: return null
-        // 主歌词与译文必须取自**同一个容器**：载荷可能把二者一起放在
+        // 主歌词与译文必须取自同一个容器：载荷可能把二者一起放在
         // `lyrics` / `track_page` 等嵌套层下（见类注释）。只在根节点找译文，
         // 嵌套形态的译文会整段丢失，且无任何痕迹
         val container = findSentencesContainer(root, 0) ?: return null
@@ -277,7 +277,7 @@ object SodaJsonParser {
     }
 
     /**
-     * 定位**持有** `sentences` 的那个对象
+     * 定位持有 `sentences` 的那个对象
      *
      * 返回容器本身而非数组：主歌词与译文常并列放在同一层，调用方需要从同一个容器里
      * 分别取 `sentences` 与 `translations`，否则嵌套形态的译文会整段丢失

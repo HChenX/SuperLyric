@@ -21,19 +21,18 @@ package com.hchen.superlyric.provider.apple;
 import androidx.annotation.NonNull;
 
 import com.hchen.processor.HookThis;
-import com.hchen.superlyric.kernel.identity.TrackIdentity;
 import com.hchen.superlyric.provider.base.HookLyricSource;
 import com.hchen.superlyric.provider.base.MusicProvider;
 
 /**
  * Apple Music 歌词提供者。
- *
- * <h3>为什么只有 Hook 路径</h3>
+ * <p>
+ * 为什么只有 Hook 路径
  * Apple Music 的歌词由 JNI 侧解析后交给 Java 层，模块拿不到可直接解析的明文报文；
  * 同时其歌词接口需要 Apple 的 Music-User-Token，模块不持有、也不应持有用户凭证。
  * 因此本 Provider 只实现 Hook 路径。
  *
- * <p>另一个后果是<b>没有网络兜底</b>：一旦宿主结构变动导致抽取失败，本 Provider 会静默失效，
+ * <p>另一个后果是没有网络兜底：一旦宿主结构变动导致抽取失败，本 Provider 会静默失效，
  * 而不是退化成"从别的平台拉一首同名歌"——后者在跨语言曲库上错配率很高。
  *
  * @author 焕晨HChen

@@ -56,11 +56,11 @@ import java.util.concurrent.TimeUnit
  * 3. [buildIdentity]：声明如何从 `MediaSession` 元数据得到稳定标识
  *
  * 其余（切歌感知、双轨降级、超时、重试、包装发布）全部由基类与 [LyricOrchestrator] 承担。
- * Provider 只发布**全量歌词**与**停止**两种包，进度推进由系统框架侧的唯一时钟负责
+ * Provider 只发布全量歌词与停止两种包，进度推进由系统框架侧的唯一时钟负责
  *
- * ## 为什么具体 Provider 必须用 Java 写
+ * 为什么具体 Provider 必须用 Java 写
  * `@HookThis` 是 `SOURCE` 级注解，由 `:processor` 的 Java 注解处理器消费，而本项目通过
- * `annotationProcessor` 接入。**Kotlin 类不会经过 Java 注解处理器**，因此用 Kotlin 写的
+ * `annotationProcessor` 接入。Kotlin 类不会经过 Java 注解处理器，因此用 Kotlin 写的
  * Provider 不会出现在生成的 `HookMaps` 中，整个模块都不会被挂载。本基类用 Kotlin 只为简洁
  *
  * @author 焕晨HChen
@@ -105,11 +105,11 @@ abstract class MusicProvider : AbsPublisher() {
     /**
      * "播放仍在继续"的证据计数（见 [StopEvidence]）
      *
-     * ## 为什么 StopGate 自己不够
+     * 为什么 StopGate 自己不够
      * 确认跑在 [stopConfirmer] 线程上，撤销跑在宿主 `MediaSession` 回调线程上。StopGate 只能
-     * 保证"**排期时**没有人撤销"，保证不了"此后也没人发布"：撤销若落在"令牌已被确认消费、
+     * 保证"排期时没有人撤销"，保证不了"此后也没人发布"：撤销若落在"令牌已被确认消费、
      * 回调还没执行"这段里，它会读到 `armed == false` 而放行，随后 [LyricOrchestrator.onPlaybackStopped]
-     * 就把**刚切过去的新曲目**连人带取词一起清掉——它是无条件的：推进 epoch、清空、取消两个来源。
+     * 就把刚切过去的新曲目连人带取词一起清掉——它是无条件的：推进 epoch、清空、取消两个来源。
      *
      * 因此排期时 [StopEvidence.snapshot]、确认前 [StopEvidence.isStillValid]。
      * system_server 一侧同理，见 `SuperLyricService#mStopEvidence`
@@ -119,7 +119,7 @@ abstract class MusicProvider : AbsPublisher() {
     /**
      * 停止判定
      *
-     * 与 system_server 侧**共用同一套判定**（[StopGate]），只有观察点是各自的：
+     * 与 system_server 侧共用同一套判定（[StopGate]），只有观察点是各自的：
      * 本侧看的是宿主进程内 `MediaSession.setPlaybackState` 的调用。
      * 两侧不合并观察点——覆盖面不同，合并会丢掉其中一侧独有的信号
      */
@@ -168,7 +168,7 @@ abstract class MusicProvider : AbsPublisher() {
      * 从 `MediaSession` 元数据构建音轨身份
      *
      * 默认实现取 `MEDIA_ID` 作为稳定标识、缺失时退化为标题 + 歌手 + 时长。
-     * 能拿到平台侧不可变标识（songMID / 音频 hash / rid）的 Provider **应当**覆写，
+     * 能拿到平台侧不可变标识（songMID / 音频 hash / rid）的 Provider 应当覆写，
      * 否则 Hook 上报的标识与元数据上报的标识表示法不一致，捕获会被当成过期数据丢弃
      */
     protected open fun buildIdentity(metadata: MediaMetadata): TrackIdentity {
@@ -247,22 +247,22 @@ abstract class MusicProvider : AbsPublisher() {
     /**
      * 播放状态变化
      *
-     * ## 为什么停止必须"确认"后才生效
-     * 宿主在过渡期会**瞬发** `STATE_STOPPED`：实测网易云在一次切歌前后连发多次停止状态，
+     * 为什么停止必须"确认"后才生效
+     * 宿主在过渡期会瞬发 `STATE_STOPPED`：实测网易云在一次切歌前后连发多次停止状态，
      * 随后又回到正常播放。而 `onPlaybackStopped` 是终态操作 —— 它清空当前音轨、推进 epoch，
-     * 并向系统下发**停止**包。瞬发停止若被当真，歌词会莫名闪空
+     * 并向系统下发停止包。瞬发停止若被当真，歌词会莫名闪空
      *
-     * 判定规则与 system_server 侧**完全一致**，见 [StopGate]：终态排期、旁证撤销、`NONE` 中性。
-     * 本侧的旁证有两条：随后到来的**其它播放状态**，以及随后到来的**可用元数据**。
-     * 后者是必需的——实测网易云风暴里的几次 STOPPED 之间**没有别的播放状态**，
+     * 判定规则与 system_server 侧完全一致，见 [StopGate]：终态排期、旁证撤销、`NONE` 中性。
+     * 本侧的旁证有两条：随后到来的其它播放状态，以及随后到来的可用元数据。
+     * 后者是必需的——实测网易云风暴里的几次 STOPPED 之间没有别的播放状态，
      * 只看播放状态挡不住
      */
     private fun onPlaybackStateChanged(state: PlaybackState) {
         val signal = PlaybackSignals.of(state.state)
 
-        // 非终态信号一律记一笔证据，且必须在判定**之前**记：判定为 `IGNORED` 的那一半
+        // 非终态信号一律记一笔证据，且必须在判定之前记：判定为 `IGNORED` 的那一半
         // （令牌已被确认消费）正是要拦的情形——此时 StopGate 已经放行，只有这笔账拦得住。
-        // 这里与 StopGate 的分类**有意重复**：那里决定"要不要排期"，这里回答"算不算证据"，
+        // 这里与 StopGate 的分类有意重复：那里决定"要不要排期"，这里回答"算不算证据"，
         // 而 `UNKNOWN` 在两处都是"不算"（见 [PlaybackSignals]）
         when (signal) {
             PlaybackSignal.PLAYING, PlaybackSignal.PAUSED, PlaybackSignal.ACTIVE ->
@@ -282,7 +282,7 @@ abstract class MusicProvider : AbsPublisher() {
                 AndroidLog.logD(providerTag, "Pending stop cancelled by $signal")
 
             // `UNKNOWN` 与"已排期在案"都落在这里。前者在过渡期会成串出现，无差别输出会刷屏，
-            // 因此只在**确实有停止悬着**这个需要判断的时刻留痕
+            // 因此只在确实有停止悬着这个需要判断的时刻留痕
             StopGate.Decision.IGNORED ->
                 if (stopGate.isPending) {
                     AndroidLog.logD(providerTag, "$signal ignored while a stop is pending")
@@ -357,8 +357,8 @@ abstract class MusicProvider : AbsPublisher() {
         }
 
         // 收到可用的曲目信息，说明播放仍在继续——先前那次 STOPPED 属过渡期瞬发，撤销它。
-        // 这是挡住"停止风暴"的关键条件：实测网易云风暴里的几次 STOPPED **之间并没有别的
-        // 播放状态**（夹在中间的是元数据），所以只盯着播放状态是挡不住的。
+        // 这是挡住"停止风暴"的关键条件：实测网易云风暴里的几次 STOPPED 之间并没有别的
+        // 播放状态（夹在中间的是元数据），所以只盯着播放状态是挡不住的。
         cancelPendingStop("track metadata")
 
         orchestrator.onTrackChanged(identity)
@@ -373,7 +373,7 @@ abstract class MusicProvider : AbsPublisher() {
     }
 
     /**
-     * 仅诊断期：注册广播接收器，用于**模拟宿主跳转播放位置**
+     * 仅诊断期：注册广播接收器，用于模拟宿主跳转播放位置
      *
      * 验收清单里的「大幅拖动 / 拖回开头」需要改变播放位置，而 adb 层面无法 seek。
      * 本模块本就持有宿主 [MediaSession] 的引用，因此可以替它发布一次带新位置的
@@ -383,7 +383,7 @@ abstract class MusicProvider : AbsPublisher() {
      * adb shell am broadcast -a com.hchen.superlyric.DEBUG.SEEK --el position 60000
      * ```
      *
-     * 只在 debug 构建注册。**刻意未加权限**：`adb shell am broadcast` 以 shell uid 发出，
+     * 只在 debug 构建注册。刻意未加权限：`adb shell am broadcast` 以 shell uid 发出，
      * 加了权限或改为不导出都会让这条诊断失效。代价是 debug 构建下任意应用也能触发一次
      * 位置跳转——发布构建不注册本接收器，故实机用户不受影响
      */

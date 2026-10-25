@@ -32,22 +32,22 @@ import com.hchen.superlyric.provider.base.MusicProvider;
 
 /**
  * 汽水音乐歌词提供者。
- *
- * <h3>取词路径</h3>
+ * <p>
+ * 取词路径
  * 只有 Hook 一条，两处锚点：
  * <ul>
- *   <li><b>解析入口</b>（{@code Lyric} 构造器）：宿主把原始正文交给歌词模型时截获，
+ *   <li>解析入口（{@code Lyric} 构造器）：宿主把原始正文交给歌词模型时截获，
  *       拿到的是未经加工的 LRC / KRC 原词。</li>
- *   <li><b>数据入口</b>（{@code TrackLyric} 的构造 / setter / getter）：宿主从网络或本地库
- *       装载曲目歌词时截获。汽水是<b>按需解析</b>的 —— 后台播放、快速切歌、UGC 视频条目下
+ *   <li>数据入口（{@code TrackLyric} 的构造 / setter / getter）：宿主从网络或本地库
+ *       装载曲目歌词时截获。汽水是按需解析的 —— 后台播放、快速切歌、UGC 视频条目下
  *       解析入口可能整首都不触发，数据入口是这些场景的唯一来源。</li>
  * </ul>
- *
- * <h3>为什么不用宿主的 {@code Sentence} / {@code Word} 模型</h3>
+ * <p>
+ * 为什么不用宿主的 {@code Sentence} / {@code Word} 模型
  * 那是宿主解析之后的产物，字段名混淆、译文被塞进 {@code translationMap}。锚在解析之前，
  * 拿到的是宿主自己拿到的那份正文，宿主改一次模型与本层无关。
- *
- * <h3>标识一致性</h3>
+ * <p>
+ * 标识一致性
  * 覆写 {@link #buildIdentity} 以 {@code MEDIA_ID} 作为稳定标识（前缀 {@code luna:}）。
  * 不覆写就会让 Hook 上报的曲目标识与元数据上报的标识永不相等，Hook 捕获被当成过期数据
  * 丢弃，整条取词路径静默失效。
@@ -58,7 +58,9 @@ import com.hchen.superlyric.provider.base.MusicProvider;
 public class SodaProvider extends MusicProvider {
     private static final String TAG = "SodaProvider";
 
-    /** 汽水内部以 Luna 命名；命名空间只用于诊断与跨来源区分 */
+    /**
+     * 汽水内部以 Luna 命名；命名空间只用于诊断与跨来源区分
+     */
     private static final String NAMESPACE = "luna";
 
     @Override
@@ -129,7 +131,9 @@ public class SodaProvider extends MusicProvider {
         return super.buildIdentity(metadata);
     }
 
-    /** 过滤占位标识，见 {@link #buildIdentity} */
+    /**
+     * 过滤占位标识，见 {@link #buildIdentity}
+     */
     @NonNull
     private static String usableId(String raw) {
         String trimmed = raw != null ? raw.trim() : "";

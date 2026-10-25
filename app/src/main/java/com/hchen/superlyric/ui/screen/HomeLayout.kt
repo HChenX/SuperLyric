@@ -143,7 +143,7 @@ fun HomeLayout(
                         text = context.getString(R.string.clear_dexkit_cache),
                         selected = false,
                         onClick = {
-                            val ok = HomeSettingsController.clearCache(context)
+                            val ok = HomeSettingsController.clearCache()
                             Toast.makeText(
                                 context,
                                 context.getString(if (ok) R.string.cleared else R.string.clear_failed),

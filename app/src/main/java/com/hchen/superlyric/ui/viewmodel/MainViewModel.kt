@@ -31,7 +31,6 @@ import com.hchen.superlyric.data.apps.ApiAppData
 import com.hchen.superlyric.ui.Application
 import com.hchen.superlyric.utils.PackageLoader
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

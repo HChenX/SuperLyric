@@ -69,7 +69,7 @@ public final class LyricCacheStore {
     /**
      * 帧头：{@code {"v":<版本>,"n":<载荷字节数>,"d":}。
      * <p>
-     * 长度字段是<b>校验</b>用的：只靠"末尾一个 {@code }}"无法发现截断——载荷本身
+     * 长度字段是校验用的：只靠"末尾一个 {@code }}"无法发现截断——载荷本身
      * （JSON、protobuf）里到处是 {@code }}，断在哪都可能恰好以它收尾。声明长度与
      * 帧内剩余空间必须精确吻合，见 {@link #unpack}
      */
@@ -89,7 +89,7 @@ public final class LyricCacheStore {
     /**
      * 帧的最大可能字节数：帧头 + 长度字段的最大位数 + 分隔符 + 上限载荷 + 收尾 '}'
      * <p>
-     * 不能拿 {@link #FRAME_MIN_BYTES} 当基数再加大载荷：那是按<b>一位</b>长度字段算的，
+     * 不能拿 {@link #FRAME_MIN_BYTES} 当基数再加大载荷：那是按一位长度字段算的，
      * 而接近上限的帧其长度字段有 7 位，于是合法的满额条目会被当成损坏文件删掉
      */
     private static final long FRAME_MAX_BYTES =
@@ -197,7 +197,7 @@ public final class LyricCacheStore {
     /**
      * 将接口返回的原始响应字节（JSON 或 protobuf）写入磁盘缓存。
      * <p>
-     * 写入只做"临时文件 + 原子改名（{@code REPLACE_EXISTING}）"，<b>不检查既有文件</b>：
+     * 写入只做"临时文件 + 原子改名（{@code REPLACE_EXISTING}）"，不检查既有文件：
      * 旧格式的迁移发生在读取侧——{@link #get} 发现版本不符就删掉并报未命中，
      * 下一次取词自然按新格式重写。
      *
@@ -306,7 +306,7 @@ public final class LyricCacheStore {
         }
         cursor += FRAME_SEPARATOR_BYTES.length;
 
-        // 声明长度必须与帧内剩余空间**精确**吻合，且结尾就是那一个 '}'。
+        // 声明长度必须与帧内剩余空间精确吻合，且结尾就是那一个 '}'。
         // 这一步才是"校验"：截断的帧剩余空间与声明长度对不上，直接判废
         if (declared <= 0 || data.length - cursor - 1 != declared) {
             return invalidFrame(reason, "length mismatch");
@@ -355,7 +355,7 @@ public final class LyricCacheStore {
             AndroidLog.logD(TAG, "get: Disk cache MISS (file not found): " + file.getAbsolutePath());
             return null;
         }
-        // **不加写锁**：写入走 `tmp + 原子改名`，读到的要么是旧文件、要么是新文件，
+        // 不加写锁：写入走 `tmp + 原子改名`，读到的要么是旧文件、要么是新文件，
         // 不存在读到写了一半的中间态；而与全局写锁共享会让本方法被别的 provider 的慢写
         // 或清理扫描堵住，直接拖慢取词热路径。与删除并发也安全：删掉后读会抛 IOException，
         // 由下面的 catch 兜住并返回未命中
@@ -608,10 +608,10 @@ public final class LyricCacheStore {
      * 解析宿主 Context：优先使用传入的宿主 Application Context，
      * 缺失时（onApplicationCreated 未触发的兜底场景）反射获取当前 Application。
      * <p>
-     * 注意 {@code getApplicationContext()} <b>可能返回 null</b>：模块在 Hook
+     * 注意 {@code getApplicationContext()} 可能返回 null：模块在 Hook
      * {@code Application.attach(Context)} 的时点就会调用 {@code onApplicationCreated}，
      * 那一刻 Application 尚未挂上，取不到 Application Context。此时必须退回使用
-     * <b>传入的这个 Context 本身</b>（它同样是可用的宿主 Context，能正常取 cacheDir），
+     * 传入的这个 Context 本身（它同样是可用的宿主 Context，能正常取 cacheDir），
      * 否则整条缓存迁移链路每次启动都会静默失败。
      */
     @Nullable

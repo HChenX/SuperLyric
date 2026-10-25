@@ -36,7 +36,7 @@ interface Scheduler {
 /**
  * 一个歌词来源
  *
- * **线程约束**：[start] 由编排器在锁外调用，但仍运行在调用方线程上，因此实现**必须快速返回**。
+ * 线程约束：[start] 由编排器在锁外调用，但仍运行在调用方线程上，因此实现必须快速返回。
  * 轻量登记可以同步做，任何网络、文件 IO 或加解密都必须放到自己的后台线程，完成后经
  * [Session.deliver] 回投 —— 在 [start] 里做重 IO 会拖住调用方，进而阻塞超时调度与后续切歌
  */
@@ -46,7 +46,7 @@ interface LyricSource {
     val sourceName: String
 
     /**
-     * 发起一次取词。**必须快速返回**。
+     * 发起一次取词。必须快速返回。
      *
      * @param identity 目标音轨
      * @param session  回投通道；结果就绪时调用 [Session.deliver]，
@@ -66,7 +66,7 @@ interface LyricSource {
 /**
  * 歌词获取编排状态机
  *
- * ## 状态
+ * 状态
  * ```
  *   IDLE ──切歌──► RESOLVING_HOOK ──超时/失效──► FETCHING_API ──► ACTIVE
  *                        │                          │
@@ -75,13 +75,13 @@ interface LyricSource {
  *                                                   └──► UNAVAILABLE（重试耗尽，不得下发占位）
  * ```
  *
- * ## Epoch 取消机制
- * 每次**切歌**与**停止**都自增 [epoch]，所有异步回投在送达时校验 epoch，不匹配即静默丢弃。
+ * Epoch 取消机制
+ * 每次切歌与停止都自增 [epoch]，所有异步回投在送达时校验 epoch，不匹配即静默丢弃。
  * 这一条守卫同时挡住三件事：停止后迟到的捕获仍发布歌词、旧曲目的网络结果覆盖新曲目、
  * 以及快速连切时的时序竞争
  *
- * ## 并发模型
- * 所有共享状态由 [lock] 保护，但**锁内只做决策，不做执行**：每个公开入口在锁内构造一份
+ * 并发模型
+ * 所有共享状态由 [lock] 保护，但锁内只做决策，不做执行：每个公开入口在锁内构造一份
  * [Plan]，随后在锁外执行它。这样既不在持锁时做 Binder 发布或来源启动，
  * 也不存在"多个线程在锁外争抢清理同一份待发通知"的竞态
  *
@@ -113,7 +113,7 @@ class LyricOrchestrator(
         /**
          * 确认切换到新曲目，且该曲目尚无歌词。
          *
-         * 下游应据此**立即作废上一首的展示**：旧歌词与当前播放已无关系，
+         * 下游应据此立即作废上一首的展示：旧歌词与当前播放已无关系，
          * 继续留着会让界面显示错误内容。具体下发什么由下游决定——
          * 宿主侧目前下发切歌包，把空窗期呈现方式交给客户端。
          */
@@ -123,13 +123,13 @@ class LyricOrchestrator(
         fun onLyricResolved(outcome: LyricOutcome.Success)
 
         /**
-         * 平台或宿主**明确**说这首没有歌词——这是唯一允许下发「纯音乐」占位的结论。
+         * 平台或宿主明确说这首没有歌词——这是唯一允许下发「纯音乐」占位的结论。
          *
          * 与 [onUnavailable] 的区别在于归因：这里对方表了态，那里是我们没拿到
          */
         fun onNoLyrics(identity: TrackIdentity?)
 
-        /** 取词失败且重试耗尽——**不得**下发占位，应保持等待或留空。 */
+        /** 取词失败且重试耗尽——不得下发占位，应保持等待或留空。 */
         fun onUnavailable(identity: TrackIdentity?)
 
         /** 播放停止。 */
@@ -247,7 +247,7 @@ class LyricOrchestrator(
     /**
      * 停止播放。
      *
-     * **必须**清空当前音轨并推进 epoch——这正是"停止后仍发布于歌词"缺陷的根治点。
+     * 必须清空当前音轨并推进 epoch——这正是"停止后仍发布于歌词"缺陷的根治点。
      */
     fun onPlaybackStopped() {
         val dispatch = synchronized(lock) {
@@ -299,7 +299,7 @@ class LyricOrchestrator(
                 activeIdentity = identity
                 return null
             } else if (isProvisionalUpgrade(current, identity)) {
-                // 同一首歌拿到了更好的标识——原地升级，**不推进 epoch、不重启取词**。
+                // 同一首歌拿到了更好的标识——原地升级，不推进 epoch、不重启取词。
                 // 推进 epoch 会让在途的取词结果因代际过期被丢弃，于是白白重取一次。
                 currentIdentity = identity
                 activeIdentity = identity
@@ -342,10 +342,10 @@ class LyricOrchestrator(
      * （`kuwo:486777537#南山南…`）。按字符串判等会当成换歌——推进 epoch、清屏、
      * 重新取词一次，而那次取词拿到的还是同一首。
      *
-     * 只在**有一侧没有标题段**时放宽。两侧都带标题且不同，是有声书换集
+     * 只在有一侧没有标题段时放宽。两侧都带标题且不同，是有声书换集
      * （专辑级 rid 下唯一能区分集的依据），必须按换歌处理。
      *
-     * **必须有时间上界**：标题是紧接着 id 补上来的，而"这一首始终没拿到标题"
+     * 必须有时间上界：标题是紧接着 id 补上来的，而"这一首始终没拿到标题"
      * （该集没有歌词、探针从未触发）与"换到同一专辑的另一集"在字符串上无法区分。
      * 窗口外一律按换歌处理，否则新一集会一直沿用上一集的歌词。
      */
@@ -363,16 +363,16 @@ class LyricOrchestrator(
     /**
      * 判断是否为"同一首歌拿到了更权威的标识"，而不是换歌
      *
-     * 宿主上报标识常常**分步收敛**：先给一个降级形态，稍后再给权威形态。实测 QQ 音乐先给
+     * 宿主上报标识常常分步收敛：先给一个降级形态，稍后再给权威形态。实测 QQ 音乐先给
      * 数字 songID、约 30ms 后再给 14 位 songMID —— 两者是同一音轨；不识别这一步，
      * 第二次上报会被当成切歌，第一次已完成的取词因代际过期被丢弃
      *
-     * **不比对标题**：部分宿主会把当前正在唱的那句歌词写进 `METADATA_KEY_TITLE`（椒盐音乐即是），
+     * 不比对标题：部分宿主会把当前正在唱的那句歌词写进 `METADATA_KEY_TITLE`（椒盐音乐即是），
      * 标题因此不是可信的同一性判据。本判据只用歌手与时长作佐证
      *
-     * **必须有时间上界**：判据放宽了标题这一项，就必须限制它只能在"临时身份刚建立"的短窗口内
+     * 必须有时间上界：判据放宽了标题这一项，就必须限制它只能在"临时身份刚建立"的短窗口内
      * 生效，否则长期放宽会吞掉真实的切歌。窗口用 [Config.provisionalGraceMs] 控制。
-     * 这**不是去抖** —— 本机制不延迟任何东西，只判断该不该换歌
+     * 这不是去抖 —— 本机制不延迟任何东西，只判断该不该换歌
      */
     private fun isProvisionalUpgrade(current: TrackIdentity, next: TrackIdentity): Boolean {
         // 当前已有权威标识：任何变化都按换歌处理，不做任何放宽
@@ -443,9 +443,9 @@ class LyricOrchestrator(
 
         if (apiSource == null) {
             // 没有可用的网络来源，只能就 Hook 的结论收尾。
-            // **只有宿主明确说"没有歌词"才允许下发占位**：`Unsupported`（读不到文件、清洗后
-            // 一行不剩）与"暂时失败"一样都是**我们没拿到**，判成纯音乐等于替宿主断言——
-            // 而且"清洗后一行不剩"这种情形恰恰说明宿主**给了**歌词行
+            // 只有宿主明确说"没有歌词"才允许下发占位：`Unsupported`（读不到文件、清洗后
+            // 一行不剩）与"暂时失败"一样都是我们没拿到，判成纯音乐等于替宿主断言——
+            // 而且"清洗后一行不剩"这种情形恰恰说明宿主给了歌词行
             if (hookOutcome is LyricOutcome.NoLyrics) {
                 transitionLocked(State.NO_LYRICS, dispatch)
                 dispatch.actions += Action.NoLyrics
@@ -504,14 +504,14 @@ class LyricOrchestrator(
             }
 
             is LyricOutcome.NoLyrics -> {
-                // 平台明确说"这首没有歌词"——**这是允许下发纯音乐占位的唯一来源**
+                // 平台明确说"这首没有歌词"——这是允许下发纯音乐占位的唯一来源
                 apiDelivered = true
                 transitionLocked(State.NO_LYRICS, dispatch)
                 dispatch.actions += Action.NoLyrics
             }
 
             is LyricOutcome.Unsupported -> {
-                // "这个来源服务不了这一首"（平台无版权、拿不到必要的标识）**不是**"平台说没有歌词"：
+                // "这个来源服务不了这一首"（平台无版权、拿不到必要的标识）不是"平台说没有歌词"：
                 // 请求要么根本没发出去，要么服务端没说这句话。据此下发占位等于替平台编结论
                 apiDelivered = true
                 transitionLocked(State.UNAVAILABLE, dispatch)
@@ -627,7 +627,7 @@ class LyricOrchestrator(
     /**
      * 诊断用的稳定标签
      *
-     * **不要用 `::class.simpleName`**：release 构建下 R8 会把子类名混淆成 `bw0` 之类，
+     * 不要用 `::class.simpleName`：release 构建下 R8 会把子类名混淆成 `bw0` 之类，
      * 于是这行诊断恰好只在最需要它的场景里不可读（真机日志实证）
      */
     private val LyricOutcome.label: String

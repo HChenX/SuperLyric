@@ -36,18 +36,18 @@ import org.luckypray.dexkit.result.ClassDataList;
 import java.lang.reflect.Constructor;
 
 /**
- * 波点音乐 Hook 锚点：在歌词引擎的构造入口截获<b>本地原生歌词文件路径</b>
- *
- * <h3>为什么锚在这里</h3>
+ * 波点音乐 Hook 锚点：在歌词引擎的构造入口截获本地原生歌词文件路径
+ * <p>
+ * 为什么锚在这里
  * {@code LyricsRunner4Flutter} 是波点把歌词交给 Flutter 渲染层的唯一咽喉，
  * 其构造参数 {@code (Music, int, String lyricPath)} 中的第三个参数就是
- * 宿主自己下载好的歌词文件路径。这是<b>未经宿主任何加工</b>的原始载荷。
+ * 宿主自己下载好的歌词文件路径。这是未经宿主任何加工的原始载荷。
  *
  * <p>相对地，从宿主的行/词模型里反射抠数据要走
  * {@code VerbatimLyricsParserImpl.e()}，而该实现会对相邻词元做重叠裁切，
  * 造成逐字时戳 0ms 坍缩、动效卡死；绕开它即可。
- *
- * <h3>代价</h3>
+ * <p>
+ * 代价
  * 只挂一个构造器，仅此一处。
  *
  * @author 焕晨HChen
@@ -96,7 +96,7 @@ public final class BodianAnchors {
             }
 
             for (Constructor<?> constructor : runnerClass.getDeclaredConstructors()) {
-                // 按**签名**选，而不是只数参数个数：该类可能另有 3 参的合成/重载构造器，
+                // 按签名选，而不是只数参数个数：该类可能另有 3 参的合成/重载构造器，
                 // 一旦先命中，`getArg(2)` 就不是文件路径（asString 返回 ""），
                 // 上层会把"路径为空"当成"宿主没有歌词"从而下发纯音乐占位。
                 // 判据：第 1 参是曲目对象（非基本类型/String），第 3 参是 String 文件路径

@@ -32,7 +32,7 @@ import com.hchen.superlyric.provider.base.MusicProvider;
  *
  * <p>宿主把歌词解析链路全部放在 Java/Kotlin 层：内嵌标签（USLT/SYLT）、
  * 同名 LRC 文件、插件写入的缓存都汇总到 {@code TagAndMeta} 与
- * {@code cached_lyrics.content}。本 Provider 在解析入口截获<b>整首</b>歌词文本，
+ * {@code cached_lyrics.content}。本 Provider 在解析入口截获整首歌词文本，
  * 再交给内核解析；"只取当前渲染行"的逐行通道会丢整首歌词，不能作为取词入口。
  *
  * @author HChenX
@@ -61,7 +61,7 @@ public class PowerampProvider extends MusicProvider {
 
     /**
      * 切歌时的取词要先查宿主数据库、再读 LRC 文件，默认 800ms 的 Hook 窗口
-     * 在首次查询（JIT 未热）时可能不够。本 Provider <b>没有网络兜底</b>，
+     * 在首次查询（JIT 未热）时可能不够。本 Provider 没有网络兜底，
      * 超时后编排器直接进入 UNAVAILABLE，因此这里把窗口放宽到 3 秒。
      */
     @NonNull

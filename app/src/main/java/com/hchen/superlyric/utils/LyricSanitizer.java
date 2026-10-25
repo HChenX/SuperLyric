@@ -250,7 +250,7 @@ public final class LyricSanitizer {
             long start = cur.getStartTime();
             long end = cur.getEndTime();
             String text = cur.getWord();
-            // 兜底时长**只有一份实现**（内核 LyricText）。此处曾另写一遍，且与内核不等价
+            // 兜底时长只有一份实现（内核 LyricText）。此处曾另写一遍，且与内核不等价
             // （这里算的是 trim 后的长度），改一处漏一处
             long fallbackDur = LyricText.INSTANCE.fallbackWordDuration(text != null ? text : "");
 

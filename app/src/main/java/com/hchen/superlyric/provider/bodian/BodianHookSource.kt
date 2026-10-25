@@ -38,9 +38,9 @@ import java.util.concurrent.Executors
 /**
  * 波点音乐 Hook 取词来源：读取宿主自己的本地原生歌词文件
  *
- * ## 三种结果的语义
+ * 三种结果的语义
  * - 宿主给了路径且解析成功 → [LyricOutcome.Success]
- * - 宿主**明确没有**给路径 → [LyricOutcome.NoLyrics]：这是宿主的确定性信号，此时才允许下发纯音乐占位
+ * - 宿主明确没有给路径 → [LyricOutcome.NoLyrics]：这是宿主的确定性信号，此时才允许下发纯音乐占位
  * - 给了路径但文件读不到 / 解不开 → [LyricOutcome.Unsupported]：不知道是不是没歌词，交给网络路径再试
  *
  * 格式识别交给 [LyricFormat.AUTO]，按载荷自身的结构特征判断：LRCX 有 `[kuwo:]` 头部、
@@ -95,7 +95,7 @@ class BodianHookSource : HookLyricSource {
         val pathKey = TrackIdentity.normalizeStableId(identity.stableId)
         pathStash.takeIf(pathKey)?.let { path ->
             executor.execute {
-                val outcome = parseFile(path.filePath, path.album, identity.stableId, path.title, path.artist)
+                val outcome = parseFile(path.filePath, path.album, identity.stableId)
                 session.deliver(outcome.withMetadata(identity, path.title, path.artist))
             }
         }
@@ -133,7 +133,7 @@ class BodianHookSource : HookLyricSource {
         )
 
         if (filePath.isEmpty()) {
-            // 否定结论同样要认身份：这可能是**上一首**迟到的"没有歌词文件"。算到当前曲目
+            // 否定结论同样要认身份：这可能是上一首迟到的"没有歌词文件"。算到当前曲目
             // 头上会占掉本代际的 Hook 名额（编排器只收第一次投递），把随后到达的真实
             // 结果当成重复投递丢弃，最终给一首有歌词的曲目下发纯音乐占位
             // rid 为空时 identity 会退化成 base 的 stableId，上面的判据就恒等，
@@ -154,12 +154,12 @@ class BodianHookSource : HookLyricSource {
         lastProcessedPath = filePath
 
         executor.execute {
-            val outcome = parseFile(filePath, album, identity.stableId, title, artist)
+            val outcome = parseFile(filePath, album, identity.stableId)
             if (outcome is LyricOutcome.Success) {
                 docStash.put(listOf(identity.stableId, base.stableId), ParsedStash(outcome.doc, identity.stableId, base.stableId))
             }
 
-            // 会话与身份都必须在**投递时**重读，不能在回调入口处捕获：
+            // 会话与身份都必须在投递时重读，不能在回调入口处捕获：
             // 解析在后台线程进行，期间可能已经切歌换掉了 session，
             // 投给入口处捕获的那个旧会话会被 epoch 判为过期而丢弃 —— 表现为
             // "Hook 明明解析成功却整轮超时转网络"，网络再匹配不上就成了纯音乐占位。
@@ -187,8 +187,6 @@ class BodianHookSource : HookLyricSource {
         filePath: String,
         album: String,
         stableId: String?,
-        hostTitle: String,
-        hostArtist: String,
     ): LyricOutcome {
         val file = File(filePath)
         if (!file.isFile || file.length() == 0L) {
@@ -218,7 +216,7 @@ class BodianHookSource : HookLyricSource {
                 LyricRequest(
                     format = LyricFormat.AUTO,
                     text = text,
-                    // album 是宿主为**这一份文件**给出的，不属于身份，因此在这里带上
+                    // album 是宿主为这一份文件给出的，不属于身份，因此在这里带上
                     album = album,
                     lyricId = stableId,
                 )

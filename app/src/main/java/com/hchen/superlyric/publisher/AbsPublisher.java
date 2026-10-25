@@ -39,14 +39,14 @@ import io.github.libxposed.api.XposedModuleInterface;
  * 宿主进程中的底层发布基类
  * <p>
  * 统一管理与系统 SuperLyricService 的发布者注册、死亡处理。
- *
- * <h3>只发布两种包</h3>
+ * <p>
+ * 只发布两种包
  * 按项目核心理念「音乐软件仅负责发布完整歌词，系统框架负责分发」，宿主侧只发送：
  * <ul>
- *   <li><b>全量歌词</b>——{@link #publishFullLyric}；</li>
- *   <li><b>停止</b>——{@link #publishStop}。</li>
+ *   <li>全量歌词——{@link #publishFullLyric}；</li>
+ *   <li>停止——{@link #publishStop}。</li>
  * </ul>
- * 进度推进由系统服务端的唯一时钟负责。这是<b>约定</b>而非类型保证：
+ * 进度推进由系统服务端的唯一时钟负责。这是约定而非类型保证：
  * {@link com.hchen.superlyricapi.SuperLyricData} 仍是公开可变 Parcelable，
  * 带 position 的包也能从这两个入口发出；服务端不校验，发布者必须遵守本约定。
  *

@@ -94,7 +94,6 @@ import top.yukonga.miuix.kmp.window.WindowDialog
 @SuppressLint("LocalContextGetResourceValueCall")
 fun AboutLayout(
     paddingValues: PaddingValues,
-    isWideScreen: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current

@@ -30,7 +30,6 @@ import com.hchen.processor.HookThis;
 
 import java.lang.reflect.Method;
 import java.util.Map;
-import java.util.Objects;
 
 import io.github.libxposed.api.XposedModuleInterface;
 
@@ -158,14 +157,14 @@ public final class SuperLyricProxy extends AbsModule {
 
                             int pid = (int) getArg(1);
 
-                            // 刻意**不**按 ProcessRecord#mKilled 过滤。那个字段的注释是
+                            // 刻意不按 ProcessRecord#mKilled 过滤。那个字段的注释是
                             // "True once we know the process has been killed"，但全类只有两处写它：
-                            // ProcessRecord.killLocked()——即 AMS **自己**下发 Process.killProcessQuiet
+                            // ProcessRecord.killLocked()——即 AMS 自己下发 Process.killProcessQuiet
                             // 的那条路径——以及同包内的 setter。内核 LMK 杀进程根本不经过 AMS，
                             // AMS 只是事后由 binder 死亡得知，那种情况下 mKilled 仍是 false。
                             // 加了这道过滤，恰好漏掉 LMK 这一种。
                             //
-                            // 也**不需要**在这里筛"死的是不是播放进程"：这里看不到那个信息，
+                            // 也不需要在这里筛"死的是不是播放进程"：这里看不到那个信息，
                             // 真正兜住的是 SuperLyricService#onProcessDied 的两级守卫——
                             // ① 该 pid 必须本来就是个注册过的发布者（子进程确实也会注册）；
                             // ② 同包其它注册 pid 必须都已经走光。

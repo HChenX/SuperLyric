@@ -29,16 +29,16 @@ import com.hchen.superlyric.utils.LyricDiag
 /**
  * 把内核编排结果发布到系统框架
  *
- * 宿主侧只发布**三种包**：
- * - **切歌** —— 曲目刚切换、歌词尚未就绪时下发，令客户端立刻作废旧歌词
- * - **全量歌词** —— 曲目解析完成、或确认无歌词时下发
- * - **停止** —— 播放真正停止时下发
+ * 宿主侧只发布三种包：
+ * - 切歌 —— 曲目刚切换、歌词尚未就绪时下发，令客户端立刻作废旧歌词
+ * - 全量歌词 —— 曲目解析完成、或确认无歌词时下发
+ * - 停止 —— 播放真正停止时下发
  *
- * 进度推进完全由系统框架侧的时钟负责，宿主**不发布任何进度包**
+ * 进度推进完全由系统框架侧的时钟负责，宿主不发布任何进度包
  *
  * 切歌后到新歌词就绪之间有几十毫秒到数百毫秒的空窗期。这段空窗期该显示什么是
- * **客户端的决定**，不是本模块的：模块不知道客户端的 UI 意图，也不该替它保留上一首的歌词，
- * 那会让界面显示与当前播放**无关的内容**
+ * 客户端的决定，不是本模块的：模块不知道客户端的 UI 意图，也不该替它保留上一首的歌词，
+ * 那会让界面显示与当前播放无关的内容
  *
  * @author 焕晨HChen
  */
@@ -71,7 +71,7 @@ class LyricPublishBridge : LyricOrchestrator.Listener {
     }
 
     override fun onNoLyrics(identity: TrackIdentity?) {
-        // 只有平台或宿主**明确**说没有歌词才会走到这里；"查不到"走 onUnavailable，不下发占位
+        // 只有平台或宿主明确说没有歌词才会走到这里；"查不到"走 onUnavailable，不下发占位
         AndroidLog.logI(
             TAG,
             "Platform/host reported no lyric; publishing instrumental placeholder for " +

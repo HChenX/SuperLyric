@@ -37,7 +37,6 @@ import com.hchen.superlyric.data.LocalConfig;
 import com.hchen.superlyric.utils.LyricCacheStore;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;

@@ -133,7 +133,7 @@ internal fun ApiLyricPlayerView(
 
     // 真实毫秒时钟驱动：仅在真实处于动态播放流（ON_LYRIC 且非静态拉取）时才进行流逝插值计算；
     // 未播放、静态拉取（PULL_LATEST）、停止或暂停时保持静态固定在 basePos，绝不盲目空转或重置从头跑
-    // 位置 state 必须是**稳定对象**：如果 remember 的键包含 data.position，每次位置包都会
+    // 位置 state 必须是稳定对象：如果 remember 的键包含 data.position，每次位置包都会
     // 返回新的 MutableLongState，而派生状态仍捕获旧对象，逐字高亮会冻在首次组合的位置。
     val playPos = remember { mutableLongStateOf(data?.position ?: 0L) }
     var currentPlayPos by playPos
@@ -168,7 +168,7 @@ internal fun ApiLyricPlayerView(
                     break
                 }
                 playPos.longValue = calculated
-                // 这个节拍只决定**刷新密度**，不影响正确性——位置按墙上时钟算，与循环频率无关。
+                // 这个节拍只决定刷新密度，不影响正确性——位置按墙上时钟算，与循环频率无关。
                 // 20ms ≈ 50Hz：比逐字高亮需要的密度高，又明显低于"每帧一次"的代价
                 delay(20)
             }
@@ -323,7 +323,7 @@ internal fun ApiLyricPlayerView(
                                 // 正在演唱的当前行：
                                 // 计算当前句内唯一活跃字词索引：严格互斥，同一时刻最多仅有一个字词处于 singing 激活状态。
                                 //
-                                // 读取的是**稳定的** playPos 对象，而不是被 remember 键替换掉的
+                                // 读取的是稳定的 playPos 对象，而不是被 remember 键替换掉的
                                 // 旧 delegate；`derivedStateOf` 只在被读取时按当前位置求值。
                                 val activeWordIndex by remember(words) {
                                     derivedStateOf {

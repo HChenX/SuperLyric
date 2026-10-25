@@ -32,15 +32,15 @@ import com.hchen.superlyric.utils.LyricDiag
 /**
  * Spotify 官方接口取词来源
  *
- * ## 流程
+ * 流程
  * - 等 [SpotifyAnchors] 从宿主的 `okhttp3.Headers` 旁路捕获到会话头
  * - 以该会话头拉取 `color-lyrics/v2`（protobuf）
  * - 解析结果（含逐字与音译）映射为内核模型
  *
- * 本模块**不持有任何 Spotify 凭证**，只是复用宿主已经发出的请求头；
+ * 本模块不持有任何 Spotify 凭证，只是复用宿主已经发出的请求头；
  * 会话头失效时返回可重试失败，由编排器退避重试。
  *
- * ## 结果语义
+ * 结果语义
  * - `LyricNotFoundException` → [LyricOutcome.NoLyrics]——平台明确表示无歌词
  * - 鉴权失败 / 网络异常 / 会话头尚未就绪 → [LyricOutcome.TransientFailure]
  *
@@ -72,7 +72,7 @@ class SpotifyApiSource : LyricSource {
     private fun resolve(identity: TrackIdentity, token: Long): LyricOutcome {
         val rawId = TrackIdentity.normalizeStableId(identity.stableId)
             ?: return LyricOutcome.Unsupported("spotify: no track id")
-        // 这个 id 来自宿主上报的 MEDIA_ID，会被直接拼进请求 URL 的**路径段**。必须过一道
+        // 这个 id 来自宿主上报的 MEDIA_ID，会被直接拼进请求 URL 的路径段。必须过一道
         // 格式闸：否则含 `/`、`..` 的值能改变请求路径（同域路径注入）。Spotify 的 track id
         // 是 base62，这里按字符集与长度区间收紧，与酷狗/网易的 HASH/NUMERIC 闸同一目的
         if (!TRACK_ID_PATTERN.matches(rawId)) {
@@ -107,7 +107,7 @@ class SpotifyApiSource : LyricSource {
                     return LyricOutcome.TransientFailure(null)
                 }
                 SpotifyLyricAnalysis.invalidate(headers)
-                // 只缓存**已成功解析**的 protobuf 原始响应；命中后连会话头都不再需要，
+                // 只缓存已成功解析的 protobuf 原始响应；命中后连会话头都不再需要，
                 // 于是 VIP 过期 / 断网时仍能拿到已缓存曲目的歌词
                 LyricCacheStore.putAsync(null, PROVIDER_NAME, cacheKey, data)
 
@@ -144,7 +144,7 @@ class SpotifyApiSource : LyricSource {
      * 读磁盘缓存并复核
      *
      * 命中后重新解析一遍：缓存损坏、或解析器变更导致旧响应不再可用时，删掉该条目
-     * 并回落网络。**绝不**把"缓存不可用"当成"平台没有歌词"——后者是终态。
+     * 并回落网络。绝不把"缓存不可用"当成"平台没有歌词"——后者是终态。
      *
      * 缓存键带语言标签：`color-lyrics/v2` 的译文随 `clientLanguage` 变化，
      * 不带语言会在用户切换应用语言后拿到旧语言的歌词。

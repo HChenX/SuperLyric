@@ -37,7 +37,7 @@ object HomeSettingsController {
     fun launcherLabelRes(hidden: Boolean): Int =
         if (hidden) R.string.show_icon else R.string.hide_icon
 
-    fun clearCache(context: Context): Boolean {
+    fun clearCache(): Boolean {
         val remotePrefs = Application.getRemotePreferences() ?: return false
         var version = remotePrefs.getInt("super_lyric_dexkit_cache_version", 0)
         remotePrefs.edit { putInt("super_lyric_dexkit_cache_version", ++version) }

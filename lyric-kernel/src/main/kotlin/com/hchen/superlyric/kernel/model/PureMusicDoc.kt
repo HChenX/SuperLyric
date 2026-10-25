@@ -21,11 +21,11 @@ package com.hchen.superlyric.kernel.model
 /**
  * 纯音乐占位文档
  *
- * 只有在**平台或宿主明确表态该曲目没有歌词**时才允许构造并下发，即
+ * 只有在平台或宿主明确表态该曲目没有歌词时才允许构造并下发，即
  * [com.hchen.superlyric.kernel.outcome.LyricOutcome.NoLyrics]。
  * 取词失败（[com.hchen.superlyric.kernel.outcome.LyricOutcome.TransientFailure]）
  * 与"来源不可用"（[com.hchen.superlyric.kernel.outcome.LyricOutcome.Unsupported]）
- * **绝不允许**落到这里 —— 前者会让一次网络抖动被永久钉死为纯音乐，
+ * 绝不允许落到这里 —— 前者会让一次网络抖动被永久钉死为纯音乐，
  * 后者是在替对方编造"这首没有歌词"的结论
  *
  * @author 焕晨HChen
@@ -33,7 +33,7 @@ package com.hchen.superlyric.kernel.model
 object PureMusicDoc {
 
     /**
-     * 曲目时长未知时**保持 0**（表示未知）
+     * 曲目时长未知时保持 0（表示未知）
      *
      * 不要填一个具体值：那是在伪造事实，消费方无法区分"不知道"与"就是 5 分钟"，
      * 进度与百分比会跟着错到曲末。系统侧会用宿主元数据补齐真实时长

@@ -46,8 +46,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 /**
  * QQ 音乐官方接口访问层，供 Hook 路径与 API 路径共用
  *
- * ## 三路载荷
- * `GetPlayLyricInfo` 同时返回三个**各自独立加密**的字段：
+ * 三路载荷
+ * `GetPlayLyricInfo` 同时返回三个各自独立加密的字段：
  * - `lyric`——原生 QRC 逐字报文（主歌词）
  * - `trans`——译文，解密后是 `[start,dur]译文` 形态
  * - `roma`——罗马音，解密后同样是 `[start,dur]` 形态
@@ -73,11 +73,11 @@ internal object QQNetwork {
     /**
      * 取词的整体时限预算
      *
-     * connect/read 都只约束**单次操作**：read 超时在每次读到数据后都会重置，
+     * connect/read 都只约束单次操作：read 超时在每次读到数据后都会重置，
      * 一个"永远挤一点数据"的服务端能把请求拖到无限久。callTimeout 给整次调用封顶——
      * 取词跑在来源自己的线程上，拖住它就是拖住后面的每一次切歌
      *
-     * 与 Spotify 的 15/15/30 不同是**有意**的：那家要跑 protobuf 分析且服务端更慢，
+     * 与 Spotify 的 15/15/30 不同是有意的：那家要跑 protobuf 分析且服务端更慢，
      * 这里的三家只取 JSON
      */
     private val client: OkHttpClient = OkHttpClient.Builder()
@@ -113,7 +113,7 @@ internal object QQNetwork {
         var lastFailure: Throwable? = null
         var reachedServer = false
 
-        // 是否见过**非空**的 lyric 字段。它与"服务端没有 lyric 字段"必须分开：
+        // 是否见过非空的 lyric 字段。它与"服务端没有 lyric 字段"必须分开：
         // 前者说明服务端有歌词而我们没解开（解密/解析失败），后者才是"平台确定没有歌词"
         var sawLyricPayload = false
 
@@ -147,7 +147,7 @@ internal object QQNetwork {
                     if (!isCurrent()) return LyricOutcome.TransientFailure(null)
                     val outcome = parsePayloads(lyricRaw, data, identity)
                     if (outcome != null) {
-                        // 只缓存**已成功解析**的响应（含 lyric / trans / roma 三路密文），
+                        // 只缓存已成功解析的响应（含 lyric / trans / roma 三路密文），
                         // 命中后连鉴权与两次端点尝试都省掉
                         LyricCacheStore.putAsync(null, PROVIDER_NAME, cacheKey, data.toString())
                         return outcome
@@ -162,7 +162,7 @@ internal object QQNetwork {
         return when {
             lastFailure != null -> LyricOutcome.TransientFailure(lastFailure)
 
-            // 服务端**给了** lyric 字段，是我们没解开（解密失败或解析不出行）。
+            // 服务端给了 lyric 字段，是我们没解开（解密失败或解析不出行）。
             // 这不是"平台没有歌词"：把它当无歌词，会把一首有歌词的曲目钉成纯音乐占位。
             // 也不要返回 null——调用方用 null 表达另一种含义
             sawLyricPayload -> {
@@ -185,7 +185,7 @@ internal object QQNetwork {
      * 读磁盘缓存并复核
      *
      * 命中后仍重新走一遍解密 + 解析：缓存损坏、或解析器变更导致旧响应不再可解析时，
-     * 删掉该条目并回落网络。**绝不**把"缓存不可用"当成"平台没有歌词"——
+     * 删掉该条目并回落网络。绝不把"缓存不可用"当成"平台没有歌词"——
      * 后者是终态，会把无歌词占位钉死。
      */
     private fun readCached(key: String, identity: TrackIdentity): LyricOutcome? {
@@ -369,9 +369,9 @@ internal object QQNetwork {
      * 与 `title` 同样做多键兜底：只认一种键的形状，平台换一次 schema 就会让歌手分
      * 静默退化成常量，而歌手是 30% 的权重
      *
-     * ## 值不是字符串时**绝不**落进字符串兜底
+     * 值不是字符串时绝不落进字符串兜底
      * `optString` 只在值本身是 String 时返回它；遇到数组/对象会走 `JSON.toString`，
-     * 返回一段**非空白**的 JSON 文本（`[{"name":"周杰伦"}]`）。因此判定必须按**值的类型**
+     * 返回一段非空白的 JSON 文本（`[{"name":"周杰伦"}]`）。因此判定必须按值的类型
      * 分派，不能按"取出来的串空不空"分派——否则数组形状的候选会被 JSON 文本截住，
      * 歌手分恒为 0，满分随之从 100 掉到 70、低于采纳线，合法的匹配全部不采纳
      */
@@ -404,7 +404,7 @@ internal object QQNetwork {
     /**
      * 发起一次 POST
      *
-     * **传输层失败必须抛出**：网络异常不是"服务端没有歌词"。抛出后由调用方归类为
+     * 传输层失败必须抛出：网络异常不是"服务端没有歌词"。抛出后由调用方归类为
      * 可重试失败；只有业务响应里确实没有 lyric 字段，才由 `parsePayloads` 返回 null。
      */
     private fun post(url: String, body: String, userAgent: String): String {

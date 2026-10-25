@@ -60,7 +60,7 @@ internal object ApiReceiverManager {
     /**
      * 收包计数与状态赋值的临界区
      *
-     * 计数（`incrementAndGet`）与随后的 `receiverFlow.value = …` 必须是**一步**：
+     * 计数（`incrementAndGet`）与随后的 `receiverFlow.value = …` 必须是一步：
      * 回调由 Binder 线程池并发进入，若两者之间没有互斥，T1 取到 seq=5、T2 取到 seq=6
      * 而 T2 先赋值时，看板上的 `packetSeq` 会从 6 退回 5。锁只包住这两步，
      * 不包 JSON 解析等耗时操作

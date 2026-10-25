@@ -149,7 +149,7 @@ internal class BgEffectPainter(
     /**
      * 应用主题预设
      *
-     * 收的是调用方**已经定好的** [BgEffectConfig.Config]，不在这里按 deviceType/isDark 重算：
+     * 收的是调用方已经定好的 [BgEffectConfig.Config]，不在这里按 deviceType/isDark 重算：
      * 那套重算漏了 theme，SUNSET 主题下 uPoints/uLightOffset/uSaturateOffset 会静默退回
      * DEFAULT，而颜色却仍来自 SUNSET——同一帧里两套预设打架
      */

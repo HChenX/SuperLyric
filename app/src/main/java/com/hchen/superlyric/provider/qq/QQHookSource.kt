@@ -28,7 +28,7 @@ import com.hchen.superlyric.provider.base.HookLyricSource
 /**
  * QQ 音乐 Hook 取词来源：从宿主取回官方 songMID，再自行拉取原生 QRC
  *
- * ## 取词流程
+ * 取词流程
  * - 切歌时若元数据已带 14 位 songMID，立刻拉取
  * - 否则等 [QQAnchors] 的 `LyricLoadBean` 构造信号
  * - 信号带来 songMID 后立即拉取——这条路径上的标识来自宿主自身，
@@ -60,7 +60,7 @@ class QQHookSource : HookLyricSource {
     /**
      * 已经成功取回歌词的 songMID，避免宿主重复构造 LyricLoadBean 时反复发起网络请求
      *
-     * 只对**本次取词**有效：每次 [start] 都会清空。宿主切歌不会调用 [cancel]（只有确认
+     * 只对本次取词有效：每次 [start] 都会清空。宿主切歌不会调用 [cancel]（只有确认
      * 停止才会），留着它会让"切走再切回"的曲目一个请求都发不出
      */
     @Volatile
@@ -69,7 +69,7 @@ class QQHookSource : HookLyricSource {
     /**
      * 正在取词中的 songMID
      *
-     * 必须在**派发前**登记：宿主会在几十毫秒内连续构造多次 LyricLoadBean，
+     * 必须在派发前登记：宿主会在几十毫秒内连续构造多次 LyricLoadBean，
      * 若只在取词完成后才登记，这几次并发请求会全部落空去重、各发一次网络请求。
      */
     @Volatile
@@ -121,14 +121,14 @@ class QQHookSource : HookLyricSource {
 
         val baseMid = QQIdentity.midOf(base)
 
-        // 锚点常**先于**新曲目的元数据到达（实测早约 8~30ms）。此刻它说的是下一首，
+        // 锚点常先于新曲目的元数据到达（实测早约 8~30ms）。此刻它说的是下一首，
         // 而编排器还没切歌：照取不误的话，这轮请求会带着上一首的曲名、歌手与时长出门
         // （实测：一首曲目被发布成了上一首的歌名），而且它属于旧代际，结果只会被丢弃。
         // 留给随后的 start() 取词——那时编排器手里才是权威身份
         //
         // 这一次不会白丢：[capturedMid] 已在上面更新，因此下一次 buildIdentity 就会带上
         // 这个 mid，编排器随即判定切歌并调用 start()，由它按权威身份取词。
-        // 若日志里这行之后**没有**紧跟着本来源的取词记录，说明切歌没被判定出来——
+        // 若日志里这行之后没有紧跟着本来源的取词记录，说明切歌没被判定出来——
         // 那是身份抖动（宿主上报的标识乱变），不是本处的取舍问题
         if (baseMid != null && baseMid != songMid) {
             AndroidLog.logD(
@@ -139,7 +139,7 @@ class QQHookSource : HookLyricSource {
             return
         }
 
-        // 曲名与歌手以**锚点**为准：它们与 songMid 同属一次上报，而 base 可能仍是上一首
+        // 曲名与歌手以锚点为准：它们与 songMid 同属一次上报，而 base 可能仍是上一首
         val identity = base.copy(
             stableId = TrackIdentity.stableId(NAMESPACE, songMid),
             title = title.ifBlank { base.title },

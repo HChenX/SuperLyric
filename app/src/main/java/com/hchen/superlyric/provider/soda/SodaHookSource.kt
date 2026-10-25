@@ -28,7 +28,6 @@ import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
 import com.hchen.superlyric.provider.base.HookLyricSource
-import com.hchen.superlyric.provider.base.KeyedStash
 import com.hchen.superlyric.provider.base.SourceRequest
 import com.hchen.superlyric.provider.base.SourceRequestGate
 import com.hchen.superlyric.provider.base.withMetadata
@@ -42,13 +41,13 @@ import java.util.concurrent.TimeUnit
 /**
  * 汽水音乐 Hook 取词来源：解析宿主交给歌词模型的原始正文
  *
- * ## 宿主给出的三种格式
+ * 宿主给出的三种格式
  * - `LRC` —— 通用 LRC，交 [LyricFormat.GENERAL]
  * - `KRC` —— 酷狗系逐字格式 `[行起始,行时长]<词偏移,词时长,0>词`，交 [LyricFormat.KRC]
  * - `TEXT` —— 纯文本、无时间轴；按内容再嗅探一次，仍然没有时间轴就不发布
  *
- * ## 只投递成功结果
- * 编排器对同一代际**只接受第一次投递**，投出一次否定结论就把这一代际关死了：
+ * 只投递成功结果
+ * 编排器对同一代际只接受第一次投递，投出一次否定结论就把这一代际关死了：
  * 宿主先给一份占位/纯文本载荷、几百毫秒后才给真正的逐字载荷，是很常见的时序。
  * 若把前者的 [LyricOutcome.Unsupported] 投出去，后者会被当成重复投递丢弃 ——
  * 表现就是"同一首歌有时有歌词、有时没有"。
@@ -56,8 +55,8 @@ import java.util.concurrent.TimeUnit
  * 因此本来源只投递 [LyricOutcome.Success]。读不出来就保持沉默，由编排器的 Hook 超时
  * 把状态落到 `UNAVAILABLE`（不发布任何占位），迟到的成功结果仍然会被接受
  *
- * ## 为什么译文要等一小会儿
- * 主歌词与译文是**两份独立载荷**（宿主按语言各构造一个歌词实体），到达时间不固定。
+ * 为什么译文要等一小会儿
+ * 主歌词与译文是两份独立载荷（宿主按语言各构造一个歌词实体），到达时间不固定。
  * 编排器对同一代际只接受第一次投递，因此先到就投会把译文整份丢掉。这里给译文一个
  * [TRANSLATION_GRACE_MS] 的窗口，窗口内没等到就按主歌词单独发布 —— 宁可少一份译文，
  * 也不能为了译文把发布拖到 Hook 等待窗口之外。只有译文、没有主歌词时多等
@@ -103,7 +102,7 @@ class SodaHookSource : HookLyricSource {
     /**
      * 按曲目标识暂存的载荷
      *
-     * 宿主会**预加载下一首的歌词**：切歌前就把它解析完，切过去之后不再重新解析。
+     * 宿主会预加载下一首的歌词：切歌前就把它解析完，切过去之后不再重新解析。
      * 只靠 [lastCaptured] 一个槽位的话，预加载的那份会被判成"上一首的"而丢弃，
      * 切过去以后就再也等不到第二份 —— 表现为切歌后没歌词。
      */
@@ -209,10 +208,12 @@ class SodaHookSource : HookLyricSource {
                     pendingMain = captured
                     pendingMatched = matched
                 }
+
                 matched && !pendingMatched -> {
                     pendingMain = captured
                     pendingMatched = true
                 }
+
                 else -> {
                     AndroidLog.logD(
                         sourceName,
@@ -248,7 +249,7 @@ class SodaHookSource : HookLyricSource {
         } ?: return
 
         val key = batch.main.type + "|" + batch.main.payload.hashCode() + "|" +
-            batch.translation?.payload?.hashCode()
+                batch.translation?.payload?.hashCode()
         if (key == deliveredKey) return
 
         if (!requests.isCurrent(batch.request)) return
@@ -265,7 +266,7 @@ class SodaHookSource : HookLyricSource {
             AndroidLog.logI(
                 sourceName,
                 "Publishing by arrival order: payload id ${batch.main.trackId} "
-                    + "!= identity ${batch.request.identity.stableId}",
+                        + "!= identity ${batch.request.identity.stableId}",
             )
         }
         batch.request.session.deliver(outcome)
@@ -334,7 +335,7 @@ class SodaHookSource : HookLyricSource {
         language.isNotEmpty() && !language.equals(MAIN_LANGUAGE, ignoreCase = true)
 
     /**
-     * 载荷的标识是否与当前身份**相等**
+     * 载荷的标识是否与当前身份相等
      *
      * 只作为"更强的证据"使用，不作为准入门槛：汽水对同一个播放项会给出两套命名空间的 id
      * （媒体会话的 `MEDIA_ID` 是 UGC 片段 id，歌词实体的 `trackId` 是曲目 id），
