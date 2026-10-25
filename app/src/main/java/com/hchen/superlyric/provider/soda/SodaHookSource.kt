@@ -28,6 +28,10 @@ import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
 import com.hchen.superlyric.provider.base.HookLyricSource
+import com.hchen.superlyric.provider.base.KeyedStash
+import com.hchen.superlyric.provider.base.SourceRequest
+import com.hchen.superlyric.provider.base.SourceRequestGate
+import com.hchen.superlyric.provider.base.withMetadata
 import com.hchen.superlyric.utils.LyricDiag
 
 import java.util.concurrent.Executors
@@ -81,11 +85,7 @@ class SodaHookSource : HookLyricSource {
             Thread(runnable, "SuperLyric-SodaHook").apply { isDaemon = true }
         }
 
-    @Volatile
-    private var session: LyricSource.Session? = null
-
-    @Volatile
-    private var identity: TrackIdentity? = null
+    private val requests = SourceRequestGate()
 
     /** 最近一次截获到的曲目标识；供 `buildIdentity` 在元数据缺标识时兜底 */
     @Volatile
@@ -131,8 +131,7 @@ class SodaHookSource : HookLyricSource {
     override fun currentStableId(): String? = capturedTrackId
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
-        this.session = session
-        this.identity = identity
+        requests.open(identity, session)
         deliveredKey = null
 
         synchronized(lock) {
@@ -163,9 +162,8 @@ class SodaHookSource : HookLyricSource {
     }
 
     override fun cancel() {
+        requests.invalidate()
         synchronized(lock) {
-            session = null
-            identity = null
             pendingMain = null
             pendingTranslation = null
             lastCaptured = null
@@ -187,7 +185,7 @@ class SodaHookSource : HookLyricSource {
             }
 
             lastCaptured = captured
-            if (session == null) return
+            if (requests.current() == null) return
             // 本代际已经投递过：编排器只收第一次，再解析一遍只是白烧 CPU
             if (deliveredKey != null) return
 
@@ -244,16 +242,18 @@ class SodaHookSource : HookLyricSource {
             pendingMain = null
             pendingTranslation = null
             pendingMatched = false
-            val target = session
-            if (main == null || target == null) null
-            else Batch(main, translation, target, identity, matched)
+            val active = requests.current()
+            if (main == null || active == null) null
+            else Batch(main, translation, active, matched)
         } ?: return
 
         val key = batch.main.type + "|" + batch.main.payload.hashCode() + "|" +
             batch.translation?.payload?.hashCode()
         if (key == deliveredKey) return
 
-        val outcome = parse(batch.main, batch.translation, batch.identity)
+        if (!requests.isCurrent(batch.request)) return
+
+        val outcome = parse(batch.main, batch.translation, batch.request.identity)
         if (outcome !is LyricOutcome.Success) {
             // 读不出来不等于没有歌词；投出去会把这一代际关死（见类注释）
             AndroidLog.logD(sourceName, "No usable lyric in ${batch.main.type} payload; staying silent")
@@ -265,18 +265,17 @@ class SodaHookSource : HookLyricSource {
             AndroidLog.logI(
                 sourceName,
                 "Publishing by arrival order: payload id ${batch.main.trackId} "
-                    + "!= identity ${batch.identity?.stableId}",
+                    + "!= identity ${batch.request.identity.stableId}",
             )
         }
-        batch.target.deliver(outcome)
+        batch.request.session.deliver(outcome)
     }
 
     /** 一次投递所需的全部快照；在锁内组装，锁外执行 */
     private class Batch(
         val main: Captured,
         val translation: Captured?,
-        val target: LyricSource.Session,
-        val identity: TrackIdentity?,
+        val request: SourceRequest,
         val matched: Boolean,
     )
 
@@ -345,7 +344,7 @@ class SodaHookSource : HookLyricSource {
      */
     private fun matchesCurrent(payloadId: String?): Boolean {
         val left = usableId(payloadId) ?: return true
-        val right = usableId(identity?.stableId) ?: return true
+        val right = usableId(requests.current()?.identity?.stableId) ?: return true
         if (left == right) return true
         AndroidLog.logD(sourceName, "Track id differs: payload=$left identity=$right")
         return false
@@ -355,18 +354,6 @@ class SodaHookSource : HookLyricSource {
         val normalized = TrackIdentity.normalizeStableId(raw) ?: return null
         return normalized.takeIf { it.lowercase() !in PLACEHOLDER_IDS }
     }
-
-    /**
-     * 身份与元数据在**投递时**回填
-     *
-     * 截获可能早于 `setMetadata`，那时身份还停在上一位；烤进文档就再也纠不回来
-     */
-    private fun LyricDoc.withMetadata(identity: TrackIdentity?): LyricDoc = copy(
-        title = title.ifBlank { identity?.title.orEmpty() },
-        artist = artist.ifBlank { identity?.artist.orEmpty() },
-        durationMs = if (durationMs > 0) durationMs else identity?.durationMs ?: 0L,
-        lyricId = lyricId ?: identity?.stableId,
-    )
 
     private companion object {
         /** 主歌词的语言枚举名；其余语言视为译文 */
