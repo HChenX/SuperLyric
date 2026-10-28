@@ -155,6 +155,7 @@
     <string name="kugou_music">无需额外设置，正常播放即可</string>
     <string name="kugou_lite_music">无需额外设置，正常播放即可</string>
     <string name="migu_music">无需额外设置，正常播放即可</string>
+    <string name="miui_music">无需额外设置，正常播放即可</string>
     <string name="qq_music">无需额外设置，正常播放即可</string>
     <string name="wangyiyun_music">保持网络畅通，正常播放即可</string>
     <string name="spotify_music">保持网络畅通，正常播放即可</string>

@@ -45,6 +45,7 @@
 - 酷狗音乐 (com.kugou.android) -> 网络获取
 - 酷狗概念版 (com.kugou.android.lite) -> 网络获取
 - 咪咕音乐 (cmccwm.mobilemusic) -> Hook 获取
+- 小米音乐 (com.miui.player) -> Hook 获取
 - 网易云音乐 (com.netease.cloudmusic) -> 网络获取
 - Poweramp (com.maxmpz.audioplayer) -> Hook 获取（本地 LRC / 歌词缓存）
 - QQ 音乐 (com.tencent.qqmusic) -> Hook 获取
@@ -66,7 +67,6 @@
 - LX Music (cn.toside.music.mobile) -> 桌面歌词
 - 魅族音乐 (com.meizu.media.music) -> 魅族状态栏歌词
 - 拟声音乐 (com.mimicry.mymusic) -> 魅族状态栏歌词
-- 小米音乐 (com.miui.player) -> 蓝牙歌词
 - MusicFree (fun.upup.musicfree) -> 桌面歌词
 - OPPO 音乐 (com.oppo.music) -> 蓝牙歌词
 - 青盐音乐 (com.xuncorp.qinalt.music) -> 魅族状态栏歌词
