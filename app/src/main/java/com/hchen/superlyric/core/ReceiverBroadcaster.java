@@ -29,6 +29,7 @@ import com.hchen.superlyricapi.ISuperLyricReceiver;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -52,7 +53,7 @@ final class ReceiverBroadcaster {
     // 三个集合必须同步维护：注销与 binder 死亡都要回退 uid 配额
     private final ConcurrentHashMap<Integer, Integer> uidCounts = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<IBinder, Integer> binderUids = new ConcurrentHashMap<>();
-    private final java.util.Set<IBinder> binders = ConcurrentHashMap.newKeySet();
+    private final Set<IBinder> binders = ConcurrentHashMap.newKeySet();
 
     private final RemoteCallbackList<ISuperLyricReceiver> callbacks = new RemoteCallbackList<>() {
         @Override

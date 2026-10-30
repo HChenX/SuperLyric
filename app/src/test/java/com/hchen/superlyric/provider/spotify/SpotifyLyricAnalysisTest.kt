@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.io.ByteArrayOutputStream
 
 /**
  * Spotify 解析层的行为
@@ -155,7 +156,7 @@ class SpotifyLyricAnalysisTest {
 
     private fun varint(value: Int): ByteArray {
         var v = value
-        val out = java.io.ByteArrayOutputStream()
+        val out = ByteArrayOutputStream()
         while (v and 0x7F.inv() != 0) {
             out.write((v and 0x7F) or 0x80)
             v = v ushr 7

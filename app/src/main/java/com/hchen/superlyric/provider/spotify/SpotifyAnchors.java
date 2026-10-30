@@ -32,6 +32,7 @@ import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.result.ClassDataList;
 
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -159,7 +160,7 @@ public final class SpotifyAnchors {
         for (Class<?> candidate : loose) {
             int modifiers = candidate.getModifiers();
             if (candidate.isInterface() || candidate.isAnnotation() || candidate.isEnum()) continue;
-            if (java.lang.reflect.Modifier.isAbstract(modifiers)) continue;
+            if (Modifier.isAbstract(modifiers)) continue;
             if (candidate.getDeclaredFields().length == 0) continue;
             filtered.add(candidate);
         }

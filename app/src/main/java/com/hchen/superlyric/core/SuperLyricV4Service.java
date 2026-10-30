@@ -24,6 +24,7 @@ import android.os.RemoteException;
 import androidx.annotation.NonNull;
 
 import com.hchen.hooktool.log.XposedLog;
+import com.hchen.superlyricapi.BuildConfig;
 import com.hchen.superlyricapi.v4.ILyricFrameListener;
 import com.hchen.superlyricapi.v4.ISuperLyricService;
 
@@ -90,6 +91,6 @@ public final class SuperLyricV4Service extends ISuperLyricService.Stub {
 
     @Override
     public int getApiVersion() throws RemoteException {
-        return com.hchen.superlyricapi.BuildConfig.API_VERSION;
+        return BuildConfig.API_VERSION;
     }
 }

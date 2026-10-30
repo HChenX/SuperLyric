@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
+import java.util.Base64
 import java.util.zip.Deflater
 
 /**
@@ -140,7 +141,7 @@ class DecodeTest {
     @Test
     fun `base64 payloads are restored as bytes`() {
         val raw = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9)
-        val encoded = java.util.Base64.getEncoder().encodeToString(raw)
+        val encoded = Base64.getEncoder().encodeToString(raw)
 
         assertArrayEquals(raw, PayloadBytes.decode(encoded))
     }

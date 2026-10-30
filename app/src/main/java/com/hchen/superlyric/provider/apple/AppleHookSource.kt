@@ -28,6 +28,7 @@ import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.text.LyricText
 import com.hchen.superlyric.provider.apple.AppleAnchors.AppleLine
 import com.hchen.superlyric.provider.base.HookLyricSource
+import com.hchen.superlyric.provider.base.SourceRequestGate
 import com.hchen.superlyric.utils.LyricDiag
 
 /**
@@ -43,7 +44,7 @@ class AppleHookSource : HookLyricSource {
     override val sourceName: String = "AppleHook"
 
     /** session 与 identity 作为一个快照发布，避免回调读到跨代际组合 */
-    private val requests = com.hchen.superlyric.provider.base.SourceRequestGate()
+    private val requests = SourceRequestGate()
 
     override fun install() {
         AppleAnchors.install(object : AppleAnchors.LyricsListener {

@@ -18,6 +18,7 @@
  */
 package com.hchen.superlyric.provider.base
 
+import com.hchen.hooktool.log.AndroidLog
 import com.hchen.superlyric.kernel.orchestrate.Cancellable
 import com.hchen.superlyric.kernel.orchestrate.Scheduler
 import java.util.concurrent.Executors
@@ -41,7 +42,7 @@ class ExecutorScheduler(private val threadName: String = "SuperLyric-Scheduler")
                 runCatching { task() }.onFailure {
                     // 定时任务包含编排器的重试与停止发布。异常被 ScheduledFuture 吞掉时，
                     // 重试链会中断或停止包不会发出，因此在此记录。
-                    com.hchen.hooktool.log.AndroidLog.logE(threadName, "Scheduled task failed", it)
+                    AndroidLog.logE(threadName, "Scheduled task failed", it)
                 }
             },
             delayMs.coerceAtLeast(0L),

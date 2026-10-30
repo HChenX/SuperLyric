@@ -29,6 +29,7 @@ import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.superlyric.publisher.AbsPublisher;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
@@ -231,7 +232,7 @@ public final class PowerampAnchors {
             AndroidLog.logW(TAG, "LRC engine unavailable");
             return false;
         }
-        Context context = com.hchen.superlyric.publisher.AbsPublisher.getAppContext();
+        Context context = AbsPublisher.getAppContext();
         if (context == null) {
             AndroidLog.logW(TAG, "No app context for host lyric parse");
             return false;

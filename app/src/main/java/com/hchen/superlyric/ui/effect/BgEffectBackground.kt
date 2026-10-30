@@ -31,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.dp
@@ -177,7 +178,7 @@ private const val MILLIS_PER_PERIOD_UNIT = 500f
 fun Modifier.cardBlur(
     backdrop: LayerBackdrop?,
     cardBlend: List<BlendColorEntry>,
-    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp),
+    shape: Shape = RoundedCornerShape(16.dp),
     blurRadius: Float = 60f,
 ): Modifier = this.then(
     if (backdrop != null) {

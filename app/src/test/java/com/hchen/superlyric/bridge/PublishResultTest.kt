@@ -18,6 +18,7 @@
  */
 package com.hchen.superlyric.bridge
 
+import com.hchen.superlyricapi.BuildConfig
 import com.hchen.superlyricapi.Publisher
 import com.hchen.superlyricapi.Receiver
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -79,6 +80,6 @@ class PublishResultTest {
     @Test
     fun `the service reports api version 40`() {
         // SuperLyricV4Service.getApiVersion() 直接返回这个常量
-        assertEquals(40, com.hchen.superlyricapi.BuildConfig.API_VERSION)
+        assertEquals(40, BuildConfig.API_VERSION)
     }
 }

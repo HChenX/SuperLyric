@@ -29,6 +29,8 @@ import com.hchen.superlyric.kernel.orchestrate.LyricOrchestrator;
 import com.hchen.superlyric.provider.base.HookLyricSource;
 import com.hchen.superlyric.provider.base.MusicProvider;
 
+import java.util.Locale;
+
 /**
  * 酷我音乐歌词提供者基类。
  *
@@ -200,7 +202,7 @@ abstract class KuwoBaseProvider extends MusicProvider {
     @NonNull
     private static String usableRid(@Nullable String raw) {
         String trimmed = raw != null ? raw.trim() : "";
-        switch (trimmed.toLowerCase(java.util.Locale.ROOT)) {
+        switch (trimmed.toLowerCase(Locale.ROOT)) {
             case "", "0", "-1", "null", "unknown", "none":
                 return "";
             default:

@@ -30,6 +30,8 @@ import com.hchen.superlyric.kernel.orchestrate.LyricSource;
 import com.hchen.superlyric.provider.base.HookLyricSource;
 import com.hchen.superlyric.provider.base.MusicProvider;
 
+import java.util.Locale;
+
 /**
  * 汽水音乐歌词提供者
  *
@@ -135,7 +137,7 @@ public class SodaProvider extends MusicProvider {
     @NonNull
     private static String usableId(String raw) {
         String trimmed = raw != null ? raw.trim() : "";
-        switch (trimmed.toLowerCase(java.util.Locale.ROOT)) {
+        switch (trimmed.toLowerCase(Locale.ROOT)) {
             case "", "0", "-1", "null", "unknown", "none":
                 return "";
             default:

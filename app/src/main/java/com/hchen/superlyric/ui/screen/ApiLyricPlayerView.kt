@@ -61,6 +61,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -307,7 +308,7 @@ internal fun ApiLyricPlayerView(
                                 .graphicsLayer {
                                     scaleX = scale
                                     scaleY = scale
-                                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
+                                    transformOrigin = TransformOrigin(0f, 0.5f)
                                 }
                         ) {
                             // 整句起止时间与持续时长（ms）
@@ -462,7 +463,8 @@ internal fun ApiLyricPlayerView(
                     }
                 }
 
-                // 用户浏览到别处时显示回到当前行的入口
+                // 用户浏览到别处时显示回到当前行的入口。
+                // 必须用全限定名：导入的 AnimatedVisibility 会解析为 ColumnScope 扩展。
                 androidx.compose.animation.AnimatedVisibility(
                     visible = showBackToCurrentLine,
                     enter = fadeIn(tween(200)) + scaleIn(tween(200)),

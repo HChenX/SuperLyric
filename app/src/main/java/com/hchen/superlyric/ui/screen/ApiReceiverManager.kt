@@ -19,6 +19,7 @@
 package com.hchen.superlyric.ui.screen
 
 import android.os.SystemClock
+import android.util.Log
 import com.hchen.superlyricapi.LyricListener
 import com.hchen.superlyricapi.LyricView
 import com.hchen.superlyricapi.Receiver
@@ -105,10 +106,10 @@ internal object ApiReceiverManager {
             val result = SuperLyric.receiver().register(mListener)
             registeredNow = result == Receiver.RegisterResult.OK
             if (!registeredNow) {
-                android.util.Log.w(TAG, "Register result: $result")
+                Log.w(TAG, "Register result: $result")
             }
         } catch (t: Throwable) {
-            android.util.Log.e(TAG, "Failed to register receiver", t)
+            Log.e(TAG, "Failed to register receiver", t)
         }
         if (registeredNow) {
             sourceLabel = if (SuperLyric.serverApiVersion() > 0) SOURCE_SERVICE else SOURCE_LEGACY
@@ -124,7 +125,7 @@ internal object ApiReceiverManager {
             // 因此用 unregisterAll 断开整个连接
             SuperLyric.receiver().unregisterAll()
         } catch (t: Throwable) {
-            android.util.Log.e(TAG, "Failed to unregister receiver", t)
+            Log.e(TAG, "Failed to unregister receiver", t)
         }
     }
 
@@ -219,7 +220,7 @@ internal object ApiReceiverManager {
                 }
             } catch (e: Throwable) {
                 // 必须留痕：否则无法区分服务端没有数据（正常空态）与 IPC 调用异常
-                android.util.Log.w(TAG, "Failed to pull the latest lyric", e)
+                Log.w(TAG, "Failed to pull the latest lyric", e)
                 withContext(Dispatchers.Main) {
                     onComplete?.invoke(false)
                 }

@@ -20,7 +20,9 @@ package com.hchen.superlyric.ui;
 
 import static com.hchen.hooktool.ModuleConfig.LOG_D;
 
+import android.content.Context;
 import android.content.SharedPreferences;
+import android.util.Log;
 
 import androidx.annotation.NonNull;
 
@@ -44,9 +46,10 @@ import io.github.libxposed.service.XposedServiceHelper;
  *
  * @author 焕晨HChen
  */
+// 与 android.app.Application 同名，父类保留全限定名。
 public class Application extends android.app.Application implements XposedServiceHelper.OnServiceListener {
     private static final Object PREFS_LOCK = new Object();
-    private static volatile android.content.Context sAppContext;
+    private static volatile Context sAppContext;
     private static volatile boolean isXposedActive = false;
     private static volatile XposedService mXposedService;
     private static volatile SharedPreferences mRemotePreferences;
@@ -79,8 +82,8 @@ public class Application extends android.app.Application implements XposedServic
      * @throws IllegalStateException {@code onCreate} 尚未执行
      */
     @NonNull
-    public static android.content.Context getAppContext() {
-        android.content.Context context = sAppContext;
+    public static Context getAppContext() {
+        Context context = sAppContext;
         if (context == null) {
             throw new IllegalStateException("Application.onCreate has not run yet");
         }
@@ -131,14 +134,14 @@ public class Application extends android.app.Application implements XposedServic
                     listener.accept(remotePreferences);
                 } catch (Throwable t) {
                     // 一个监听器失败不影响后续监听器，否则界面会停在旧配置上
-                    android.util.Log.w("SuperLyric", "Prefs-ready listener failed", t);
+                    Log.w("SuperLyric", "Prefs-ready listener failed", t);
                 }
             }
             isXposedActive = true;
         } catch (Throwable t) {
             // 远程 prefs 读取失败不得抛回 XposedServiceHelper 的回调线程；
             // 界面保持可用，仅缺少远程配置
-            android.util.Log.w("SuperLyric", "Failed to bind Xposed service", t);
+            Log.w("SuperLyric", "Failed to bind Xposed service", t);
         }
     }
 
@@ -152,6 +155,6 @@ public class Application extends android.app.Application implements XposedServic
             mXposedService = null;
             mRemotePreferences = null;
         }
-        android.util.Log.i("SuperLyric", "Xposed service died");
+        Log.i("SuperLyric", "Xposed service died");
     }
 }

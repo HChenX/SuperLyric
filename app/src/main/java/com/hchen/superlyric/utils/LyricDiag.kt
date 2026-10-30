@@ -19,13 +19,18 @@
 package com.hchen.superlyric.utils
 
 import android.annotation.SuppressLint
+import android.media.MediaMetadata
+import android.os.Bundle
 import com.hchen.hooktool.ModuleConfig
 import com.hchen.hooktool.log.AndroidLog
 import com.hchen.superlyric.BuildConfig
 import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.model.LyricLine
+import com.hchen.superlyric.kernel.parse.QrcParser
 import com.hchen.superlyric.kernel.pipeline.LyricPipeline
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
+import java.lang.reflect.Field
+import org.json.JSONObject
 
 /**
  * 全量诊断输出
@@ -70,8 +75,8 @@ object LyricDiag {
      * 会在非文本键上抛 `ClassCastException` 并在宿主进程刷屏。
      */
     @SuppressLint("SoonBlockedPrivateApi") // 只读诊断；反射失败由 runCatching 降级为 null
-    private val BUNDLE_FIELD: java.lang.reflect.Field? = runCatching {
-        android.media.MediaMetadata::class.java
+    private val BUNDLE_FIELD: Field? = runCatching {
+        MediaMetadata::class.java
             .getDeclaredField("mBundle")
             .apply { isAccessible = true }
     }.getOrNull()
@@ -95,7 +100,7 @@ object LyricDiag {
 
         dumpRequest(source, request)
 
-        val qrcStats = com.hchen.superlyric.kernel.parse.QrcParser.ParseStats()
+        val qrcStats = QrcParser.ParseStats()
         val doc = try {
             LyricPipeline.parse(request, qrcStats)
         } catch (t: Throwable) {
@@ -230,7 +235,7 @@ object LyricDiag {
      * 用于核实"版本参数全为 0 时服务端是否返回空壳"这类只能靠真机定论的问题。
      */
     @JvmStatic
-    fun dumpNeteaseChannels(source: String, url: String, payload: org.json.JSONObject) {
+    fun dumpNeteaseChannels(source: String, url: String, payload: JSONObject) {
         if (!enabled) return
 
         val keys = ArrayList<String>()
@@ -261,7 +266,7 @@ object LyricDiag {
      * 宿主改写"时必须看到全量键。
      */
     @JvmStatic
-    fun dumpMetadata(source: String, metadata: android.media.MediaMetadata) {
+    fun dumpMetadata(source: String, metadata: MediaMetadata) {
         if (!enabled) return
 
         val keys = metadata.keySet()
@@ -285,10 +290,10 @@ object LyricDiag {
      * 会有上述噪声但功能不受影响。
      */
     @Suppress("DEPRECATION")
-    private fun textOf(metadata: android.media.MediaMetadata, key: String): String? {
+    private fun textOf(metadata: MediaMetadata, key: String): String? {
         val bundle = BUNDLE_FIELD
             ?.let { field -> runCatching { field.get(metadata) }.getOrNull() }
-                as? android.os.Bundle
+                as? Bundle
         if (bundle == null) return runCatching { metadata.getText(key)?.toString() }.getOrNull()
         return (bundle.get(key) as? CharSequence)?.toString()
     }

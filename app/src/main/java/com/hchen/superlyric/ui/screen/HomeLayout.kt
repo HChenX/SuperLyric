@@ -20,6 +20,7 @@ package com.hchen.superlyric.ui.screen
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -562,7 +563,7 @@ private fun AppDetailsDialog(
                     } catch (e: Throwable) {
                         // 原因必须留痕：getLaunchIntentForPackage / startActivity 抛错的
                         // 原因（包不存在、权限、Activity 未导出）各不相同，Toast 无法区分
-                        android.util.Log.w("HomeLayout", "Failed to launch app $pkgName", e)
+                        Log.w("HomeLayout", "Failed to launch app $pkgName", e)
                         Toast.makeText(context, R.string.no_activity, Toast.LENGTH_SHORT).show()
                     }
 

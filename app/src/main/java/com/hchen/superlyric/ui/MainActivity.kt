@@ -50,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.stringResource
@@ -353,7 +354,7 @@ class MainActivity : ComponentActivity() {
     private data class NavigationItemData(
         val index: Int,
         val labelRes: Int,
-        val icon: androidx.compose.ui.graphics.vector.ImageVector
+        val icon: ImageVector
     )
 
     private val navigationItems = listOf(

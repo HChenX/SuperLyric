@@ -21,6 +21,7 @@ package com.hchen.superlyric.ui.screen
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -492,7 +493,7 @@ private fun openUrl(context: Context, url: String) {
     } catch (e: Exception) {
         // 原因必须留痕：无浏览器处理该 scheme、URI 非法、Activity 未导出都会抛异常，
         // Toast 无法区分它们
-        android.util.Log.w("AboutLayout", "Failed to open url $url", e)
+        Log.w("AboutLayout", "Failed to open url $url", e)
         Toast.makeText(context, R.string.no_activity, Toast.LENGTH_SHORT).show()
     }
 }

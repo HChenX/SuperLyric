@@ -19,6 +19,7 @@
 package com.hchen.superlyric.provider.apple;
 
 import android.app.Application;
+import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -30,6 +31,7 @@ import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.superlyric.publisher.AbsPublisher;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
@@ -226,7 +228,7 @@ public final class AppleAnchors {
 
     private static void ensureLyricViewModel() {
         if (sLyricViewModel != null) return;
-        android.content.Context context = com.hchen.superlyric.publisher.AbsPublisher.getAppContext();
+        Context context = AbsPublisher.getAppContext();
         if (context instanceof Application application) {
             initLyricViewModel(application);
         }

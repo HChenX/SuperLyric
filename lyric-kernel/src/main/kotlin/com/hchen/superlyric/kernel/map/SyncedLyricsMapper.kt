@@ -22,6 +22,7 @@ import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.model.LyricLine
 import com.hchen.superlyric.kernel.model.LyricWord
 import com.hchen.superlyric.kernel.text.LyricText
+import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
@@ -56,7 +57,7 @@ object SyncedLyricsMapper {
         )
     }
 
-    private fun toLine(line: com.mocharealm.accompanist.lyrics.core.model.ISyncedLine): LyricLine? =
+    private fun toLine(line: ISyncedLine): LyricLine? =
         when (line) {
             is SyncedLine -> plainLine(line)
             is KaraokeLine.MainKaraokeLine -> karaokeLine(line)

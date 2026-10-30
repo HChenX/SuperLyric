@@ -37,6 +37,7 @@ import com.hchen.superlyric.kernel.orchestrate.StopEvidence;
 import com.hchen.superlyric.utils.LyricSanitizer;
 import com.hchen.superlyric.utils.PlaybackStates;
 import com.hchen.superlyric.utils.PublishGuard;
+import com.hchen.superlyricapi.BuildConfig;
 import com.hchen.superlyricapi.ISuperLyricManager;
 import com.hchen.superlyricapi.ISuperLyricReceiver;
 import com.hchen.superlyricapi.SuperLyricData;
@@ -883,7 +884,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
      */
     @Override
     public int getServerApiVersion() throws RemoteException {
-        return com.hchen.superlyricapi.BuildConfig.API_VERSION;
+        return BuildConfig.API_VERSION;
     }
 
     public void onProcessDied(@NonNull String packageName, int pid) {

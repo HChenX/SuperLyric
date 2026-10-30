@@ -35,9 +35,12 @@ import com.hchen.superlyric.data.apps.ApiAppData;
 import java.text.Collator;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -220,10 +223,10 @@ public final class PackageLoader {
     }
 
     private static boolean hasXposedModule(@NonNull String apkPath) {
-        try (java.util.zip.ZipFile zipFile = new java.util.zip.ZipFile(apkPath)) {
-            java.util.Enumeration<? extends java.util.zip.ZipEntry> entries = zipFile.entries();
+        try (ZipFile zipFile = new ZipFile(apkPath)) {
+            Enumeration<? extends ZipEntry> entries = zipFile.entries();
             while (entries.hasMoreElements()) {
-                java.util.zip.ZipEntry entry = entries.nextElement();
+                ZipEntry entry = entries.nextElement();
                 String name = entry.getName();
                 if (name.startsWith("META-INF/xposed")) {
                     return true;

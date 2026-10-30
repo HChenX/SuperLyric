@@ -137,7 +137,7 @@ object LyricPipeline {
      */
     fun parse(
         request: LyricRequest,
-        qrcStats: com.hchen.superlyric.kernel.parse.QrcParser.ParseStats? = null,
+        qrcStats: QrcParser.ParseStats? = null,
     ): LyricDoc? {
         val content = resolveContent(request) ?: return null
         if (content.isBlank()) return null

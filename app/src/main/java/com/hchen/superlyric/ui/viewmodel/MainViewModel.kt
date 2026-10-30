@@ -20,6 +20,7 @@ package com.hchen.superlyric.ui.viewmodel
 
 import android.annotation.SuppressLint
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.compose.ui.util.fastFirstOrNull
 import androidx.core.content.edit
 import androidx.lifecycle.ViewModel
@@ -30,6 +31,7 @@ import com.hchen.superlyric.data.PrefsKey
 import com.hchen.superlyric.data.apps.ApiAppData
 import com.hchen.superlyric.ui.Application
 import com.hchen.superlyric.utils.PackageLoader
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -94,7 +96,7 @@ class MainViewModel(
                 _logLevel.value = level
             }.onFailure {
                 // 读取失败必须记录，否则无法区分默认值与读取异常
-                android.util.Log.w("MainViewModel", "Failed to read the log level", it)
+                Log.w("MainViewModel", "Failed to read the log level", it)
             }
         }
     }
@@ -109,7 +111,7 @@ class MainViewModel(
                     runCatching {
                         currentPrefs.edit { putInt(PrefsKey.LOG_LEVEL, action.value) }
                     }.onFailure {
-                        android.util.Log.w("MainViewModel", "Failed to persist the log level", it)
+                        Log.w("MainViewModel", "Failed to persist the log level", it)
                     }
                     _logLevel.value = action.value
                 }
@@ -127,8 +129,8 @@ class MainViewModel(
                 runCatching {
                     reloadApps().awaitCompletion()
                 }.onFailure { e ->
-                    if (e is kotlinx.coroutines.CancellationException) throw e
-                    android.util.Log.e("MainViewModel", "Failed to reload apps", e)
+                    if (e is CancellationException) throw e
+                    Log.e("MainViewModel", "Failed to reload apps", e)
                 }
                 loadApps()
 
