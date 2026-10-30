@@ -26,17 +26,17 @@ import org.junit.jupiter.api.Test
 import java.io.File
 
 /**
- * 缓存路径的三道守卫。
+ * 缓存路径校验
  *
- * provider 与 key 都来自**载荷**（平台返回的 id、locale 前缀），因此这里是输入侧的安全边界：
+ * provider 与 key 都来自载荷（平台返回的 id、locale 前缀），这里是输入侧的安全边界：
  * 放行一个 `../` 就能把文件写到缓存目录之外。白名单正则与 canonical 前缀校验
- * 在本类分别钉住；符号链接检查需要真实链接且依赖 `getCacheDir()`，不在这里伪造覆盖。
+ * 分别在此固定；符号链接检查需要真实链接且依赖 `getCacheDir()`，不在本测试覆盖。
  *
  * 被测方法都是私有的纯函数（只吃字符串与 `File`），用反射直接调用，不需要 Context。
  */
 class LyricCacheStorePathTest {
 
-    // ---------------------------------------------------------------- 白名单正则
+    // 白名单正则
 
     @Test
     fun `a provider name must be a single plain segment`() {
@@ -64,7 +64,7 @@ class LyricCacheStorePathTest {
         assertNull(sanitizeKey("a//b"), "空段会让路径含义含糊")
     }
 
-    // ---------------------------------------------------------------- canonical 前缀
+    // canonical 前缀
 
     @Test
     fun `a target inside the provider directory is accepted`() {
@@ -78,8 +78,8 @@ class LyricCacheStorePathTest {
 
     @Test
     fun `a target outside the provider directory is rejected`() {
-        // 第二道守卫是"能不能跳出 provider 目录"，与第一道的白名单无关：
-        // 白名单只保证每一段是干净的，绑不住"拼起来跑到别处去"
+        // 第二道守卫校验目标能否跳出 provider 目录，与白名单无关：
+        // 白名单只保证每一段干净，不能约束拼接后的位置
         val root = createTempDir()
         val providerDir = File(root, "Netease").apply { mkdirs() }
         try {
@@ -90,7 +90,7 @@ class LyricCacheStorePathTest {
         }
     }
 
-    // ---------------------------------------------------------------- 反射入口
+    // 反射入口
 
     private fun sanitizeSegment(segment: String): String? = invoke("sanitizeSegment", segment)
 
@@ -109,10 +109,10 @@ class LyricCacheStorePathTest {
             .invoke(null, providerDir, target) as Boolean
 
     /**
-     * 建一个临时目录。
+     * 建一个临时目录
      *
-     * 不用 `createTempFile`：这里要的是**目录**，且 Windows 上 `createTempFile` 返回的是文件。
-     * 符号链接那一道守卫没有覆盖——Windows 下建符号链接需要额外权限，写了只会变成"悄悄不跑"的测试
+     * 这里需要目录，不使用 `createTempFile`。Windows 上创建符号链接需要额外权限，
+     * 符号链接守卫不在本测试覆盖。
      */
     private fun createTempDir(): File =
         File(System.getProperty("java.io.tmpdir"), "superlyric-test-${System.nanoTime()}")

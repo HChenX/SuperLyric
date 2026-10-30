@@ -27,20 +27,16 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * 三个自研解析器的金标准测试。
+ * 三个自研解析器的金标准测试
  *
- * 重点覆盖历史上出过缺陷的三类行为：翻译混入主歌词、翻译丢失、逐字时序错误。
+ * 重点覆盖三类边界：翻译混入主歌词、翻译丢失、逐字时序错误。
  */
 class ParserTest {
 
-    // =========================================================================
-    // QRC
-    // =========================================================================
-
     @Test
     fun `bare qrc keeps the first word and maps each word to its own timing`() {
-        // 真机报文形态：[行起始,行时长]文字(词起始,词时长)文字(词起始,词时长)…
-        // 文字在时间标签**之前**。旧实现按"标签在前"捕获，导致每行首个词被整段丢弃。
+        // 报文形态：[行起始,行时长]文字(词起始,词时长)文字(词起始,词时长)…，
+        // 文字在时间标签之前。按"标签在前"捕获会让每行首个词被整段丢弃。
         val doc = QrcParser.parse("[0,3500]Hello(0,500) world(500,400)")
 
         assertNotNull(doc)
@@ -59,7 +55,7 @@ class ParserTest {
 
     @Test
     fun `qrc word text stays aligned with its own tag rather than the next one`() {
-        // 真机样本："后会无期" 曾被解析成 "会无期"
+        // 逐字文本必须与自己的标签对齐，行首词不得丢失
         val doc = QrcParser.parse("[0,4000]后(0,1000)会(1000,1000)无(2000,1000)期(3000,1000)")
 
         assertNotNull(doc)
@@ -72,9 +68,8 @@ class ParserTest {
 
     @Test
     fun `absolute word timing layout is detected and not offset by the line start`() {
-        // 真机 QQ 报文：词起始是**歌内绝对毫秒**。
-        // 早期实现按"行内相对偏移"解释，会把行起始加两次（20699 + 20699），
-        // 再被 normalize 把词首压回行首，逐字高光实际全程失效。
+        // QQ 报文的词起始是歌内绝对毫秒。按"行内相对偏移"解释会把行起始
+        // 叠加两次（20699 + 20699），逐字高光全程失效。
         val doc = QrcParser.parse("[20699,2312]初(20699,434)め(21133,169)て(21302,84)")
 
         assertNotNull(doc)
@@ -111,7 +106,7 @@ class ParserTest {
 
     @Test
     fun `relative word timing layout is detected and offset by the line start`() {
-        // 另一种真实排布：词起始是行内相对偏移
+        // 词起始为行内相对偏移的排布
         val doc = QrcParser.parse("[1000,2000]你(0,500)好(500,500)")
 
         assertNotNull(doc)
@@ -157,7 +152,7 @@ class ParserTest {
 
     @Test
     fun `qrc translation tolerates small timestamp drift`() {
-        // 旧实现用精确时间戳匹配，此处特意制造 37ms 漂移
+        // 译文与主行相差 37ms，仍在容差内
         val xml = """
             <QrcInfos>
             <Lyric_1 LyricType="1" LyricContent="[1000,2000]Hello(0,2000)"/>
@@ -181,8 +176,7 @@ class ParserTest {
 
     @Test
     fun `an uppercase hexadecimal entity is decoded too`() {
-        // 正则曾写成 `&#x?`（只认小写 x），而解析分支同时处理了 `#X`——
-        // 大写形式永远进不了那个分支，退化为显示原始实体串
+        // 实体前缀 `#X` 与 `#x` 都必须识别；只认小写会让大写实体原样显示
         val doc = QrcParser.parse("[0,1000]a&#X41;b(0,1000)")
 
         assertNotNull(doc)
@@ -191,8 +185,8 @@ class ParserTest {
 
     @Test
     fun `an entity encoded invisible character is stripped from a wordless line`() {
-        // 无逐字标签的回退分支：若先剥不可见字符、后解实体，`&#x200b;` 会在剥离**之后**
-        // 才被解成零宽空格，等于没剥。它会让下游按字符索引做逐字高亮时越界
+        // 无逐字标签的回退分支必须先解实体再剥不可见字符，否则 `&#x200b;` 会在
+        // 剥离之后才变成零宽空格，下游按字符索引做逐字高亮时越界
         val doc = QrcParser.parse("[0,1000]a&#x200b;b")
 
         assertNotNull(doc)
@@ -201,7 +195,7 @@ class ParserTest {
 
     @Test
     fun `an entity encoded invisible character is stripped from a word tag`() {
-        // 同一个模式在逐字分支里也要成立，否则"两处都改了"只是一句口号
+        // 逐字分支与回退分支必须采用相同的处理顺序
         val doc = QrcParser.parse("[0,1000]a(0,500)b(500,500)")
 
         assertNotNull(doc)
@@ -223,10 +217,6 @@ class ParserTest {
         assertNull(QrcParser.parse(""))
         assertNull(QrcParser.parse("no time tags here"))
     }
-
-    // =========================================================================
-    // LRCX
-    // =========================================================================
 
     /** key 八进制 13 == 十进制 11 → c = 1, d = 1，使算式可手算验证 */
     private val lrcxHeader = "[kuwo:13]"
@@ -253,9 +243,9 @@ class ParserTest {
 
     @Test
     fun `a zero-tagged translation line is still recognised as a translation`() {
-        // 真机报文（波点）：译文行**也带标签，但值全是 `<0,0>`**——那等于没有逐字数据。
-        // 若按"有标签即主行"处理，译文行会被当成普通歌词行，译文永远配不上
-        // （实测整首歌 196 行、0 条译文，且译文全部作为独立行下发）。
+        // 波点报文的译文行也带标签，但值全是 `<0,0>`，等于没有逐字数据。
+        // 按"有标签即主行"处理会让译文行成为普通歌词行，译文无法配对；
+        // 该形态在 196 行的载荷中可产生 0 条译文，译文全部作为独立行下发。
         val text = "$lrcxHeader\n[00:01.00]<0,0>你好 世界\n[00:01.00]<1000,500>Hello <2000,1000>world"
 
         val doc = KuwoLrcxParser.parse(text)
@@ -282,8 +272,8 @@ class ParserTest {
 
     @Test
     fun `untagged line with a unique timestamp stays a main line`() {
-        // 这是旧实现最严重的缺陷：它把任何无标签行都当成译文，
-        // 导致这条独立主行要么被挂到别的行上，要么被静默丢弃。
+        // 把任何无标签行都当成译文，会让独立主行被错挂或静默丢弃；
+        // 只有时间戳与逐字行相同的无标签行才是译文。
         val text = "$lrcxHeader\n" +
                 "[00:01.00]<1000,500>Hello\n" +
                 "[00:05.00]A line without verbatim data"
@@ -299,9 +289,9 @@ class ParserTest {
 
     @Test
     fun `a translation whose main line is empty is discarded instead of promoted`() {
-        // 真机报文（波点《Dream It Possible》）的末尾形状：译文行之后的主行**只有时间戳、
-        // 内容为空**，被解析器丢弃。丢弃时若不留下时间戳痕迹，这条译文就找不到主行，
-        // 会被当成"无逐字数据的独立主行"提升 —— 实测整首歌的最后一行变成了一句译文
+        // 波点《Dream It Possible》的末尾形态：译文行之后的主行只有时间戳、内容为空，
+        // 被解析器丢弃。丢弃时必须留下时间戳痕迹，否则该译文会被当成无逐字数据的
+        // 独立主行提升，成为整首歌的最后一句"歌词"。
         val text = "$lrcxHeader\n" +
                 "[00:01.00]<0,0>梦想成真\n" +
                 "[00:01.00]<1000,500>And we'll dream it possible\n" +
@@ -334,13 +324,9 @@ class ParserTest {
         assertEquals("Album", doc.album)
     }
 
-    // =========================================================================
-    // Soda JSON
-    // =========================================================================
-
     @Test
     fun `soda json parses sentences and words`() {
-        // 真实载荷中拉丁文的词文本自带尾随空格，中文则不含；拼接时不做任何猜测性补空格
+        // 拉丁词文本可能自带尾随空格，中文则不含；拼接时不做猜测性补空格
         val json = """
             {"sentences":[
               {"startMs":0,"endMs":2000,"words":[
@@ -389,7 +375,7 @@ class ParserTest {
 
     @Test
     fun `soda json reads translations from the same nested container as the sentences`() {
-        // 主歌词沿容器下潜、译文却只读根节点时，嵌套形态的译文会整段丢失。
+        // 主歌词沿容器下潜、译文却只读根节点时，嵌套形态的译文会整段丢失；
         // 二者必须取自同一个容器
         val json = """
             {"loaderData":{"track_page":{"lyrics":{
@@ -406,8 +392,8 @@ class ParserTest {
 
     @Test
     fun `soda json still reads translations from the root when the sentences are nested`() {
-        // 与上一条互补：主歌词在嵌套层、译文却在根节点。译文查找必须两条路都走，
-        // 否则修好"同容器"会反过来丢掉这一种排布
+        // 主歌词在嵌套层、译文在根节点时，译文查找必须同时检查两处，
+        // 否则这一种排布会丢失译文
         val json = """
             {"translations":{"cn":[{"startMs":0,"text":"你好"}]},
              "loaderData":{"track_page":{"lyrics":{
@@ -423,7 +409,8 @@ class ParserTest {
 
     @Test
     fun `soda json handles the first lines of a track without collapsing them`() {
-        // 旧实现以 lineStart > 1000 为门控，曲目开头 1 秒内的行会被误判为相对时间
+        // 以 lineStart > 1000 为门控会把曲目开头 1 秒内的行误判为相对时间；
+        // 判据必须逐句比较词起始与句起始
         val json = """
             {"sentences":[{"startMs":200,"endMs":1200,"words":[
               {"text":"早","startMs":200,"endMs":700},
@@ -449,7 +436,7 @@ class ParserTest {
     @Test
     fun `an oversized sentence array is capped instead of allocated whole`() {
         // 载荷由宿主给出，规模不受本层控制：预分配跟着 sentences.size() 走的话，
-        // 一份构造出来的巨型 JSON 能在解析出任何一行之前就把堆吃掉
+        // 一份构造出来的巨型 JSON 能在解析出任何一行之前耗尽堆内存
         val cap = 4096
         val builder = StringBuilder("""{"sentences":[""")
         for (i in 0 until cap + 500) {
@@ -466,16 +453,12 @@ class ParserTest {
         assertEquals(cap, doc!!.lines.size, "超过上限的句必须被截断，上限值改动时同步改本断言")
     }
 
-    // =========================================================================
-    // CompanionSplitter（同时间戳伴随行的拆分）
-    // =========================================================================
-
     @Test
     fun `a companion row written before its main row is still split out`() {
-        // 伴随行写在主行**之前**的排布。判据必须与遍历顺序无关：若以"遍历到该行时
-        // 是否已经见过它的主行"为准，这种排布下所有伴随行都找不到主人，于是没有任何行
-        // 被拆出去，split() 直接返回 null —— 整份载荷退回通用解析库，
-        // 而库正是会把译文留成独立歌词行的那个（见 CompanionSplitter 的类注释）。
+        // 伴随行写在主行之前的排布。判据必须与遍历顺序无关：若以"遍历到该行时
+        // 是否已经见过它的主行"为准，这种排布下所有伴随行都找不到对应主行，
+        // 于是没有任何行被拆出去，split() 直接返回 null，整份载荷退回通用解析库，
+        // 而库会把译文留成独立歌词行（见 CompanionSplitter 的类注释）。
         val text = "[00:20.699]第一次参观卢浮宫\n" +
                 "[00:20.699]<00:20.699>初<00:21.133>め<00:22.298>は <00:23.011>"
 

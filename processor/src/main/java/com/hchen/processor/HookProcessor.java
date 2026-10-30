@@ -48,7 +48,10 @@ import javax.lang.model.element.TypeElement;
 import javax.tools.Diagnostic;
 
 /**
- * 注解处理
+ * 读取 {@code @HookThis} 并生成 {@code HookMaps}
+ *
+ * <p>按 {@code targetPackage} 分组，生成 {@code ON_PACKAGE_LOADED} 与
+ * {@code ON_SYSTEM_STARTING} 两个常量表。
  *
  * @author 焕晨HChen
  */
@@ -62,9 +65,8 @@ public class HookProcessor extends AbstractProcessor {
     /**
      * 是否已经生成过 {@code HookMaps}
      *
-     * <p>注解处理器可能被调用多轮。{@code JavaFile.writeTo(filer)} 对同一个类名写第二次会抛
-     * {@code FilerException: Attempt to recreate a file}——而报错与真正的根因（"有元素出现在
-     * 后续轮"）毫无关系，极难定位。因此只写一次
+     * <p>注解处理器可能被调用多轮；{@code JavaFile.writeTo(filer)} 对同一个类名写第二次会抛
+     * {@code FilerException}，因此只写一次
      */
     private boolean generated;
 
@@ -81,8 +83,8 @@ public class HookProcessor extends AbstractProcessor {
             String typeName = typeElement.getQualifiedName().toString();
             boolean newType = seenTypes.add(typeName);
             if (generated && newType) {
-                // javac 不允许在最后一轮写新的 class 文件，第一轮之后出现的
-                // @HookThis 无法再并入已有的 HookMaps；显式报错，不能静默漏 Provider。
+                // javac 不允许在最后一轮写新的 class 文件，首轮之后出现的 @HookThis
+                // 无法再并入已有的 HookMaps；显式报错，不能静默漏掉 Provider
                 processingEnv.getMessager().printMessage(
                     Diagnostic.Kind.ERROR,
                     "@HookThis element appeared after HookMaps was generated: " + typeName
@@ -147,8 +149,10 @@ public class HookProcessor extends AbstractProcessor {
             .writeTo(processingEnv.getFiler());
     }
 
-    /*
+    /**
      * 生成 static final Map 常量
+     *
+     * <p>按包名聚合类路径，过滤条件不成立的条目不会出现在结果中。
      */
     private FieldSpec generateStaticMap(
         String fieldName,

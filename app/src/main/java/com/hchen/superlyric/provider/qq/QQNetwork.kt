@@ -48,9 +48,9 @@ import okhttp3.RequestBody.Companion.toRequestBody
  *
  * 三路载荷
  * `GetPlayLyricInfo` 同时返回三个各自独立加密的字段：
- * - `lyric`——原生 QRC 逐字报文（主歌词）
- * - `trans`——译文，解密后是 `[start,dur]译文` 形态
- * - `roma`——罗马音，解密后同样是 `[start,dur]` 形态
+ * - `lyric`：原生 QRC 逐字报文（主歌词）
+ * - `trans`：译文，解密后是 `[start,dur]译文` 形态
+ * - `roma`：罗马音，解密后同样是 `[start,dur]` 形态
  *
  * 三者都经 [QrcCipher] 解密（腾讯改造版 3DES + ZLib）。
  *
@@ -73,12 +73,11 @@ internal object QQNetwork {
     /**
      * 取词的整体时限预算
      *
-     * connect/read 都只约束单次操作：read 超时在每次读到数据后都会重置，
-     * 一个"永远挤一点数据"的服务端能把请求拖到无限久。callTimeout 给整次调用封顶——
-     * 取词跑在来源自己的线程上，拖住它就是拖住后面的每一次切歌
+     * connect/read 都只约束单次操作：read 超时在每次读到数据后都会重置，持续挤出少量
+     * 数据的服务端能把请求拖到无限久。callTimeout 给整次调用封顶，取词跑在来源自己的
+     * 线程上，拖住它就是拖住后续每一次切歌
      *
-     * 与 Spotify 的 15/15/30 不同是有意的：那家要跑 protobuf 分析且服务端更慢，
-     * 这里的三家只取 JSON
+     * 与 Spotify 的 15/15/30 不同：后者要跑 protobuf 分析且服务端更慢，此处三家只取 JSON
      */
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(4, TimeUnit.SECONDS)
@@ -103,8 +102,8 @@ internal object QQNetwork {
         identity: TrackIdentity,
         isCurrent: () -> Boolean = { true },
     ): LyricOutcome {
-        // 没有标识就压根没查询过，谈不上"平台说没有歌词"：它是"我们查不了"。
-        // 判成 NoLyrics 会为一次查不到下发纯音乐占位
+        // 没有标识时未发出任何查询，不构成平台结论。判成 NoLyrics 会为一次查询失败
+        // 下发纯音乐占位
         if (songMid.isBlank() && songId <= 0L) return LyricOutcome.Unsupported("qq: no identifier")
 
         val cacheKey = songMid.trim().ifBlank { songId.toString() }
@@ -113,8 +112,8 @@ internal object QQNetwork {
         var lastFailure: Throwable? = null
         var reachedServer = false
 
-        // 是否见过非空的 lyric 字段。它与"服务端没有 lyric 字段"必须分开：
-        // 前者说明服务端有歌词而我们没解开（解密/解析失败），后者才是"平台确定没有歌词"
+        // 是否见过非空的 lyric 字段。它与服务端没有 lyric 字段必须分开：
+        // 前者说明服务端有歌词而本模块没解开（解密/解析失败），后者才是平台确定没有歌词
         var sawLyricPayload = false
 
         for (url in listOf(URL_PRIMARY, URL_FALLBACK)) {
@@ -131,7 +130,7 @@ internal object QQNetwork {
                     val data = req0?.optJSONObject("data") ?: root.optJSONObject("data")
                     if (code != 0) {
                         // HTTP 200 不等于业务成功：风控、登录、参数错误都走这里。
-                        // 这不是“平台没有歌词”，只是这次没查成，必须可重试。
+                        // 这属于本次查询失败，不是平台没有歌词，必须可重试。
                         lastFailure = IllegalStateException("qq code=$code")
                         continue
                     }
@@ -162,9 +161,9 @@ internal object QQNetwork {
         return when {
             lastFailure != null -> LyricOutcome.TransientFailure(lastFailure)
 
-            // 服务端给了 lyric 字段，是我们没解开（解密失败或解析不出行）。
-            // 这不是"平台没有歌词"：把它当无歌词，会把一首有歌词的曲目钉成纯音乐占位。
-            // 也不要返回 null——调用方用 null 表达另一种含义
+            // 服务端给了 lyric 字段而本模块没有解开（解密失败或解析不出行）。
+            // 这不构成平台无歌词的结论：判成无歌词会把有歌词的曲目钉成纯音乐占位。
+            // 也不返回 null：调用方用 null 表达另一种含义
             sawLyricPayload -> {
                 AndroidLog.logW(
                     TAG,
@@ -184,9 +183,9 @@ internal object QQNetwork {
     /**
      * 读磁盘缓存并复核
      *
-     * 命中后仍重新走一遍解密 + 解析：缓存损坏、或解析器变更导致旧响应不再可解析时，
-     * 删掉该条目并回落网络。绝不把"缓存不可用"当成"平台没有歌词"——
-     * 后者是终态，会把无歌词占位钉死。
+     * 命中后仍重新走一遍解密与解析：缓存损坏、或解析器变更导致既有响应无法解析时，
+     * 删掉该条目并回落网络。缓存不可用不构成平台无歌词的结论：后者是终态，
+     * 会把纯音乐占位钉死。
      */
     private fun readCached(key: String, identity: TrackIdentity): LyricOutcome? {
         val bytes = LyricCacheStore.getBytes(null, PROVIDER_NAME, key) ?: return null
@@ -269,8 +268,8 @@ internal object QQNetwork {
                 item.optLong("interval", 0L) * 1000L,
             )
             // 用 `>` 而不是 `>=`：同分时采纳检索的排序首位。
-            // 同一首歌的不同版本可能登记成完全相同的歌名/歌手/时长，打分器无从区分，
-            // 平局只能靠顺序决定——取最后一个会随机配上错误版本的歌词。
+            // 同一曲目的不同版本可能登记成完全相同的歌名/歌手/时长，打分器无从区分，
+            // 平局只能靠顺序决定，取最后一个会随机配上错误版本的歌词。
             if (score > bestScore) {
                 bestScore = score
                 best = mid to item.optLong("id", item.optLong("songid", 0L))
@@ -282,8 +281,6 @@ internal object QQNetwork {
         }
         return best
     }
-
-    // ------------------------------------------------------------------ 内部
 
     private fun buildLyricRequest(ct: String, cv: String, songMid: String, songId: Long): String =
         JSONObject().apply {
@@ -366,14 +363,13 @@ internal object QQNetwork {
     /**
      * 取候选的歌手名
      *
-     * 与 `title` 同样做多键兜底：只认一种键的形状，平台换一次 schema 就会让歌手分
-     * 静默退化成常量，而歌手是 30% 的权重
+     * 与 `title` 一样做多键兜底：只认一种键的形状，平台换一次 schema 就会让歌手分
+     * 静默退化成常量，而歌手占 30% 的权重。
      *
-     * 值不是字符串时绝不落进字符串兜底
-     * `optString` 只在值本身是 String 时返回它；遇到数组/对象会走 `JSON.toString`，
-     * 返回一段非空白的 JSON 文本（`[{"name":"周杰伦"}]`）。因此判定必须按值的类型
-     * 分派，不能按"取出来的串空不空"分派——否则数组形状的候选会被 JSON 文本截住，
-     * 歌手分恒为 0，满分随之从 100 掉到 70、低于采纳线，合法的匹配全部不采纳
+     * 判定按值的类型分派，不按取出的串是否为空分派：`optString` 只在值本身是 String
+     * 时返回它，遇到数组或对象会走 `JSON.toString`，返回一段非空白的 JSON 文本
+     * （`[{"name":"周杰伦"}]`）。若按空串判定，数组形状的候选会被 JSON 文本截住，
+     * 歌手分恒为 0，满分从 100 掉到 70、低于采纳线，合法匹配全部不采纳
      */
     private fun readSingers(item: JSONObject): String {
         val value = item.opt("singer")

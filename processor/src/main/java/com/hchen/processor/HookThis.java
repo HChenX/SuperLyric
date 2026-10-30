@@ -24,7 +24,9 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Hook 收集
+ * 标记需要注入 Hook 的类
+ *
+ * <p>保留策略为 {@code SOURCE}，只在编译期由注解处理器读取，不进入运行时。
  *
  * @author 焕晨HChen
  */

@@ -31,24 +31,21 @@ import java.lang.reflect.Method;
 
 /**
  * 汽水音乐 Hook 锚点：截获宿主的原始歌词正文与它的格式声明
- * <p>
- * 为什么锚在这里
- * 汽水的歌词模型 {@code com.luna.common.arch.db.entity.lyrics.Lyric} 的构造器签名是
+ *
+ * <p>汽水的歌词模型 {@code com.luna.common.arch.db.entity.lyrics.Lyric} 的构造器签名是
  * {@code (NetLyricType type, String content, NetLyricsLanguage lang, ILunaQueueItem item,
- * boolean …, Function1 …)}。该构造器的字节码先把 {@code content} 按 {@code \n} 切行，
- * 再按 {@code type} 分派给 {@code KrcLyricParser} / {@code LrcLyricParser} ——
- * 也就是说，入参就是宿主自己拿到的那份未加工的歌词文本，格式（LRC / KRC / TEXT）
- * 也由宿主一并给出。
+     * boolean …, Function1 …)}。该构造器的字节码先把 {@code content} 按换行符切行，
+ * 再按 {@code type} 分派给 {@code KrcLyricParser} / {@code LrcLyricParser}，因此入参就是
+ * 宿主拿到的未加工歌词文本，格式（LRC / KRC / TEXT）也由宿主一并给出。
  *
- * <p>相对地，宿主的 {@code Sentence} / {@code Word} 模型是解析之后的产物：字段名被混淆、
- * 译文被塞进 {@code translationMap}，从它反射抠数据等于跟着宿主的内部结构走。
- * 锚在解析之前，宿主改一次模型与本层无关。
+ * <p>宿主的 {@code Sentence} / {@code Word} 模型是解析之后的产物：字段名被混淆、译文被
+ * 塞进 {@code translationMap}，从它反射取数等于跟随宿主的内部结构。锚点位于解析入口，
+ * 宿主改一次模型与本层无关。
  *
- * <p>类名与包名都不是混淆产物（{@code com.luna.*} 全部可读），因此这里按名字定位；
- * 定位不到就明确报错，不硬编码"看起来能兜住"的备选类名。
- * <p>
- * 代价
- * 只挂一个构造器（含 Kotlin 为默认参数合成的桥接构造器），仅此一处。
+ * <p>类名与包名都不是混淆产物（{@code com.luna.*} 全部可读），因此按名字定位；
+ * 定位不到就明确报错，不硬编码备选类名。
+ *
+ * <p>代价：只挂一个构造器，含 Kotlin 为默认参数合成的桥接构造器。
  *
  * @author 焕晨HChen
  */
@@ -56,22 +53,22 @@ public final class SodaAnchors {
     private static final String TAG = "SodaAnchors";
 
     /**
-     * 歌词实体：宿主解析歌词的入口。
+     * 歌词实体：宿主解析歌词的入口
      */
     private static final String LYRIC_CLASS = "com.luna.common.arch.db.entity.lyrics.Lyric";
 
     /**
-     * 格式枚举：{@code LRC} / {@code KRC} / {@code TEXT}。
+     * 格式枚举：{@code LRC} / {@code KRC} / {@code TEXT}
      */
     private static final String TYPE_CLASS_SUFFIX = ".NetLyricType";
 
     /**
-     * 语言枚举：区分主歌词与译文。
+     * 语言枚举：区分主歌词与译文
      */
     private static final String LANGUAGE_CLASS_SUFFIX = ".NetLyricsLanguage";
 
     /**
-     * 曲目歌词实体：{@code getTrackId()} 给出该份歌词所属的曲目。
+     * 曲目歌词实体：{@code getTrackId()} 给出该份歌词所属的曲目
      */
     private static final String TRACK_LYRIC_CLASS = "com.luna.common.arch.db.entity.TrackLyric";
 
@@ -94,7 +91,7 @@ public final class SodaAnchors {
     }
 
     /**
-     * 截获到一份歌词正文时的回调。
+     * 截获到一份歌词正文时的回调
      */
     public interface PayloadListener {
         /**
@@ -110,7 +107,7 @@ public final class SodaAnchors {
     }
 
     /**
-     * 定位并挂载 Hook。幂等；失败只记录日志。
+     * 定位并挂载 Hook。幂等；失败只记录日志
      */
     public static void install(@NonNull PayloadListener listener) {
         if (sInstalled) return;
@@ -132,7 +129,7 @@ public final class SodaAnchors {
                 if (parameterTypes.length < 2) continue;
                 if (!parameterTypes[0].getName().endsWith(TYPE_CLASS_SUFFIX)) continue;
                 if (parameterTypes[1] != String.class) continue;
-                // 桥接构造器只是 `this(…)` 转发，主构造器必然被调用。两边都挂会让每份载荷
+                // 桥接构造器只做 this(…) 转发，主构造器必然被调用。两边都挂会让每份载荷
                 // 被截获两次：解析翻倍、日志翻倍，且两次投递在编排器里只会被收下第一次
                 if (isSyntheticBridge(parameterTypes)) continue;
 
@@ -170,16 +167,14 @@ public final class SodaAnchors {
 
     /**
      * 第二锚点：曲目歌词实体 {@code TrackLyric} 的数据入口
-     * <p>
-     * 为什么还需要它
-     * 汽水的歌词是按需解析的：宿主只在歌词界面活跃、或它自己预取队列时才构造
-     * {@code Lyric}。后台播放、快速切歌、以及大量 UGC 视频条目下，解析入口整首都不触发 ——
-     * 这不是本模块丢了数据，而是宿主根本没解析。而 {@code TrackLyric} 是宿主装载歌词的
-     * 数据入口（网络回包写库、读库回放都经过它），与歌词界面是否可见无关。
-     * <p>
-     * 三处一起挂
-     * {@code lyric} 字段可能由 Room 直接写字段、也可能走 setter，两种都要覆盖；再补一个
-     * getter —— 任何读取路径都会把内容带出来。三处都命中同一份内容时由去重键压掉。
+     *
+     * <p>汽水的歌词按需解析：宿主只在歌词界面活跃或自己预取队列时才构造 {@code Lyric}。
+     * 后台播放、快速切歌以及大量 UGC 视频条目下，解析入口整首都不触发，此时不是本模块
+     * 丢失数据，而是宿主没有解析。{@code TrackLyric} 是宿主装载歌词的数据入口（网络回包
+     * 写库、读库回放都经过它），与歌词界面是否可见无关。
+     *
+     * <p>{@code lyric} 字段可能由 Room 直接写字段，也可能走 setter，两种都要覆盖；再补一个
+     * getter，任何读取路径都会把内容带出来。三处命中同一份内容时由去重键压掉。
      */
     private static void installTrackLyricHooks(@NonNull PayloadListener listener) {
         Class<?> entityClass = CoreTool.findClassIfExists(TRACK_LYRIC_CLASS);
@@ -288,8 +283,8 @@ public final class SodaAnchors {
                                  @Nullable String trackId,
                                  @NonNull PayloadListener listener) {
         if (payload.isEmpty()) {
-            // 宿主会为"正在加载/确实没有歌词"构造一份空载荷。空载荷不是"没有歌词"的证据，
-            // 交回上层按"读不出来"处理，绝不在这里下结论
+            // 宿主会为正在加载或确实没有歌词的曲目构造空载荷。空载荷不构成无歌词的
+            // 证据，交回上层按读取失败处理，不在此下结论
             AndroidLog.logD(TAG, "Empty lyric payload (type=" + type + ", lang=" + language + ")");
             return;
         }

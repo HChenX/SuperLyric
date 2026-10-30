@@ -26,11 +26,11 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 
 /**
- * 桌面图标开关。
+ * 桌面图标开关
  *
  * <p>桌面入口是 {@code LauncherAlias}，LSPosed 入口仍是 {@code MainActivity} 的
- * {@code MODULE_SETTINGS} filter。隐藏时只禁用 alias，不禁用 Activity，因此
- * LSPosed 仍能显式启动设置页。
+ * {@code MODULE_SETTINGS} filter。隐藏时只禁用 alias，不禁用 Activity，LSPosed 因此
+ * 仍能显式启动设置页。
  */
 public final class LauncherIconController {
 
@@ -41,7 +41,7 @@ public final class LauncherIconController {
     }
 
     /**
-     * 桌面图标当前是否被隐藏。
+     * 桌面图标当前是否被隐藏
      */
     public static boolean isHidden(@NonNull Context context) {
         ComponentName alias = new ComponentName(context, ALIAS_CLASS);
@@ -50,7 +50,7 @@ public final class LauncherIconController {
     }
 
     /**
-     * 切换桌面图标。
+     * 切换桌面图标
      *
      * <p>{@link PackageManager#DONT_KILL_APP} 让组件状态立即生效但不杀当前进程；
      * 桌面通过 package-changed 广播刷新图标，不需要重启应用。

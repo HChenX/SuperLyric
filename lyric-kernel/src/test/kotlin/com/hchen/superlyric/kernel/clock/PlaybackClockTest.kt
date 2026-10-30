@@ -23,7 +23,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
 /**
- * 播放时钟的确定性测试。时间源注入，因此每个场景都可精确复现。
+ * 播放时钟的确定性测试
+ *
+ * 时间源注入，每个场景都可精确复现。
  */
 class PlaybackClockTest {
 
@@ -35,11 +37,11 @@ class PlaybackClockTest {
     fun `position is anchored at the host reported update time, not the callback time`() {
         val clock = clock()
 
-        // 宿主在 8000ms 时刻产生快照 pos=5000；我们在 10000ms 才把它喂给时钟
+        // 宿主在 8000ms 时刻产生快照 pos=5000，时钟在 10000ms 才收到它
         now = 10_000L
         clock.sync(PlaybackStatus.PLAYING, positionMs = 5_000L, speed = 1f, positionUpdateTimeMs = 8_000L)
 
-        // 旧实现会以 10000 为锚，算出 5000；正确结果是 5000 + (10000-8000) = 7000
+        // 锚点取 8000：5000 + (10000-8000) = 7000；以 10000 为锚会错误地得到 5000
         assertEquals(7_000L, clock.positionAt())
     }
 
@@ -108,11 +110,11 @@ class PlaybackClockTest {
         clock.sync(PlaybackStatus.PLAYING, positionMs = 100_000L, speed = 1f, positionUpdateTimeMs = 0L)
         assertEquals(101_000L, clock.positionAt(now = 1_000L))
 
-        // 用户把进度条拖回开头并重新播放
+        // 进度条拖回开头并重新播放
         now = 1_000L
         clock.sync(PlaybackStatus.PLAYING, positionMs = 0L, speed = 1f, positionUpdateTimeMs = 1_000L)
 
-        // 旧实现会把这当作"虚假 0ms"抑制掉，把时钟留在曲尾
+        // 位置回退到 0 是合法状态，不得作为虚假 0ms 抑制，否则时钟会停在曲尾
         assertEquals(0L, clock.positionAt(now = 1_000L))
     }
 
@@ -147,9 +149,18 @@ class PlaybackClockTest {
         )
 
         assertEquals(-1, PlaybackClock.lineIndexAt(emptyList(), 0L))
-        assertEquals(0, PlaybackClock.lineIndexAt(lines, -1L))
+        assertEquals(-1, PlaybackClock.lineIndexAt(lines, -1L))
         assertEquals(0, PlaybackClock.lineIndexAt(lines, 500L))
         assertEquals(1, PlaybackClock.lineIndexAt(lines, 1_000L))
         assertEquals(2, PlaybackClock.lineIndexAt(lines, 99_999L))
+    }
+
+    @Test
+    fun `no line is current before the first line starts`() {
+        val lines = listOf(LyricLine(startMs = 5_000L, endMs = 6_000L, text = "a"))
+
+        assertEquals(-1, PlaybackClock.lineIndexAt(lines, 0L))
+        assertEquals(-1, PlaybackClock.lineIndexAt(lines, 4_999L))
+        assertEquals(0, PlaybackClock.lineIndexAt(lines, 5_000L))
     }
 }

@@ -24,32 +24,27 @@ import android.os.HandlerThread
 import android.os.SystemClock
 
 import com.hchen.hooktool.log.AndroidLog
-import com.hchen.superlyric.bridge.LyricDocAdapter
 import com.hchen.superlyric.kernel.clock.PlaybackClock
 import com.hchen.superlyric.kernel.clock.PlaybackStatus
 import com.hchen.superlyric.kernel.model.LyricDoc
-import com.hchen.superlyricapi.SuperLyricData
 
 /**
  * 系统服务端的播放时钟与跨行推进器
  *
- * 职责归属
- * 按项目核心理念「音乐软件仅负责发布完整歌词，系统框架负责分发」，
- * 这是整条链路上唯一的进度来源。宿主侧不发布任何进度包。
+ * 按「音乐软件仅负责发布完整歌词，系统框架负责分发」的边界，这是整条链路上唯一的进度
+ * 来源，宿主侧不发布任何进度包。
  *
- * 设计要点
- * - 漂移：进度以宿主自报的 `lastPositionUpdateTime` 为锚（见 [PlaybackClock]）。
- *   若改以"收到回调的时刻"为锚，漂移会恒等于快照年龄。
- * - 速率为 0：PLAYING 而速率为 0 时由 [PlaybackClock] 视为冻结；
- *   否则时钟会表现为"运行却停住"。
- * - 重播与拖回开头：位置回退是合法事件（seek / 重播），据此重新锚定并重置行索引即可，
- *   不做"虚假 0ms"抑制——抑制会让合法的重播把时钟留在曲尾。
- * - 竞态：所有对行索引与时钟的修改都收敛到内部 HandlerThread 上执行。
+ * - 漂移：进度以宿主自报的 `lastPositionUpdateTime` 为锚（见 [PlaybackClock]）；改以
+ *   回调到达时刻为锚，漂移会恒等于快照年龄
+ * - 速率为 0：PLAYING 而速率为 0 时由 [PlaybackClock] 视为冻结，否则时钟会表现为
+ *   运行却停住
+ * - 重播与拖回开头：位置回退是合法事件（seek / 重播），重新锚定并重置行索引即可；
+ *   "虚假 0ms" 抑制会让合法的重播把时钟留在曲尾
+ * - 线程：行索引与循环调度只在内部 HandlerThread 上修改；[PlaybackClock] 自带同步，
+ *   时钟可跨线程读写，State 帧经 [positionNow] / [indexNow] 取快照
  *
- * 时间源
  * 时钟必须与 `PlaybackState.getLastPositionUpdateTime()` 同基，因此显式使用
- * `SystemClock.elapsedRealtime()`——不能用内核的默认时间源（纳秒时钟），
- * 否则两者相减毫无意义。
+ * `SystemClock.elapsedRealtime()`，不能用内核的默认纳秒时钟，否则两者相减没有意义。
  *
  * @author 焕晨HChen
  */
@@ -58,9 +53,9 @@ class PlaybackTracker @JvmOverloads constructor(
     private val timeSource: () -> Long = { SystemClock.elapsedRealtime() },
 ) {
 
-    /** 进度推进回调；在追踪线程上调用。 */
+    /** 进度推进回调；在追踪线程上调用 */
     fun interface OnProgressAdvanceListener {
-        fun onProgressAdvance(index: Int, progress: SuperLyricData)
+        fun onProgressAdvance(index: Int, positionMs: Long)
     }
 
     private val thread = HandlerThread(threadName).apply { start() }
@@ -71,8 +66,13 @@ class PlaybackTracker @JvmOverloads constructor(
     @Volatile
     private var listener: OnProgressAdvanceListener? = null
 
-    /** 以下字段只在追踪线程上访问。 */
+    /**
+     * 当前曲目。必须 volatile：发布线程写入后，追踪线程与构造 State 帧的 binder 线程都要读
+     */
+    @Volatile
     private var doc: LyricDoc? = null
+
+    /** 以下字段只在追踪线程上访问 */
     private var shownIndex = -1
     private var running = false
     private var loopToken = 0L
@@ -82,29 +82,30 @@ class PlaybackTracker @JvmOverloads constructor(
     }
 
     /**
-     * 绑定当前曲目的全量歌词。传入 null 表示清空。
+     * 绑定当前曲目的全量歌词；传入 null 表示清空
      *
-     * 换歌时必须调用本方法；它会重置行索引并重新开始推演。
+     * 换歌时必须调用本方法，它会重置行索引并重新开始推演。
      */
-    fun setLyrics(data: SuperLyricData?) {
-        val converted = LyricDocAdapter.toDoc(data).takeIf { !it.isEmpty }
+    fun setLyrics(doc: LyricDoc?) {
+        val converted = doc?.takeIf { !it.isEmpty }
+        this.doc = converted
+        // 时长与清空都同步生效：构造 FULL 帧的 binder 线程会立刻读 positionNow()/durationMs，
+        // 排到追踪线程上执行会让新曲目的首帧拿到上一首的时长或位置
+        if (converted == null) {
+            clock.reset()
+        } else {
+            clock.durationMs = converted.durationMs
+        }
         handler.post {
-            doc = converted
             shownIndex = -1
-            if (converted == null) {
-                clock.reset()
-                stopLoop()
-            } else {
-                clock.durationMs = converted.durationMs
-            }
+            if (converted == null) stopLoop()
         }
     }
 
     /**
-     * 同步宿主上报的播放状态。
+     * 同步宿主上报的播放状态
      *
-     * 位置回退（seek / 重播）会被识别为新锚点并立即重推行索引，
-     * 不做任何"虚假 0ms"抑制。
+     * 位置回退（seek / 重播）会被识别为新锚点并立即重推行索引，不做"虚假 0ms"抑制。
      */
     fun onPlaybackStateChanged(state: PlaybackState?) {
         if (state == null) return
@@ -114,21 +115,22 @@ class PlaybackTracker @JvmOverloads constructor(
         val updateTime = state.lastPositionUpdateTime
         val status = toStatus(state.state)
 
+        val now = timeSource()
+        val previous = clock.positionAt(now)
+        val jumpedBackwards = position < previous - JUMP_BACK_TOLERANCE_MS
+
+        // 宿主给的锚点可能过时到没有参考价值；钳到 [now-MAX, now]，避免把
+        // “几分钟前的快照”当成当前位置，直接把进度推到曲尾。
+        val anchorTime = when {
+            updateTime <= 0L -> now
+            updateTime > now -> now
+            now - updateTime > MAX_ANCHOR_AGE_MS -> now - MAX_ANCHOR_AGE_MS
+            else -> updateTime
+        }
+        // 同步锚定：State/FULL 帧在别的线程上立即读 positionNow()，排队同步会让首帧拿到过期位置
+        clock.sync(status, position, speed, anchorTime)
+
         handler.post {
-            val now = timeSource()
-            val previous = clock.positionAt(now)
-            val jumpedBackwards = position < previous - JUMP_BACK_TOLERANCE_MS
-
-            // 宿主给的锚点可能陈旧到没有参考价值；钳到 [now-MAX, now]，避免把
-            // “几分钟前的快照”当成当前位置，直接把进度推到曲尾。
-            val anchorTime = when {
-                updateTime <= 0L -> now
-                updateTime > now -> now
-                now - updateTime > MAX_ANCHOR_AGE_MS -> now - MAX_ANCHOR_AGE_MS
-                else -> updateTime
-            }
-            clock.sync(status, position, speed, anchorTime)
-
             if (jumpedBackwards) {
                 // 位置回退是合法事件：重置行索引，让下一行立即重推
                 shownIndex = -1
@@ -140,32 +142,38 @@ class PlaybackTracker @JvmOverloads constructor(
     }
 
     /**
-     * 外部直接同步播放位置（例如服务端从系统媒体会话轮询到的值）。
+     * 当前播放位置（毫秒）
+     *
+     * 可从任意线程读取，供 v4 State 帧取快照。
      */
-    fun onPositionSynced(positionMs: Long) {
-        handler.post {
-            val now = timeSource()
-            if (positionMs < clock.positionAt(now) - JUMP_BACK_TOLERANCE_MS) {
-                shownIndex = -1
-            }
-            clock.seekTo(positionMs, now)
-            dispatchIfNeeded(positionMs)
-            updateLoop()
-        }
+    fun positionNow(): Long = clock.positionAt(timeSource())
+
+    /** 当前播放速率（倍速） */
+    fun currentSpeed(): Float = clock.currentSpeed
+
+    /**
+     * 当前行下标；没有曲目或早于首行开始时间为 -1（与 4.0 的 `Lyric.indexAt` 一致）
+     *
+     * 与 [dispatchIfNeeded] 使用同一个 [PlaybackClock.lineIndexAt]，State 帧里的行号与
+     * 真正触发回调的行号不会分叉。
+     */
+    fun indexNow(): Int {
+        val current = doc ?: return -1
+        if (current.isEmpty) return -1
+        return PlaybackClock.lineIndexAt(current.lines, positionNow())
     }
 
-    /** 停止追踪并清空全部状态。 */
+    /** 停止追踪并清空全部状态 */
     fun stop() {
+        doc = null
+        // 同步复位：tracker.stop() 之后紧接着就会构造 State/快照，排队复位会让它读到过期位置
+        clock.reset()
         handler.post {
             running = false
             loopToken++
             shownIndex = -1
-            doc = null
-            clock.reset()
         }
     }
-
-    // ------------------------------------------------------------------ 内部
 
     private fun updateLoop() {
         val shouldRun = clock.currentStatus == PlaybackStatus.PLAYING && doc != null
@@ -198,8 +206,8 @@ class PlaybackTracker @JvmOverloads constructor(
      * 睡到下一行的起点，而不是固定间隔空转
      *
      * 行边界是已知的，按它排程既准又省：一首 4 分钟的歌由约 4800 次唤醒降到与行数同量级。
-     * 到末行后退化为固定间隔——此时还可能变的只剩位置跳转，而跳转有自己的入口
-     * （[onPositionSynced] / [onPlaybackStateChanged] 都会立即重推）。
+     * 到末行后退化为固定间隔：此时还可能变的只剩位置跳转，而跳转有自己的入口
+     * （[onSessionPositionSynced] / [onPlaybackStateChanged] 都会立即重推）。
      *
      * 只能在追踪线程上调用。
      */
@@ -207,14 +215,35 @@ class PlaybackTracker @JvmOverloads constructor(
         val lines = doc?.lines ?: return MAX_LOOP_SLEEP_MS
         val position = clock.positionAt(timeSource())
         val index = PlaybackClock.lineIndexAt(lines, position)
-        // 末行之后没有可推的内容；位置跳转有 onPositionSynced/onPlaybackStateChanged
-        // 专用入口，不需要 20Hz 空转。
+        // 末行之后没有可推的内容；位置跳转有专门的入口，不需要 20Hz 空转。
         val nextStart = lines.getOrNull(index + 1)?.startMs ?: return MAX_LOOP_SLEEP_MS
         return (nextStart - position).coerceIn(LOOP_INTERVAL_MS, MAX_LOOP_SLEEP_MS)
     }
 
     /**
-     * 若当前位置落在新的行上，则构造极轻量的增量包并回调。
+     * 外部直接同步播放位置（3.x 发布者仍会上报点位）
+     *
+     * v4 发布者不再推进度；这条入口只服务 3.x 发布者，时钟仍由系统 MediaSession 的状态
+     * 重新锚定。
+     */
+    fun onSessionPositionSynced(positionMs: Long) {
+        val now = timeSource()
+        val jumpedBackwards = positionMs < clock.positionAt(now) - JUMP_BACK_TOLERANCE_MS
+
+        // 同步 seek：调用方紧接着可能构造 State 帧，排队 seek 会让它读到过期位置
+        clock.seekTo(positionMs, now)
+
+        handler.post {
+            if (jumpedBackwards) {
+                shownIndex = -1
+            }
+            dispatchIfNeeded(positionMs)
+            updateLoop()
+        }
+    }
+
+    /**
+     * 若当前位置落在新的行上，则回调行号与位置
      *
      * 本方法只能在追踪线程上调用。
      */
@@ -226,25 +255,22 @@ class PlaybackTracker @JvmOverloads constructor(
         if (index < 0 || index == shownIndex) return
         shownIndex = index
 
-        val payload = LyricDocAdapter.toLineData(current, index, positionMs) ?: return
-
         AndroidLog.logD(
             TAG,
             "Advance line [$index/${current.lines.size}] at ${positionMs}ms: " +
                     "\"${current.lines[index].text}\""
         )
-        listener?.onProgressAdvance(index, payload)
+        listener?.onProgressAdvance(index, positionMs)
     }
 
     /**
      * `FAST_FORWARDING` / `REWINDING` / `SKIPPING_*` 属于"仍在播放、只是位置在动"，
-     * 归为 PLAYING。把它们并进 `else` 会让时钟在快进/跳转期间冻结
+     * 归为 PLAYING；并进 `else` 会让时钟在快进与跳转期间冻结
      *
-     * 这里把 `NONE` 归为 STOPPED，与 `PlaybackSignals` 把它判为 `UNKNOWN` 并不冲突
-     * 两处回答的是不同的问题：这里决定"时钟要不要继续走"，那里决定"要不要清空并下发停止"。
-     * 冻结是可逆的（宿主随后报任何状态都会重新锚定），而清空不可逆——所以同一个
-     * "不知道"，在本层可以按停止处理，在停止判定里必须保持中性。不要为了"统一"把
-     * 这里也改成中性：那会让时钟在宿主不再上报时一直往前爬
+     * `NONE` 在这里归为 STOPPED，与 `PlaybackSignals` 判其为 `UNKNOWN` 并不冲突：
+     * 这里决定"时钟是否继续走"，那里决定"是否清空并下发停止"。冻结可逆（宿主随后报
+     * 任何状态都会重新锚定），清空不可逆，因此同一个"不知道"在本层可按停止处理，
+     * 在停止判定里必须保持中性；把这里也改成中性会让时钟在宿主停止上报后继续推进。
      */
     private fun toStatus(state: Int): PlaybackStatus = when (state) {
         PlaybackState.STATE_PLAYING,
@@ -269,10 +295,10 @@ class PlaybackTracker @JvmOverloads constructor(
         /** 按行边界排程时的最大时延：行间隔再长也要定期醒来看一眼 */
         const val MAX_LOOP_SLEEP_MS = 1_000L
 
-        /** 超过该幅度的位置回退才判定为 seek / 重播，避免抖动误判。 */
+        /** 超过该幅度的位置回退才判定为 seek / 重播，避免抖动误判 */
         const val JUMP_BACK_TOLERANCE_MS = 1_000L
 
-        /** 宿主锚点超过该年龄就不再可信，钳到 now-MAX。 */
+        /** 宿主锚点超过该年龄即不可信，钳到 now-MAX */
         const val MAX_ANCHOR_AGE_MS = 5 * 60 * 1000L
     }
 }

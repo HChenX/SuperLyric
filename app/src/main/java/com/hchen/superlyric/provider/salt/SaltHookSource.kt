@@ -80,7 +80,7 @@ class SaltHookSource : HookLyricSource {
                 // Song 探针是宿主自己的切歌点，必须推进身份；只在 handleLyrics 里写
                 // 会让“切到无歌词曲目”仍返回上一首的身份，编排器判同一首、旧歌词继续显示。
                 capturedSongId = songId
-                // 只做缓存，容量到顶即整体清空——保留最近若干首足够覆盖切歌时序
+                // 只做缓存，容量到顶即整体清空：保留最近若干首足够覆盖切歌时序
                 if (songStore.size >= MAX_CACHED_SONGS) songStore.clear()
                 songStore[songId] = SongInfo(title, artist, durationMs)
             }
@@ -146,7 +146,7 @@ class SaltHookSource : HookLyricSource {
             AndroidLog.logI(sourceName, "Parsed sourceText, lines=${doc.lines.size}")
 
             // 只有当这份结果确实属于当前会话时才直接投递；否则留给 start() 补投。
-            // 绝不能投给一个属于别的曲目的会话——那会被当成新曲目的歌词发布出去。
+            // 投给别的曲目的会话会被当作新曲目的歌词发布出去。
             val activeAtDelivery = requests.current()
             val target = activeAtDelivery?.session
             val current = activeAtDelivery?.identity

@@ -22,7 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
 /**
- * 原始载荷字节的十六进制 / Base64 还原工具。
+ * 原始载荷的十六进制 / Base64 还原工具。
  *
  * @author 焕晨HChen
  */
@@ -31,14 +31,10 @@ public final class PayloadBytes {
     }
 
     /**
-     * 将平台返回的字符串载荷还原为字节。
-     * <p>
-     * 判定顺序是<b>确定性</b>的，不依赖"解码失败再试下一个"的试探：
-     * <ol>
-     *   <li>偶数长度且全为十六进制字符 → 按十六进制还原；</li>
-     *   <li>否则 → 按 MIME Base64 还原（容忍换行与空白）；</li>
-     *   <li>两者皆不成立 → 视为原文的 UTF-8 字节。</li>
-     * </ol>
+     * 将字符串载荷还原为字节。
+     *
+     * <p>判定顺序：偶数长度且全为十六进制字符时按十六进制；否则按 MIME Base64
+     * （容忍换行与空白）；两者都不成立时按 UTF-8 原文处理。
      *
      * @param payload 原始字符串载荷
      * @return 还原后的字节；载荷为空时返回长度为 0 的数组

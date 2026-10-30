@@ -25,11 +25,10 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Spotify 纯解析层测试。
+ * Spotify 解析层的行为
  *
- * <p>Spotify 是订阅制服务，本机无法做真机验证（无 VIP），因此**解析层必须靠单测兜住**。
- * 这里只覆盖 [SpotifyLyricAnalysis.parseLyrics] 的 JSON 分支——它是纯函数，
- * 不触碰任何 Android API；网络、鉴权与 protobuf 二进制分支不在本测试范围内。
+ * 覆盖 [SpotifyLyricAnalysis.parseLyrics] 的 JSON 与 protobuf 字节分支；它是纯函数，
+ * 不触碰任何 Android API。网络与鉴权不在本测试范围内。
  *
  * @author 焕晨HChen
  */
@@ -37,8 +36,8 @@ class SpotifyLyricAnalysisTest {
 
     @Test
     fun `json lyrics keep timing transliteration and syllables`() {
-        // 音节 count 必须**恰好覆盖整行文本**（实现里有 cursor == text.length() 的硬校验）：
-        // "Hello world" 共 11 个字符 → 5 + 6
+        // 音节 count 必须恰好覆盖整行文本（实现校验 cursor == text.length()）：
+        // "Hello world" 共 11 个字符，故为 5 + 6
         val json = """
             {"lyrics":{"lines":[
               {"startTimeMs":"1000","words":"Hello world","endTimeMs":"3000",
@@ -204,7 +203,7 @@ class SpotifyLyricAnalysisTest {
         assertNull(SpotifyLyricAnalysis.parseLyrics("{}"))
         assertNull(SpotifyLyricAnalysis.parseLyrics("""{"lyrics":{}}"""))
         // 结构合法但没有内容：返回空列表而非 null；调用方 SpotifyApiSource 把
-        // lines.isEmpty() 归为 TransientFailure，绝不能据此下发纯音乐占位。
+        // lines.isEmpty() 归为 TransientFailure，不得据此下发纯音乐占位
         assertTrue(SpotifyLyricAnalysis.parseLyrics("""{"lyrics":{"lines":[]}}""").isNullOrEmpty())
     }
 }

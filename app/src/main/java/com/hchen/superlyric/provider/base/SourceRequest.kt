@@ -23,9 +23,9 @@ import com.hchen.superlyric.kernel.orchestrate.LyricSource
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * 一次取词请求的不可变快照。
+ * 一次取词请求的不可变快照
  *
- * session 与 identity 必须同时发布，否则异步回调可能拿到新 session + 旧 identity。
+ * session 与 identity 必须同时发布，否则异步回调可能读到新 session 搭配过期 identity。
  */
 data class SourceRequest(
     val session: LyricSource.Session,
@@ -34,7 +34,7 @@ data class SourceRequest(
 )
 
 /**
- * 按请求代际筛选异步结果。
+ * 按请求代际筛选异步结果
  *
  * 本地只做预筛；最终仍由编排器的 epoch 丢弃迟到投递。
  */

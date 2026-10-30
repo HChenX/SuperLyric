@@ -49,7 +49,7 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 /**
- * Spotify 歌词数据链路辅助：会话头捕获 + 私有歌词接口拉取 + JSON / protobuf 解析 + 行数据规整。
+ * Spotify 歌词数据链路辅助：会话头捕获、私有歌词接口拉取、JSON / protobuf 解析与行数据规整
  * <p>
  * Inspired from tomakino/LyricProvider/spotify-music.
  *
@@ -61,7 +61,7 @@ public final class SpotifyLyricAnalysis {
     private static final String BASE_URL = "https://gae2-spclient.spotify.com/color-lyrics/v2/track/";
 
     /**
-     * 私有歌词接口所需的 4 个关键会话头（不可变）。
+     * 私有歌词接口所需的 4 个关键会话头（不可变）
      */
     private static final List<String> KEYS_REQUIRED = List.of(
         "authorization",
@@ -94,8 +94,8 @@ public final class SpotifyLyricAnalysis {
     private static final Map<String, Call> activeCalls = new ConcurrentHashMap<>();
 
     private static final OkHttpClient client = new OkHttpClient.Builder()
-        // 比 QQ / 酷狗 / 网易云的 4/6/12 宽松是有意的：这一家取回后还要跑一遍
-        // protobuf 分析，服务端也更慢。要"统一"之前先确认它不需要这个余量
+        // 比 QQ / 酷狗 / 网易云的 4/6/12 宽松：本家取回后还要跑一遍 protobuf 分析，
+        // 服务端也更慢
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .callTimeout(30, TimeUnit.SECONDS)
@@ -103,8 +103,6 @@ public final class SpotifyLyricAnalysis {
 
     private SpotifyLyricAnalysis() {
     }
-
-    // ------------------------------ 会话头捕获 ------------------------------
 
     public static void addHeaderListener(@NonNull Runnable listener) {
         sHeaderListeners.add(listener);
@@ -115,14 +113,14 @@ public final class SpotifyLyricAnalysis {
     }
 
     /**
-     * 判断是否为关键会话头（key 需已小写）。
+     * 判断是否为关键会话头（key 需已小写）
      */
     public static boolean isKeyRequired(@NonNull String keyLowercase) {
         return KEYS_REQUIRED.contains(keyLowercase);
     }
 
     /**
-     * 从同一批 okhttp Headers 构造参数发布完整会话头快照。
+     * 从同一批 okhttp Headers 构造参数发布完整会话头快照
      *
      * @param namesAndValues okhttp 名称和值交替排列的数组
      * @return 本次数据是否包含全部关键头
@@ -172,10 +170,8 @@ public final class SpotifyLyricAnalysis {
             new HeaderSnapshot(Collections.emptyMap(), requestSnapshot.generation, false));
     }
 
-    // ------------------------------ 网络拉取 ------------------------------
-
     /**
-     * 拉取指定音轨的歌词原始响应（protobuf 编码）。
+     * 拉取指定音轨的歌词原始响应（protobuf 编码）
      *
      * @param id 音轨标识（已剥离 spotify:track: 前缀）
      * @return 歌词接口原始响应字节
@@ -248,10 +244,8 @@ public final class SpotifyLyricAnalysis {
         return output.toByteArray();
     }
 
-    // ------------------------------ 解析与规整 ------------------------------
-
     /**
-     * 解析歌词 JSON 并规整行数据（照搬 Converter 行为）：
+     * 解析歌词 JSON 并规整行数据：
      * <ul>
      *   <li>{@code endTimeMs == 0} → 取下一行 {@code startTimeMs}；最后一行兜底 {@code +5000ms}</li>
      *   <li>空文本行跳过</li>
@@ -275,7 +269,7 @@ public final class SpotifyLyricAnalysis {
     }
 
     /**
-     * 解析歌词响应：按首字节自动分流——JSON 走 Gson，protobuf 走手写 wire 解析。
+     * 解析歌词响应：按首字节自动分流：JSON 走 Gson，protobuf 走手写 wire 解析
      */
     @Nullable
     public static List<SpotifyLine> parseLyrics(@NonNull byte[] data) {
@@ -323,8 +317,6 @@ public final class SpotifyLyricAnalysis {
         }
         return syllables.isEmpty() ? null : syllables;
     }
-
-    // ------------------------------ protobuf 解析（手写 wire format） ------------------------------
 
     private static final int MAX_PROTO_LINES = 10000;
     private static final int MAX_PROTO_SYLLABLES_PER_LINE = 10000;

@@ -33,10 +33,10 @@ object UIConstants {
     /**
      * 是否按宽屏（分屏 / 横屏）布局呈现
      *
-     * 判定只有这一份：主布局与背景效果共用它，避免在 840dp / 600dp 边界上
-     * 因 `>` 与 `>=` 的差异给出相反结论
+     * 主布局与背景效果共用这一判定，避免 840dp / 600dp 边界上 `>` 与 `>=` 的差异
+     * 让两侧结论相反
      *
-     * @param widthDp  可用宽度（dp）
+     * @param widthDp 可用宽度（dp）
      * @param heightDp 可用高度（dp）
      */
     fun isWideScreen(widthDp: Float, heightDp: Float): Boolean {

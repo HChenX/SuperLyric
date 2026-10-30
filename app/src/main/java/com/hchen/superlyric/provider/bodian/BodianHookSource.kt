@@ -36,15 +36,15 @@ import java.io.File
 import java.util.concurrent.Executors
 
 /**
- * 波点音乐 Hook 取词来源：读取宿主自己的本地原生歌词文件
+ * 波点音乐 Hook 取词来源：读取宿主提供的本地原生歌词文件
  *
- * 三种结果的语义
- * - 宿主给了路径且解析成功 → [LyricOutcome.Success]
- * - 宿主明确没有给路径 → [LyricOutcome.NoLyrics]：这是宿主的确定性信号，此时才允许下发纯音乐占位
- * - 给了路径但文件读不到 / 解不开 → [LyricOutcome.Unsupported]：不知道是不是没歌词，交给网络路径再试
+ * 三种结果的语义：
+ * - 宿主给出路径且解析成功 → [LyricOutcome.Success]
+ * - 宿主明确未给路径 → [LyricOutcome.NoLyrics]：宿主的确定性信号，此时允许下发纯音乐占位
+ * - 给出路径但文件读不到或解不开 → [LyricOutcome.Unsupported]：交给网络路径重试
  *
- * 格式识别交给 [LyricFormat.AUTO]，按载荷自身的结构特征判断：LRCX 有 `[kuwo:]` 头部、
- * JSON 有 `sentences` 根键，其余走通用解析器
+ * 格式识别交给 [LyricFormat.AUTO]，按载荷结构判断：LRCX 有 `[kuwo:]` 头部，
+ * JSON 有 `sentences` 根键，其余走通用解析器。
  *
  * @author 焕晨HChen
  */
@@ -126,18 +126,18 @@ class BodianHookSource : HookLyricSource {
         }
         val base = active.identity
 
-        // 只取稳定标识。曲名/歌手/时长一律不在解析时确定 —— 这个回调可能早于元数据更新到达，
-        // 那时 pending.identity 还停在上一首，烤进文档就再也纠不回来了（见 withMetadata）
+        // 只取稳定标识。曲名、歌手、时长不在解析时确定：该回调可能早于元数据更新到达，
+        // 此时基础身份仍属于上一首，写入文档后无法纠正（见 withMetadata）
         val identity = base.copy(
             stableId = TrackIdentity.stableId(NAMESPACE, rid) ?: base.stableId,
         )
 
         if (filePath.isEmpty()) {
-            // 否定结论同样要认身份：这可能是上一首迟到的"没有歌词文件"。算到当前曲目
-            // 头上会占掉本代际的 Hook 名额（编排器只收第一次投递），把随后到达的真实
-            // 结果当成重复投递丢弃，最终给一首有歌词的曲目下发纯音乐占位
-            // rid 为空时 identity 会退化成 base 的 stableId，上面的判据就恒等，
-            // 预载曲目的“无词”会投给当前曲目。无词是终态，只能在同一 rid 的证据下采纳。
+            // 否定结论也要校验身份：这可能是上一首迟到的“没有歌词文件”。记到当前曲目
+            // 会占用本代际的 Hook 名额（编排器只收第一次投递），随后到达的真实结果会被
+            // 当作重复投递丢弃，最终给有歌词的曲目下发纯音乐占位。
+            // rid 为空时 identity 退化为 base.stableId，上述判据恒等，预载曲目的“无词”
+            // 会投给当前曲目。无词是终态，只能在同一 rid 的证据下采纳。
             if (rid.isEmpty() || identity.stableId == null || identity.stableId != base.stableId) {
                 AndroidLog.logW(
                     sourceName,
@@ -159,11 +159,10 @@ class BodianHookSource : HookLyricSource {
                 docStash.put(listOf(identity.stableId, base.stableId), ParsedStash(outcome.doc, identity.stableId, base.stableId))
             }
 
-            // 会话与身份都必须在投递时重读，不能在回调入口处捕获：
-            // 解析在后台线程进行，期间可能已经切歌换掉了 session，
-            // 投给入口处捕获的那个旧会话会被 epoch 判为过期而丢弃 —— 表现为
-            // "Hook 明明解析成功却整轮超时转网络"，网络再匹配不上就成了纯音乐占位。
-            // 身份对不上也先留着，投给别的曲目的会话会被当成新曲目的歌词发布出去
+            // 会话与身份必须在投递时重读，不能在回调入口捕获：解析在后台线程进行，
+            // 期间可能切歌；投给入口处的过期会话会被 epoch 判为过期而丢弃，表现为
+            // Hook 解析成功却超时转网络，网络匹配不上时还会下发纯音乐占位。
+            // 身份对不上也先保留，投给其它曲目的会话会被当作新曲目歌词发布。
             val activeAtDelivery = requests.current()
             val current = activeAtDelivery?.identity
             val sameTrack = identity.stableId == current?.stableId || base.stableId == current?.stableId
@@ -175,8 +174,8 @@ class BodianHookSource : HookLyricSource {
                 return@execute
             }
             activeAtDelivery.session.deliver(outcome.withMetadata(current, title, artist))
-            // 直接投递成功后清掉暂存：`start()` 的补投路径本就要求暂存只在"投不出去"时留着，
-            // 留着会让同一曲目再次 `start()`（重播）把旧文档重放一遍
+            // 直接投递成功后清掉暂存：`start()` 的补投只在投不出去时保留；
+            // 保留会让同一曲目再次 `start()`（重播）时重放同一文档
             if (outcome is LyricOutcome.Success) {
                 docStash.clear()
             }
@@ -193,8 +192,8 @@ class BodianHookSource : HookLyricSource {
             AndroidLog.logW(sourceName, "Lyric file is missing or empty: $filePath")
             return LyricOutcome.Unsupported("bodian: file unreadable")
         }
-        // 文件由宿主给出，大小不受本层控制：无上限整块读会让一个畸形/超大歌词文件
-        // 撑爆宿主内存。上限复用网络路径的同一常量
+        // 文件由宿主给出，大小不受本层控制；整块读取超大文件会耗尽宿主内存。
+        // 上限复用网络路径的同一常量
         if (file.length() > LyricCacheStore.MAX_PAYLOAD_BYTES) {
             AndroidLog.logW(
                 sourceName,

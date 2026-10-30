@@ -26,10 +26,8 @@ import com.hchen.superlyricapi.SuperLyricWord;
 import java.io.IOException;
 import java.util.List;
 
-// ------------------------------ 数据模型 ------------------------------
-
 /**
- * 规整后的歌词行。
+ * 规整后的歌词行
  */
 final class SpotifyLine {
     @NonNull

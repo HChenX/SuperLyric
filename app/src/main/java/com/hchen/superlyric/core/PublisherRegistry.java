@@ -28,14 +28,20 @@ import androidx.annotation.Nullable;
 
 import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyric.data.SupportApps;
+import com.hchen.superlyric.kernel.model.LyricDoc;
+import com.hchen.superlyric.utils.MediaFacts;
 import com.hchen.superlyricapi.SuperLyricData;
+import com.hchen.superlyricapi.model.Lyric;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 发布者进程、世代与按包会话的状态仓库。
+ * 发布者进程、世代与按包会话的状态仓库
+ *
+ * <p>会话表与 {@code activePublisher} 由 {@link #lock} 保护；进程集合与世代使用并发容器，
+ * 可在任意线程访问。
  */
 final class PublisherRegistry {
 
@@ -46,7 +52,28 @@ final class PublisherRegistry {
     static final AtomicLong generationSequence = new AtomicLong();
     static final Set<String> disabledPackages = ConcurrentHashMap.newKeySet();
 
+    // 会话缓存上限；裁剪时跳过正在播放的会话与 activePublisher
     private static final int MAX_CACHED_SESSIONS = 5;
+
+    /**
+     * 发布方配额
+     *
+     * <p>仅用于兜底异常宿主无限登记进程，不是功能限制：正常音乐应用只有一到两个进程
+     * 会发布。超过配额时 v4 publish 返回 REJECTED_QUOTA，不静默丢弃。
+     */
+    private static final int MAX_PUBLISHER_PACKAGES = 32;
+    private static final int MAX_PIDS_PER_PACKAGE = 8;
+
+    /**
+     * 发布方登记结果
+     *
+     * <p>{@link #QUOTA} 与普通拒绝分开，供 v4 的发布结果码使用。
+     */
+    enum Registration {
+        OK,
+        REJECTED,
+        QUOTA,
+    }
 
     static final class DeathResult {
         final boolean lastPid;
@@ -76,20 +103,37 @@ final class PublisherRegistry {
         return disabledPackages.contains(packageName);
     }
 
-    static boolean registerPublisher(@NonNull String packageName, int pid, int uid) {
+    static Registration registerPublisher(@NonNull String packageName, int pid, int uid) {
         if (uid < Process.FIRST_APPLICATION_UID) {
             XposedLog.logW("SuperLyricService", "Registration as publisher rejected! Non-app caller, uid: "
                 + uid + ", pid: " + pid);
-            return false;
+            return Registration.REJECTED;
         }
         if (!SupportApps.sMediaAppPackages.contains(packageName)) {
             XposedLog.logW("SuperLyricService",
                 "Registration as publisher rejected! Unsupported package: " + packageName);
-            return false;
+            return Registration.REJECTED;
         }
+
+        Set<Integer> registrations = pids.get(packageName);
+        if (registrations != null && registrations.contains(pid)) {
+            return Registration.OK;
+        }
+        if (registrations == null) {
+            if (pids.size() >= MAX_PUBLISHER_PACKAGES) {
+                XposedLog.logW("SuperLyricService", "Registration as publisher rejected! Quota: "
+                    + pids.size() + "/" + MAX_PUBLISHER_PACKAGES + " packages, caller: " + packageName);
+                return Registration.QUOTA;
+            }
+        } else if (registrations.size() >= MAX_PIDS_PER_PACKAGE) {
+            XposedLog.logW("SuperLyricService", "Registration as publisher rejected! Quota: "
+                + registrations.size() + "/" + MAX_PIDS_PER_PACKAGE + " pids for " + packageName);
+            return Registration.QUOTA;
+        }
+
         register(packageName, pid);
         XposedLog.logI("SuperLyricService", "Register publisher: " + packageName + ", pid: " + pid);
-        return true;
+        return Registration.OK;
     }
 
     static boolean register(@NonNull String packageName, int pid) {
@@ -168,6 +212,7 @@ final class PublisherRegistry {
         }
     }
 
+    // 调用方必须持有 lock；至少保留 activePublisher 与正在播放的会话
     private void trimSessionsLocked() {
         while (sessions.size() >= MAX_CACHED_SESSIONS) {
             String oldestPackage = null;
@@ -185,15 +230,34 @@ final class PublisherRegistry {
     }
 
     /**
-     * 单个应用的最新歌词与播放状态。
+     * 单个应用的最新歌词与播放状态
      */
     static final class Session {
         @NonNull
         final String packageName;
+        /**
+         * 3.x 订阅者与 {@code getLatestLyric()} 看到的数据包，始终保持全量行
+         */
         @Nullable
         volatile SuperLyricData latestLyric;
+        /**
+         * 内核文档，时钟与 v4 帧的投影源
+         */
+        @Nullable
+        volatile LyricDoc latestDoc;
+        /**
+         * v4 的不可变歌词模型；没有可投影的行时为 null
+         */
+        @Nullable
+        volatile Lyric latestV4Lyric;
         @Nullable
         volatile PlaybackState playbackState;
+        /**
+         * 系统 MediaSession 的曲名与时长，仅用于入站校验
+         *
+         * <p>与歌词文档分开放：它们是"系统所说的曲目"，不是"发布者所说的曲目"。
+         */
+        final MediaFacts mediaFacts = new MediaFacts();
         volatile long lastActiveTime;
         volatile int publishingPid = NO_PID;
         volatile boolean published;
@@ -214,6 +278,8 @@ final class PublisherRegistry {
 
         void clear() {
             latestLyric = null;
+            latestDoc = null;
+            latestV4Lyric = null;
             playbackState = null;
         }
     }

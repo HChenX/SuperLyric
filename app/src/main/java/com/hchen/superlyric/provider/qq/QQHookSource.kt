@@ -31,7 +31,7 @@ import com.hchen.superlyric.provider.base.HookLyricSource
  * 取词流程
  * - 切歌时若元数据已带 14 位 songMID，立刻拉取
  * - 否则等 [QQAnchors] 的 `LyricLoadBean` 构造信号
- * - 信号带来 songMID 后立即拉取——这条路径上的标识来自宿主自身，
+ * - 信号带来 songMID 后立即拉取：这条路径上的标识来自宿主自身，
  *   因此不会出现"同名翻唱错配"
  * - 信号始终不来时由编排器超时兜底转检索路径
  *
@@ -41,7 +41,7 @@ class QQHookSource : HookLyricSource {
 
     override val sourceName: String = "QQHook"
 
-    /** 取词执行槽位：见 [FetchSlot]——单线程会让新歌排在上一首在途请求后面 */
+    /** 取词执行槽位：见 [FetchSlot]：单线程会让新歌排在上一首在途请求后面 */
     private val fetches = FetchSlot()
 
     /** [deliveredMid] / [inFlightMid] 的锁：见 [claimFetch] */
@@ -60,8 +60,8 @@ class QQHookSource : HookLyricSource {
     /**
      * 已经成功取回歌词的 songMID，避免宿主重复构造 LyricLoadBean 时反复发起网络请求
      *
-     * 只对本次取词有效：每次 [start] 都会清空。宿主切歌不会调用 [cancel]（只有确认
-     * 停止才会），留着它会让"切走再切回"的曲目一个请求都发不出
+     * 只在一次取词内有效：每次 [start] 都会清空。宿主切歌不调用 [cancel]（仅在确认
+     * 停止时调用），保留它会让切走再切回的曲目一个请求都发不出
      */
     @Volatile
     private var deliveredMid: String? = null
@@ -87,10 +87,10 @@ class QQHookSource : HookLyricSource {
         this.session = session
         this.pendingIdentity = identity
 
-        // 去重状态只属于"一次取词"。Hook 来源的 start() 每个代际恰好调用一次，因此这里
-        // 清空不会误伤本次取词，只会丢掉已经死掉的旧代际的登记。反之不清则致命：
-        // 切走再切回同一首曲目时，本方法会直接命中 deliveredMid，一个请求都不发，
-        // 编排器空等 Hook 超时后转检索，检索不成便是纯音乐占位
+        // 去重状态只属于一次取词。Hook 来源的 start() 每个代际恰好调用一次，因此这里
+        // 清空不会误伤本次取词，只会丢掉已作废代际的登记。不清空则会导致切走再切回
+        // 同一首曲目时直接命中 deliveredMid、不发起任何请求，编排器空等 Hook 超时后
+        // 转检索，检索不成便是纯音乐占位
         clearDedupState()
 
         val mid = QQIdentity.midOf(identity)
@@ -121,15 +121,13 @@ class QQHookSource : HookLyricSource {
 
         val baseMid = QQIdentity.midOf(base)
 
-        // 锚点常先于新曲目的元数据到达（实测早约 8~30ms）。此刻它说的是下一首，
-        // 而编排器还没切歌：照取不误的话，这轮请求会带着上一首的曲名、歌手与时长出门
-        // （实测：一首曲目被发布成了上一首的歌名），而且它属于旧代际，结果只会被丢弃。
-        // 留给随后的 start() 取词——那时编排器手里才是权威身份
+        // 锚点常先于新曲目的元数据到达（实测早约 8~30ms），此时它指向下一首而编排器
+        // 尚未切歌；照常取词会带着上一首的曲名、歌手与时长发出请求，且结果属于已作废
+        // 的代际，只会被丢弃。留给随后的 start() 取词，那时编排器手里才是权威身份。
         //
-        // 这一次不会白丢：[capturedMid] 已在上面更新，因此下一次 buildIdentity 就会带上
-        // 这个 mid，编排器随即判定切歌并调用 start()，由它按权威身份取词。
-        // 若日志里这行之后没有紧跟着本来源的取词记录，说明切歌没被判定出来——
-        // 那是身份抖动（宿主上报的标识乱变），不是本处的取舍问题
+        // 该信号不会丢失：[capturedMid] 已在上方更新，下一次 buildIdentity 即带上这个
+        // mid，编排器判定切歌并调用 start()，由它按权威身份取词。若日志中该行之后没有
+        // 紧跟着本来源的取词记录，说明切歌未被判定：那是身份抖动，与此处的取舍无关
         if (baseMid != null && baseMid != songMid) {
             AndroidLog.logD(
                 sourceName,

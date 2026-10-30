@@ -25,14 +25,13 @@ import androidx.annotation.NonNull;
 import com.hchen.superlyric.kernel.orchestrate.PlaybackSignal;
 
 /**
- * 宿主播放状态常量到内核语义信号的唯一映射。
+ * 宿主播放状态常量到内核语义信号的唯一映射
  *
- * <p>两侧共用这一份：宿主进程内的 Provider 与 system_server 内的服务。若各写一套，
- * {@link PlaybackState#STATE_NONE} 会被映射成相反的含义（一侧"没停"、一侧"停了"），
- * 分叉就从这里开始。
+ * <p>宿主进程内的 Provider 与 system_server 内的服务共用这一份。各写一套时
+ * {@link PlaybackState#STATE_NONE} 会被映射成相反的含义（一侧"没停"、一侧"停了"）。
  *
- * <p>映射与判定分开是有意的：内核只认语义（见 {@link PlaybackSignal}），
- * android 的常量解码留在 {@code :app}。
+ * <p>映射与判定分开：内核只认语义（见 {@link PlaybackSignal}），Android 常量解码留在
+ * {@code :app}。
  *
  * @author 焕晨HChen
  */
@@ -41,7 +40,7 @@ public final class PlaybackSignals {
     }
 
     /**
-     * 把 {@link PlaybackState#getState()} 的取值映射为内核语义信号。
+     * 把 {@link PlaybackState#getState()} 的取值映射为内核语义信号
      *
      * @param state {@link PlaybackState} 的状态常量
      * @return 对应的语义信号；未知取值按"仍在播放流程中"处理

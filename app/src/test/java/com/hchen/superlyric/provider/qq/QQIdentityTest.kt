@@ -24,12 +24,11 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 
 /**
- * 锚点捕获的 songMID 与元数据标识之间如何取舍。
+ * 锚点捕获的 songMID 与元数据标识之间的取舍
  *
- * ## 为什么值得一条测试
- * 锚点常**先于**新曲目的元数据到达，也可能**根本没触发**。前者要求不能盲目信锚点、
- * 后者要求不能盲目信元数据——判错任一方向都会漏切歌（新曲目被构造成上一首的 mid，
- * 编排器判为同一首、不重启取词，旧歌词继续显示）。
+ * 锚点可能先于新曲目的元数据到达，也可能不触发，两个方向都不能盲目采信。
+ * 判错任一方向都会漏切歌：新曲目被构造成上一首的 mid，编排器判为同一首而不重启取词，
+ * 上一首的歌词继续显示。
  */
 class QQIdentityTest {
 
@@ -38,7 +37,7 @@ class QQIdentityTest {
 
     @Test
     fun `a stale anchor mid yields to a different mid carried by the metadata`() {
-        // 锚点停在上一首、元数据已带新曲目的 mid：必须采用元数据那个
+        // 锚点停在上一首、元数据已带新曲目的 mid：采用元数据中的 mid
         assertEquals(midB, QQIdentity.preferredMid(midA, midB))
     }
 

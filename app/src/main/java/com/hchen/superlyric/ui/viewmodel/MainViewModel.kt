@@ -93,7 +93,7 @@ class MainViewModel(
                 val level = sharedPreferences.getInt(PrefsKey.LOG_LEVEL, 0)
                 _logLevel.value = level
             }.onFailure {
-                // 读失败要留痕：否则"日志级别一直是默认值"与"读挂了"看起来一样
+                // 读取失败必须记录，否则无法区分默认值与读取异常
                 android.util.Log.w("MainViewModel", "Failed to read the log level", it)
             }
         }
@@ -104,9 +104,8 @@ class MainViewModel(
             is MainUiAction.UpdateLogLevel -> {
                 val currentPrefs = Application.getRemotePreferences() ?: prefs
                 if (currentPrefs != null) {
-                    // `edit {}` 这个 KTX 重载不返回成败，所以这里无法在失败时回退状态；
-                    // 但 currentPrefs 可能来自 getRemotePreferences()（跨进程），那里是会抛的，
-                    // 抛了就必须留痕——否则界面显示"已生效"而实际没写进去
+                    // KTX 的 edit {} 不返回写入结果，状态无法在失败时回退；跨进程的
+                    // remote prefs 仍可能抛异常，异常必须记录，否则界面会显示未写入的值
                     runCatching {
                         currentPrefs.edit { putInt(PrefsKey.LOG_LEVEL, action.value) }
                     }.onFailure {
@@ -133,8 +132,8 @@ class MainViewModel(
                 }
                 loadApps()
 
-                // PackageLoader 先写入 sMediaApps/sMediaApiApps、再 complete future；
-                // awaitCompletion 返回时列表已经是新的，不需要额外等待。
+                // PackageLoader 先写入 sMediaApps/sMediaApiApps 再 complete future；
+                // awaitCompletion 返回时列表已更新，无需额外等待
                 val targetPkg = _currentApp.value.packageName
                 if (!targetPkg.isNullOrEmpty()) {
                     _currentApp.value = _hookApps.value.fastFirstOrNull { it.packageName == targetPkg }

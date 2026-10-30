@@ -28,13 +28,11 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 
 /**
- * 编排状态机测试。
+ * 编排状态机测试
  *
- * 每个用例对应一条历史缺陷或一条明确的架构约束。
+ * 每个用例固定一条状态机约束。
  */
 class LyricOrchestratorTest {
-
-    // ---------------------------------------------------------------- 测试替身
 
     private class FakeScheduler : Scheduler {
         private class Entry(val task: () -> Unit)
@@ -49,7 +47,7 @@ class LyricOrchestratorTest {
 
         val pending: Int get() = entries.size
 
-        /** 触发当前所有已排期任务（不含触发过程中新排的）。 */
+        /** 触发当前所有已排期任务，不含触发过程中新排的任务 */
         fun fireAll() {
             entries.toList().forEach { it.task() }
         }
@@ -61,7 +59,7 @@ class LyricOrchestratorTest {
         var cancelCount = 0
             private set
 
-        /** 按创建顺序记录每一次 start 得到的回投通道，以便复现"旧会话迟到回投"。 */
+        /** 按创建顺序记录每次 start 得到的回投通道，用于回投过期代际 */
         val sessions = ArrayList<LyricSource.Session>()
 
         override fun start(identity: TrackIdentity, session: LyricSource.Session) {
@@ -73,7 +71,7 @@ class LyricOrchestratorTest {
             cancelCount++
         }
 
-        /** 通过最近一次会话回投。 */
+        /** 通过最近一次会话回投 */
         fun deliver(outcome: LyricOutcome) {
             sessions.lastOrNull()?.deliver(outcome)
         }
@@ -113,8 +111,6 @@ class LyricOrchestratorTest {
         }
     }
 
-    // ---------------------------------------------------------------- 辅助
-
     private val doc = LyricDoc(lines = listOf(LyricLine(0L, 1_000L, "line")))
 
     private fun success() = LyricOutcome.Success(doc)
@@ -128,14 +124,12 @@ class LyricOrchestratorTest {
         val hookSource = if (hook) FakeSource("hook") else null
         val apiSource = if (api) FakeSource("api") else null
 
-        /** 可推进的假时钟，用于验证"临时身份升级"的时间上界。 */
+        /** 可推进的假时钟，用于验证"临时身份升级"的时间上界 */
         var now = 0L
         val orchestrator = LyricOrchestrator(
             hookSource, apiSource, scheduler, listener, nowMs = { now },
         )
     }
-
-    // ---------------------------------------------------------------- 用例
 
     @Test
     fun `hook hit activates immediately and never touches the api`() {
@@ -238,7 +232,7 @@ class LyricOrchestratorTest {
     fun `a title segment arriving after the platform id does not restart the resolve`() {
         val f = Fixture()
 
-        // 实测酷我：元数据先到，此刻只有平台 id
+        // 酷我元数据先到，此刻只有平台 id
         f.orchestrator.onTrackChanged(TrackIdentity("kuwo", "kuwo:486777537", "", "", 191_000L))
         assertEquals(1, f.hookSource!!.startCount)
 
@@ -261,7 +255,7 @@ class LyricOrchestratorTest {
         f.orchestrator.onTrackChanged(TrackIdentity("kuwo", "kuwo:100", "", "", 600_000L))
         assertEquals(1, f.hookSource!!.startCount)
 
-        // 两分钟后换到同一专辑的另一集，标题此刻才出现 —— 不得当成"标题补全"
+        // 两分钟后换到同一专辑的另一集，标题此刻才出现，不得当成"标题补全"
         f.now = 120_000L
         f.orchestrator.onTrackChanged(
             TrackIdentity("kuwo", "kuwo:100#第489集", "第489集", "某书", 600_000L),
@@ -314,8 +308,8 @@ class LyricOrchestratorTest {
 
     @Test
     fun `an unsupported source is not a no lyrics verdict`() {
-        // "这个来源服务不了这一首"（无版权、拿不到必要标识）说的是**我们拿不到**，
-        // 不是"这首没有歌词"。据此下发占位就是替平台编结论
+        // "这个来源服务不了这一首"（无版权、缺少必要标识）说明本层没有拿到内容，
+        // 不代表"这首没有歌词"。据此下发占位等于替平台断言
         val f = Fixture()
 
         f.orchestrator.onTrackChanged(track("A"))
@@ -329,7 +323,7 @@ class LyricOrchestratorTest {
 
     @Test
     fun `hook unsupported with no api source does not conclude no lyrics`() {
-        // "清洗后一行不剩"恰恰说明宿主**给了**歌词行 ⇒ 更不能反过来断言这首是纯音乐
+        // "清洗后一行不剩"说明宿主提供了歌词行，不能反过来断言这首是纯音乐
         val f = Fixture(api = false)
 
         f.orchestrator.onTrackChanged(track("A"))
@@ -427,7 +421,7 @@ class LyricOrchestratorTest {
         val sessions = f.hookSource!!.sessions
         assertEquals(10, sessions.size)
 
-        // 前九首的会话此刻才回投——全部属于过期代际
+        // 前九首的会话此刻才回投：全部属于过期代际
         sessions.dropLast(1).forEach { it.deliver(success()) }
         assertNull(f.listener.resolved, "连切 10 次后，所有旧会话的结果都必须被丢弃")
 
@@ -437,16 +431,14 @@ class LyricOrchestratorTest {
         assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
     }
 
-    // ---------------------------------------------------------------- 临时身份升级
-
-    /** 降级形态的身份：宿主还没给出权威标识。 */
+    /** 降级形态的身份：宿主尚未给出权威标识 */
     private fun provisional(
         title: String = "Song",
         artist: String = "Artist",
         duration: Long = 200_000L,
     ) = TrackIdentity("qq", null, title, artist, duration)
 
-    /** 权威形态的身份：带命名空间稳定标识。 */
+    /** 权威形态的身份：带命名空间稳定标识 */
     private fun authoritative(
         id: String,
         title: String = "Song",
@@ -458,7 +450,7 @@ class LyricOrchestratorTest {
     fun `authoritative id arriving late upgrades in place instead of restarting the resolve`() {
         val f = Fixture()
 
-        // 宿主先给降级形态（实测 QQ 先给数字 songID）
+        // 宿主先给降级形态（QQ 先给数字 songID）
         f.orchestrator.onTrackChanged(provisional())
         assertEquals(1, f.hookSource!!.startCount)
 
@@ -482,7 +474,7 @@ class LyricOrchestratorTest {
         val f = Fixture()
 
         // 某些宿主会把当前正在唱的歌词行写进 TITLE（椒盐音乐即如此），
-        // 因此升级判据刻意不看标题，只认歌手与时长。
+        // 因此升级判据不比较标题，只认歌手与时长
         f.orchestrator.onTrackChanged(provisional(title = "后会无期"))
         f.now = 40L
         f.orchestrator.onTrackChanged(
@@ -501,7 +493,7 @@ class LyricOrchestratorTest {
         f.hookSource!!.deliver(success())
         assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
 
-        // 出结果之后不再放宽：宁可多取一次，也不能漏判真实切歌
+        // 出结果后不再放宽：多取一次词的代价低于漏判真实切歌
         f.now = 50L
         f.orchestrator.onTrackChanged(authoritative("NEXT", title = "Another Song"))
 
@@ -555,8 +547,8 @@ class LyricOrchestratorTest {
         assertEquals(LyricOrchestrator.State.NO_LYRICS, f.orchestrator.state)
 
         // 宿主高频改写元数据（椒盐开启蓝牙歌词后会把当前歌词行写进 TITLE）。
-        // 稳定标识没变，就绝不能重启取词——否则会形成
-        // "事件 → 取词 → 无歌词 → 事件" 的死循环，每次都下发一次纯音乐占位。
+        // 稳定标识未变时不得重启取词，否则事件触发取词、取词得到无歌词又触发事件，
+        // 每次循环都下发一次纯音乐占位。
         repeat(5) { index ->
             f.orchestrator.onTrackChanged(track("A", title = "第 $index 句歌词"))
         }
@@ -567,9 +559,9 @@ class LyricOrchestratorTest {
 
     @Test
     fun `a source delivering synchronously still reports states in order`() {
-        // 宿主侧存在"按稳定标识暂存、会话建立后补投"的来源，它在 start() 里**同步**回投。
-        // 若状态迁移在来源启动之后才发出，监听者会先看到 ACTIVE、再看到过期的
-        // RESOLVING_HOOK——内部 state 是对的，但对外回报的顺序是错的。
+        // 宿主侧存在"按稳定标识暂存、会话建立后补投"的来源，它在 start() 里同步回投。
+        // 若状态迁移在来源启动之后才发出，监听者会先看到 ACTIVE、再看到 RESOLVING_HOOK；
+        // 内部 state 正确，但对外回报顺序错误。
         val listener = RecordingListener()
         val synchronous = object : LyricSource {
             override val sourceName: String = "sync"

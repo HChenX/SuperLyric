@@ -36,19 +36,17 @@ import org.luckypray.dexkit.result.ClassDataList;
 import java.lang.reflect.Constructor;
 
 /**
- * 波点音乐 Hook 锚点：在歌词引擎的构造入口截获本地原生歌词文件路径
+ * 波点音乐 Hook 锚点：在歌词引擎构造入口截获本地原生歌词文件路径
  * <p>
- * 为什么锚在这里
- * {@code LyricsRunner4Flutter} 是波点把歌词交给 Flutter 渲染层的唯一咽喉，
- * 其构造参数 {@code (Music, int, String lyricPath)} 中的第三个参数就是
- * 宿主自己下载好的歌词文件路径。这是未经宿主任何加工的原始载荷。
- *
- * <p>相对地，从宿主的行/词模型里反射抠数据要走
- * {@code VerbatimLyricsParserImpl.e()}，而该实现会对相邻词元做重叠裁切，
- * 造成逐字时戳 0ms 坍缩、动效卡死；绕开它即可。
+ * {@code LyricsRunner4Flutter} 是波点把歌词交给 Flutter 渲染层的入口，
+ * 其构造参数 {@code (Music, int, String lyricPath)} 的第三个参数是宿主下载好的
+ * 歌词文件路径，属于未经加工的原始载荷。
  * <p>
- * 代价
- * 只挂一个构造器，仅此一处。
+ * 从宿主行/词模型反射取数据需要经过 {@code VerbatimLyricsParserImpl.e()}，
+ * 该实现会对相邻词元做重叠裁切，造成逐字时戳 0ms 坍缩与动效异常；
+ * 构造入口绕开该模型。
+ * <p>
+ * 只挂这一个构造器。
  *
  * @author 焕晨HChen
  */
@@ -58,7 +56,10 @@ public final class BodianAnchors {
     private static final String CACHE_KEY = "bodian_lyrics_runner_class_v1";
 
     /**
-     * 锚点：Flutter 桥接层的类名，跨版本稳定。
+     * 锚点：Flutter 桥接层的类名
+     * <p>
+     * DexKit 按 {@code ClassMatcher.usingEqStrings(ANCHOR)} 匹配；命中多个类时优先取
+     * 非内部类，否则取第一个。
      */
     private static final String ANCHOR = "LyricsRunner4Flutter";
 
@@ -68,7 +69,7 @@ public final class BodianAnchors {
     }
 
     /**
-     * 截获到歌词文件路径（或确认没有）时的回调。
+     * 截获到歌词文件路径或确认没有歌词时的回调
      */
     public interface LyricFileListener {
         /**
@@ -82,7 +83,7 @@ public final class BodianAnchors {
     }
 
     /**
-     * 定位并挂载 Hook。幂等；失败只记录日志。
+     * 定位并挂载 Hook；幂等，失败只记录日志
      */
     public static void install(@NonNull LyricFileListener listener) {
         if (sInstalled) return;
@@ -96,10 +97,10 @@ public final class BodianAnchors {
             }
 
             for (Constructor<?> constructor : runnerClass.getDeclaredConstructors()) {
-                // 按签名选，而不是只数参数个数：该类可能另有 3 参的合成/重载构造器，
-                // 一旦先命中，`getArg(2)` 就不是文件路径（asString 返回 ""），
-                // 上层会把"路径为空"当成"宿主没有歌词"从而下发纯音乐占位。
-                // 判据：第 1 参是曲目对象（非基本类型/String），第 3 参是 String 文件路径
+                // 按签名选择，不能只数参数个数：该类可能另有 3 参合成或重载构造器，
+                // 先命中时第三个参数不是文件路径（asString 返回 ""），上层会把空路径
+                // 当成宿主无歌词并下发纯音乐占位。判据：第 1 参是曲目对象
+                // （非基本类型、非 String），第 3 参是 String 文件路径
                 Class<?>[] parameterTypes = constructor.getParameterTypes();
                 if (parameterTypes.length != 3) continue;
                 if (parameterTypes[0].isPrimitive() || parameterTypes[0] == String.class) continue;
@@ -134,7 +135,7 @@ public final class BodianAnchors {
     }
 
     /**
-     * 检索锚点类；优先取非内部类（内部类通常是伴生类，构造签名不同）。
+     * 检索锚点类；优先取非内部类（内部类通常是伴生类，构造签名不同）
      */
     @Nullable
     private static Class<?> locateRunnerClass() {

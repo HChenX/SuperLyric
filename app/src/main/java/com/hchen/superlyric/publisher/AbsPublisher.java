@@ -28,31 +28,35 @@ import androidx.annotation.Nullable;
 
 import com.hchen.hooktool.AbsModule;
 import com.hchen.hooktool.ModuleData;
+import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.superlyric.bridge.LyricDocAdapter;
+import com.hchen.superlyric.kernel.model.LyricDoc;
 import com.hchen.superlyric.utils.HotfixDisabler;
 import com.hchen.superlyric.utils.LyricSanitizer;
+import com.hchen.superlyricapi.Publisher;
+import com.hchen.superlyricapi.SuperLyric;
 import com.hchen.superlyricapi.SuperLyricData;
-import com.hchen.superlyricapi.SuperLyricHelper;
+import com.hchen.superlyricapi.model.Lyric;
 
 import io.github.libxposed.api.XposedModuleInterface;
 
 /**
  * 宿主进程中的底层发布基类
- * <p>
- * 统一管理与系统 SuperLyricService 的发布者注册、死亡处理。
- * <p>
- * 只发布两种包
- * 按项目核心理念「音乐软件仅负责发布完整歌词，系统框架负责分发」，宿主侧只发送：
+ *
+ * <p>统一管理宿主上下文、版本信息与系统 SuperLyricService 的发布链路。
+ *
+ * <p>按「音乐软件仅负责发布完整歌词，系统框架负责分发」的边界，宿主侧只发送：
  * <ul>
- *   <li>全量歌词——{@link #publishFullLyric}；</li>
- *   <li>停止——{@link #publishStop}。</li>
+ *   <li>全量歌词：{@link #publishFullLyric}；</li>
+ *   <li>清除：{@link #publishStop}。</li>
  * </ul>
- * 进度推进由系统服务端的唯一时钟负责。这是约定而非类型保证：
- * {@link com.hchen.superlyricapi.SuperLyricData} 仍是公开可变 Parcelable，
- * 带 position 的包也能从这两个入口发出；服务端不校验，发布者必须遵守本约定。
+ *
+ * <p>进度推进由系统服务端的唯一时钟负责，宿主不发布任何进度包。
  *
  * @author 焕晨HChen
  */
 public abstract class AbsPublisher extends AbsModule {
+    private static final String TAG = "AbsPublisher";
     private static final Object sPublishLock = new Object();
 
     private static volatile Context sAppContext;
@@ -60,12 +64,10 @@ public abstract class AbsPublisher extends AbsModule {
     private static volatile long sVersionCode = -1L;
     private static volatile String sVersionName = "unknown";
     private static volatile boolean sContextFallbackLogged;
-    private static volatile boolean sNeedsReRegister;
 
     @CallSuper
     @Override
     protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
-        SuperLyricHelper.registerPublisher();
         HotfixDisabler.disableAllHotfixes();
     }
 
@@ -100,7 +102,7 @@ public abstract class AbsPublisher extends AbsModule {
         } catch (Throwable t) {
             if (!sContextFallbackLogged) {
                 sContextFallbackLogged = true;
-                com.hchen.hooktool.log.AndroidLog.logW("AbsPublisher",
+                AndroidLog.logW("AbsPublisher",
                     "Cannot resolve Application context via ActivityThread", t);
             }
         }
@@ -120,56 +122,57 @@ public abstract class AbsPublisher extends AbsModule {
     }
 
     /**
-     * 发送全量歌词数据包（切歌或歌词初次解析完毕时调用）
+     * 发送全量歌词数据包（歌词解析完成或确认无歌词时调用）
+     *
+     * <p>清洗与模型转换都在发布前完成：4.0 的 {@link Lyric} 构造器会校验 id、时长与行。
+     * 逐字时序的保护（越界切片会让消费端 {@code Canvas.drawTextRun} 崩溃）由
+     * {@link LyricSanitizer} 唯一负责。
      */
-    public static void publishFullLyric(@NonNull SuperLyricData fullData) {
-        SuperLyricData clean = LyricSanitizer.sanitizeData(fullData);
-        if (clean == null) return;
+    public static void publishFullLyric(@NonNull LyricDoc doc) {
+        SuperLyricData raw = LyricDocAdapter.INSTANCE.toFullData(doc);
+        SuperLyricData clean = LyricSanitizer.sanitizeData(raw);
+        if (clean == null) {
+            AndroidLog.logW(TAG, "Dropping lyric: sanitization failed");
+            return;
+        }
+
+        Lyric lyric = LyricDocAdapter.INSTANCE.toLyric(LyricDocAdapter.INSTANCE.toDoc(clean));
+        if (lyric == null) {
+            AndroidLog.logW(TAG, "Dropping lyric: no publishable line");
+            return;
+        }
+        if (lyric.getTitle().trim().isEmpty()) {
+            // 4.0 的 Publisher 要求 title 非空白；在此拦截，避免 IllegalArgumentException
+            // 从 host 进程抛给调用方。
+            AndroidLog.logW(TAG, "Dropping lyric: title is blank (lyricId=" + lyric.getId() + ")");
+            return;
+        }
+
         synchronized (sPublishLock) {
-            ensureRegistered();
             try {
-                SuperLyricHelper.sendLyric(clean);
+                Publisher.PublishResult result = SuperLyric.publisher().publish(lyric);
+                if (result != Publisher.PublishResult.OK) {
+                    // REJECTED 表示服务端拒收，多为切歌竞态导致的内容与当前曲目不一致；
+                    // 留痕用于区分"服务端未安装"与"服务端拒收"
+                    AndroidLog.logW(TAG,
+                        "Publish result: " + result + " (lyricId=" + lyric.getId() + ")");
+                }
             } catch (Throwable t) {
-                // API 在未注册时抛 IllegalStateException；不能让异常穿出编排器回调线程。
-                sNeedsReRegister = true;
-                com.hchen.hooktool.log.AndroidLog.logE("AbsPublisher", "Failed to publish full lyric", t);
+                AndroidLog.logE(TAG, "Failed to publish full lyric", t);
             }
         }
     }
 
     /**
-     * 发送停止/暂停事件
+     * 清除当前歌词（切歌与停止时调用）
      */
     public static void publishStop() {
-        publishStop(new SuperLyricData());
-    }
-
-    /**
-     * 发送停止/暂停事件（带上下文）
-     */
-    public static void publishStop(@NonNull SuperLyricData stopData) {
         synchronized (sPublishLock) {
-            ensureRegistered();
             try {
-                SuperLyricHelper.sendStop(stopData);
+                SuperLyric.publisher().clear();
             } catch (Throwable t) {
-                sNeedsReRegister = true;
-                com.hchen.hooktool.log.AndroidLog.logE("AbsPublisher", "Failed to publish stop", t);
+                AndroidLog.logE(TAG, "Failed to clear lyric", t);
             }
-        }
-    }
-
-    /**
-     * 发布失败后置位；下一次发布前重试注册，避免整轮歌词永久丢失。
-     */
-    private static void ensureRegistered() {
-        if (!sNeedsReRegister) return;
-        try {
-            SuperLyricHelper.registerPublisher();
-            sNeedsReRegister = false;
-            com.hchen.hooktool.log.AndroidLog.logI("AbsPublisher", "Re-registered publisher after failure");
-        } catch (Throwable t) {
-            com.hchen.hooktool.log.AndroidLog.logW("AbsPublisher", "Re-register failed; will retry", t);
         }
     }
 }

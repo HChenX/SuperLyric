@@ -23,10 +23,10 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * 停止确认的证据计数。
+ * 停止确认的证据计数
  *
- * 这几条钉住的正是停止竞态的**那一半**：`StopGate` 的令牌证明不了"确认成立之后没人发布"，
- * 只能靠这里的计数。两侧（宿主进程内的 Provider 与 system_server 内的服务）共用本类。
+ * 这些用例固定 StopGate 令牌覆盖不到的那一半：确认成立之后到达的证据只能靠计数拦截。
+ * 宿主进程内的 Provider 与 system_server 内的服务共用本类。
  */
 class StopEvidenceTest {
 
@@ -42,8 +42,8 @@ class StopEvidenceTest {
 
     @Test
     fun `evidence arriving after the snapshot invalidates the confirmation`() {
-        // 这一条就是那个窗口：确认已经消费了 StopGate 的令牌，此后到达的证据只能靠计数拦住。
-        // 拦不住的话，刚发布的歌词会被随后的"停止"清掉
+        // 确认消费 StopGate 令牌之后到达的证据只能靠计数拦截，
+        // 否则刚发布的歌词会被随后的停止清空
         val evidence = StopEvidence()
 
         evidence.snapshot()
@@ -60,7 +60,7 @@ class StopEvidenceTest {
         evidence.record()
         assertFalse(evidence.isStillValid())
 
-        // 下一次排期重新取快照：此后的确认不受上一轮证据影响
+        // 每次排期重新取快照，新的确认只比较本次快照之后的证据
         evidence.snapshot()
         assertTrue(evidence.isStillValid())
     }

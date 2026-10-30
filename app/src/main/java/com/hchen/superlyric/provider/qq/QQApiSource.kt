@@ -25,13 +25,12 @@ import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.provider.base.FetchSlot
 
 /**
- * QQ 音乐 API 取词来源：Hook 路径拿不到 songMID 时，按歌名 + 歌手检索兜底。
+ * QQ 音乐 API 取词来源：Hook 路径拿不到 songMID 时，按歌名 + 歌手检索兜底
  *
- * 检索采纳门槛已收紧（见 [QQNetwork]），未达标一律判为无候选，
- * 宁可不下发也不下发另一首歌的歌词。
+ * 检索采纳门槛见 [QQNetwork]，未达标一律判为无候选，不下发另一首歌的歌词。
  *
- * 但"没候选"不等于"平台确定没有歌词"：可能是没匹配上、也可能是报文形态变了。
- * 因此检索落空返回可重试失败，绝不下发纯音乐占位——一次检索抖动不该把有歌词的曲目钉死。
+ * 没有候选不等于平台确定没有歌词：可能是没有匹配上，也可能是报文形态变化。
+ * 因此检索落空返回可重试失败，不下发纯音乐占位。
  *
  * @author 焕晨HChen
  */
@@ -67,8 +66,8 @@ class QQApiSource : LyricSource {
         }
 
         val candidate = QQNetwork.searchBest(identity)
-        // 检索落空 ≠ 平台确定没有歌词：可能只是没匹配上，或报文结构变了。
-        // NoLyrics 允许下发纯音乐占位，误判一次就把有歌词的曲目钉死了
+        // 检索落空不等于平台确定没有歌词：可能只是没有匹配上，或报文结构变化。
+        // NoLyrics 允许下发纯音乐占位，误判一次就会把有歌词的曲目钉死
             ?: return LyricOutcome.TransientFailure(null)
 
         AndroidLog.logI(sourceName, "Matched candidate mid=${candidate.first}")

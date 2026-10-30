@@ -27,7 +27,7 @@ enum class PlaybackSignal {
     /** 正在播放 */
     PLAYING,
 
-    /** 暂停。不是终止：用户随时可能继续播 */
+    /** 暂停；不是终止，播放可能继续 */
     PAUSED,
 
     /** 缓冲、快进、跳转等一切仍在播放流程中的状态 */
@@ -44,16 +44,16 @@ enum class PlaybackSignal {
      *
      * 取值语义就是"不知道"，因此既不排期也不撤销。把"不知道"当成"已停止"，
      * 与把一次失败的取词当成"平台确定没有歌词"是同一种错误：都会把正常状态判成终态，
-     * 而且判错了还会先清空数据，等到它恢复正常时已经没有东西可恢复了
+     * 且判错会先清空数据，状态恢复后内容已不可恢复
      */
     UNKNOWN,
 
-    /** 会话已被销毁：播放源本身不存在了。这是确定信号，不是"不知道" */
+    /** 会话已被销毁：播放源本身不存在。这是确定信号，不是"不知道" */
     SESSION_GONE,
 }
 
 /**
- * 停止判定的统一状态机。
+ * 停止判定的统一状态机
  *
  * Provider 与服务各自观察，但共用这里的判定；`UNKNOWN` 保持中性，避免把"不知道"
  * 当成停止。终态信号需要短窗口确认，防止过渡状态清空正在播放的歌词。
@@ -74,15 +74,15 @@ class StopGate(
     /**
      * 排期器
      *
-     * 用 [Runnable] 而非 Kotlin 函数类型：本类的另一个调用方是 Java 写的 system_server
-     * 服务，`Function0<Unit>` 在 Java 侧要显式 `return Unit.INSTANCE`，不必要地难看
+     * 使用 [Runnable] 而非 Kotlin 函数类型：本类的另一个调用方是 Java 写的 system_server
+     * 服务，`Function0<Unit>` 在 Java 侧需要显式 `return Unit.INSTANCE`
      */
     fun interface Scheduler {
         /** 在 [delayMs] 之后执行 [task] */
         fun schedule(delayMs: Long, task: Runnable)
     }
 
-    /** 一次判定的结果。两侧都应据此留痕——"拦下"与"放行"都要看得见 */
+    /** 一次判定的结果，两侧都应记录判定，包括拦截与放行 */
     enum class Decision {
         /** 已排期一次待确认的停止 */
         ARMED,
@@ -98,7 +98,7 @@ class StopGate(
     private var token = 0L
     private var armed = false
 
-    /** 当前是否有一次待确认的停止。仅用于诊断留痕，不参与判定 */
+    /** 当前是否有一次待确认的停止；仅用于诊断留痕，不参与判定 */
     val isPending: Boolean
         get() = synchronized(lock) { armed }
 
@@ -128,9 +128,8 @@ class StopGate(
 
     private fun arm(): Decision {
         val current = synchronized(lock) {
-            // 已排期就不再重排：宿主瞬发的是终态与其它状态交替的一串，
-            // 每收到一个终态就重排窗口的话，一串持续的状态能把确认无限期往后推，
-            // 真停止反而永远不生效
+            // 已排期就不再重排：宿主会瞬发终态与其它状态交替的一串，
+            // 每收到一个终态都重排窗口会把确认无限期往后推，真正的停止一直不生效
             if (armed) return Decision.IGNORED
             armed = true
             ++token
@@ -149,7 +148,7 @@ class StopGate(
         Decision.CANCELLED
     }
 
-    /** 令牌仍对得上就把这次排期消费掉；对不上说明期间已被撤销或被新的一次取代 */
+    /** 令牌仍对得上就消费本次排期；对不上说明期间已被撤销或被新的排期取代 */
     private fun takeConfirmation(current: Long): Boolean = synchronized(lock) {
         if (current != token) return@synchronized false
         armed = false
@@ -160,8 +159,8 @@ class StopGate(
         /**
          * 停止确认窗口的默认值（毫秒）
          *
-         * 宿主瞬发的过渡状态串通常在一两百毫秒内就被后续状态取代（实测 QQ 切歌全程约 140ms），
-         * 而真正的停止晚这么一点生效对用户不可见。唯一一处定义，两侧共用。
+         * 宿主瞬发的过渡状态串通常在一两百毫秒内被后续状态取代（QQ 切歌全程约 140ms），
+         * 停止晚这么一点生效对用户不可见。唯一一处定义，两侧共用。
          */
         const val DEFAULT_CONFIRM_WINDOW_MS = 400L
     }

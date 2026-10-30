@@ -42,25 +42,25 @@ import java.util.concurrent.TimeUnit
  * 汽水音乐 Hook 取词来源：解析宿主交给歌词模型的原始正文
  *
  * 宿主给出的三种格式
- * - `LRC` —— 通用 LRC，交 [LyricFormat.GENERAL]
- * - `KRC` —— 酷狗系逐字格式 `[行起始,行时长]<词偏移,词时长,0>词`，交 [LyricFormat.KRC]
- * - `TEXT` —— 纯文本、无时间轴；按内容再嗅探一次，仍然没有时间轴就不发布
+ * - `LRC`：通用 LRC，交 [LyricFormat.GENERAL]
+ * - `KRC`：酷狗系逐字格式 `[行起始,行时长]<词偏移,词时长,0>词`，交 [LyricFormat.KRC]
+ * - `TEXT`：纯文本、无时间轴；按内容再嗅探一次，仍然没有时间轴就不发布
  *
  * 只投递成功结果
  * 编排器对同一代际只接受第一次投递，投出一次否定结论就把这一代际关死了：
- * 宿主先给一份占位/纯文本载荷、几百毫秒后才给真正的逐字载荷，是很常见的时序。
- * 若把前者的 [LyricOutcome.Unsupported] 投出去，后者会被当成重复投递丢弃 ——
- * 表现就是"同一首歌有时有歌词、有时没有"。
+ * 宿主先给一份占位或纯文本载荷、几百毫秒后才给真正的逐字载荷，是常见时序。
+ * 若把前者的 [LyricOutcome.Unsupported] 投出去，后者会被当成重复投递丢弃，
+ * 表现为同一首歌时而取到歌词、时而没有。
  *
  * 因此本来源只投递 [LyricOutcome.Success]。读不出来就保持沉默，由编排器的 Hook 超时
- * 把状态落到 `UNAVAILABLE`（不发布任何占位），迟到的成功结果仍然会被接受
+ * 把状态落到 `UNAVAILABLE`（不发布任何占位），迟到的成功结果仍会被接受
  *
- * 为什么译文要等一小会儿
+ * 译文要等待一小会儿
  * 主歌词与译文是两份独立载荷（宿主按语言各构造一个歌词实体），到达时间不固定。
- * 编排器对同一代际只接受第一次投递，因此先到就投会把译文整份丢掉。这里给译文一个
- * [TRANSLATION_GRACE_MS] 的窗口，窗口内没等到就按主歌词单独发布 —— 宁可少一份译文，
- * 也不能为了译文把发布拖到 Hook 等待窗口之外。只有译文、没有主歌词时多等
- * [MAIN_WAIT_MS]：译文本身也是带时间轴的，实在等不到主歌词才拿它当正文。
+ * 编排器对同一代际只接受第一次投递，先到就投会把译文整份丢掉。这里给译文一个
+ * [TRANSLATION_GRACE_MS] 的窗口，窗口内没等到就按主歌词单独发布：译文缺失优于把发布
+ * 拖到 Hook 等待窗口之外。只有译文、没有主歌词时多等 [MAIN_WAIT_MS]：译文本身也是带
+ * 时间轴的，等不到主歌词才拿它当正文。
  *
  * @author 焕晨HChen
  */
@@ -104,7 +104,7 @@ class SodaHookSource : HookLyricSource {
      *
      * 宿主会预加载下一首的歌词：切歌前就把它解析完，切过去之后不再重新解析。
      * 只靠 [lastCaptured] 一个槽位的话，预加载的那份会被判成"上一首的"而丢弃，
-     * 切过去以后就再也等不到第二份 —— 表现为切歌后没歌词。
+     * 切过去以后就再也等不到第二份：表现为切歌后没歌词。
      */
     private val stash = object : LinkedHashMap<String, Stashed>(4, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Stashed>?): Boolean =
@@ -185,7 +185,7 @@ class SodaHookSource : HookLyricSource {
 
             lastCaptured = captured
             if (requests.current() == null) return
-            // 本代际已经投递过：编排器只收第一次，再解析一遍只是白烧 CPU
+            // 本代际已经投递过：编排器只收第一次，再解析一遍只会增加开销
             if (deliveredKey != null) return
 
             // 标识相等只是"更强"的证据，不是准入门槛：汽水对同一个播放项会给出两套命名空间
@@ -200,7 +200,7 @@ class SodaHookSource : HookLyricSource {
             pendingTranslation = captured
         } else {
             // 先到先得：同一代际里第一份载荷就是宿主为当前播放项解析的那份。
-            // 唯一例外是"对得上标识"的那份可以顶掉对不上的 —— 启动时宿主会一次性预解析
+            // 唯一例外是"对得上标识"的那份可以顶掉对不上的：启动时宿主会一次性预解析
             // 队列里的好几首，其中只有一首属于当前曲目
             val existing = pendingMain
             when {
@@ -325,7 +325,7 @@ class SodaHookSource : HookLyricSource {
         return LyricOutcome.Success(doc.withMetadata(current))
     }
 
-    /** 至少两个不同的起始时间，或首行起始非零 —— 否则整份载荷没有可用时间轴 */
+    /** 至少两个不同的起始时间，或首行起始非零：否则整份载荷没有可用时间轴 */
     private fun LyricDoc.hasUsableTiming(): Boolean {
         val starts = lines.map { it.startMs }.distinct()
         return starts.size >= 2 || (starts.size == 1 && starts[0] > 0L)

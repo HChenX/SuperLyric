@@ -21,7 +21,7 @@ package com.hchen.superlyric.provider.kuwo;
 import com.hchen.processor.HookThis;
 
 /**
- * 酷我音乐（手机版）歌词提供者。
+ * 酷我音乐（手机版）歌词提供者
  *
  * @author 焕晨HChen
  * @see KuwoBaseProvider 取词与身份逻辑

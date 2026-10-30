@@ -43,7 +43,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * 扫描并加载已安装的支持音乐应用列表。
+ * 扫描并加载已安装的支持音乐应用与被支持的 API 应用
+ *
+ * <p>扫描在单线程执行器上串行执行，结果以不可变列表整体替换，任意线程均可读取；
+ * 加载期间的重复请求合并为一次重新扫描。加载失败时完成 future 的异常状态，
+ * 不通知监听器。
  *
  * @author 焕晨HChen
  */
@@ -111,7 +115,7 @@ public final class PackageLoader {
                 completedFuture.complete(null);
                 notifyPackageLoadedListeners(listenersSnapshot);
             } else {
-                // 失败不能通知监听器：监听器只拿到旧列表，会把“加载失败”当成“列表刷新完成”。
+                // 失败不能通知监听器：监听器只拿到上一次的列表，会把加载失败当成刷新完成。
                 completedFuture.completeExceptionally(failure);
             }
 
@@ -141,9 +145,9 @@ public final class PackageLoader {
                         if (!isXposed) {
                             ApiAppData apiAppData = new ApiAppData();
                             apiAppData.icon = BitmapTool.drawableToBitmap(info.applicationInfo.loadIcon(pm));
-                            // `loadLabel` 声明返回 CharSequence：标签来自 `Resources.getText()` 时
-                            // 可能是 SpannedString，强转 String 会抛 ClassCastException，而异常会被
-                            // scheduleLoad 吞成"整个包列表加载失败"——一个 App 的标签形态异常就让
+                            // loadLabel 声明返回 CharSequence：标签来自 Resources.getText() 时可能是
+                            // SpannedString，强转 String 会抛 ClassCastException，而异常会被
+                            // scheduleLoad 吞成"整个包列表加载失败"，一个 App 的标签形态异常就会让
                             // 界面里所有受支持应用消失。用 String.valueOf 无条件取文本
                             apiAppData.label = String.valueOf(info.applicationInfo.loadLabel(pm));
                             apiAppData.packageName = info.applicationInfo.packageName;
@@ -227,7 +231,7 @@ public final class PackageLoader {
             }
         } catch (Exception e) {
             // 静默返回 false 会让"APK 打不开"与"确实没有 Xposed 模块"在日志里一模一样，
-            // 而两者对这一层的含义完全不同：前者是我们没读到，后者是宿主确实没模块
+            // 而两者含义完全不同：前者是未能读取，后者是宿主确实没有模块
             AndroidLog.logW(TAG, "Cannot inspect " + apkPath + "; treating it as a non-Xposed app", e);
         }
         return false;

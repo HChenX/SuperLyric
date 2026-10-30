@@ -21,24 +21,18 @@ package com.hchen.superlyric.kernel.decode;
 import java.nio.charset.StandardCharsets;
 
 /**
- * 酷狗 KRC 载荷解密：{@code byte[] → 已解密的 KRC 明文}。
- * <p>
- * <b>只做解密，不做解析。</b>解密后的明文（形如 {@code [start,duration]<rel,dur,0>word}）
- * 交由 {@code lyrics-core} 的 {@code KugouKrcParser} 解析。
- * 解密与解析必须分层：解密是协议级的稳定逻辑，解析是随宿主格式变化的易错逻辑。
- * <p>
- * <b>格式：</b>
- * <ol>
- *   <li>前 4 字节魔数 {@code "krc1"}（0x6B 0x72 0x63 0x31）；</li>
- *   <li>自第 5 字节起，与 16 字节静态密钥循环异或；</li>
- *   <li>异或结果符合 RFC 1950，经 ZLib 解压为 UTF-8 明文。</li>
- * </ol>
+ * 酷狗 KRC 载荷解密。
+ *
+ * <p>只做解密，不解析。解密后的明文交给 KRC 解析器。
+ *
+ * <p>格式：前 4 字节为 {@code "krc1"}；其后与 16 字节静态密钥循环异或；
+ * 异或结果经 ZLib 解压为 UTF-8。
  *
  * @author 焕晨HChen
  */
 public final class KrcCipher {
     /**
-     * 酷狗 KRC 官方 16 字节静态异或密钥。
+     * 酷狗 KRC 的 16 字节静态异或密钥。
      */
     private static final byte[] KRC_KEY = new byte[]{
         0x40, 0x47, 0x61, 0x77, 0x5e, 0x32, 0x74, 0x47,
@@ -70,14 +64,12 @@ public final class KrcCipher {
 
     /**
      * 将 KRC 载荷还原为明文。
-     * <p>
-     * 若载荷带 {@code krc1} 魔数，则执行「剥离魔数 → 异或 → ZLib 解压」；解压失败即抛
-     * {@link DecodeException}，<b>绝不</b>回退到未解密的密文缓冲区。
-     * 若载荷不带魔数，则按调用方的声明视为<b>已解密明文</b>直接返回。
+     *
+     * <p>带 {@code krc1} 魔数时剥离魔数、异或并解压；否则按已解密明文返回。
      *
      * @param krcBytes 原始载荷
-     * @return 已解密的 KRC 明文
-     * @throws DecodeException 载荷为空，或异或后的数据不是合法 ZLib 流
+     * @return 解密后的 KRC 明文
+     * @throws DecodeException 载荷为空或解压失败
      */
     public static String decrypt(byte[] krcBytes) throws DecodeException {
         if (krcBytes == null || krcBytes.length == 0) {

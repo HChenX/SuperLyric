@@ -19,10 +19,10 @@
 package com.hchen.superlyric.kernel.model
 
 /**
- * 逐字切片时序。
+ * 逐字切片时序
  *
  * 时间单位一律为毫秒。三分量模型（[LyricDoc] / [LyricLine] / [LyricWord]）全部不可变，
- * 这是承重设计：它使解析结果可以安全地跨线程、跨 Binder 传递而无需深拷贝防御。
+ * 使解析结果可以安全地跨线程、跨 Binder 传递而无需深拷贝防御。
  *
  * @property text    切片文本
  * @property startMs 起始毫秒
@@ -35,10 +35,10 @@ data class LyricWord(
 )
 
 /**
- * 单行歌词。
+ * 单行歌词
  *
  * 翻译通道约定：译文只允许通过 [translation] 承载，罗马音只允许通过 [phonetic] 承载。
- * 解析层严禁把译文行输出为独立的 [LyricLine]，否则界面会把翻译当成歌词显示
+ * 解析层不得把译文行输出为独立的 [LyricLine]，否则界面会把翻译当成歌词显示
  *
  * @property text        主歌词文本
  * @property translation 翻译文本；无翻译时为 null
@@ -61,7 +61,7 @@ data class LyricLine(
 }
 
 /**
- * 一首曲目的完整歌词文档，是 `:lyric-kernel` 的唯一输出形态。
+ * 一首曲目的完整歌词文档，是 `:lyric-kernel` 的唯一输出形态
  *
  * 该类型不依赖任何 Android / Parcelable 类型，因此本模块可以完全在 JVM 上做单元测试。
  *

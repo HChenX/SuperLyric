@@ -37,24 +37,20 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Spotify 会话头捕获锚点。
- * <p>
- * 为什么需要它
- * {@code color-lyrics/v2} 接口需要 Bearer 鉴权，而令牌只存在于宿主自己的网络请求里。
- * 本模块不发起登录、也不持有任何凭证，而是从宿主已经发出的
- * {@code okhttp3.Headers} 中旁路复制最新的一份会话头。
- * <p>
- * 为什么锚构造器而不是请求方法
- * {@code okhttp3.Headers} 的构造器是所有请求头的唯一汇聚点，挂一个构造器即可覆盖全部请求，
- * 而非逐个去匹配歌词接口的调用点。这是"最少最精准"的直接体现。
- * <p>
- * 两级降级
+ * Spotify 会话头捕获锚点
+ *
+ * <p>{@code color-lyrics/v2} 接口需要 Bearer 鉴权，而令牌只存在于宿主自己的网络请求里。
+ * 本模块不发起登录、也不持有任何凭证，而是从宿主已经发出的 {@code okhttp3.Headers} 中
+ * 旁路复制最新的一份会话头。
+ *
+ * <p>锚点是 {@code okhttp3.Headers} 的构造器：它是所有请求头的唯一汇聚点，挂一个构造器
+ * 即可覆盖全部请求，无需逐个匹配歌词接口的调用点。
+ *
+ * <p>两级降级：
  * <ol>
  *   <li>能直接引用到 {@code okhttp3.Headers} 时走明文快速通道；</li>
- *   <li>否则用 DexKit 按
- *       "含 {@code <init>(String[])} 且实现 {@code Iterable}" 的结构指纹定位，
- *       这正是 {@code okhttp3.Headers} 的结构特征，
- *       即便类名被混淆也能命中。</li>
+ *   <li>否则用 DexKit 按"含 {@code <init>(String[])} 且实现 {@code Iterable}"的结构指纹
+ *       定位，这正是 {@code okhttp3.Headers} 的结构特征，类名被混淆也能命中。</li>
  * </ol>
  *
  * @author 焕晨HChen
@@ -68,7 +64,7 @@ public final class SpotifyAnchors {
     }
 
     /**
-     * 安装会话头捕获。幂等。
+     * 安装会话头捕获。幂等
      */
     public static void installHeaderCapture() {
         if (sInstalled) return;
@@ -84,7 +80,7 @@ public final class SpotifyAnchors {
             }
         };
 
-        // ① 明文快速通道
+        // 明文快速通道
         try {
             Class<?> headersClass = CoreTool.findClass("okhttp3.Headers");
             CoreTool.hookAllConstructor(headersClass, capture);
@@ -94,7 +90,7 @@ public final class SpotifyAnchors {
             AndroidLog.logD(TAG, "Plaintext okhttp3.Headers unavailable, falling back to DexKit");
         }
 
-        // ② 结构指纹兜底
+        // 结构指纹兜底
         List<Class<?>> candidates = findHeaderCandidateClasses();
         int hooked = 0;
         for (Class<?> candidate : candidates) {
@@ -138,10 +134,10 @@ public final class SpotifyAnchors {
 
         // 宽松指纹：仅含 <init>(String[])
         //
-        // 这个判据会命中所有带 `String[]` 构造器的类，而其中绝大多数与 okhttp 无关。
-        // 给它们逐个挂构造器钩子会平白抬高宿主开销，与 L1"绝不广撒网"相悖。
-        // 因此在 DexKit 结果之上再收一道：只保留"像 Headers 的类"——非接口、非注解、
-        // 非抽象、非枚举，且自带字段（Headers 持有 `String[] namesAndValues`）
+        // 这个判据会命中所有带 String[] 构造器的类，其中绝大多数与 okhttp 无关。
+        // 给这些类逐个挂构造器钩子会抬高宿主开销，违背最少最精准的约束。
+        // 因此在 DexKit 结果之上再收一道：只保留像 Headers 的类，即非接口、非注解、
+        // 非抽象、非枚举且自带字段（Headers 持有 String[] namesAndValues）
         Class<?>[] loose = DexkitCache.findMember("spotify$headers_ctor",
             new IDexkit<ClassDataList>() {
                 @NonNull

@@ -22,7 +22,7 @@ import com.hchen.superlyric.kernel.model.LyricLine
 import kotlin.math.max
 import kotlin.math.min
 
-/** 播放状态。刻意不复用 Android 的 `PlaybackState` —— 内核必须保持零 Android 依赖 */
+/** 播放状态。刻意不复用 Android 的 `PlaybackState` ： 内核必须保持零 Android 依赖 */
 enum class PlaybackStatus {
     STOPPED,
     PAUSED,
@@ -39,9 +39,9 @@ enum class PlaybackStatus {
  * - 锚点是宿主自报的时刻：`pos(now) = position + (now - positionUpdateTime) * speed`，
  *   进度不随系统回调延迟而滞后
  * - speed ≤ 0 的 PLAYING 视为冻结，而非"运行但速率为 0"
- * - 位置回退是合法的（重播、拖回开头），不做抑制，由上层据此重置行索引
+ * - 位置回退合法（重播、拖回开头），不做抑制，由上层据此重置行索引
  *
- * 时间源可注入，因此漂移、seek、重播、speed=0、暂停等场景均可确定性复现
+ * 时间源可注入，漂移、seek、重播、speed=0、暂停等场景均可确定性复现
  *
  * @param durationMs 曲目总时长；未知时为 0（表示不做上界钳制）
  * @param timeSource 单调时间源（毫秒）。默认取纳秒时钟换算（CLOCK_MONOTONIC，
@@ -65,9 +65,11 @@ class PlaybackClock(
     private var anchorTime: Long = 0L
     private var speed: Float = 1f
 
-    val currentStatus: PlaybackStatus get() = status
+    val currentStatus: PlaybackStatus
+        @Synchronized get() = status
 
-    val currentSpeed: Float get() = speed
+    val currentSpeed: Float
+        @Synchronized get() = speed
 
     /**
      * 同步一次宿主上报的播放状态
@@ -78,6 +80,7 @@ class PlaybackClock(
      * @param positionUpdateTimeMs 该快照产生的时刻（与 [timeSource] 同基）；
      *                             传入 0 或负值表示宿主未提供，退回当前时刻
      */
+    @Synchronized
     fun sync(
         status: PlaybackStatus,
         positionMs: Long,
@@ -87,8 +90,8 @@ class PlaybackClock(
         this.status = status
         this.anchorPosition = max(0L, positionMs)
         val now = timeSource()
-        // 锚点在“未来”通常意味着宿主用了另一个时间基（如 uptimeMillis/currentTimeMillis），
-        // 若照单全收，positionAt 的 elapsed 会长期为负，位置整首冻结。宁可退回当前时刻，
+        // 锚点在未来通常意味着宿主使用了另一个时间基（如 uptimeMillis/currentTimeMillis）。
+        // 照单全收会让 positionAt 的 elapsed 长期为负、位置整首冻结，因此退回当前时刻，
         // 以宿主上报的 position 作为本次锚点。
         this.anchorTime = when {
             positionUpdateTimeMs <= 0L -> now
@@ -101,6 +104,7 @@ class PlaybackClock(
     /**
      * 处理一次跳转。跳转后位置立即生效，并以此为新的锚点
      */
+    @Synchronized
     fun seekTo(positionMs: Long, now: Long = timeSource()) {
         anchorPosition = max(0L, positionMs)
         anchorTime = now
@@ -109,6 +113,7 @@ class PlaybackClock(
     /**
      * 重置为停止状态
      */
+    @Synchronized
     fun reset() {
         status = PlaybackStatus.STOPPED
         anchorPosition = 0L
@@ -119,6 +124,7 @@ class PlaybackClock(
     /**
      * 计算当前播放位置
      */
+    @Synchronized
     fun positionAt(now: Long = timeSource()): Long {
         val base = max(0L, anchorPosition)
 
@@ -146,9 +152,10 @@ class PlaybackClock(
         /**
          * 在按起始时间升序排列的歌词行中，定位给定时刻所在的行
          *
-         * 使用二分查找；时刻早于首行时返回 0，晚于末行时返回末行下标
+         * 使用二分查找；时刻早于首行时返回 -1，晚于末行时返回末行下标
          *
-         * @return 行下标；行列表为空时返回 -1
+         * 行定位语义与库的 `Lyric.indexAt` 一致：首行之前没有"当前行"，调用方自行决定
+         * 是否显示首行。返回 0 会让前奏阶段的界面提前亮起第一句。
          */
         fun lineIndexAt(lines: List<LyricLine>, positionMs: Long): Int {
             if (lines.isEmpty()) return -1
@@ -165,7 +172,7 @@ class PlaybackClock(
                     high = mid - 1
                 }
             }
-            return if (matched < 0) 0 else min(matched, lines.size - 1)
+            return if (matched < 0) -1 else min(matched, lines.size - 1)
         }
     }
 }

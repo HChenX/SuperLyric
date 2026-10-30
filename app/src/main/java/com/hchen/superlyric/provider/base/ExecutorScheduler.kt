@@ -25,10 +25,9 @@ import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
 /**
- * 基于单线程调度器的 [Scheduler] 实现。
+ * 基于单线程调度器的 [Scheduler] 实现
  *
- * 编排器的超时与退避任务量极小（每首歌至多几次），单线程足够，
- * 且能保证同一首歌内的定时任务按序执行。
+ * 编排器的超时与退避任务量很小（每首歌至多几次），单线程足以保证同一首歌内的定时任务按序执行。
  */
 class ExecutorScheduler(private val threadName: String = "SuperLyric-Scheduler") : Scheduler {
 
@@ -40,8 +39,8 @@ class ExecutorScheduler(private val threadName: String = "SuperLyric-Scheduler")
         val future: ScheduledFuture<*> = executor.schedule(
             {
                 runCatching { task() }.onFailure {
-                    // 定时任务里包含编排器的重试/停止发布；异常被 ScheduledFuture 吞掉时
-                    // 表现为“重试链断了/停止包没发出去”，必须留痕。
+                    // 定时任务包含编排器的重试与停止发布。异常被 ScheduledFuture 吞掉时，
+                    // 重试链会中断或停止包不会发出，因此在此记录。
                     com.hchen.hooktool.log.AndroidLog.logE(threadName, "Scheduled task failed", it)
                 }
             },
@@ -51,7 +50,7 @@ class ExecutorScheduler(private val threadName: String = "SuperLyric-Scheduler")
         return Cancellable { future.cancel(false) }
     }
 
-    /** 释放线程；宿主进程退出时无需显式调用，此处仅供测试与显式清理使用。 */
+    /** 释放线程；宿主进程退出时无需显式调用，此处仅供测试与显式清理使用 */
     fun shutdown() {
         executor.shutdownNow()
     }

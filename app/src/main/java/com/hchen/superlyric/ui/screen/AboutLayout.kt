@@ -176,8 +176,8 @@ fun AboutLayout(
     } else {
         Modifier
     }
-    // Defer the frame-rate scroll read out of composition: these booleans only flip at the
-    // single 1f threshold, so derivedStateOf recomposes the bar on flip rather than every frame.
+    // 把逐帧变化的滚动状态收窄为两个布尔量：它们只在 1f 阈值翻转时触发重组，
+    // 顶栏不会随每一帧重组
     val collapsed by remember { derivedStateOf { scrollProgress == 1f } }
     val blurActive by remember(barBackdrop) { derivedStateOf { barBackdrop != null && scrollProgress == 1f } }
 
@@ -490,8 +490,8 @@ private fun openUrl(context: Context, url: String) {
 
         context.startActivity(intent)
     } catch (e: Exception) {
-        // 留痕：无浏览器可处理该 scheme、URI 非法、Activity 未导出都会抛，
-        // 只给用户一个 Toast 会把这些原因丢掉
+        // 原因必须留痕：无浏览器处理该 scheme、URI 非法、Activity 未导出都会抛异常，
+        // Toast 无法区分它们
         android.util.Log.w("AboutLayout", "Failed to open url $url", e)
         Toast.makeText(context, R.string.no_activity, Toast.LENGTH_SHORT).show()
     }

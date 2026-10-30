@@ -29,7 +29,7 @@ import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 import com.mocharealm.accompanist.lyrics.core.parser.AutoParser
 
-/** 伴随通道的解析、对齐与空值清理。 */
+/** 伴随通道的解析、对齐与空值清理 */
 internal object SidecarMerger {
 
     private val autoParser = AutoParser()

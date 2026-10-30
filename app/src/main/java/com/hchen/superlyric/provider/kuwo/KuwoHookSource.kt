@@ -33,22 +33,20 @@ import com.hchen.superlyric.utils.LyricDiag
 import java.util.concurrent.Executors
 
 /**
- * 酷我音乐 Hook 取词来源：解析宿主交给自己渲染层的明文歌词全文。
+ * 酷我音乐 Hook 取词来源：解析宿主交给自己渲染层的明文歌词全文
  *
- * 取词流程
- * 宿主持有明文全文只有一个瞬间：把它交给歌词引擎之前。锚点就挂在那一个瞬间
- * （见 [KuwoAnchors]），拿到的是未经宿主行/词模型裁切的原始 LRCX，
- * 因此逐字时戳不会出现 0ms 坍缩。
+ * 取词流程：宿主持有明文全文的时机只有交给歌词引擎之前；锚点位于该入口
+ * （见 [KuwoAnchors]），拿到未经宿主行/词模型裁切的原始 LRCX，因此逐字时戳不会出现
+ * 0ms 坍缩。
  *
- * 进度
- * 本模块不发布进度（L3）。宿主的播放位置由系统框架侧时钟推导，
- * 而歌词是全量的，因此逐字高亮与行切换天然跟随播放进度。
+ * 进度：本模块不发布进度（L3）。宿主播放位置由系统框架侧时钟推导；歌词是全量的，
+ * 逐字高亮与行切换跟随播放进度。
  *
- * 结果的语义
+ * 结果的语义：
  * - 拿到明文且解析成功 → [LyricOutcome.Success]
  * - 明文像歌词（带 LRC 时间标签）却解析不出任何行 → [LyricOutcome.Unsupported]：
- *   这是"我们读不懂"，不是"没有歌词"，不能下发纯音乐占位
- * - 明文不像歌词（太短，或完全没有时间标签）→ 直接忽略：它不构成对曲目的任何判断
+ *   说明本模块读不懂，不代表没有歌词，不能下发纯音乐占位
+ * - 明文不像歌词（太短，或完全没有时间标签）→ 直接忽略，不构成对曲目的任何判断
  * - 从未拿到明文 → 不投递，由编排器超时后转其它路径
  *
  * @author 焕晨HChen
@@ -66,8 +64,8 @@ class KuwoHookSource : HookLyricSource {
     /**
      * 最近一次由宿主上报的 rid
      *
-     * 两处消费：Provider 经 [currentStableId] 用它构建一致的音轨身份；
-     * 歌词回调用它把正文与宿主的曲目而不是 MediaSession 的身份绑定。
+     * 两处消费：Provider 经 [currentStableId] 构建一致的音轨身份；歌词回调用它把正文
+     * 绑定到宿主曲目，而不是 MediaSession 身份。
      */
     @Volatile
     private var capturedRid: String? = null
@@ -76,13 +74,12 @@ class KuwoHookSource : HookLyricSource {
      * 按 rid 索引的宿主真实曲目信息（访问序 LRU）
      *
      * 酷我把当前歌词行写进 `MediaMetadata.METADATA_KEY_TITLE`，元数据不可信；
-     * 而宿主自己的 `Music` 对象带着干净的曲名与歌手，且其 `rid` 与
-     * 歌词回调同一时序到达，可精确关联。
+     * 宿主 `Music` 对象带有干净的曲名与歌手，其 `rid` 与歌词回调同一时序到达，可精确关联。
      *
-     * 不能"满了整表清空"：那会把当前曲目的标题一起抹掉，Provider 侧的身份随即从
-     * `kuwo:<rid>#<标题>` 退化成 `kuwo:<rid>`，编排器把这次退化当成换歌重新取词；
-     * 而宿主通常不会重新解析，歌词就此中断。访问序保证正在播的那一条每次构造身份都被读到，
-     * 永远在最热的一端，被淘汰的只会是预取过、还没轮到的曲目。
+     * 不能“满了整表清空”：那会同时抹掉当前曲目的标题，Provider 侧身份从
+     * `kuwo:<rid>#<标题>` 退化为 `kuwo:<rid>`，编排器把退化当成换歌并重新取词；
+     * 宿主通常不会重新解析，歌词就此中断。访问序保证正在播放的条目每次构建身份都被读到，
+     * 淘汰的只会是已预取、尚未轮到的曲目。
      */
     private val trackStore = object : LinkedHashMap<String, KuwoTrack>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, KuwoTrack>): Boolean =
@@ -90,29 +87,30 @@ class KuwoHookSource : HookLyricSource {
     }
 
     /**
-     * 已解析、尚未被会话消费的结果，按 rid 暂存。宿主先给歌词后发元数据，见 [start] 的补投。
+     * 按 rid 暂存已解析、尚未被会话消费的结果
      *
-     * 三个字段必须一起读、一起写，所以合成一个不可变快照：分成三个 `@Volatile` 字段时，
-     * [start] 可能读到新正文配旧标识（或反之），补投判定就会拿错身份。
+     * 宿主可能先给歌词后发元数据，见 [start] 的补投。
      *
-     * 必须是多槽而不是单槽：宿主会预取播放队列里后面几首的歌词 —— 实测一次启动后的
-     * 6 秒内解析了 76 / 42 / 63 / 76 行四份正文，分属四首不同的曲目。单槽只会留下最后
-     * 一份，先播的那一首真正切过去时，它的正文已被后一份顶掉，只能等宿主重新解析 ——
-     * 而宿主不会，表现为切歌后整首没有歌词。按 rid 各存一份，切到哪首补投哪首。
+     * 三个字段必须一起读写，因此合成不可变快照：分成三个 `@Volatile` 字段时，
+     * [start] 可能读到新正文搭配过期标识（或反之），补投判定会使用错误身份。
      *
-     * 访问一律走 [stashByRid] 的锁：写入在解析线程，补投在读会话建立线程。
+     * 必须多槽而非单槽：宿主会预取播放队列中后续曲目的歌词。一次启动后的 6 秒内可解析
+     * 76 / 42 / 63 / 76 行四份正文，分属四首不同曲目。单槽只保留最后一份；先播曲目切过去时
+     * 正文已被顶掉，只能等宿主重新解析，而宿主不会再解析，表现为切歌后整首无歌词。
+     * 按 rid 各存一份，切到哪首补投哪首。
+     *
+     * 访问一律在 [stashByRid] 上同步：写入在解析线程，补投在读会话建立线程。
      */
     private val stashByRid = LinkedHashMap<String, Stashed>(8, 0.75f, true)
 
     /**
      * 最近一次成功交付的（标识, 正文）
      *
-     * 宿主会重复回调同一份歌词（实测同一 rid 在 70ms 内完整回调两次），用它挡掉
-     * 重复触发：重复解析只会白烧 CPU 并让日志刷屏，重复投递也会让下游重新发布同一份。
+     * 宿主会重复回调同一份歌词（同一 rid 可在 70ms 内完整回调两次），用它跳过重复处理：
+     * 重复解析消耗 CPU 并刷日志，重复投递会让下游重新发布同一份。
      *
-     * 只在解析成功之后才写入。若在解析之前就写，一次解析失败（线程池被占、
-     * 宿主这次给的是残包）会让同一份正文永远命中去重分支而再也进不来 ——
-     * 而宿主随后可能不再回调，这一首就整首没有歌词。
+     * 只在解析成功后写入。若在解析前写入，一次失败（线程池被占、宿主给的是残包）
+     * 会让同一份正文持续命中去重分支，宿主随后可能不再回调，该曲目整首无歌词。
      */
     @Volatile
     private var lastDelivered: Pair<String?, String>? = null
@@ -120,15 +118,13 @@ class KuwoHookSource : HookLyricSource {
     /**
      * 最近一次交给解析器的（标识, 正文）
      *
-     * 只为挡住同一份正文的并发重复入队（回调是连发的），解析失败时会被清空，
-     * 让下一次回调有权重新尝试。
+     * 用于挡住同一份正文的并发重复入队（回调连发）；解析失败时清空，让下一次回调重新尝试。
      */
     @Volatile
     private var lastAttempted: Pair<String?, String>? = null
 
     override fun install() {
-        // 曲目回调用对象表达式而不是 lambda：它是三参接口，lambda 形式在 Kotlin 里
-        // 无法按位置推断参数名，可读性差
+        // 三参接口使用对象表达式，显式保留参数名
         KuwoAnchors.installTrackProbe(object : KuwoAnchors.TrackListener {
             override fun onTrack(rid: String, title: String, artist: String) {
                 handleTrack(rid, title, artist)
@@ -143,9 +139,8 @@ class KuwoHookSource : HookLyricSource {
     /** 记录宿主上报的当前曲目 */
     private fun handleTrack(rid: String, title: String, artist: String) {
         if (rid.isEmpty()) return
-        // 必须在此写入：歌词回调要拿它构造与宿主一致的稳定标识。缺了它，
-        // 歌词侧只能回退到 MediaSession 的身份，而切歌瞬间两者会短暂错配，
-        // 表现为同一份歌词配上了另一个 rid
+        // 必须在此写入：歌词回调要用它构造与宿主一致的稳定标识。缺失时歌词侧只能
+        // 回退到 MediaSession 身份，切歌瞬间两者会短暂错配，同一份歌词会配上另一个 rid
         capturedRid = rid
         // 容量由 removeEldestEntry 按访问序淘汰最旧的一条，见 trackStore
         synchronized(trackStore) { trackStore[rid] = KuwoTrack(rid, title, artist) }
@@ -160,18 +155,18 @@ class KuwoHookSource : HookLyricSource {
     fun trackArtist(rid: String): String = synchronized(trackStore) { trackStore[rid]?.artist }.orEmpty()
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
-        // 首要补救时机：切歌那一刻宿主已跑起来、dex 必然加载完毕，是首轮定位失败后
-        // 最自然的第二次机会。内部已限流封顶，重复调用不会白烧 DexKit 检索
+        // 切歌时宿主已运行，dex 必然加载完毕，是首轮定位失败后的第二次机会；
+        // 内部已限流封顶，重复调用不会反复执行 DexKit 检索
         KuwoAnchors.retryInstallIfNeeded()
         requests.open(identity, session)
-        // 补投：宿主的歌词回调可能早于元数据更新到达，成果必须还给刚刚建立的新会话。
+        // 补投：宿主的歌词回调可能早于元数据更新到达，成果必须还给刚建立的新会话。
         //
-        // 按完整标识取槽，不做 rid 级模糊匹配：暂存槽是按 rid + 标题归的，而同专辑
-        // 各集共用一个 rid。模糊匹配在有声书队列里会把上一集的正文补投给新一集，
-        // 那正是身份带标题要消除的错配；宁可这一次不等补投，等宿主重新解析。
+        // 按完整标识取槽，不做 rid 级模糊匹配：暂存槽按 rid + 标题归类，而同专辑各集
+        // 共用一个 rid。模糊匹配会把上一集正文补投给新一集；本次不补投优于错配，
+        // 等待宿主重新解析。
         //
-        // 判定收在 [canReplay] 里：有标识走 [sameTrack]，没有标识时才看"解析那一刻是否
-        // 有会话"，并用歌词自带的标题再核一次。
+        // 判定收在 [canReplay]：有标识走 [sameTrack]，没有标识时才看解析那一刻是否有会话，
+        // 并用歌词自带标题再核一次。
         val key = stashKey(identity.stableId)
         val stashed = synchronized(stashByRid) { stashByRid[key] }
         if (stashed != null && canReplay(stashed, identity)) {
@@ -192,28 +187,28 @@ class KuwoHookSource : HookLyricSource {
         synchronized(stashByRid) { stashByRid.clear() }
         lastDelivered = null
         lastAttempted = null
-        // 一并清掉：残留的旧 rid 会让下一首的歌词回调先被配上上一首的标识
+        // 一并清掉：残留 rid 会让下一首歌词回调先配上上一首标识
         capturedRid = null
     }
 
     /**
-     * @param rid 这份歌词所属曲目的 rid，由锚点在取词入口处一并转交。
-     *           切歌时宿主先翻 rid 再送歌词，用回调自带的 rid 才不会把上一首的
-     *           正文配上新标识
+     * @param rid 这份歌词所属曲目的 rid，由锚点在取词入口一并转交。
+     *            切歌时宿主先翻 rid 再送歌词，使用回调自带的 rid 才不会把上一首正文
+     *            配上新标识
      */
     private fun handleLyricText(text: String, rid: String) {
         // 与 Provider 侧同一套组合规则：rid + 标题。酷我的 rid 在有声书上是专辑级 ID，
-        // 同一部书各集共用，只用 rid 会让新一集被当成同一首而丢弃
+        // 同一部书各集共用；只用 rid 会让新一集被当成同一首而丢弃
         val entryIdentity = requests.current()?.identity
         val stableId = stableIdOf(rid) ?: entryIdentity?.stableId
-        // 已经成功交付过的同一份正文才跳过。判定放在这里只是快速路径，
-        // 真正的写入在解析成功之后（见下方 lastDelivered = ...）。
+        // 已成功交付同一份正文才跳过。此处只是快速路径，真正写入在解析成功后
+        // （见下方 lastDelivered = ...）。
         val delivered = lastDelivered
         if (delivered != null && stableId == delivered.first && text == delivered.second) {
             return
         }
-        // 同一份正文正在解析队列里时不必重复入队：宿主连发两次回调时，
-        // 第二次进来 parsed 还没写回 lastDelivered，光靠上面那条挡不住。
+        // 同一份正文正在解析队列中时不必重复入队：宿主连发两次回调时，
+        // 第二次进入时 parsed 尚未写回 lastDelivered，仅靠上一条无法拦住。
         val attempted = lastAttempted
         if (attempted != null && stableId == attempted.first && text == attempted.second) {
             return
@@ -238,18 +233,18 @@ class KuwoHookSource : HookLyricSource {
             }
             val parsed = doc
             if (parsed == null || parsed.isEmpty) {
-                // 解析没成功，必须放行下一次回调：lastAttempted 只为挡并发重复入队，
-                // 不能连"换个时机再试一次"也一起挡掉。留着不清，宿主再送同一份正文时
-                // 会被上面的快速路径直接 return，这一首就再也没有第二次机会。
+                // 解析失败必须放行下一次回调：lastAttempted 只挡并发重复入队，
+                // 不能连换个时机重试也挡掉。保留不清时，宿主再送同一份正文会被快速路径
+                // 直接 return，该曲目不再有第二次机会。
                 lastAttempted = null
-                // 先按长度分流，再决定要不要判 Unsupported。
+                // 先按长度分流，再决定是否判 Unsupported。
                 //
-                // 短载荷不是"读不懂"而是"这不是歌词全文"：宿主的辅助方法也会带单行文本经过
-                // 解析入口，长度还不及一行完整歌词。这种输入判 Unsupported 会把整个
-                // hook 来源钉成"服务不了"，让本可成功的取词跟着一起失败。
+                // 短载荷不是“读不懂”，而是“不是歌词全文”：宿主的辅助方法也会带单行文本
+                // 经过解析入口，长度不及一行完整歌词。判 Unsupported 会把整个 hook 来源
+                // 标成服务不了，使本可成功的取词一起失败。
                 //
-                // 反之，载荷足够长却仍解不出行，确实是"我们读不懂"，此时才判 Unsupported：
-                // NoLyrics 允许下发纯音乐占位，把有歌词的曲目误判成没有更糟。
+                // 反之，载荷足够长却仍解不出行，才说明本模块读不懂，此时判 Unsupported：
+                // NoLyrics 允许下发纯音乐占位，把有歌词曲目误判为无歌词的后果更严重。
                 if (text.length < MIN_LYRIC_TEXT_LENGTH) {
                     AndroidLog.logD(
                         sourceName,
@@ -257,9 +252,9 @@ class KuwoHookSource : HookLyricSource {
                     )
                     return@execute
                 }
-                // 长但完全没有 LRC 时间标签的载荷，同样不是"我们读不懂"，而是"这不是歌词"。
-                // 解析入口一旦多挂了一个锚点，别的长文本（路径、JSON、搜索结果）也会经过这里；
-                // 把它们判成 Unsupported 会把整首钉死，而它本来只是走错了锚点。
+                // 长但完全没有 LRC 时间标签的载荷同样不是“读不懂”，而是“不是歌词”。
+                // 解析入口一旦多挂锚点，路径、JSON、搜索结果等长文本也会经过这里；
+                // 判成 Unsupported 会把整首曲目标为不可用，而它只是走错锚点。
                 if (!LYRIC_TIME_TAG.containsMatchIn(text)) {
                     AndroidLog.logD(
                         sourceName,
@@ -276,24 +271,24 @@ class KuwoHookSource : HookLyricSource {
 
             stashPut(stashKey(stableId), Stashed(parsed, stableId, requests.current() == null))
             // 解析成功才写 lastDelivered：这份正文确实能出歌词，才值得挡重复回调。
-            // 若在解析之前就写，一次失败（线程池被占、宿主这次给的是残包）会让同一份
-            // 正文永远命中去重分支而再也进不来，而宿主随后可能不再回调。
+            // 若在解析前写，一次失败（线程池被占、宿主给的是残包）会让同一份正文持续
+            // 命中去重分支，而宿主随后可能不再回调。
             lastDelivered = stableId to text
             lastAttempted = null
             AndroidLog.logI(sourceName, "Parsed lyric text, lines=${parsed.lines.size}")
 
-            // 只有当这份结果确实属于当前会话时才直接投递；否则留给 start() 补投。
-            // 绝不能投给一个属于别的曲目的会话——那会被当成新曲目的歌词发布出去。
+            // 只有结果属于当前会话时才直接投递；否则留给 start() 补投。
+            // 不得投给属于其它曲目的会话，那会被当作新曲目歌词发布。
             val activeAtDelivery = requests.current()
             val target = activeAtDelivery?.session
             val current = activeAtDelivery?.identity
-            // 同样走 sameTrack：解析期间若宿主标题才到位，stableId 会从 `kuwo:<rid>`
-            // 变成 `kuwo:<rid>#<标题>`，用严格相等会判成"不是当前曲目"而白白转进 stash。
+            // 同样走 sameTrack：解析期间宿主标题才到位时，stableId 会从 `kuwo:<rid>`
+            // 变成 `kuwo:<rid>#<标题>`；严格相等会判成不是当前曲目，结果白白转入 stash。
             //
-            // stableId 为空（车机版的 Music 字段全被混淆，读不到 rid，只能退到元数据身份，
-            // 而元数据也可能没有 mediaId）时改用身份是否自回调入口以来变过来判定：
-            // 解析是异步的，这期间宿主可能已经切歌，此时投递就是把上一首的正文
-            // 配上新曲目的标识。TrackIdentity 是 data class，结构相等即"同一首"。
+            // stableId 为空（车机版 Music 字段全被混淆，读不到 rid，只能退回元数据身份，
+            // 而元数据也可能没有 mediaId）时，用身份自回调入口以来是否变化判定：
+            // 解析异步进行，期间宿主可能已切歌，此时投递会把上一首正文配上新曲目标识。
+            // TrackIdentity 是 data class，结构相等即同一首。
             val sameSession = if (stableId != null) {
                 sameTrack(stableId, current?.stableId)
             } else {
@@ -315,18 +310,18 @@ class KuwoHookSource : HookLyricSource {
     }
 
     /**
-     * 暂存结果能否还给这次会话
+     * 暂存结果能否还给本次会话
      *
      * 有标识时按 [sameTrack] 判（两边表示法可能不同，见 [start] 的注释）。
      *
-     * 没有标识时只在"解析那一刻没有任何会话"时放行。车机版的 `Music` 字段全被
-     * 混淆、读不到 `rid`，而宿主在进程刚起来时就把当前曲目的歌词解析完了，
-     * 那一刻还没有任何会话，标识只能是 null —— 这类歌词只可能属于接下来建立的会话
-     * （切歌时旧会话仍在，走的是另一条路径），不放行就等于车机版整首没有歌词。
+     * 没有标识时只在解析那一刻没有任何会话时放行。车机版的 `Music` 字段全被混淆，
+     * 读不到 `rid`；宿主在进程刚启动时就把当前曲目歌词解析完，那一刻没有会话，
+     * 标识只能为 null。这类歌词只可能属于接下来建立的会话（切歌时前一会话仍在，
+     * 走另一条路径）；不放行会使车机版整首无歌词。
      *
-     * 放行前再用歌词自带的 `[ti:]`/`[ar:]` 核一次：两边标题都拿得到却不一致，
-     * 就说明这份歌词属于别的曲目，宁可丢弃也不发布错误内容。歌词没带标题时无从核对，
-     * 只能依赖"没有会话"这一条 —— 那种输入本来就少见（酷我的 LRCX 必带 [ti:]）。
+     * 放行前用歌词自带的 `[ti:]` / `[ar:]` 再核一次：两边标题都可得却不一致，
+     * 说明这份歌词属于其它曲目，丢弃而不发布。歌词未带标题时无从核对，只能依赖
+     * “没有会话”这一条；这种输入少见（酷我的 LRCX 必带 [ti:]）。
      */
     private fun canReplay(stashed: Stashed, identity: TrackIdentity): Boolean {
         if (stashed.id != null) return sameTrack(stashed.id, identity.stableId)
@@ -341,8 +336,8 @@ class KuwoHookSource : HookLyricSource {
     /**
      * 写入一个暂存槽，超出上限时淘汰最久未访问的一份
      *
-     * 上限存在的原因：队列预取没有边界，长时间播放会把每一首的正文都留在内存里。
-     * 按访问顺序淘汰，正在等待补投的那几首总在最近访问的一端。
+     * 上限存在的原因：队列预取没有边界，长时间播放会把每首正文都留在内存中。
+     * 按访问顺序淘汰，正在等待补投的曲目位于最近访问端。
      */
     private fun stashPut(key: String, value: Stashed) {
         synchronized(stashByRid) {
@@ -357,9 +352,9 @@ class KuwoHookSource : HookLyricSource {
     /**
      * 暂存槽的键：稳定标识去掉命名空间后的全文（含标题段）
      *
-     * 键里必须保留标题段：酷我的 rid 在有声书上是专辑级 ID，同一部书各集共用一个；
-     * 只按 rid 归槽会让「第 489 集」的正文顶掉「第 481 集」，换集时补投出去的还是上一集。
-     * 读不到 rid（车机版）时退化成空串，等价于单槽 —— 那种输入本来也无法区分曲目。
+     * 键必须保留标题段：酷我的 rid 在有声书上是专辑级 ID，同一部书各集共用；只按 rid
+     * 归槽会让第 489 集的正文顶掉第 481 集，换集时补投上一集。读不到 rid（车机版）时
+     * 退化为空串，等价于单槽；这类输入无法区分曲目。
      */
     private fun stashKey(stableId: String?): String =
         TrackIdentity.normalizeStableId(stableId).orEmpty()
@@ -367,15 +362,13 @@ class KuwoHookSource : HookLyricSource {
     /**
      * 判断两个稳定标识是否指向同一曲目
      *
-     * 完全相等即同一首；除此之外只放宽"一方还没有标题段"这一种写法差异：
-     * `kuwo:<rid>` 与 `kuwo:<rid>#<标题>` 表示的是同一首（区别只在拼标识时宿主标题
-     * 是否已就绪）。
+     * 完全相等即同一首；此外只放宽“一方尚无标题段”的写法差异：`kuwo:<rid>` 与
+     * `kuwo:<rid>#<标题>` 表示同一首，区别只在拼标识时宿主标题是否就绪。
      *
-     * 两侧都带标题且不同时不是同一首：酷我的 rid 在有声书上是专辑级 ID，标题才是
-     * 区分集的依据。按 rid 放宽会把上一集的正文配给新一集。
+     * 两侧都带标题且不同则不是同一首：酷我的 rid 在有声书上是专辑级 ID，标题才区分集；
+     * 按 rid 放宽会把上一集正文配给新一集。
      *
-     * 任何一侧为空都返回 false —— 两侧都为空时相等，会把上一首的歌词
-     * 当成本曲目的结果发布出去。
+     * 任一侧为空都返回 false；两侧都为空时相等会把上一首歌词当作本曲目结果发布。
      */
     private fun sameTrack(leftId: String?, rightId: String?): Boolean {
         val left = TrackIdentity.normalizeStableId(leftId) ?: return false
@@ -388,10 +381,9 @@ class KuwoHookSource : HookLyricSource {
 
     /**
      * 用 rid + 宿主标题组装稳定标识
-
      *
      * 必须与 Provider 侧 [KuwoBaseProvider] 的规则一致，否则两侧标识表示法不同，
-     * Hook 上报的结果会被当成过期数据丢弃。标题取不到时退化为只用 rid。
+     * Hook 上报结果会被当作过期数据丢弃。标题取不到时退化为只用 rid。
      */
     private fun stableIdOf(rid: String): String? {
         if (rid.isEmpty()) return null
@@ -426,24 +418,24 @@ class KuwoHookSource : HookLyricSource {
     private companion object {
         const val NAMESPACE = "kuwo"
 
-        /** 宿主真实曲目信息的 LRU 上限；被淘汰的只会是预取过、还没轮到的曲目 */
+        /** 宿主真实曲目信息的 LRU 上限；淘汰的只会是已预取、尚未轮到的曲目 */
         const val MAX_CACHED_TRACKS = 32
 
-        /** 预取歌词的暂存槽上限：覆盖队列里预取的几首即可，超出按访问顺序淘汰最旧 */
+        /** 预取歌词的暂存槽上限：覆盖队列预取的几首即可，超出按访问顺序淘汰最旧 */
         const val MAX_STASHED_TRACKS = 8
 
         /**
-         * 可视为"歌词全文"的最小长度
+         * 可视为“歌词全文”的最小长度
          *
-         * LRCX 全文至少带密钥头、若干 LRC 标签与一行歌词，实际上不会低于数百字节；
-         * 而宿主辅助方法带过解析入口的单行文本通常只有数十字符。取 200 以稳定分开两者。
+         * LRCX 全文至少带密钥头、若干 LRC 标签与一行歌词，实际不会低于数百字节；
+         * 宿主辅助方法带入解析入口的单行文本通常只有数十字符。取 200 以稳定区分两者。
          */
         const val MIN_LYRIC_TEXT_LENGTH = 200
 
         /**
          * LRC / LRCX 的时间标签（`[mm:ss]` 或 `[mm:ss.SSS]`）
          *
-         * 任何一份真正的歌词全文都带它；用它把"读不懂歌词"和"这压根不是歌词"分开。
+         * 任何真正的歌词全文都带它；用它区分“读不懂歌词”与“这根本不是歌词”。
          */
         val LYRIC_TIME_TAG = Regex("""\[\d{1,3}:\d{1,2}""")
     }

@@ -47,20 +47,17 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Poweramp Hook 锚点
- * <p>
- * 为什么只需要两个入口
- * Poweramp 的整首歌词最终只有两种形态：
+ *
+ * <p>Poweramp 的整首歌词只有两种形态：
  * <ul>
- * <li>{@code cached_lyrics.content} —— 插件或上次解析的结果；</li>
- * <li>{@code lrc_files} 里的路径 —— 同名 LRC 文件。</li>
+ * <li>{@code cached_lyrics.content}，即插件或上次解析的结果；</li>
+ * <li>{@code lrc_files} 里的路径，即同名 LRC 文件。</li>
  * </ul>
- * 前者由 {@link PowerampHookSource} 直接查库；后者交给宿主自己的
- * {@code LrcParser} 解析，本类在解析流上截获原始文本。这样既不依赖歌词界面，
- * 也不需要触碰 Poweramp 的行/词模型。
- * <p>
- * 为什么调用宿主解析器而不是自己读文件
- * Poweramp 通过它自己的存储通道读取 {@code primary/...} 相对路径；模块直接
- * {@code File} 读取会被 scoped storage 拒绝（实测 EACCES）。
+ * <p>前者由 {@link PowerampHookSource} 直接查库；后者交给宿主自己的 {@code LrcParser}
+ * 解析，本类在解析流上截获原始文本。该路径既不依赖歌词界面，也不触碰 Poweramp 的行/词模型。
+ *
+ * <p>LRC 文件必须由宿主解析器读取：Poweramp 通过自己的存储通道读取 {@code primary/...}
+ * 相对路径，模块直接 {@code File} 读取会被 scoped storage 拒绝（实测 EACCES）。
  *
  * @author HChenX
  */
@@ -70,7 +67,7 @@ public final class PowerampAnchors {
     private static final String ENGINE_CACHE_KEY = "poweramp_lrc_engine_v1";
 
     /**
-     * LrcParser 打开文件失败时的日志串，跨版本稳定。
+     * LrcParser 打开文件失败时的日志串，跨版本稳定
      */
     private static final String ENGINE_ANCHOR = "Failed to open or read LRC path=";
 
@@ -79,7 +76,7 @@ public final class PowerampAnchors {
     private static final String REST_PROVIDER = "com.maxmpz.audioplayer.rest.RestProvider";
 
     /**
-     * 单份歌词的捕获上限；超过它多半不是歌词文本。
+     * 单份歌词的捕获上限；超过它多半不是歌词文本
      */
     private static final int MAX_LYRIC_BYTES = 2 * 1024 * 1024;
 
@@ -132,7 +129,7 @@ public final class PowerampAnchors {
     }
 
     /**
-     * 取到候选歌词文本时的回调。
+     * 取到候选歌词文本时的回调
      */
     public interface LyricsListener {
         /**
@@ -154,7 +151,7 @@ public final class PowerampAnchors {
     }
 
     /**
-     * 定位并挂载全部点位。幂等；单个点位失败不影响其它点位。
+     * 定位并挂载全部点位。幂等；单个点位失败不影响其它点位
      */
     public static void install(@NonNull LyricsListener listener) {
         sListener = listener;
@@ -163,7 +160,7 @@ public final class PowerampAnchors {
     }
 
     /**
-     * 逐个点位重试；已成功的点位不会重复挂。
+     * 逐个点位重试；已成功的点位不会重复挂
      */
     public static void retryAnchors() {
         LyricsListener listener = sListener;
@@ -173,8 +170,6 @@ public final class PowerampAnchors {
         hookTagAndMeta(listener);
         hookLyricsActivity(listener);
     }
-
-    // ---------------------------------------------------------------- 数据库连接
 
     private static void hookRestProvider() {
         if (sRestHookInstalled) return;
@@ -204,7 +199,7 @@ public final class PowerampAnchors {
     }
 
     /**
-     * 宿主当前打开的数据库连接；未就绪时为 null。
+     * 宿主当前打开的数据库连接；未就绪时为 null
      */
     @Nullable
     public static SQLiteDatabase getDatabase() {
@@ -212,19 +207,17 @@ public final class PowerampAnchors {
     }
 
     /**
-     * Application 初始化后重试 LRC 存储钩子。
+     * Application 初始化后重试 LRC 存储钩子
      *
-     * <p>{@link #install} 在 packageReady 时可能拿不到宿主的 LrcParser engine；
-     * 不能把这一次失败当成永久失效。
+     * <p>{@link #install} 在 packageReady 时可能拿不到宿主的 LrcParser engine，
+     * 单次失败不视为永久失效。
      */
     public static void retryLrcHook() {
         retryAnchors();
     }
 
-    // ---------------------------------------------------------------- LRC 解析器
-
     /**
-     * 用宿主自己的 LRC 解析器读取一个歌词路径。
+     * 用宿主自己的 LRC 解析器读取一个歌词路径
      *
      * <p>调用链与 Poweramp 内部完全一致，因此 {@link #hookLrcStorage(LyricsListener)} 挂上的
      * 解析流钩子会同步拿到原始文本。
@@ -256,8 +249,8 @@ public final class PowerampAnchors {
             // 字符集由本模块在流上按原始字节判断；宿主自己的解析结果不使用，
             // 传 true 只为让它的解析路径正常走完
             engine.fileMethod.invoke(parser, context, storage, path, true, false, false);
-            // “成功调用进宿主解析器”不等于“真的拿到了文本”：engine 未就绪、open 钩子
-            // 安装失败、宿主换线程读取都会让回调永不发生。调用方必须能区分。
+            // 成功调用进宿主解析器不等于真的拿到了文本：engine 未就绪、open 钩子
+            // 安装失败、宿主换线程读取都会让回调永不发生，调用方必须能区分。
             return Boolean.TRUE.equals(sCaptureDelivered.get());
         } catch (Throwable t) {
             AndroidLog.logW(TAG, "Host lyric parse failed: " + t);
@@ -271,9 +264,9 @@ public final class PowerampAnchors {
     /**
      * 在宿主打开 LRC 输入流时截获原始字节
      *
-     * <p>不能在 `LrcParser` 的 `BufferedReader` 上取文本：宿主用
-     * `lrc_files.is_utf8` 选择字符集，而该标志实测不可靠（UTF-8 文件被按
-     * Latin-1 解码成乱码）。这里读原始字节后自己按 UTF-8 → GBK 回退解码，
+     * <p>不能在 {@code LrcParser} 的 {@code BufferedReader} 上取文本：宿主用
+     * {@code lrc_files.is_utf8} 选择字符集，而该标志实测不可靠（UTF-8 文件被按
+     * Latin-1 解码成乱码）。这里读原始字节后按 UTF-8 → GBK 回退解码，
      * 再把同一份字节包回流里，宿主行为不变。
      */
     private static void hookLrcStorage(@NonNull LyricsListener listener) {
@@ -329,7 +322,7 @@ public final class PowerampAnchors {
     }
 
     /**
-     * 读尽输入流；超过上限返回 null。不关闭入参：宿主之后还要用它。
+     * 读尽输入流；超过上限返回 null。不关闭入参：宿主之后还要用它
      */
     @Nullable
     private static byte[] readAll(@NonNull InputStream input) {
@@ -429,8 +422,6 @@ public final class PowerampAnchors {
         }
     }
 
-    // ---------------------------------------------------------------- 标签歌词
-
     private static void hookTagAndMeta(@NonNull LyricsListener listener) {
         if (sTagSetTagsInstalled && sTagUnsyncInstalled) return;
         Class<?> tagClass = CoreTool.findClassIfExists(TAG_AND_META);
@@ -480,8 +471,6 @@ public final class PowerampAnchors {
             AndroidLog.logW(TAG, "Hook getUnsyncLyrics failed: " + t);
         }
     }
-
-    // ---------------------------------------------------------------- 歌词界面兜底
 
     private static void hookLyricsActivity(@NonNull LyricsListener listener) {
         if (sActivityHookInstalled) return;
@@ -544,7 +533,7 @@ public final class PowerampAnchors {
     }
 
     /**
-     * 把 SYLT 的两个平行数组还原成标准 LRC，复用内核已有的 LRC 解析器。
+     * 把 SYLT 的两个平行数组还原成标准 LRC，复用内核已有的 LRC 解析器
      */
     @NonNull
     private static String buildLrcFromSync(@Nullable Object tag) {
@@ -569,10 +558,8 @@ public final class PowerampAnchors {
         return builder.toString();
     }
 
-    // ---------------------------------------------------------------- 工具
-
     /**
-     * 任何探测异常都必须留在本模块内，绝不能传进宿主进程。
+     * 任何探测异常都留在本模块内，不传进宿主进程
      */
     private static void safe(@NonNull Runnable action) {
         try {

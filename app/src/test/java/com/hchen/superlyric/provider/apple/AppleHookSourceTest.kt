@@ -24,11 +24,11 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * Apple Music 的**纯净化逻辑**测试。
+ * Apple Music 的净化逻辑与回调归属判定
  *
- * Apple 是订阅制服务，且歌词由 JNI 侧以裸指针交给 Java 层，
- * 本机无法做真机验证（无 VIP）。它的 Provider 层里唯一不依赖宿主对象的就是
- * [AppleHookSource.cleanHtml]，这里把它钉死。
+ * 歌词由 JNI 侧以裸指针交给 Java 层，Provider 层中不依赖宿主对象的是
+ * [AppleHookSource.cleanHtml]；[AppleHookSource.judgeTrack] 与
+ * [AppleHookSource.admits] 决定回调结论是否属于当前曲目、是否被采纳。
  *
  * @author 焕晨HChen
  */
@@ -69,9 +69,7 @@ class AppleHookSourceTest {
         assertEquals("", source.cleanHtml("   "))
     }
 
-    // =========================================================================
-    // 回调归属判定（切歌窗口里的过期结论必须被拦下）
-    // =========================================================================
+    // 回调归属判定：切歌窗口内的过期结论必须被拦下
 
     @Test
     fun `a verdict for the current track is kept`() {
@@ -82,15 +80,15 @@ class AppleHookSourceTest {
 
     @Test
     fun `a verdict for another track is dropped`() {
-        // 核心那一条：锚点的取词有 350ms 去抖，`requestLyrics(item)` 可能在切歌**之后**
-        // 才跑完。上一首的"无词"结论若被采纳，会经由纯音乐占位把有歌词的曲目永久钉死
+        // 锚点取词有 350ms 去抖，`requestLyrics(item)` 可能在切歌之后才返回。
+        // 上一首的"无词"结论若被采纳，会经由纯音乐占位把有歌词的曲目永久写成纯音乐
         assertEquals(AppleHookSource.TrackVerdict.DIFFERENT, source.judgeTrack("123456", "654321"))
     }
 
     @Test
     fun `an unverifiable verdict is delivered rather than silently dropped`() {
-        // 任一侧取不到标识 ⇒ 判"无从判定"，上层照旧投递并记 W。
-        // 静默丢弃会让 Apple 的**合法**结论凭空消失，而那条路只会让曲目显示为空
+        // 任一侧取不到标识即判为无从判定，上层仍会投递并记 W。
+        // 静默丢弃会让 Apple 的合法结论消失，而那条路只会让曲目显示为空
         assertEquals(AppleHookSource.TrackVerdict.UNVERIFIABLE, source.judgeTrack(null, "123456"))
         assertEquals(AppleHookSource.TrackVerdict.UNVERIFIABLE, source.judgeTrack("123456", null))
         assertEquals(AppleHookSource.TrackVerdict.UNVERIFIABLE, source.judgeTrack("   ", "123456"))
@@ -99,25 +97,22 @@ class AppleHookSourceTest {
 
     @Test
     fun `the containment tolerance is deliberate and bounded`() {
-        // 宽容判等的代价写在 judgeTrack 的注释里：互相包含即算同一首。
-        // 把它钉死，免得以后有人以为这个判据比实际更严
+        // 判等规则是互相包含即算同一首，其代价记在 judgeTrack 的注释中；
+        // 此处固定该判据的实际范围
         assertEquals(AppleHookSource.TrackVerdict.SAME, source.judgeTrack("12345", "123456"))
         assertEquals(AppleHookSource.TrackVerdict.DIFFERENT, source.judgeTrack("12345", "54321"))
     }
 
-    // =========================================================================
     // 判等结果的采纳（六格）
-    // =========================================================================
 
     @Test
     fun `only a confirmed same track is admitted, and only the payload path is lenient`() {
-        // 这条规则写错过两次：先是不拦（过期结论投给了新曲目），后是 enforce 形同虚设
-        // （注释写"从严、不采纳"，代码却照放行）。六格逐一钉住
+        // 六格逐一固定：终态结论只在判据成立时采纳，载荷路径放宽
         assertTrue(source.admits(AppleHookSource.TrackVerdict.SAME, enforce = true))
         assertTrue(source.admits(AppleHookSource.TrackVerdict.SAME, enforce = false))
 
-        // 终态结论（无词）：判据不成立就不采纳——判错的代价是永久钉死，而"无从判定"
-        // 恰恰说明这条判据不成立
+        // 终态结论（无词）：判据不成立即不采纳。判错的代价是曲目被永久判为纯音乐，
+        // 而无从判定说明判据不成立
         assertFalse(source.admits(AppleHookSource.TrackVerdict.DIFFERENT, enforce = true))
         assertFalse(source.admits(AppleHookSource.TrackVerdict.UNVERIFIABLE, enforce = true))
 

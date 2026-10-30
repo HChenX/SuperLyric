@@ -21,19 +21,14 @@ package com.hchen.superlyric.kernel.decode;
 import java.nio.charset.StandardCharsets;
 
 /**
- * QQ 音乐 QRC 载荷解密：{@code byte[] → 已解密的 QRC 明文}。
- * <p>
- * <b>只做解密，不做解析。</b>解密后的明文（{@code <QrcInfos>…} XML 或裸的
- * {@code [start,dur](w,dur)chars} 行）交由 {@code QrcParser} 解析。
- * <p>
- * <b>关于算法：</b>QQ 使用的是<b>经过改造的 Triple-DES</b>，与标准 DES 不兼容，因此
- * 无法使用 JCE 的 {@code DESede}。改造点在于 S 盒查表：{@link #sboxBit(byte)} 的
- * 取值展开后等价于标准 DES 的 {@code row * 16 + col}（已逐位验算），
- * 但 {@code SBOX2} 的第 24 项被改为 {@code 15}（标准 DES 为 {@code 14}）。
- * 任何"顺手换成 JCE"的改动都会静默产生乱码，务必保持本实现字节级不变。
- * <p>
- * <b>格式：</b>3DES 逐 8 字节块解密（ECB，不剥离 PKCS5 填充）→ ZLib 解压 → UTF-8 明文。
- * 未压缩的尾部填充由 {@link Zlib} 在流末尾自然停止来处理。
+ * QQ 音乐 QRC 载荷解密。
+ *
+ * <p>只做解密，不解析。解密后的 XML 或逐字行交给 QrcParser。
+ *
+ * <p>算法为改造版 Triple-DES：S 盒查表与标准 DES 不同，SBOX2 第 24 项为 15，
+ * 不能替换为 JCE 的 DESede。
+ *
+ * <p>流程：按 8 字节块 ECB 解密，不剥离 PKCS5 填充，再经 ZLib 解压为 UTF-8。
  *
  * @author 焕晨HChen
  */
@@ -82,8 +77,7 @@ public final class QrcCipher {
             throw new DecodeException("qrc ciphertext shorter than one DES block");
         }
         if (cipherBytes.length % 8 != 0) {
-            // 3DES/ECB 的密文必然是 8 的倍数。静默丢掉尾部可能把截断解成“成功”，
-            // 用户只会发现最后几行歌词消失，而整条链路判定为 Success。
+            // 密文长度必须是 8 的倍数；丢弃尾部可能把截断解成成功。
             throw new DecodeException("qrc ciphertext is not a multiple of 8 bytes");
         }
         int blocks = cipherBytes.length / 8;
@@ -100,9 +94,7 @@ public final class QrcCipher {
         return decrypted;
     }
 
-    // =========================================================================
-    // 腾讯改造版 Triple-DES（与标准 DES 不兼容，切勿替换为 JCE）
-    // =========================================================================
+    // 腾讯改造版 Triple-DES；与标准 DES 不兼容，不能替换为 JCE。
 
     private static final class ScheduleHolder {
         static final byte[][][] QRC_SCHEDULE = initSchedule();

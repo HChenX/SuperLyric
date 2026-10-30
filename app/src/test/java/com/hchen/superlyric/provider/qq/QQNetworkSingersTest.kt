@@ -25,21 +25,19 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * QQ 检索候选的歌手名解析。
+ * QQ 检索候选的歌手名解析
  *
- * ## 为什么值得一条测试
- * 歌手是打分器里 30% 的一栏。取不到它，一个本来满分的候选会掉到 70 分——**低于采纳线
- * 75**——于是检索路径的合法匹配全部不采纳，表现为"这首歌没有歌词"。
+ * 歌手占打分器 30% 的一栏。取不到它，满分候选会掉到 70 分，低于 75 的采纳线，
+ * 检索路径的合法匹配全部不采纳，表现为"这首歌没有歌词"。
  *
- * 这条规则写错过一次：给 `singer` 加的字符串兜底被放在了数组分支**之前**，而 `optString`
- * 遇到数组会返回一段非空白的 JSON 文本，于是它把所有数组形状的候选都截住了。
- * 下面的用例逐一钉住三种形状，任何一处顺序再被改回去都会失败。
+ * 用例固定歌手字段的三种形状：对象数组、纯字符串数组、纯字符串，以及两个兜底键。
+ * `optString` 遇到数组会返回非空白的 JSON 文本，因此数组形状不得落入字符串兜底。
  */
 class QQNetworkSingersTest {
 
     @Test
     fun `an array of singer objects yields the joined names`() {
-        // 这是接口的真实形状，也正是被兜底遮蔽过的那一种
+        // 接口返回的真实形状
         val item = JSONObject().put(
             "singer",
             JSONArray()
@@ -76,7 +74,7 @@ class QQNetworkSingersTest {
 
     @Test
     fun `an array never degrades into raw json text`() {
-        // 核心那一条：数组形状**绝不能**落进字符串兜底，否则歌手分会静默归零
+        // 数组形状不得落进字符串兜底，否则歌手分会静默归零
         val item = JSONObject().put(
             "singer",
             JSONArray().put(JSONObject().put("name", "周杰伦")),
@@ -95,8 +93,8 @@ class QQNetworkSingersTest {
 
     @Test
     fun `an empty array never degrades into raw json text`() {
-        // 空数组是同一个陷阱的另一面：若按"取出来的串空不空"分派，它会继续落到字符串兜底，
-        // 于是又拿到 `[]` 这段非空白的 JSON 文本
+        // 空数组若按取出的串是否为空分派，会继续落到字符串兜底，
+        // 拿到 `[]` 这段非空白 JSON 文本
         assertEquals("", readSingers(JSONObject().put("singer", JSONArray())))
     }
 

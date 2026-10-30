@@ -89,7 +89,7 @@ fun BgEffectBackground(
 
             var targetStage = floor(colorStage.value) + 1f
             while (isActive) {
-                // `colorInterpPeriod` 是预设里的周期刻度，×500 换算成毫秒
+                // `colorInterpPeriod` 是预设的周期刻度，由 MILLIS_PER_PERIOD_UNIT 换算成毫秒
                 // （各预设取值 5~100，对应 2.5s~50s）
                 delay((preset.colorInterpPeriod * MILLIS_PER_PERIOD_UNIT).toLong())
                 colorStage.animateTo(

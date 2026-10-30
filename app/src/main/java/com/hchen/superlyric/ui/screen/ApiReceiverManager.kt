@@ -19,13 +19,16 @@
 package com.hchen.superlyric.ui.screen
 
 import android.os.SystemClock
-import androidx.compose.foundation.layout.size
-import com.hchen.superlyricapi.ISuperLyricReceiver
-import com.hchen.superlyricapi.SuperLyricCache
-import com.hchen.superlyricapi.SuperLyricData
-import com.hchen.superlyricapi.SuperLyricHelper
-import com.hchen.superlyricapi.SuperLyricLine
-import com.hchen.superlyricapi.SuperLyricWord
+import com.hchen.superlyricapi.LyricListener
+import com.hchen.superlyricapi.LyricView
+import com.hchen.superlyricapi.Receiver
+import com.hchen.superlyricapi.SuperLyric
+import com.hchen.superlyricapi.model.Line
+import com.hchen.superlyricapi.model.Lyric
+import com.hchen.superlyricapi.model.PlaybackState
+import com.hchen.superlyricapi.model.Stop
+import com.hchen.superlyricapi.model.StopReason
+import com.hchen.superlyricapi.model.Word
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -38,118 +41,137 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * API 接收器与状态管理单例
+ *
+ * 接收端支持多个 [LyricListener]；本看板只注册自己的那一个，注册与注销按生命周期
+ * 配对，避免后台继续收帧。
  */
 internal object ApiReceiverManager {
     val receiverFlow = MutableStateFlow(ApiReceiverState())
     val pausedFlow = MutableStateFlow(false)
 
-    /**
-     * 收包计数
-     *
-     * 必须原子：[mReceiver] 的回调由 Binder 线程池并发进入，`++` 会丢更新，
-     * 让"全量/增量"的统计与展示用的 `packetSeq` 一起失真
-     */
+    private const val TAG = "ApiReceiverManager"
+    private const val SOURCE_SERVICE = "super_lyric.v4"
+    private const val SOURCE_LEGACY = "super_lyric"
+    private const val SOURCE_MOCK = "MockDebugPublisher"
+
+    private const val EVENT_FULL = "FULL"
+    private const val EVENT_STATE = "STATE"
+    private const val EVENT_STOP = "STOP"
+    private const val EVENT_PULL = "PULL_LATEST"
+
     private val TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
 
     private val totalPackets = AtomicInteger(0)
     private val fullPackets = AtomicInteger(0)
-    private val progressPackets = AtomicInteger(0)
+    private val statePackets = AtomicInteger(0)
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     /**
+     * 最近一次注册得到的服务名
+     *
+     * 仅在帧未携带 publisher 时作为兜底。
+     */
+    @Volatile
+    private var sourceLabel = SOURCE_SERVICE
+
+    /**
      * 收包计数与状态赋值的临界区
      *
-     * 计数（`incrementAndGet`）与随后的 `receiverFlow.value = …` 必须是一步：
-     * 回调由 Binder 线程池并发进入，若两者之间没有互斥，T1 取到 seq=5、T2 取到 seq=6
-     * 而 T2 先赋值时，看板上的 `packetSeq` 会从 6 退回 5。锁只包住这两步，
-     * 不包 JSON 解析等耗时操作
+     * 计数与随后的 `receiverFlow.value` 赋值必须原子完成：回调由 Binder 线程池并发
+     * 进入，若 T2 取到更大的序号却先赋值，看板上的 `packetSeq` 会倒退。锁只包住
+     * 这两步，不包耗时操作
      */
     private val publishLock = Any()
 
-    val mReceiver = object : ISuperLyricReceiver.Stub() {
-        override fun onLyric(publisher: String?, data: SuperLyricData?) {
+    private val mListener = object : LyricListener {
+        override fun onLyric(view: LyricView) {
             if (pausedFlow.value) return
-            handleIncomingLyric(publisher, data)
+            handleIncomingLyric(view)
         }
 
-        override fun onStop(publisher: String?, data: SuperLyricData?) {
+        override fun onStop(stop: Stop) {
             if (pausedFlow.value) return
-            handleIncomingStop(publisher, data)
+            handleIncomingStop(stop)
         }
     }
 
     fun ensureRegistered() {
         var registeredNow = false
         try {
-            if (!SuperLyricHelper.isAvailable()) return
-            val currentlyRegistered = SuperLyricHelper.isReceiverRegistered(mReceiver)
-            if (!currentlyRegistered) {
-                SuperLyricHelper.registerReceiver(mReceiver)
-                registeredNow = true
+            if (!SuperLyric.isAvailable()) return
+            // 每次回到前台都重新 register：同一 transport 时该调用幂等，
+            // 服务重启后新的 transport 会自动重绑
+            val result = SuperLyric.receiver().register(mListener)
+            registeredNow = result == Receiver.RegisterResult.OK
+            if (!registeredNow) {
+                android.util.Log.w(TAG, "Register result: $result")
             }
-        } catch (e: Throwable) {
-            android.util.Log.e("ApiReceiverManager", "Failed to register receiver", e)
+        } catch (t: Throwable) {
+            android.util.Log.e(TAG, "Failed to register receiver", t)
         }
-        // 服务端 registerReceiver 不会重放 session.latestLyric；后台期间切歌/暂停的包已经丢了。
-        // 每次（重新）注册都必须主动拉一次，否则回前台仍显示上一首。
-        if (registeredNow || receiverFlow.value.data == null) {
-            pullLatest()
+        if (registeredNow) {
+            sourceLabel = if (SuperLyric.serverApiVersion() > 0) SOURCE_SERVICE else SOURCE_LEGACY
         }
+        // register 不触发任何帧，也不补发 STOP：每次回到前台或切到本页都主动拉取一次，
+        // 补上后台期间错过的 FULL 与 STOP
+        pullLatest()
     }
 
     fun unregister() {
         try {
-            if (SuperLyricHelper.isAvailable() && SuperLyricHelper.isReceiverRegistered(mReceiver)) {
-                SuperLyricHelper.unregisterReceiver(mReceiver)
-            }
-        } catch (e: Throwable) {
-            android.util.Log.e("ApiReceiverManager", "Failed to unregister receiver", e)
+            // 接收端支持多个监听器；本类只注册一个，进程内也没有其它消费者，
+            // 因此用 unregisterAll 断开整个连接
+            SuperLyric.receiver().unregisterAll()
+        } catch (t: Throwable) {
+            android.util.Log.e(TAG, "Failed to unregister receiver", t)
         }
     }
 
-    private fun handleIncomingLyric(publisher: String?, data: SuperLyricData?) {
-        val isFull = data != null && data.hasAllLyrics()
-        // 解析耗时，放锁外
-        val effectiveData = SuperLyricCache.resolve(data) ?: data
+    private fun handleIncomingLyric(view: LyricView) {
+        // STATE 帧复用同一个 Lyric 实例，引用变化即表示 FULL 帧
+        val previous = receiverFlow.value.lyric
+        val isFull = previous == null || view.lyric !== previous
         val time = LocalTime.now().format(TIME_FORMAT)
 
-        // 计数与状态赋值在同一个临界区内，见 [publishLock]
         synchronized(publishLock) {
             val seq = totalPackets.incrementAndGet()
             if (isFull) {
                 fullPackets.incrementAndGet()
             } else {
-                progressPackets.incrementAndGet()
+                statePackets.incrementAndGet()
             }
             receiverFlow.value = ApiReceiverState(
-                publisher = publisher,
-                data = effectiveData,
-                eventType = "ON_LYRIC",
+                lyric = view.lyric,
+                index = view.index,
+                position = view.position,
+                speed = view.speed,
+                playbackState = view.state,
+                source = view.publisher ?: sourceLabel,
+                eventType = if (isFull) EVENT_FULL else EVENT_STATE,
                 receiveTime = time,
                 packetSeq = seq,
                 fullCount = fullPackets.get(),
-                progressCount = progressPackets.get(),
-                allLyricsCache = effectiveData?.allLyrics
+                stateCount = statePackets.get(),
             )
         }
     }
 
-    private fun handleIncomingStop(publisher: String?, data: SuperLyricData?) {
-        val effectiveData = SuperLyricCache.resolve(data) ?: data
+    private fun handleIncomingStop(stop: Stop) {
+        val current = receiverFlow.value
         val time = LocalTime.now().format(TIME_FORMAT)
 
         synchronized(publishLock) {
             val seq = totalPackets.incrementAndGet()
-            receiverFlow.value = ApiReceiverState(
-                publisher = publisher,
-                data = effectiveData,
-                eventType = "ON_STOP",
+            receiverFlow.value = current.copy(
+                source = stop.publisher ?: current.source ?: sourceLabel,
+                eventType = EVENT_STOP,
                 receiveTime = time,
                 packetSeq = seq,
                 fullCount = fullPackets.get(),
-                progressCount = progressPackets.get(),
-                allLyricsCache = effectiveData?.allLyrics
+                stateCount = statePackets.get(),
+                playbackState = stop.stopPlaybackState(),
+                positionTimestamp = SystemClock.elapsedRealtime(),
             )
         }
     }
@@ -157,36 +179,47 @@ internal object ApiReceiverManager {
     fun pullLatest(onComplete: ((Boolean) -> Unit)? = null) {
         scope.launch {
             try {
-                val latest = SuperLyricHelper.getLatestLyric()
-                if (latest != null) {
-                    val effectiveData = SuperLyricCache.resolve(latest) ?: latest
+                val view = SuperLyric.receiver().latest()
+                if (view != null) {
                     val time = LocalTime.now().format(TIME_FORMAT)
                     synchronized(publishLock) {
                         val seq = totalPackets.incrementAndGet()
-                        if (latest.hasAllLyrics()) fullPackets.incrementAndGet() else progressPackets.incrementAndGet()
+                        fullPackets.incrementAndGet()
                         receiverFlow.value = ApiReceiverState(
-                            publisher = "SuperLyricService",
-                            data = effectiveData,
-                            eventType = "PULL_LATEST",
+                            lyric = view.lyric,
+                            index = view.index,
+                            position = view.position,
+                            speed = view.speed,
+                            playbackState = view.state,
+                            source = view.publisher ?: sourceLabel,
+                            eventType = EVENT_PULL,
                             receiveTime = time,
                             packetSeq = seq,
                             fullCount = fullPackets.get(),
-                            progressCount = progressPackets.get(),
-                            allLyricsCache = effectiveData.allLyrics
+                            stateCount = statePackets.get(),
                         )
                     }
                     withContext(Dispatchers.Main) {
                         onComplete?.invoke(true)
                     }
                 } else {
-                    withContext(Dispatchers.Main) {
-                        onComplete?.invoke(false)
+                    // 会话结束时 latest() 返回 null，STOP 记录在 lastStop；
+                    // 冷启动靠它恢复已停止状态，而不是留空
+                    val stop = SuperLyric.receiver().lastStop()
+                    if (stop != null) {
+                        handleIncomingStop(stop)
+                        withContext(Dispatchers.Main) {
+                            onComplete?.invoke(true)
+                        }
+                    } else {
+                        withContext(Dispatchers.Main) {
+                            onComplete?.invoke(false)
+                        }
                     }
                 }
             } catch (e: Throwable) {
-                // 必须留痕：否则"服务端确实没有数据"与"IPC 抛异常"在日志里完全一样，
-                // 而两者对这一层的含义不同——前者是正常空态，后者是我们的调用没打通
-                android.util.Log.w("ApiReceiverManager", "Failed to pull the latest lyric", e)
+                // 必须留痕：否则无法区分服务端没有数据（正常空态）与 IPC 调用异常
+                android.util.Log.w(TAG, "Failed to pull the latest lyric", e)
                 withContext(Dispatchers.Main) {
                     onComplete?.invoke(false)
                 }
@@ -195,150 +228,162 @@ internal object ApiReceiverManager {
     }
 
     fun injectMockLyric() {
-        val mockWords1 = arrayOf(
-            SuperLyricWord("看", 0, 400),
-            SuperLyricWord("蔚", 400, 800),
-            SuperLyricWord("蓝", 800, 1200),
-            SuperLyricWord("的", 1200, 1500),
-            SuperLyricWord("天", 1500, 2000),
-            SuperLyricWord("空", 2000, 2600)
-        )
-        val line1 = SuperLyricLine("看蔚蓝的天空", mockWords1, 0, 2600)
-        val line2 = SuperLyricLine(
-            "白云在轻轻飘动",
-            arrayOf(
-                SuperLyricWord("白", 2700, 3100),
-                SuperLyricWord("云", 3100, 3500),
-                SuperLyricWord("在", 3500, 3800),
-                SuperLyricWord("轻", 3800, 4200),
-                SuperLyricWord("轻", 4200, 4600),
-                SuperLyricWord("飘", 4600, 5000),
-                SuperLyricWord("动", 5000, 5600)
+        val lines = listOf(
+            Line(
+                "看蔚蓝的天空", 0, 2600,
+                listOf(
+                    Word("看", 0, 400),
+                    Word("蔚", 400, 800),
+                    Word("蓝", 800, 1200),
+                    Word("的", 1200, 1500),
+                    Word("天", 1500, 2000),
+                    Word("空", 2000, 2600),
+                ),
+                "Look at the azure sky",
+                "kan wei lan de tian kong",
             ),
-            2700,
-            5600
+            Line(
+                "白云在轻轻飘动", 2700, 5600,
+                listOf(
+                    Word("白", 2700, 3100),
+                    Word("云", 3100, 3500),
+                    Word("在", 3500, 3800),
+                    Word("轻", 3800, 4200),
+                    Word("轻", 4200, 4600),
+                    Word("飘", 4600, 5000),
+                    Word("动", 5000, 5600),
+                ),
+                "White clouds drift softly by",
+                null,
+            ),
+            Line("耳边回响着熟悉的旋律", 5700, 9000),
+            Line("那是我们写下的歌", 9100, 13000),
+            Line("记录下青春最初的颜色", 13100, 17500),
+            Line("穿越时空的思念依然如昨", 17600, 22000),
         )
-        val line3 = SuperLyricLine("耳边回响着熟悉的旋律", null, 5700, 9000)
-        val line4 = SuperLyricLine("那是我们写下的歌", null, 9100, 13000)
-        val line5 = SuperLyricLine("记录下青春最初的颜色", null, 13100, 17500)
-        val line6 = SuperLyricLine("穿越时空的思念依然如昨", null, 17600, 22000)
-
-        val allLines = arrayOf(line1, line2, line3, line4, line5, line6)
-        val mockData = SuperLyricData()
-            .setTitle("晴天之歌")
-            .setArtist("SuperLyric")
-            .setAlbum("Demo Album")
-            .setLyricId("mock_song_001")
-            .setDuration(22000)
-            .setPosition(600)
-            .setCurrentLyricIndex(0)
-            .setLyric(line1)
-            .setTranslation(SuperLyricLine("Look at the azure sky", null, 0, 2600))
-            .setSecondary(SuperLyricLine("kan wei lan de tian kong", null, 0, 2600))
-            .setAllLyrics(allLines)
-
-        handleIncomingLyric("MockDebugPublisher", mockData)
+        val lyric = Lyric(
+            "mock_song_001",
+            "晴天之歌",
+            "SuperLyric",
+            "Demo Album",
+            22_000L,
+            lines,
+        )
+        publishMock(lyric, 0, 600L, PlaybackState.PLAYING, EVENT_FULL)
     }
 
     fun advanceMockProgress() {
         val current = receiverFlow.value
-        val data = current.data ?: run {
+        val lyric = current.lyric ?: run {
             injectMockLyric()
             return
         }
-        val lines = current.allLyricsCache ?: data.allLyrics
-        if (lines.isNullOrEmpty()) {
+        val lines = lyric.lines
+        if (lines.isEmpty()) {
             injectMockLyric()
             return
         }
-        val curIdx = data.currentLyricIndex
-        val nextIdx = (curIdx + 1) % lines.size
+
+        val nextIdx = (current.index + 1).mod(lines.size)
         val nextLine = lines[nextIdx]
-        val nextPos = nextLine.startTime + 100
-
-        val progressData = SuperLyricData()
-            .setTitle(data.title)
-            .setArtist(data.artist)
-            .setAlbum(data.album)
-            .setLyricId(data.lyricId)
-            .setDuration(data.duration)
-            .setPosition(nextPos)
-            .setCurrentLyricIndex(nextIdx)
-            .setLyric(nextLine)
-
-        if (nextIdx == 0) {
-            progressData.setTranslation(SuperLyricLine("Look at the azure sky", null, 0, 2600))
-            progressData.setSecondary(SuperLyricLine("kan wei lan de tian kong", null, 0, 2600))
-        } else if (nextIdx == 1) {
-            progressData.setTranslation(SuperLyricLine("White clouds drift softly by", null, 2700, 5600))
-        }
-
-        handleIncomingLyric(current.publisher ?: "MockDebugPublisher", progressData)
+        publishMock(lyric, nextIdx, nextLine.start + 100, PlaybackState.PLAYING, EVENT_STATE)
     }
 
     fun advanceMockWordProgress(stepMs: Long = 400) {
         val current = receiverFlow.value
-        val data = current.data ?: run {
+        val lyric = current.lyric ?: run {
             injectMockLyric()
             return
         }
-        val lines = current.allLyricsCache ?: data.allLyrics
-        if (lines.isNullOrEmpty()) {
+        val lines = lyric.lines
+        if (lines.isEmpty()) {
             injectMockLyric()
             return
         }
-        val curIdx = data.currentLyricIndex
-        val safeIdx = if (curIdx in lines.indices) curIdx else 0
-        val curLine = lines[safeIdx]
-        val curPos = if (data.position >= 0) data.position else curLine.startTime
 
-        val (nextPos, nextIdx) = if (curPos + stepMs >= curLine.endTime && safeIdx + 1 < lines.size) {
-            val nLine = lines[safeIdx + 1]
-            Pair(nLine.startTime + 100, safeIdx + 1)
+        val safeIdx = if (current.index in lines.indices) current.index else 0
+        val line = lines[safeIdx]
+        val position = if (current.position >= 0) current.position else line.start
+        val (nextPos, nextIdx) = if (position + stepMs >= line.end && safeIdx + 1 < lines.size) {
+            val nextLine = lines[safeIdx + 1]
+            nextLine.start + 100 to safeIdx + 1
         } else {
-            Pair(curPos + stepMs, safeIdx)
+            position + stepMs to safeIdx
         }
 
-        val targetLine = if (nextIdx in lines.indices) lines[nextIdx] else curLine
-
-        val progressData = SuperLyricData()
-            .setTitle(data.title)
-            .setArtist(data.artist)
-            .setAlbum(data.album)
-            .setLyricId(data.lyricId)
-            .setDuration(if (data.hasDuration() && data.duration > 0) data.duration else 0)
-            .setPosition(nextPos)
-            .setCurrentLyricIndex(nextIdx)
-            .setLyric(targetLine)
-
-        if (data.hasTranslation()) progressData.setTranslation(data.translation)
-        if (data.hasSecondary()) progressData.setSecondary(data.secondary)
-
-        handleIncomingLyric(current.publisher ?: "MockDebugPublisher", progressData)
+        publishMock(lyric, nextIdx, nextPos, PlaybackState.PLAYING, EVENT_STATE)
     }
 
     fun injectMockStop() {
         val current = receiverFlow.value
-        handleIncomingStop(current.publisher ?: "MockDebugPublisher", current.data)
+        val time = LocalTime.now().format(TIME_FORMAT)
+        synchronized(publishLock) {
+            val seq = totalPackets.incrementAndGet()
+            receiverFlow.value = current.copy(
+                eventType = EVENT_STOP,
+                receiveTime = time,
+                packetSeq = seq,
+                playbackState = PlaybackState.STOPPED,
+                positionTimestamp = SystemClock.elapsedRealtime(),
+            )
+        }
     }
 
     fun reset() {
         totalPackets.set(0)
         fullPackets.set(0)
-        progressPackets.set(0)
-        SuperLyricCache.clear()
+        statePackets.set(0)
         receiverFlow.value = ApiReceiverState()
+    }
+
+    private fun publishMock(
+        lyric: Lyric,
+        index: Int,
+        position: Long,
+        playbackState: PlaybackState?,
+        eventType: String,
+    ) {
+        val time = LocalTime.now().format(TIME_FORMAT)
+        synchronized(publishLock) {
+            val seq = totalPackets.incrementAndGet()
+            if (eventType == EVENT_FULL) {
+                fullPackets.incrementAndGet()
+            } else {
+                statePackets.incrementAndGet()
+            }
+            receiverFlow.value = ApiReceiverState(
+                lyric = lyric,
+                index = index,
+                position = position,
+                speed = 1f,
+                playbackState = playbackState,
+                source = SOURCE_MOCK,
+                eventType = eventType,
+                receiveTime = time,
+                packetSeq = seq,
+                fullCount = fullPackets.get(),
+                stateCount = statePackets.get(),
+            )
+        }
+    }
+
+    private fun Stop.stopPlaybackState(): PlaybackState = when (reason) {
+        StopReason.ERROR -> PlaybackState.ERROR
+        else -> PlaybackState.STOPPED
     }
 }
 
 internal data class ApiReceiverState(
-    val publisher: String? = null,
-    val data: SuperLyricData? = null,
+    val lyric: Lyric? = null,
+    val index: Int = -1,
+    val position: Long = 0L,
+    val speed: Float = 1f,
+    val playbackState: PlaybackState? = null,
+    val source: String? = null,
     val eventType: String? = null,
     val receiveTime: String? = null,
     val packetSeq: Int = 0,
     val fullCount: Int = 0,
-    val progressCount: Int = 0,
-    val allLyricsCache: Array<SuperLyricLine>? = null,
-    val positionTimestamp: Long = SystemClock.elapsedRealtime()
+    val stateCount: Int = 0,
+    val positionTimestamp: Long = SystemClock.elapsedRealtime(),
 )

@@ -33,10 +33,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * 适配器的字段映射与深拷贝语义。
+ * 适配器的字段映射与深拷贝语义
  *
- * 这一层最容易出的错是"翻译与罗马音串了通道"以及"跨 Binder 共享了可变实例"，
- * 两者都会在真机上表现为难查的显示异常，因此必须有断言兜住。
+ * 译文与罗马音各走独立通道；每次投影都分配新实例，不跨 Binder 共享可变对象。
  */
 class LyricDocAdapterTest {
 
@@ -160,8 +159,8 @@ class LyricDocAdapterTest {
 
     @Test
     fun `a delta payload falls back to the single line channel`() {
-        // 增量包不带 allLyrics，只有顶层译文/次歌词这一条通道。只读全量通道会解出空文档，
-        // 行、译文、次歌词一起丢光（全量包则会把每行的译文/次歌词随行过线，两条都在 wire 上）
+        // 增量包不带 allLyrics，只有顶层译文与次歌词通道；只读全量通道会解出空文档，
+        // 行、译文、次歌词一起丢失（全量包则在每行上携带译文与次歌词）
         val delta = SuperLyricData()
             .setTitle("T")
             .setArtist("A")
@@ -191,5 +190,95 @@ class LyricDocAdapterTest {
         val stop = SuperLyricData().setTitle("T").setArtist("A")
 
         assertTrue(LyricDocAdapter.toDoc(stop).isEmpty)
+    }
+
+    @Test
+    fun `full projection carries the current line and position`() {
+        val first = LyricDocAdapter.toFullData(doc, 0, 750L)
+
+        assertEquals(2, first.allLyricsCount)
+        assertEquals(0, first.currentLyricIndex)
+        assertEquals(750L, first.position)
+        assertEquals("Hello", first.lyric!!.text)
+        assertEquals("你好", first.translation!!.text)
+        assertEquals("he-lou", first.secondary!!.text)
+
+        val second = LyricDocAdapter.toFullData(doc, 1, 1_500L)
+
+        assertEquals(1, second.currentLyricIndex)
+        assertEquals(1_500L, second.position)
+        assertEquals("World", second.lyric!!.text)
+        assertFalse(second.hasTranslation())
+        assertFalse(second.hasSecondary())
+    }
+
+    @Test
+    fun `a system duration only fills an unknown document duration`() {
+        assertEquals(
+            180_000L,
+            LyricDocAdapter.withDuration(doc.copy(durationMs = 0L), 180_000L).durationMs
+        )
+        assertEquals(2_000L, LyricDocAdapter.withDuration(doc, 180_000L).durationMs)
+    }
+
+    @Test
+    fun `v4 projection keeps every channel in its own field`() {
+        val lyric = LyricDocAdapter.toLyric(doc)
+        assertNotNull(lyric)
+
+        assertEquals("qq:x", lyric!!.id)
+        assertEquals(2_000L, lyric.duration)
+        assertEquals("T", lyric.title)
+        assertEquals("A", lyric.artist)
+        assertEquals("Al", lyric.album)
+        assertEquals(2, lyric.lines.size)
+        assertEquals(1_000L, lyric.lines[0].end)
+        assertEquals("你好", lyric.lines[0].translation)
+        assertEquals("he-lou", lyric.lines[0].phonetic)
+        assertEquals("llo", lyric.lines[0].words!![1].text)
+        assertEquals(400L, lyric.lines[0].words!![1].start)
+    }
+
+    @Test
+    fun `a blank title stays an empty string in the v4 model`() {
+        val lyric = LyricDocAdapter.toLyric(doc.copy(title = ""))!!
+
+        assertEquals("", lyric.title)
+        assertEquals("", LyricDocAdapter.fromLyric(lyric).title)
+    }
+
+    @Test
+    fun `v4 projection round trips through the kernel model`() {
+        val lyric = LyricDocAdapter.toLyric(doc)!!
+        val restored = LyricDocAdapter.fromLyric(lyric)
+
+        assertEquals(doc.lines, restored.lines)
+        assertEquals(doc.title, restored.title)
+        assertEquals(doc.artist, restored.artist)
+        assertEquals(doc.album, restored.album)
+        assertEquals(doc.durationMs, restored.durationMs)
+        assertEquals(doc.lyricId, restored.lyricId)
+    }
+
+    @Test
+    fun `v4 projection keeps an unknown duration and fills only the required id`() {
+        // duration = 0 在 4.0 中表示未知，只能补 id，不得伪造时长
+        val source = doc.copy(lyricId = null, durationMs = 0L)
+
+        val lyric = LyricDocAdapter.toLyric(source)!!
+
+        assertEquals(0L, lyric.duration)
+        assertEquals("sl:T##A", lyric.id)
+        assertEquals(lyric.id, LyricDocAdapter.toLyric(source)!!.id)
+    }
+
+    @Test
+    fun `empty document has no v4 projection`() {
+        assertNull(LyricDocAdapter.toLyric(LyricDoc.EMPTY))
+    }
+
+    @Test
+    fun `null v4 document yields an empty kernel document`() {
+        assertTrue(LyricDocAdapter.fromLyric(null).isEmpty)
     }
 }

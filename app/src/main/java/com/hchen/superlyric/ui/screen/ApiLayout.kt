@@ -107,7 +107,7 @@ fun ApiLayout(
     val lifecycleOwner = LocalLifecycleOwner.current
     val pagerState = LocalPagerState.current
 
-    // 监听应用切前后台与页面切换，切入后台时注销避免 IPC 事务投递至被冻结进程，切回前台时自动重新注册（若无数据则拉取最新歌词）
+    // 前台时确保接收器已注册，后台时注销，避免 IPC 事务投递到被冻结进程；API 页可见时再次确保注册
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -162,7 +162,7 @@ fun ApiLayout(
     val backdrop = rememberBlurBackdrop()
     val barBackdrop = rememberBlurBackdrop()
 
-    // 当卡片滑动接近顶栏时及时激活折叠状态与毛玻璃模糊
+    // 卡片接近顶栏时进入折叠状态并启用毛玻璃模糊
     val collapsed by remember { derivedStateOf { scrollProgress >= 0.85f } }
     val blurActive by remember(barBackdrop) { derivedStateOf { barBackdrop != null && scrollProgress >= 0.85f } }
 
@@ -186,9 +186,8 @@ fun ApiLayout(
         }
     }
 
-    val data = state.data
-    val allLyrics = state.allLyricsCache ?: data?.allLyrics
-    val currentIndex = data?.currentLyricIndex ?: -1
+    val allLyrics = state.lyric?.lines
+    val currentIndex = state.index
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -201,8 +200,7 @@ fun ApiLayout(
                     titleColor = titleColor,
                     defaultWindowInsetsPadding = false,
                     actions = {
-                        // 面板能注入模拟歌词、暂停接收、清零计数，是开发专用入口，
-                        // 发布版不能出现（de74eba 的修复）。
+                        // 调试面板可注入模拟歌词、暂停接收、清零计数，仅 DEBUG 构建可见
                         if (BuildConfig.DEBUG) {
                             IconButton(
                                 onClick = {
@@ -223,7 +221,7 @@ fun ApiLayout(
         }
     ) { pv ->
         val topBarPadding = pv.calculateTopPadding()
-        // 底部实时看板静止时的吸底预留高度：给上方歌词区域留出充足视口，下方露出看板把手与状态概览
+        // 看板收起时歌词区的高度：为歌词保留视口，底部露出看板把手与状态概览
         val spacerHeightDp by remember(viewportHeightDp, topBarPadding) {
             derivedStateOf {
                 val total = viewportHeightDp - paddingValues.calculateBottomPadding()
@@ -244,10 +242,10 @@ fun ApiLayout(
                 bgModifier = if (backdrop != null) Modifier.layerBackdrop(backdrop) else Modifier,
                 alpha = { 1f - scrollProgress }
             ) {
-                // 上层：沉浸式开源播放器风格歌词展示区
-                // 1. 消除顶部多余 padding：直接对齐 topBarPadding
-                // 2. 边界精确隔离：当面板收起时置于顶层接收歌词滑动；滑动底部卡片把手时才滚动卡片
-                // 3. 上拉渐隐淡出：通过 graphicsLayer 的 alpha 顺滑渐隐，上拉时完全透明，且底层组件不被频繁卸载/重挂载（彻底避免上拉导致逐字进度被重置）
+                // 上层：歌词展示区
+                // - 顶部直接对齐 topBarPadding，不加额外间距
+                // - 面板收起时置于顶层，接收歌词区的滑动
+                // - 上拉时由 graphicsLayer 的 alpha 渐隐；播放器不重建，逐字进度不会被重置
                 val lyricAlpha = (1f - scrollProgress * 1.8f).coerceIn(0f, 1f)
                 Box(
                     modifier = Modifier
@@ -291,10 +289,10 @@ fun ApiLayout(
                         )
                     }
 
-                    // 统一放置在具备最小视口高度的 Column 中：
-                    // 确保 panelSpacer 能完全滚出视口使得 scrollProgress 达到 1f 触发 topbar 模糊，
-                    // 同时使用 contentPadding.bottom 保证滑到顶时最后一项不会被底栏遮挡；
-                    // 上滑时渐显卡片容器背景（带顶部圆角），彻底封死卡片间隙与边缘可能漏出的任何底层像素。
+                    // 面板内容放在具备最小视口高度的 Column 中：
+                    // - panelSpacer 能完全滚出视口，scrollProgress 可达到 1f（0.85f 起触发顶栏模糊）
+                    // - contentPadding.bottom 保证滚到顶部时最后一项不被底栏遮挡
+                    // - 上滑时渐显带顶部圆角的容器背景，遮住卡片间隙透出的底层像素
                     item(key = "panelContent") {
                         val panelBgAlpha = ((scrollProgress - 0.04f) / 0.20f).coerceIn(0f, 1f)
                         Column(
@@ -312,7 +310,7 @@ fun ApiLayout(
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
                                 Spacer(Modifier.height(10.dp))
-                                // 抓手条
+                                // 拖拽把手
                                 Box(
                                     modifier = Modifier
                                         .width(36.dp)
@@ -350,7 +348,7 @@ fun ApiLayout(
                             Spacer(Modifier.height(12.dp))
 
                             ApiMediaMetadataCard(
-                                data = data,
+                                state = state,
                                 backdrop = backdrop,
                                 cardBlend = cardBlend
                             )
@@ -358,8 +356,7 @@ fun ApiLayout(
                             Spacer(Modifier.height(12.dp))
 
                             ApiCurrentLineCard(
-                                data = data,
-                                currentIndex = currentIndex,
+                                state = state,
                                 backdrop = backdrop,
                                 cardBlend = cardBlend
                             )
@@ -379,8 +376,7 @@ fun ApiLayout(
             }
         }
 
-        // 右上角 API 调试控制台弹窗
-        // 关闭默认内置 insets，仅保留底部导航白条/三大按键 + 16dp 呼吸空间，避免空间过大
+        // API 调试控制台；关闭默认 insets，仅保留底部系统导航栏高度与 16dp 内边距
         WindowBottomSheet(
             show = BuildConfig.DEBUG && isDebugSheetShowing,
             title = stringResource(R.string.api_debug_and_test),

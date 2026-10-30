@@ -20,7 +20,7 @@ package com.hchen.superlyric.kernel.pipeline
 
 import com.hchen.superlyric.kernel.model.LyricLine
 
-/** 同一时刻行折叠与最终时序归一化。 */
+/** 同一时刻行折叠与最终时序归一化 */
 internal object LineNormalizer {
 
     private const val MAX_LINE_SPAN_MS = 300_000L

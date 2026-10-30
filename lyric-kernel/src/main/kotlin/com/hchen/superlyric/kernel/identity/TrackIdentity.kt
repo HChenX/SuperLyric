@@ -24,12 +24,12 @@ import kotlin.math.abs
  * 音轨身份
  *
  * 判定规则
- * 1. 双方都有可用的稳定标识 → 只比稳定标识（剥离命名空间前缀后比较）
- * 2. 否则退回组合判据：标题归一化后必须相同且非空，歌手须相容，
- *    且双方时长已知时偏差不超过 [DURATION_TOLERANCE_MS]
+ * - 双方都有稳定标识时只比较稳定标识，忽略命名空间前缀
+ * - 否则比较组合判据：归一化标题须非空且相同，歌手须相容，
+ *   双方时长已知时偏差不得超过 [DURATION_TOLERANCE_MS]
  *
- * 不要退回"标题相同即同一首"：同名的 Intro / Interlude 会被永久合并；而标识表示法
- * 不同时，Hook 捕获又会被当成过期数据丢弃
+ * 不得以"标题相同即同一首"作为唯一判据：同名的 Intro / Interlude 会被永久合并。
+ * 稳定标识的表示法不同时，Hook 捕获也不得被当成过期数据丢弃
  *
  * @property source     来源标识（`qq` / `kugou` 等），用于诊断
  * @property stableId   平台侧不可变唯一标识；未知时为 null
@@ -52,8 +52,8 @@ data class TrackIdentity(
      */
     fun matches(other: TrackIdentity?): Boolean {
         if (other == null) return false
-        // 同一实例/完全相同的数据必须判等；否则标题归一化为空（[Music]、(间奏) 等）
-        // 时连自己都不匹配，编排器会把同一首歌反复判成切歌。
+        // 同一实例或完全相同的数据必须判等：标题归一化为空时（如 [Music]、(间奏)），
+        // 组合判据连自身都不匹配，编排器会把同一首歌反复判成切歌
         if (this === other || this == other) return true
 
         val thisId = normalizeStableId(stableId)
@@ -127,7 +127,7 @@ data class TrackIdentity(
         /**
          * 时长相容判定
          *
-         * 双方都已知时才构成约束；仅一方已知不构成否定证据 —— 否则任何一条
+         * 双方都已知时才构成约束；仅一方已知不构成否定证据，否则任何一条
          * 缺少时长上报的路径都会被误判为换歌
          *
          * @param left  一侧时长（毫秒）；≤0 表示未知

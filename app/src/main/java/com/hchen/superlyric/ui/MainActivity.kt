@@ -67,7 +67,7 @@ import com.hchen.superlyric.ui.screen.HomeLayout
 import com.hchen.superlyric.ui.viewmodel.MainViewModel
 import com.hchen.superlyric.ui.viewmodel.MainViewModelFactory
 import com.hchen.superlyric.utils.PackageLoader
-import com.hchen.superlyricapi.SuperLyricHelper
+import com.hchen.superlyricapi.SuperLyric
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -98,10 +98,10 @@ import java.util.function.Consumer
 class MainActivity : ComponentActivity() {
 
     /**
-     * 本次注册到 `Application` 静态表的 prefs 监听器，供 [onDestroy] 精确摘除
+     * 本次注册到 [Application] 静态表的 prefs 监听器，供 [onDestroy] 精确摘除
      *
-     * 可空：`onCreate` 若在赋值之前抛异常，`onDestroy` 照样会被调用，
-     * 那时读 `lateinit` 字段会以"属性未初始化"再抛一次，把一个启动失败变成崩溃
+     * 可空：`onCreate` 在赋值前抛异常时 `onDestroy` 仍会被调用，读取未初始化的
+     * `lateinit` 字段会再次抛出，把启动失败升级为崩溃
      */
     private var prefsReadyListener: Consumer<SharedPreferences>? = null
     private val viewModel: MainViewModel by viewModels {
@@ -110,8 +110,7 @@ class MainActivity : ComponentActivity() {
             removePrefsReadyListener = Application::removePrefsReadyListener,
             addAppLoadedListener = PackageLoader::addPackageLoadedListener,
             removeAppLoadedListener = PackageLoader::removePackageLoadedListener,
-            // 用进程级 Application context，而不是 Activity 的 applicationContext getter：
-            // 后者会让 lambda 捕获 MainActivity，而 ViewModel 在配置变更后仍然存活。
+            // 使用进程级 context，避免 lambda 捕获在配置变更后仍存活的 Activity
             reloadApps = { PackageLoader.loadPackages(Application.getAppContext()) }
         )
     }
@@ -120,12 +119,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         window.isNavigationBarContrastEnforced = false
-        // 用 applicationContext 而不是 Activity：这个匿名监听器注册在静态表上、不会随
-        // Activity 销毁而注销，捕获 Activity 会让每次重建都泄漏一个已销毁实例，
-        // 还会对着它调 loadPackages
+        // 监听器注册在静态表上，不随 Activity 销毁而注销：捕获 Activity 会让每次重建
+        // 泄漏一个已销毁实例，后续 prefs 就绪时还会对已销毁实例调用 loadPackages
         val appContext = applicationContext
-        // 但仍要在 onDestroy 里摘掉自己：静态表只加不减的话，每次重建都会多留一个，
-        // prefs 就绪时 loadPackages 就跑 N 遍
+        // 必须在 onDestroy 摘除：静态表只增不减会让每次重建多留一个监听器，
+        // prefs 就绪时 loadPackages 会重复执行
         val listener = Consumer<SharedPreferences> {
             PackageLoader.loadPackages(appContext)
         }
@@ -139,7 +137,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        // 摘掉的必须是本次注册的那个实例：静态表是按实例移除的
+        // 摘除的必须是本次注册的实例：静态表按实例移除
         prefsReadyListener?.let(Application::removePrefsReadyListener)
         super.onDestroy()
     }
@@ -163,9 +161,8 @@ class MainActivity : ComponentActivity() {
         var showUnavailable by remember { mutableStateOf(false) }
         var unavailableReason by remember { mutableStateOf("") }
         LaunchedEffect(Unit) {
-            if (!SuperLyricHelper.isAvailable()) {
-                // 不要用 registerPublisher() 当探针：API 3.7 内部会吞掉异常并直接返回，
-                // 既拿不到原因，还会把 UI 进程注册成 publisher。
+            if (!SuperLyric.isAvailable()) {
+                // 只探测服务是否存在；isAvailable() 会分别尝试两个服务名
                 unavailableReason = "SuperLyric service is not available. " +
                         "Install/enable the module and reboot the device."
                 showUnavailable = true

@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -45,9 +46,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.hchen.superlyric.R
 import com.hchen.superlyric.ui.effect.cardBlur
-import com.hchen.superlyricapi.SuperLyricData
-import com.hchen.superlyricapi.SuperLyricHelper
-import com.hchen.superlyricapi.SuperLyricLine
+import com.hchen.superlyricapi.SuperLyric
+import com.hchen.superlyricapi.model.Line
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Text
@@ -57,7 +57,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import java.util.Locale
 
 /**
- * 底部看板的状态药丸（静止时露在屏幕最底端）
+ * 看板收起时露在屏幕底部的状态摘要
  */
 @Composable
 internal fun ApiPanelPeekHeader(
@@ -97,8 +97,9 @@ internal fun ApiPanelPeekHeader(
 
                 val (statusText, statusBg, statusFg) = when {
                     paused -> Triple(stringResource(R.string.api_status_paused), colorScheme.tertiaryContainer, colorScheme.onTertiaryContainer)
-                    state.eventType == "ON_STOP" -> Triple(stringResource(R.string.api_status_stop), Color(0xFFE53935).copy(alpha = 0.2f), Color(0xFFD32F2F))
-                    state.eventType == "ON_LYRIC" -> Triple(stringResource(R.string.api_status_streaming), colorScheme.primaryContainer, colorScheme.onPrimaryContainer)
+                    state.eventType == "STOP" -> Triple(stringResource(R.string.api_status_stop), Color(0xFFE53935).copy(alpha = 0.2f), Color(0xFFD32F2F))
+                    state.eventType == "FULL" || state.eventType == "STATE" ->
+                        Triple(stringResource(R.string.api_status_streaming), colorScheme.primaryContainer, colorScheme.onPrimaryContainer)
                     else -> Triple(stringResource(R.string.api_status_standby), colorScheme.tertiaryContainer, colorScheme.onTertiaryContainer)
                 }
 
@@ -124,14 +125,14 @@ internal fun ApiPanelPeekHeader(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = stringResource(R.string.api_source_format, state.publisher ?: stringResource(R.string.api_source_none)),
+                    text = stringResource(R.string.api_source_format, state.source ?: stringResource(R.string.api_source_none)),
                     fontSize = 12.sp,
                     color = colorScheme.onSecondaryContainer,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = stringResource(R.string.api_packet_seq_format, state.packetSeq, state.fullCount, state.progressCount),
+                    text = stringResource(R.string.api_packet_seq_format, state.packetSeq, state.fullCount, state.stateCount),
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     color = colorScheme.onBackgroundVariant
@@ -150,6 +151,11 @@ internal fun ApiMonitorSummaryCard(
     backdrop: LayerBackdrop?,
     cardBlend: List<BlendColorEntry>
 ) {
+    // 可用性每次重组都重新探测（模块可能在页面存活期间启用）；版本号按可用性缓存，
+    // 避免反复发起 Binder 调用
+    val available = SuperLyric.isAvailable()
+    val apiVersion = remember(available) { if (available) SuperLyric.serverApiVersion() else 0 }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -174,11 +180,15 @@ internal fun ApiMonitorSummaryCard(
             ) {
                 Text(text = stringResource(R.string.api_system_service_status), fontSize = 13.sp, color = colorScheme.onSecondaryContainer)
                 Text(
-                    text = if (SuperLyricHelper.isAvailable()) stringResource(R.string.api_status_available_version, SuperLyricHelper.getApiVersion()) else stringResource(R.string.api_status_unavailable),
+                    text = when {
+                        !available -> stringResource(R.string.api_status_unavailable)
+                        apiVersion > 0 -> stringResource(R.string.api_status_available_version, apiVersion)
+                        else -> stringResource(R.string.api_status_available)
+                    },
                     fontSize = 12.sp,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.SemiBold,
-                    color = if (SuperLyricHelper.isAvailable()) colorScheme.primary else Color.Red
+                    color = if (available) colorScheme.primary else Color.Red
                 )
             }
 
@@ -220,10 +230,11 @@ internal fun ApiMonitorSummaryCard(
  */
 @Composable
 internal fun ApiMediaMetadataCard(
-    data: SuperLyricData?,
+    state: ApiReceiverState,
     backdrop: LayerBackdrop?,
     cardBlend: List<BlendColorEntry>
 ) {
+    val lyric = state.lyric
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -243,7 +254,7 @@ internal fun ApiMediaMetadataCard(
             Spacer(Modifier.height(6.dp))
 
             Text(
-                text = data?.title?.takeIf { it.isNotEmpty() } ?: stringResource(R.string.unknown_title),
+                text = lyric?.title?.takeIf { it.isNotEmpty() } ?: stringResource(R.string.unknown_title),
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 color = colorScheme.onSecondaryContainer,
@@ -251,7 +262,7 @@ internal fun ApiMediaMetadataCard(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = "${data?.artist?.takeIf { it.isNotEmpty() } ?: stringResource(R.string.unknown_artist)} · ${data?.album?.takeIf { it.isNotEmpty() } ?: stringResource(R.string.unknown_album)}",
+                text = "${lyric?.artist?.takeIf { it.isNotEmpty() } ?: stringResource(R.string.unknown_artist)} · ${lyric?.album?.takeIf { it.isNotEmpty() } ?: stringResource(R.string.unknown_album)}",
                 fontSize = 13.sp,
                 color = colorScheme.onBackgroundVariant,
                 maxLines = 1,
@@ -260,8 +271,8 @@ internal fun ApiMediaMetadataCard(
 
             Spacer(Modifier.height(10.dp))
 
-            val pos = data?.position ?: -1L
-            val dur = data?.duration ?: -1L
+            val pos = state.position
+            val dur = lyric?.duration ?: -1L
             val progressRatio = if (dur > 0 && pos >= 0) (pos.toFloat() / dur).coerceIn(0f, 1f) else 0f
 
             Row(
@@ -306,10 +317,10 @@ internal fun ApiMediaMetadataCard(
                 )
             }
 
-            if (data != null && data.hasLyricId()) {
+            if (lyric != null && lyric.id.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = "LyricId: ${data.lyricId}",
+                    text = "LyricId: ${lyric.id}",
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     color = colorScheme.onBackgroundVariant
@@ -324,12 +335,12 @@ internal fun ApiMediaMetadataCard(
  */
 @Composable
 internal fun ApiCurrentLineCard(
-    data: SuperLyricData?,
-    currentIndex: Int,
+    state: ApiReceiverState,
     backdrop: LayerBackdrop?,
     cardBlend: List<BlendColorEntry>
 ) {
-    val currentLine = data?.lyric
+    val currentIndex = state.index
+    val currentLine = state.lyric?.lines?.getOrNull(currentIndex)
 
     Card(
         modifier = Modifier
@@ -355,7 +366,7 @@ internal fun ApiCurrentLineCard(
 
                 if (currentLine != null) {
                     Text(
-                        text = "${formatTimeMs(currentLine.startTime)} ~ ${formatTimeMs(currentLine.endTime)}",
+                        text = "${formatTimeMs(currentLine.start)} ~ ${formatTimeMs(currentLine.end)}",
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
                         color = colorScheme.onBackgroundVariant
@@ -365,7 +376,12 @@ internal fun ApiCurrentLineCard(
 
             Spacer(Modifier.height(8.dp))
 
-            val lineText = currentLine?.text ?: stringResource(R.string.api_no_main_lyric)
+            val lineText = currentLine?.text ?: if (state.lyric != null) {
+                // 首行开始前没有当前行（index = -1），与没有歌词不同
+                stringResource(R.string.api_waiting_first_line)
+            } else {
+                stringResource(R.string.api_no_main_lyric)
+            }
             Text(
                 text = lineText,
                 fontSize = 15.sp,
@@ -373,7 +389,7 @@ internal fun ApiCurrentLineCard(
                 color = colorScheme.onSecondaryContainer
             )
 
-            val transText = if (data?.hasTranslation() == true) data.translation?.text else null
+            val transText = currentLine?.translation
             if (!transText.isNullOrEmpty()) {
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -394,7 +410,7 @@ internal fun ApiCurrentLineCard(
                 }
             }
 
-            val secText = if (data?.hasSecondary() == true) data.secondary?.text else null
+            val secText = currentLine?.phonetic
             if (!secText.isNullOrEmpty()) {
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -431,7 +447,7 @@ internal fun ApiCurrentLineCard(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     words.forEach { word ->
-                        val durationMs = (word.endTime - word.startTime).coerceAtLeast(0)
+                        val durationMs = (word.end - word.start).coerceAtLeast(0)
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier
@@ -440,7 +456,7 @@ internal fun ApiCurrentLineCard(
                                 .padding(horizontal = 6.dp, vertical = 3.dp)
                         ) {
                             Text(
-                                text = word.word,
+                                text = word.text,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Medium,
                                 color = colorScheme.onSecondaryContainer
@@ -464,7 +480,7 @@ internal fun ApiCurrentLineCard(
  */
 @Composable
 internal fun ApiAllLyricsOverviewCard(
-    allLyrics: Array<SuperLyricLine>,
+    allLyrics: List<Line>,
     currentIndex: Int,
     backdrop: LayerBackdrop?,
     cardBlend: List<BlendColorEntry>

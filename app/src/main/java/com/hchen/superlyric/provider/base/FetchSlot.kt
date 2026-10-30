@@ -25,52 +25,41 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * 一次取词的执行槽位
+ * 一次取词请求的执行槽位
  *
- * 为什么各来源不能各用一个单线程 executor
- * 取词是同步网络调用（connect 4s / read 6s / call 12s，Spotify 更大）。单个来源用一个
- * 单线程 executor 串行执行的话，切歌时新曲目的 `start()` 会排在上一首在途请求之后：
- * 一个慢响应能把后面每一次切歌都堵住，表现为"切歌后歌词迟迟不来"，最长可达一个读超时。
+ * 取词是同步网络调用（默认 connect 4s / read 6s / call 12s，Spotify 使用更长时限）。
+ * 若每个来源各用一个单线程执行器，切歌时新曲目的 `start()` 会排在上一首在途请求之后；
+ * 单个慢响应最长可阻塞后续切歌一个读超时。编排器按 epoch 丢弃过期结果，因此这里允许
+ * 每首歌并发执行。线程池固定 6 线程、队列无界，线程数有上界，单次任务受 callTimeout 约束。
+ * 解析宿主报文或本地文件的来源仍走各自单线程，以保持同一曲目的处理顺序。
  *
- * 编排器本来就按 epoch 丢弃过期结果，因此这里允许并发——每首歌各跑各的线程。
- * 池用无界 cached 池：任务的产生者是"用户切歌"，单次任务时长又有 callTimeout 兜底，
- * 并发度天然只有个位数，再设上限反而会在极端情况下重新引入排队。
+ * 令牌用于判定请求归属。若这些来源共用一个 `cancelled` 布尔，新的 `start()` 会重置它，
+ * 使上一首在途请求的过期结果被交付。`LyricSource.cancel` 约定取消后不再交付，
+ * 过期令牌可在本地预筛掉这类投递。
  *
- * 只做解析的来源（宿主的报文、本地歌词文件）不适用这里：它们本来就是毫秒级，
- * 单线程还能顺带保证同曲目的处理顺序。
- *
- * 为什么需要令牌
- * "这次交付还算不算数"必须按请求判断。若这些来源共用一个 `cancelled` 布尔，
- * 新的 `start()` 会把它重置为 false，一首旧曲目在途的请求就会把自己过期的结果
- * 交付出去。编排器虽然按 epoch 丢弃，但 `LyricSource.cancel` 的约定是"取消后不再交付"，
- * 而且这条路径会让取消之后的线程继续做无用功。
- *
- * 令牌只做预筛，权威判定在消费方
- * `isCurrent(token)` 与随后的 `deliver(outcome)` 之间有窗口，[open] / [invalidate] 可以落在
- * 其中任意一刻——本地无法消除，除非把交付本身放进锁里（那会让投递在持锁状态下回调编排器，
- * 得不偿失）。因此约定是：本地这次检查只是省掉明显过期的投递，真正"迟到投递无害"的保证在
- * 消费方——编排器按 epoch 丢弃过期结果（`Session.deliver` 内部带着那次 `start` 的 epoch）。
- * 谁要收紧这条，只能去改 epoch 那一层，别在这里加锁。
+ * 令牌只做预筛，权威判定在消费方。`isCurrent(token)` 与随后的 `deliver(outcome)` 之间
+ * 存在窗口，[open] / [invalidate] 可能落入其中；本地检查只过滤明显过期的投递，
+ * 最终由编排器的 epoch 丢弃。不要为此在交付路径加锁。
  */
 class FetchSlot(private val executor: Executor = FETCH_POOL) {
 
     private val sequence = AtomicLong()
     private val calls = ConcurrentHashMap.newKeySet<Call>()
 
-    /** 开始一次新请求，并作废此前所有请求。 */
+    /** 开始一次新请求，并使已有请求失效 */
     fun open(): Long = sequence.incrementAndGet()
 
-    /** 作废当前请求（对应 `LyricSource.cancel`）。 */
+    /** 作废当前请求（对应 `LyricSource.cancel`） */
     fun invalidate() {
         sequence.incrementAndGet()
-        // 取消在途 Call，而不是只丢掉结果：旧代际不再继续跑 2 URL × 2 profile。
+        // 取消在途 Call，而不是只丢弃结果：过期代际不再继续跑 2 URL × 2 profile。
         for (call in calls) {
             runCatching { call.cancel() }
         }
         calls.clear()
     }
 
-    /** 登记一次 OkHttp 调用，使其可被 [invalidate] 取消。 */
+    /** 登记一次 OkHttp 调用，使其可被 [invalidate] 取消 */
     fun <T> withCall(call: Call, block: () -> T): T {
         calls.add(call)
         try {
@@ -80,10 +69,10 @@ class FetchSlot(private val executor: Executor = FETCH_POOL) {
         }
     }
 
-    /** [token] 是否仍是最新的一次请求。 */
+    /** [token] 是否仍是最新的一次请求 */
     fun isCurrent(token: Long): Boolean = sequence.get() == token
 
-    /** 在共享取词池上执行一次取词。 */
+    /** 在共享取词池上执行一次取词 */
     fun execute(task: Runnable) {
         executor.execute(task)
     }
@@ -92,9 +81,9 @@ class FetchSlot(private val executor: Executor = FETCH_POOL) {
         /**
          * 所有来源共用的取词线程池
          *
-         * 固定 6 线程：cached 池没有上限，快速连切时每首歌都会各占一条线程跑完整条
-         * 网络链（KuGou 最坏 5×12s），线程与 FD 会短时堆积。队列仍然无界，但线程数
-         * 有上界；取词本身有 HTTP 超时，不会永久占用。
+         * 固定 6 线程：快速连切时每首歌各占一条线程跑完整条网络链（KuGou 最坏 5×12s），
+         * 线程与 FD 会短时堆积。队列仍无界，线程数有上界；取词本身有 HTTP 超时，
+         * 任务不会永久占用。
          */
         val FETCH_POOL: Executor = Executors.newFixedThreadPool(6) { runnable ->
             Thread(runnable, "SuperLyric-Fetch").apply { isDaemon = true }

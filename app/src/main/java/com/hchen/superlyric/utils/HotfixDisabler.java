@@ -29,12 +29,10 @@ import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.hooktool.log.AndroidLog;
 
 /**
- * 禁用宿主应用热更新框架的工具类。
+ * 禁用宿主热更新框架
  *
- * <p>热更新会让宿主应用在运行期替换自身字节码，导致本模块基于
- * 反编译得出的 Hook 点失配、目标类被补丁换掉后 Hook 失效。
- * 因此在模块注入早期主动关闭宿主的热更新，保证歌词 Hook 始终作用于
- * 应用原始代码。</p>
+ * <p>热更新会在运行期替换宿主字节码，使基于反编译得到的 Hook 点失配、目标类被补丁
+ * 替换后 Hook 失效。模块注入早期关闭这些框架，让歌词 Hook 作用于应用原始代码。
  *
  * @author 焕晨HChen
  */
@@ -43,10 +41,9 @@ public final class HotfixDisabler {
     private static volatile boolean sDisabled;
 
     /**
-     * 禁用宿主应用热更新服务。
+     * 依次尝试关闭 Tinker、Frankie 与 Sword
      *
-     * <p>依次关闭腾讯 Tinker、字节 Frankie、腾讯剑（Sword）等主流热更新框架，
-     * 防止宿主在运行期替换自身字节码导致 Hook 点失配、目标类被补丁换掉。</p>
+     * <p>只执行一次：{@code sDisabled} 置位后重复调用直接返回。
      */
     public static void disableAllHotfixes() {
         if (sDisabled) return;
@@ -58,7 +55,7 @@ public final class HotfixDisabler {
     }
 
     /**
-     * 禁用腾讯 Tinker（dex 类加载器替换）热更新。
+     * 禁用腾讯 Tinker（dex 类加载器替换）热更新
      */
     private static void disableTencentTinker() {
         if (findClassIfExists("com.tencent.tinker.loader.shareutil.ShareTinkerInternals") == null) {
@@ -96,7 +93,7 @@ public final class HotfixDisabler {
     }
 
     /**
-     * 禁用字节跳动 Frankie（Robust 思路）方法级热修复。
+     * 禁用字节跳动 Frankie（Robust 思路）方法级热更新
      */
     private static void disableBytedanceHotfix() {
         Class<?> frankieConfig = findClassIfExists("com.bytedance.frankie.IFrankieConfig");
@@ -134,7 +131,7 @@ public final class HotfixDisabler {
     }
 
     /**
-     * 禁用腾讯剑（Sword）热更新。
+     * 禁用腾讯剑（Sword）热更新
      */
     private static void disableTencentSword() {
         if (findClassIfExists("com.tencent.qqmusic.sword.cmd.CmdManager") == null) {

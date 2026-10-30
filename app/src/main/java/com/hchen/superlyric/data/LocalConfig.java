@@ -26,7 +26,7 @@ import com.hchen.hooktool.log.XposedLog;
 import com.hchen.hooktool.utils.PrefsTool;
 
 /**
- * 本地配置读取：日志级别等设置项的取用。
+ * 本地配置读取。
  *
  * @author 焕晨HChen
  */
@@ -52,12 +52,9 @@ public final class LocalConfig {
     }
 
     /**
-     * 把设置项里的档位映射为 {@link ModuleConfig} 的日志等级
+     * 将设置项映射为 {@link ModuleConfig} 的日志等级。
      *
-     * <p>返回值必须落在 {@code LOG_E..LOG_D} 内：判定日志是否输出的是
-     * {@code getLogLevel() >= level}，而 {@code LOG_E == 1}。返回 {@code 0} 会让一切日志
-     * 都不输出——表现为"日志等级设成最低"与"诊断通道整个失效"无法分辨，
-     * 正是本项目最怕的静默类故障
+     * <p>0 映射为 {@code LOG_I}，避免返回 0 后所有日志都被过滤。
      */
     private static int getLogLevel(int level) {
         return switch (level) {

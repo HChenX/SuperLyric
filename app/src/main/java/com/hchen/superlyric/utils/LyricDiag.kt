@@ -26,57 +26,48 @@ import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.model.LyricLine
 import com.hchen.superlyric.kernel.pipeline.LyricPipeline
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
-import com.hchen.superlyricapi.SuperLyricData
-import com.hchen.superlyricapi.SuperLyricLine
 
 /**
- * 真机联调期的全量诊断输出
+ * 全量诊断输出
  *
- * 为什么需要它
- * 解析假设（例如 QQ 的标识正则、网易云的歌词版本参数）无法凭代码判别对错，
- * 唯一可靠的办法是把原始载荷与解析结果原样打出来，与预期逐条对照。
+ * 解析假设（例如 QQ 的标识正则、网易云的歌词版本参数）无法凭代码判别对错，唯一可靠的
+ * 办法是把原始载荷与解析结果原样打出，与预期逐条对照。
  *
- * 为什么落在 `:app` 而不是内核
- * `:lyric-kernel` 是纯 JVM 模块，严禁依赖任何 `android.*` 类型，
- * 因此不能调用 `AndroidLog`。所有诊断输出集中在 `:app` 侧。
+ * 诊断集中在 `:app`：`:lyric-kernel` 是纯 JVM 模块，不得依赖任何 `android.*` 类型，
+ * 因此不能调用 [AndroidLog]。
  *
- * 输出量控制
- * logcat 单条消息上限约 4KB，超出会被截断。因此所有长文本一律按
- * [CHUNK] 字符分块并带 `[i/n]` 序号输出，可完整还原。
+ * logcat 单条消息上限约 4KB，超出会被截断；长文本按 [CHUNK] 字符分块并带 `[i/n]`
+ * 序号输出，可完整还原。
  *
- * 过滤命令
- * ```
- * adb logcat -v time -s SLDiag
- * ```
+ * 过滤命令：`adb logcat -v time -s SLDiag`
  *
  * @author 焕晨HChen
  */
 object LyricDiag {
 
-    /** 所有诊断输出的统一 tag，便于一条 `-s` 抓全。 */
+    /** 所有诊断输出的统一 tag，便于用一条 `-s` 抓全 */
     const val TAG = "SLDiag"
 
     /**
      * 总开关
      *
-     * 判据取自 HookTool 自己的日志等级，而不是重新去读一遍偏好设置：宿主进程里
-     * `AndroidLog.logD` 能否打出，只由 [ModuleConfig.getLogLevel] 决定，本开关跟着
-     * 同一个值走，就不可能出现"日志等级明明是调试、诊断却一行不出"的分歧。
-     * 真机实测过这种分歧：宿主进程的 `[Provider][D]` 在打，`SLDiag` 一条都没有
+     * 判据取自 HookTool 的日志等级，不另读一遍偏好设置：宿主进程里
+     * `AndroidLog.logD` 能否输出只由 [ModuleConfig.getLogLevel] 决定，跟着同一个值走
+     * 才不会出现"日志等级为调试、诊断却无输出"的分歧。
      *
-     * 之所以是 getter 而不是字段：等级由模块入口在加载时写入，可能晚于本对象的首次触碰，
-     * 一次性求值会把结果钉死
+     * 用 getter 而非字段：等级由模块入口在加载时写入，可能晚于本对象的首次访问，
+     * 一次性求值会固定为首次访问时的值。
      *
-     * 诊断会打印完整歌词原文、原始报文与全部元数据，发布版绝不能默认开启
+     * 诊断会打印完整歌词原文、原始报文与全部元数据，发布版不得默认开启。
      */
     val enabled: Boolean
         get() = BuildConfig.DEBUG || ModuleConfig.getLogLevel() == ModuleConfig.LOG_D
 
     /**
-     * `MediaMetadata` 内部的原始 `Bundle`。
+     * `MediaMetadata` 内部的原始 `Bundle`
      *
-     * 仅用于 [dumpMetadata] 取原始值判类型——`MediaMetadata` 没有泛型取值器，
-     * 而类型化取值器会在非文本键上抛 `ClassCastException` 并在宿主进程刷屏。
+     * 仅用于 [textOf] 取原始值判类型：`MediaMetadata` 没有泛型取值器，类型化取值器
+     * 会在非文本键上抛 `ClassCastException` 并在宿主进程刷屏。
      */
     @SuppressLint("SoonBlockedPrivateApi") // 只读诊断；反射失败由 runCatching 降级为 null
     private val BUNDLE_FIELD: java.lang.reflect.Field? = runCatching {
@@ -85,19 +76,18 @@ object LyricDiag {
             .apply { isAccessible = true }
     }.getOrNull()
 
-    /** 单次载荷输出的字符上限，防止畸形报文撑爆日志缓冲区。 */
+    /** 单次载荷输出的字符上限，防止畸形报文撑爆日志缓冲区 */
     @JvmField
     var maxPayloadChars: Int = 120_000
 
-    // logcat 单条约 4KB；中文每字符 UTF-8 占 3 字节。2600 字符约 7.8KB，会被截断。
-    // 取 1200 字符，最坏 3.6KB + 前缀，仍在单条上限内。
+    // logcat 单条约 4KB，中文每字符 UTF-8 占 3 字节：2600 字符约 7.8KB，会被截断。
+    // 取 1200 字符，最坏 3.6KB 加前缀，仍在单条上限内。
     private const val CHUNK = 1200
 
-    // ---------------------------------------------------------------- 解析包装
-
     /**
-     * 包装 [LyricPipeline.parse]：先完整输出请求（含未解析的原始载荷），
-     * 再输出解析结果。异常原样抛出，不改变任何控制流。
+     * 包装 [LyricPipeline.parse]，先输出完整请求（含未解析的原始载荷）再输出解析结果
+     *
+     * 异常原样抛出，不改变任何控制流。
      */
     @JvmStatic
     fun parse(source: String, request: LyricRequest): LyricDoc? {
@@ -123,10 +113,10 @@ object LyricDiag {
     }
 
     /**
-     * 源码级只出摘要。
+     * 源码级只输出摘要
      *
-     * 完整正文由发布入口（[dumpDoc] / [dumpData]）负责输出一次即可；
-     * 两处都出全文会让两股分块流在 logcat 中交错，既难读又浪费缓冲区。
+     * 完整正文由发布入口 [dumpDoc] 输出一次即可；两处都出全文会让两股分块流在 logcat
+     * 中交错，既难读又浪费缓冲区。
      */
     @JvmStatic
     fun dumpDocSummary(source: String, doc: LyricDoc?) {
@@ -147,7 +137,7 @@ object LyricDiag {
     }
 
     /**
-     * 输出一次解析请求的全部输入。
+     * 输出一次解析请求的全部输入
      */
     @JvmStatic
     fun dumpRequest(source: String, request: LyricRequest) {
@@ -171,7 +161,7 @@ object LyricDiag {
     }
 
     /**
-     * 输出解析产出的文档全文：曲目信息 + 每一行的主歌词 / 译文 / 音译 / 逐字时间。
+     * 输出解析产出的文档全文：曲目信息，以及每一行的主歌词、译文、音译与逐字时间
      */
     @JvmStatic
     fun dumpDoc(source: String, doc: LyricDoc?) {
@@ -199,43 +189,14 @@ object LyricDiag {
         dumpText(source, "DOC-BODY", builder.toString())
     }
 
-    /**
-     * 输出一份即将跨 Binder 发布的 `SuperLyricData` 的完整内容。
-     */
-    @JvmStatic
-    fun dumpData(source: String, data: SuperLyricData?) {
-        if (!enabled) return
-
-        if (data == null) {
-            log(source, "=== PUBLISH DATA === null")
-            return
-        }
-
-        val lines = data.allLyrics
-        log(
-            source,
-            "=== PUBLISH DATA === title=\"${data.title}\" artist=\"${data.artist}\" " +
-                    "album=\"${data.album}\" lyricId=${data.lyricId} duration=${data.duration} " +
-                    "position=${data.position} index=${data.currentLyricIndex} " +
-                    "allLyrics=${lines?.size ?: 0} fullPayload=${data.isFullPayload} " +
-                    "deltaPayload=${data.isDeltaPayload}",
-        )
-
-        val builder = StringBuilder(64 * (lines?.size ?: 0))
-        lines?.forEachIndexed { index, line -> appendLine(builder, index, line) }
-        dumpText(source, "PUBLISH-BODY", builder.toString())
-    }
-
-    // ---------------------------------------------------------------- 原始载荷
-
-    /** 输出一段文本载荷全文（自动分块）。 */
+    /** 输出一段文本载荷全文（自动分块） */
     @JvmStatic
     fun dumpPayload(source: String, label: String, text: String) {
         if (!enabled) return
         dumpText(source, label, text)
     }
 
-    /** 输出字节载荷的规模、可打印预览与十六进制头部。 */
+    /** 输出字节载荷的规模、可打印预览与十六进制头部 */
     @JvmStatic
     fun dumpBytes(source: String, label: String, bytes: ByteArray) {
         if (!enabled) return
@@ -245,10 +206,9 @@ object LyricDiag {
     }
 
     /**
-     * 输出一段尚未解密的原始字段：只给规模与前 96 字符预览。
+     * 输出一段尚未解密的原始字段：只给规模与前 96 字符预览
      *
-     * 加密载荷动辄数十 KB，全文输出会撑爆 logcat 缓冲区，而判断
-     * "这个字段到底是什么形态"只需要看头部。
+     * 加密载荷常有数十 KB，全文输出会撑爆 logcat 缓冲区，而判断字段形态只需要看头部。
      */
     @JvmStatic
     fun dumpRawPreview(source: String, label: String, text: String?) {
@@ -265,9 +225,9 @@ object LyricDiag {
     }
 
     /**
-     * 输出网易云歌词接口的响应骨架：顶层键、`nolyric` 标记，以及每一路歌词通道的字符数。
+     * 输出网易云歌词接口的响应骨架：顶层键、`nolyric` 标记，以及每一路歌词通道的字符数
      *
-     * 专用于核实"版本参数全为 0 时服务端是否返回空壳"这类只能靠真机定论的问题。
+     * 用于核实"版本参数全为 0 时服务端是否返回空壳"这类只能靠真机定论的问题。
      */
     @JvmStatic
     fun dumpNeteaseChannels(source: String, url: String, payload: org.json.JSONObject) {
@@ -294,11 +254,11 @@ object LyricDiag {
         listOf("yrc", "lrc", "ytlrc", "tlyric", "yromalrc", "romalrc")
 
     /**
-     * 输出一条 `MediaMetadata` 的全部键与其中的文本值。
+     * 输出一条 `MediaMetadata` 的全部键与其中的文本值
      *
      * `dumpsys media_session` 只渲染 title/artist/album 三项，而宿主可能把真正的曲名
-     * 放在别的键上（例如 `DISPLAY_TITLE`），同时用歌词行污染 `TITLE`。
-     * 排查"曲名被宿主改写"这类问题时必须看到全量键。
+     * 放在别的键上（例如 `DISPLAY_TITLE`），同时用歌词行污染 `TITLE`。排查"曲名被
+     * 宿主改写"时必须看到全量键。
      */
     @JvmStatic
     fun dumpMetadata(source: String, metadata: android.media.MediaMetadata) {
@@ -316,13 +276,13 @@ object LyricDiag {
      * 取某个键的文本值，非文本键返回 `null`
      *
      * 不能直接调 `MediaMetadata.getText(key)`：它内部是 `Bundle.getCharSequence`，
-     * 撞上 `DURATION`（Long）或 `USER_RATING`（Rating）会抛 `ClassCastException`。
-     * 异常虽被平台内部吞掉并返回 null，但 `BaseBundle` 会先以
-     * "Attempt to cast generated internal exception" 打一条 W——元数据回调是高频的，
-     * 于是每次切歌都会在宿主进程里刷屏。
+     * 撞上 `DURATION`（Long）或 `USER_RATING`（Rating）会抛 `ClassCastException`；
+     * 平台虽会吞掉异常并返回 null，`BaseBundle` 仍会先以
+     * "Attempt to cast generated internal exception" 打一条 W，元数据回调频率高，
+     * 每次切歌都会在宿主进程刷屏。
      *
-     * `MediaMetadata` 没有泛型取值器，所以这里反射取内部 `Bundle` 拿原始值，
-     * 先判类型再转文本。反射失败时退回类型化取值器（此时会有上述噪声，但功能不受影响）。
+     * 因此反射取内部 `Bundle` 的原始值，先判类型再转文本；反射失败时退回类型化取值器，
+     * 会有上述噪声但功能不受影响。
      */
     @Suppress("DEPRECATION")
     private fun textOf(metadata: android.media.MediaMetadata, key: String): String? {
@@ -332,8 +292,6 @@ object LyricDiag {
         if (bundle == null) return runCatching { metadata.getText(key)?.toString() }.getOrNull()
         return (bundle.get(key) as? CharSequence)?.toString()
     }
-
-    // ---------------------------------------------------------------- 内部
 
     private fun appendLine(builder: StringBuilder, index: Int, line: LyricLine) {
         builder.append('[')
@@ -358,35 +316,11 @@ object LyricDiag {
         builder.append('\n')
     }
 
-    private fun appendLine(builder: StringBuilder, index: Int, line: SuperLyricLine) {
-        builder.append('[')
-        if (index < 10) builder.append(' ')
-        if (index < 100) builder.append(' ')
-        builder.append(index).append("] ")
-        builder.append(ms(line.startTime)).append('-').append(ms(line.endTime))
-        builder.append(" | ").append(line.text)
-
-        line.translation?.let { builder.append("\n      T: ").append(it) }
-        line.secondary?.let { builder.append("\n      P: ").append(it) }
-
-        val words = line.words
-        if (words != null && words.isNotEmpty()) {
-            builder.append("\n      W: ")
-            for (wordIndex in words.indices) {
-                val word = words[wordIndex]
-                if (wordIndex > 0) builder.append(' ')
-                builder.append("(\"").append(word.word).append("\"@")
-                    .append(word.startTime).append('-').append(word.endTime).append(')')
-            }
-        }
-        builder.append('\n')
-    }
-
     /**
-     * 分块输出长文本。每块带 `[i/n]` 序号，可完整还原。
+     * 分块输出长文本，每块带 `[i/n]` 序号，可完整还原
      *
-     * 换行会被替换为可见标记 `⏎`——logcat 会把消息里的 `\n` 拆成独立的行，
-     * 那样只有首块带序号、后续行无法归属，反而更难读。
+     * 换行会被替换为可见标记 `⏎`：logcat 会把消息里的 `\n` 拆成独立的行，只有首块
+     * 带序号、后续行无法归属，更难读。
      */
     private fun dumpText(source: String, label: String, text: String) {
         val safe = if (text.length > maxPayloadChars) {

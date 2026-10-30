@@ -44,25 +44,18 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Apple Music Hook 锚点与歌词抽取。
+ * Apple Music Hook 锚点与歌词抽取
  * <p>
- * 为什么 Apple 是唯一的例外
- * 其余六个平台都能拿到协议级的原始报文（KRC / QRC / LRCX / JSON / TTML / YRC），
- * 因此模块可以自行解析。Apple Music 的歌词由 JNI 侧解析完成后通过裸指针
- * （{@code SongInfo$SongInfoPtr}）交给 Java 层，不存在可直接读取的明文报文。
+ * Apple Music 的歌词由 JNI 侧解析后通过裸指针（{@code SongInfo$SongInfoPtr}）交给 Java 层，
+ * 没有可直接读取的明文报文。因此在 {@code buildTimeRangeToLyricsMap} 的入参上遍历
+ * {@code LyricsSectionVector} 到 {@code LyricsWordVector}，取出文本、译文与逐字时戳。
  * <p>
- * 因此这一家必须走宿主模型：在 {@code buildTimeRangeToLyricsMap} 的入参上遍历
- * {@code LyricsSectionVector → LyricsWordVector} 取出文本、译文与逐字时戳。
- * 这是经过权衡后有意保留的例外，不是遗漏。
+ * 本层读取宿主歌词对象，并调用 {@code setTranslation} 设置译文语言、
+ * 调用 {@code PlayerLyricsViewModel.loadLyrics} 触发一次歌词加载；不修改宿主播放状态。
+ * 所有调用均捕获异常，失败只影响该 Provider。
  * <p>
- * 只读取，不改写
- * 本层只从宿主对象上读值，不调用任何会改变宿主状态的 API（除了主动触发一次歌词加载），
- * 因此宿主内部结构的变动最多让本 Provider 失效，不会影响宿主稳定性。
- * <p>
- * 关于主动触发
- * {@code buildTimeRangeToLyricsMap} 只在宿主真正构建歌词时被调用。
- * 若用户没有打开歌词界面，歌词永远不会构建，因此本层需要主动调用
- * {@code PlayerLyricsViewModel.loadLyrics} 把歌词"叫醒"。
+ * {@code buildTimeRangeToLyricsMap} 只在宿主构建歌词时调用。用户未打开歌词界面时
+ * 歌词不会构建，因此需要主动触发 {@code loadLyrics}。
  *
  * @author 焕晨HChen
  */
@@ -75,17 +68,20 @@ public final class AppleAnchors {
     private static final String PM_CACHE_KEY = "apple_pm_class_v1";
 
     /**
-     * 锚点：MediaPlaybackManager 中的固定日志串。
+     * 锚点：MediaPlaybackManager 中的固定日志串
+     * <p>
+     * DexKit 按 {@code ClassMatcher.usingEqStrings(PM_ANCHOR)} 匹配。命中多个类时取第一个，
+     * 并记录匹配数量；类选错会使该 Provider 全程失效。
      */
     private static final String PM_ANCHOR = "Unrecognized PlayerTimedTextItem.AnchorType: ";
 
     /**
      * 请求歌词的去抖窗口
      * <p>
-     * 宿主切歌时会连着发几次队列变化，逐个去请求会让它重复加载歌词；350ms 是实测够覆盖
-     * 这一串、又不至于让人察觉延迟的值。
+     * 宿主切歌时会连续发送几次队列变化，逐个请求会重复加载歌词；350ms 足以覆盖这一串事件，
+     * 又不会产生可感知延迟。
      * <p>
-     * 去抖任务跑在宿主主线程：宿主的 ViewModel 必须在主线程触碰，不能挪到我们自己的线程
+     * 去抖任务在宿主主线程执行：宿主的 ViewModel 只能在主线程访问。
      */
     private static final long REQUEST_DEBOUNCE_MS = 350L;
 
@@ -94,12 +90,12 @@ public final class AppleAnchors {
     private static volatile Object sLyricViewModel;
     private static volatile String sLastRequestedItemId;
     /**
-     * 最近一次成功发起请求的 itemId；去重只看它，失败后允许同一曲目重试
+     * 最近一次成功发起请求的 itemId；去重只使用它，失败后允许同一曲目重试
      */
     private static volatile String sLastCompletedItemId;
     private static volatile Runnable sPendingRequest;
     /**
-     * 队列触发路径第一次死亡时打一条 W；后续静默，避免每次回调刷屏
+     * 队列触发路径首次失败时记录一条 W；后续不再记录，避免每次回调刷屏
      */
     private static final AtomicBoolean sQueueTriggerDeadReported = new AtomicBoolean();
     private static volatile LyricsListener sListener;
@@ -108,19 +104,18 @@ public final class AppleAnchors {
     /**
      * {@code PlaybackItem.setId} 兜底锚点的插桩计数
      * <p>
-     * 这条兜底靠匹配调用栈里的字符串（{@code getItemAtIndex} / {@code .accept}），
-     * 宿主混淆改名后它就再也命中不了——而"从未命中"与"根本没插桩"在日志里长得一模一样。
-     * 计数放在这里，正是为了让这两者能被区分开
+     * 该回退依赖调用栈中的 {@code getItemAtIndex} / {@code .accept}，宿主混淆改名后无法命中；
+     * 计数用于区分“从未命中”与“未插桩”。
      */
     private static final AtomicInteger sSetIdProbes = new AtomicInteger();
     private static final AtomicInteger sSetIdCaptures = new AtomicInteger();
     private static final int SET_ID_REPORT_AFTER = 200;
 
     /**
-     * 兜底锚点已死的告警是否已经打过
+     * 兜底锚点失效告警是否已输出
      * <p>
-     * 判据必须是"跨过阈值"而不是"恰好等于阈值"：计数由 Hook 回调并发自增，
-     * {@code get() == 200} 可能被整个跳过去，那行告警就再也不会出现
+     * 判据必须是“跨过阈值”而非“恰好等于阈值”：计数由 Hook 回调并发自增，
+     * {@code get() == 200} 可能被跳过，告警将不再出现。
      */
     private static final AtomicBoolean sSetIdDeadReported = new AtomicBoolean();
 
@@ -128,7 +123,7 @@ public final class AppleAnchors {
     }
 
     /**
-     * 逐字切片。
+     * 逐字切片
      */
     public static final class AppleWord {
         public final String text;
@@ -143,7 +138,7 @@ public final class AppleAnchors {
     }
 
     /**
-     * 单行歌词；文本保留宿主给出的原始 HTML，由上层统一净化。
+     * 单行歌词；文本保留宿主给出的原始 HTML，由上层统一净化
      */
     public static final class AppleLine {
         public final String text;
@@ -163,7 +158,7 @@ public final class AppleAnchors {
     }
 
     /**
-     * 抽取结果回调。
+     * 抽取结果回调
      */
     public interface LyricsListener {
         /**
@@ -173,11 +168,11 @@ public final class AppleAnchors {
         void onLyrics(@NonNull List<AppleLine> lines, @Nullable String itemId);
 
         /**
-         * 宿主明确表示这首曲目没有歌词。
+         * 宿主明确表示这首曲目没有歌词
          *
-         * <p>{@code itemId} 是被判定的那一首，不是"现在正在播的那一首"：取词有 350ms
-         * 去抖，这个回调可能落在切歌窗口内。调用方必须拿它与当前曲目比对后再决定是否采纳——
-         * 无词结论一旦被误采纳，会经由"纯音乐占位"把有歌词的曲目永久钉死。
+         * <p>{@code itemId} 是被判定的曲目，不是当前正在播放的曲目：取词有 350ms 去抖，
+         * 该回调可能落在切歌窗口内。调用方必须与当前曲目比对后再决定是否采纳；
+         * 无词结论误采纳会经纯音乐占位把有歌词的曲目永久标记。
          *
          * @param itemId 被判定为无词的曲目标识；取不到时为 null
          */
@@ -185,7 +180,9 @@ public final class AppleAnchors {
     }
 
     /**
-     * 安装全部 Hook。幂等；失败只记录日志。
+     * 安装全部 Hook
+     *
+     * <p>幂等；失败只记录日志。
      */
     public static void install(@NonNull LyricsListener listener) {
         if (sInstalled) return;
@@ -197,8 +194,6 @@ public final class AppleAnchors {
         hookMediaPlaybackManager();
         hookPlaybackItemSetId();
     }
-
-    // ------------------------------------------------------------------ 安装
 
     private static void hookApplicationCreate() {
         try {
@@ -269,8 +264,8 @@ public final class AppleAnchors {
                         )
                     );
                     if (classes == null || classes.isEmpty()) return null;
-                    // 命中多个时报错不要沉默：另一处锚点用的是 get(0)，两处取舍不一致的话
-                    // "到底挂了哪一个"就无法从日志判断，而这个类一旦选错，本 Provider 全程失效
+                    // 命中多个类时记录数量：另一处锚点使用 get(0)，两处取舍不一致会导致
+                    // 无法从日志判断实际挂载类；类选错会使该 Provider 全程失效
                     if (classes.size() > 1) {
                         AndroidLog.logW(TAG, "MediaPlaybackManager anchor matched " + classes.size()
                             + " classes; using the first: " + classes.get(0).getName());
@@ -313,7 +308,7 @@ public final class AppleAnchors {
     }
 
     /**
-     * 兜底：从队列构建路径上捕获 {@code PlaybackItem} 实体。
+     * 兜底：从队列构建路径上捕获 {@code PlaybackItem} 实体
      */
     private static void hookPlaybackItemSetId() {
         try {
@@ -329,7 +324,7 @@ public final class AppleAnchors {
                             Object id = getArg(0);
                             if (!(id instanceof String trackId) || trackId.isEmpty()) return;
 
-                            // 只接受来自"队列逐项构建"这一条路径的赋值，避免误捕其它 setId
+                            // 只接受来自队列逐项构建路径的赋值，避免误捕其它 setId
                             sSetIdProbes.incrementAndGet();
                             boolean fromQueueBuild = false;
                             boolean fromCallback = false;
@@ -347,9 +342,9 @@ public final class AppleAnchors {
                                 return;
                             }
 
-                            // 跨过阈值就说明这条兜底已经死了（取词现在只靠 MediaPlaybackManager，
-                            // 而它若同时失效，本 Provider 会静默地什么都不做）。
-                            // 用 `>=` 而非 `==`：并发自增可能整个跳过阈值；`compareAndSet` 保证只打一次
+                            // 跨过阈值说明该回退已失效；取词只剩 MediaPlaybackManager，
+                            // 若它同时失效，该 Provider 不会执行任何操作。使用 >= 而非 ==：
+                            // 并发自增可能跳过阈值；compareAndSet 保证只输出一次
                             if (sSetIdProbes.get() >= SET_ID_REPORT_AFTER && sSetIdCaptures.get() == 0
                                 && sSetIdDeadReported.compareAndSet(false, true)) {
                                 AndroidLog.logW(TAG, "PlaybackItem.setId fallback anchor matched nothing in "
@@ -365,8 +360,6 @@ public final class AppleAnchors {
             AndroidLog.logW(TAG, "Failed to hook PlaybackItem.setId: " + t.getMessage());
         }
     }
-
-    // ------------------------------------------------------------------ 触发
 
     private static void handlePlayerQueueItem(@Nullable Object queueItem) {
         if (queueItem == null) {
@@ -419,8 +412,8 @@ public final class AppleAnchors {
     }
 
     /**
-     * @return 是否已经把请求交出去（或已得到“无歌词”的确定结论）。失败返回 false，
-     * 调用方不写去重键，让同一曲目的下一次宿主回调还能重试。
+     * @return 是否已发出请求，或已得到“无歌词”的确定结论；失败返回 false，
+     * 调用方不写去重键，同一曲目的下一次宿主回调仍可重试
      */
     private static boolean requestLyrics(@NonNull Object playbackItem) {
         try {
@@ -471,10 +464,8 @@ public final class AppleAnchors {
         }
     }
 
-    // ------------------------------------------------------------------ 抽取
-
     /**
-     * 遍历 JNI 侧的 {@code LyricsSectionVector} 取出全部歌词行。
+     * 遍历 JNI 侧的 {@code LyricsSectionVector} 取出全部歌词行
      */
     private static void handleSongInfo(@NonNull Object songInfoPtr) {
         Object songInfo = CoreTool.callMethodIfExists(songInfoPtr, "get");
@@ -492,10 +483,9 @@ public final class AppleAnchors {
 
         Object sections = CoreTool.callMethodIfExists(songInfo, "getSections");
         if (sections == null) {
-            // 取不到 sections 说明我们的反射没打通（方法改名/类型不符），
-            // 而不是宿主说"这首没有歌词"。此处绝不能 notifyNoLyrics：那是一个允许下发
-            // 纯音乐占位的确定性结论，会把一首有歌词的曲目永久钉成纯音乐。
-            // 不投递任何结论，交给编排器超时兜底
+            // 取不到 sections 说明反射未打通（方法改名或类型不符），不是宿主声明无歌词。
+            // 此处不得调用 notifyNoLyrics：该结论允许下发纯音乐占位，会把有歌词的曲目
+            // 永久标记为纯音乐。不投递结论，交给编排器超时兜底。
             AndroidLog.logW(TAG, "Cannot read lyric sections; leaving the verdict to the orchestrator");
             return;
         }
@@ -512,8 +502,8 @@ public final class AppleAnchors {
 
             Object sectionLines = CoreTool.callMethodIfExists(section, "getLines");
             if (sectionLines == null) {
-                // 取不到 lines 与上面取不到 sections 是同一件事：我们的反射没打通
-                // （方法改名 / 类型不符），不是宿主说"这首没有歌词"。跳过本段、继续看其余段
+                // 取不到 lines 与取不到 sections 相同：反射未打通（方法改名或类型不符），
+                // 不是宿主声明无歌词。跳过本段并继续处理其余段。
                 AndroidLog.logW(TAG, "Cannot read lines of lyric section; skipping it");
                 continue;
             }
@@ -531,23 +521,21 @@ public final class AppleAnchors {
 
         if (lines.isEmpty()) {
             if (attempted > 0) {
-                // 看到了行，却一行都没读出来 ⇒ 是我们的反射没打通，不是宿主没有歌词
+                // 读到行但没有任何一行可用，说明反射未打通，不是宿主无歌词
                 AndroidLog.logW(TAG, "Read " + attempted
                     + " lyric lines but none was usable; not a no-lyrics verdict");
                 return;
             }
             if (sectionsRead == 0) {
-                // 一段都没读到：`sections.size()` 与 `getLines` 同样可能因宿主改名而
-                // 返回 0/null，此时 attempted 恒为 0。这与"宿主说这首没有歌词"完全不是一回事，
-                // 绝不能据此下发纯音乐占位——那会把一首有歌词的曲目永久钉死。
-                // 不投递任何结论，交给编排器超时兜底
+                // 一段都未读到：sections.size() 与 getLines 可能因宿主改名返回 0/null，
+                // 此时 attempted 恒为 0。该情况不代表宿主声明无歌词；不得下发纯音乐占位，
+                // 不投递结论，交给编排器超时兜底。
                 AndroidLog.logW(TAG, "No lyric section was reachable (size=" + sectionCount
                     + "); leaving the verdict to the orchestrator");
                 return;
             }
-            // 确实读到了段，且段内一行都没有：这才是宿主给的空歌词结构。
-            // 这里没有直接的 playbackItem，用"最后一次请求的那首"作为被判定对象——
-            // 宿主构建歌词就是在回应那次请求。为空时交给上层按"无法判定"处理
+            // 确实读到段且段内没有行，才是宿主给出的空歌词结构。此处没有 playbackItem，
+            // 用最后一次请求的曲目作为判定对象；为空时由上层按无法判定处理。
             notifyNoLyrics(sLastRequestedItemId);
         } else {
             LyricsListener listener = sListener;
@@ -567,7 +555,7 @@ public final class AppleAnchors {
         if (!(rawText instanceof String text)) {
             return null;
         }
-        // asLong 对任意 Number 容错（宿主既可能给 Integer，也可能给 Long）
+        // asLong 对任意 Number 容错（宿主可能给 Integer 或 Long）
         long start = asLong(begin);
         long stop = asLong(end);
 
@@ -593,7 +581,7 @@ public final class AppleAnchors {
     }
 
     /**
-     * JNI 向量元素是"指针包装对象"，需要再取一次 {@code get()} 才能拿到实体。
+     * JNI 向量元素是指针包装对象，需要再调用一次 {@code get()} 才能取得实体
      */
     @Nullable
     private static Object unwrap(@Nullable Object pointer) {

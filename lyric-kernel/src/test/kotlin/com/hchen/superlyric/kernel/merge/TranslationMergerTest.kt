@@ -26,9 +26,9 @@ import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 
 /**
- * 翻译合并的容差矩阵。
+ * 翻译合并的容差矩阵
  *
- * 这组用例把「翻译丢失」与「翻译错位」两类历史缺陷钉死为可回归的断言。
+ * 覆盖翻译丢失与翻译错位两类边界。
  */
 class TranslationMergerTest {
 
@@ -45,7 +45,7 @@ class TranslationMergerTest {
 
     @Test
     fun `one millisecond drift is tolerated`() {
-        // 旧实现用精确时间戳匹配，1ms 漂移即静默丢弃译文
+        // 1ms 漂移仍在容差内，译文必须对齐而不是静默丢弃
         val result = TranslationMerger.attach(doc(1000), listOf(TimeText(1001, "译文")), SidecarChannel.TRANSLATION)
 
         assertEquals("译文", result.lines[0].translation)

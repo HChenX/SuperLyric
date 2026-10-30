@@ -37,7 +37,7 @@ import java.util.concurrent.TimeUnit
  * 咪咕整首原生歌词来源
  *
  * 歌词回调可能早于媒体会话，快照保留到同曲目的会话建立后补投。
- * 每次任务捕获自己的会话，切歌或取消后只会回到旧代际，绝不借用新曲目的通道
+ * 每次任务持有自己的会话，切歌或取消后的结果只落在已作废的代际上，不会借用新曲目的通道
  */
 class MobileMusicHookSource internal constructor(
     private val anchors: MobileMusicAnchors,

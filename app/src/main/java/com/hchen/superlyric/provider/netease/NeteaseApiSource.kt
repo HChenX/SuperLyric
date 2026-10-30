@@ -51,15 +51,15 @@ import okhttp3.RequestBody.Companion.toRequestBody
  *
  * 四路载荷
  * `/api/song/lyric/v1` 一次返回四份歌词，都是明文（无需解密）：
- * - `yrc`——逐字（YRC，绝对毫秒），优先；`lyric` 为 LRC，兜底
- * - `ytlrc` / `tlyric`——译文
- * - `yromalrc` / `romalrc`——罗马音
+ * - `yrc`：逐字（YRC，绝对毫秒），优先；`lyric` 为 LRC，兜底
+ * - `ytlrc` / `tlyric`：译文
+ * - `yromalrc` / `romalrc`：罗马音
  *
  * 解析全部交给 `lyrics-core`：YRC 走其内置的 `NeteaseYrcParser`，
  * LRC 走 `EnhancedLrcParser`，译文与罗马音作为伴随载荷统一对齐。
  *
  * VIP 与逐字
- * 从宿主 WebView 的 CookieManager 中取真实登录凭证，用于解锁 VIP 曲目的完整逐字歌词；
+ * 从宿主 WebView 的 CookieManager 中取登录凭证，用于解锁 VIP 曲目的完整逐字歌词；
  * 取不到时降级为普通歌词，不影响主流程。
  *
  * @author 焕晨HChen
@@ -95,30 +95,30 @@ class NeteaseApiSource : LyricSource {
     private fun resolve(identity: TrackIdentity): LyricOutcome {
         val songId = songIdOf(identity) ?: when (val outcome = searchSongId(identity)) {
             is SearchOutcome.Found -> outcome.songId
-            // 检索空集不是平台在说"这首没有歌词"：它说的是"我们没搜到这首歌"，而宿主
-            // 上报的曲名/歌手并不总是干净（同名版本、修饰后缀、被改写的字段都够让它搜空）。
+            // 检索返回空集不代表平台声明该曲目无歌词：宿主上报的曲名/歌手并不总是干净
+            // （同名版本、修饰后缀、被改写的字段都会导致检索落空）。
             // 判成 NoLyrics 会给一首有歌词的曲目下发纯音乐占位
             SearchOutcome.NoCandidate -> return LyricOutcome.TransientFailure(null)
-            // 与上一条同理：报文读不出来/"这次没查成"同样不是曲目结论
+            // 报文读取失败同样不是曲目结论
             SearchOutcome.Failed -> return LyricOutcome.TransientFailure(null)
         }
 
         val payload = fetchLyricPayload(songId)
             ?: return LyricOutcome.TransientFailure(null)
 
-        // 平台明确标记"无歌词"
+        // 平台明确标记无歌词
         if (payload.optBoolean("nolyric", false)) {
             return LyricOutcome.NoLyrics("netease: platform reports nolyric")
         }
 
         // `ifBlank` 而不是 `ifEmpty`：接口在无逐字歌词时会返回空白的 yrc，
-        // `ifEmpty` 只认空串，于是"yrc 空白 + lrc 有效"这一格会丢掉有效的 lrc 并误判无歌词
+        // `ifEmpty` 只认空串，"yrc 空白 + lrc 有效"的组合会丢掉有效的 lrc 并误判无歌词
         val main = lyricText(payload, "yrc").ifBlank { lyricText(payload, "lrc") }
         if (main.isBlank()) {
-            // 不是确定结论。平台对"确实没有歌词"的曲目会带 `nolyric` 标记（上面那格已覆盖）；
-            // 走到这里只说明两个端点的歌词通道都空——那可能是空壳响应（参数/区域/鉴权
-            // 导致我们没取到），而不是平台在就这首曲目表态。判成 NoLyrics 会下发纯音乐占位，
-            // 把一首有歌词的曲目永久钉死；宁可判可重试失败
+            // 不构成确定结论。平台对确实没有歌词的曲目会带 `nolyric` 标记，该情形已在上方返回；
+            // 走到这里只说明两个端点的歌词通道都空，可能是空壳响应（参数、区域或鉴权导致
+            // 本模块没取到），而不是平台就该曲目表态。判成 NoLyrics 会把有歌词的曲目
+            // 标记为无歌词；此处按可重试失败处理
             AndroidLog.logW(sourceName, "No lyric channel in the primary or legacy response; treating as retryable")
             return LyricOutcome.TransientFailure(null)
         }
@@ -139,9 +139,8 @@ class NeteaseApiSource : LyricSource {
                 lyricId = identity.stableId,
             )
         ) ?: return LyricOutcome.TransientFailure(null)
-        // 上面那格已经覆盖了"平台给的是空歌词体"这条确定结论；走到这里说明歌词体非空
-        // 而我们没解析出行——那是"这次没读出来"，不是"平台没有歌词"。
-        // 判成 NoLyrics 会下发纯音乐占位，把一首有歌词的曲目钉死
+        // 歌词体非空而没有解析出行，说明本次没有读出来，不是平台没有歌词。
+        // 判成 NoLyrics 会下发纯音乐占位，把有歌词的曲目钉死
 
         AndroidLog.logI(
             sourceName,
@@ -153,18 +152,14 @@ class NeteaseApiSource : LyricSource {
         return LyricOutcome.Success(doc)
     }
 
-    // ------------------------------------------------------------------ 接口
-
     private fun fetchLyricPayload(songId: Long): JSONObject? {
         readCached(songId)?.let { return it }
 
         // 首选 EAPI 端点：字段最全（含 yrc / yromalrc）
         //
-        //  这里的 lv/tv/rv/yv/ytv/yrv 取 0 表示"要这一路"，不是"关掉"。
-        // 不要因为看到一串 0 就以为是全部禁用、改成 1：实测 0、1、-1 的响应
-        // 逐字节相同，而 0 确实能拿到
-        // yrc / ytlrc / yromalrc 三路逐字载荷。不要动这几个参数。
-        // 若某首歌没有 yrc，是那首歌本身没有逐字歌词，不是参数写错。
+        // lv/tv/rv/yv/ytv/yrv 取 0 表示请求该路载荷，不是关闭：实测 0、1、-1 三种取值
+        // 的响应逐字节相同，而 0 确实能拿到 yrc / ytlrc / yromalrc 三路逐字载荷，
+        // 因此这几个参数保持为 0。某首曲目没有 yrc 是该曲目本身没有逐字歌词，与参数无关。
         val primary = post(
             url = URL_V1,
             body = "id=$songId&cp=false&tv=0&lv=0&rv=0&kv=0&yv=0&ytv=0&yrv=0",
@@ -174,7 +169,7 @@ class NeteaseApiSource : LyricSource {
             if (hasAnyLyricChannel(it)) return cache(songId, it)
         }
 
-        // 退回老端点
+        // 退回 legacy 端点
         val legacy = get("$URL_LEGACY?id=$songId&lv=1&kv=1&tv=-1&rv=1")
         legacy?.let {
             LyricDiag.dumpNeteaseChannels("NeteaseApi/Legacy", URL_LEGACY, it)
@@ -186,9 +181,9 @@ class NeteaseApiSource : LyricSource {
     /**
      * 读磁盘缓存
      *
-     * 只有真正带了歌词通道的响应才会被写盘（见 [cache]），因此命中后仍需复核一遍：
-     * 缓存文件损坏、或写入的只是空壳时，删掉该条目并回落网络，绝不把
-     * "缓存不可用"当成"平台没有歌词"——后者是终态，会把纯音乐占位钉死。
+     * 只有真正带了歌词通道的响应才会被写盘（见 [cache]），因此命中后仍需复核：
+     * 缓存文件损坏或写入的只是空壳时，删掉该条目并回落网络。缓存不可用不构成
+     * 平台没有歌词的结论：后者是终态，会把纯音乐占位钉死。
      */
     private fun readCached(songId: Long): JSONObject? {
         val key = songId.toString()
@@ -217,8 +212,8 @@ class NeteaseApiSource : LyricSource {
      *
      * V1 端点若版本参数全为 0，服务端会返回结构完整但内容全空的 JSON。
      * 判据必须是 `isNotBlank` 而非 `isNotEmpty`：接口在无逐字歌词时会返回空白的
-     * yrc，用 `isNotEmpty` 会把空白算作"带歌词"，于是不再回退 legacy 端点，
-     * 最终把一首有歌词的曲目判成无歌词
+     * yrc，用 `isNotEmpty` 会把空白算作带歌词，于是不再回退 legacy 端点，
+     * 最终把有歌词的曲目判成无歌词
      */
     private fun hasAnyLyricChannel(payload: JSONObject): Boolean =
         NET_LYRIC_KEYS.any { key -> lyricText(payload, key).isNotBlank() }
@@ -226,17 +221,16 @@ class NeteaseApiSource : LyricSource {
     /**
      * 检索结果
      *
-     * 三者都不构成"这首没有歌词"这一结论：平台从未就曲目表态，它只回答了"这次检索的
-     * 结果"。因此 [NoCandidate] 与 [Failed] 都归为可重试失败——把检索落空当终态，等于用
-     * 一次搜不到替平台断言曲目无歌词
+     * 三者都不构成该曲目没有歌词这一结论：平台从未就曲目表态，只回答了本次检索的结果。
+     * 因此 [NoCandidate] 与 [Failed] 都归为可重试失败
      */
     private sealed interface SearchOutcome {
         data class Found(val songId: Long) : SearchOutcome
 
-        /** 平台检索返回空集：我们没搜到，不是平台说这首没有歌词 */
+        /** 平台检索返回空集：本次没有命中，不代表平台声明无歌词 */
         data object NoCandidate : SearchOutcome
 
-        /** 这次没查成：没标题、报文畸形、或候选里没有一个能采信 */
+        /** 检索未完成：缺少标题、报文畸形，或候选均未通过校验 */
         data object Failed : SearchOutcome
     }
 
@@ -260,7 +254,7 @@ class NeteaseApiSource : LyricSource {
         }
 
         // 网易云接口不返回时长，无法做时长校验；只接受歌名完全一致的候选，
-        // 且必须同时比对歌手——同名不同曲配上别人的歌词是本项目最严重的可见缺陷。
+        // 且必须同时比对歌手，避免同名不同曲配上他人的歌词。
         // 目标歌手未知时 artistCompatible 恒真，不会因此收窄
         val normalizedTitle = identity.title.trim()
         for (index in 0 until songs.length()) {
@@ -294,8 +288,6 @@ class NeteaseApiSource : LyricSource {
 
     private fun lyricText(payload: JSONObject, key: String): String =
         payload.optJSONObject(key)?.optString("lyric", "").orEmpty()
-
-    // ------------------------------------------------------------------ HTTP
 
     private fun post(url: String, body: String): JSONObject? = try {
         val request = Request.Builder()
@@ -402,7 +394,7 @@ class NeteaseApiSource : LyricSource {
         /**
          * 取词的整体时限预算
          *
-         * read 超时只约束单次读，每次读到数据就重置，挡不住"永远挤一点数据"的服务端；
+         * read 超时只约束单次读，每读到数据就重置，挡不住持续挤出少量数据的服务端；
          * callTimeout 给整次调用封顶。与 QQ / 酷狗的 4/6/12 一致，Spotify 另有一套更大的值
          */
         val client: OkHttpClient = OkHttpClient.Builder()

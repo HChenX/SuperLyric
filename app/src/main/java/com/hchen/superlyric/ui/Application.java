@@ -25,11 +25,12 @@ import android.content.SharedPreferences;
 import androidx.annotation.NonNull;
 
 import com.hchen.hooktool.ModuleConfig;
+import com.hchen.hooktool.log.AndroidLog;
 import com.hchen.hooktool.utils.PrefsTool;
 import com.hchen.superlyric.BuildConfig;
 import com.hchen.superlyric.data.LocalConfig;
 import com.hchen.superlyric.data.PrefsKey;
-import com.hchen.superlyricapi.SuperLyricHelper;
+import com.hchen.superlyricapi.SuperLyric;
 
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -39,7 +40,7 @@ import io.github.libxposed.service.XposedService;
 import io.github.libxposed.service.XposedServiceHelper;
 
 /**
- * 模块宿主 Application：初始化配置与 Xposed 服务绑定。
+ * 模块宿主 Application，初始化配置并绑定 Xposed 服务
  *
  * @author 焕晨HChen
  */
@@ -63,16 +64,19 @@ public class Application extends android.app.Application implements XposedServic
         PrefsTool.prefs(this, "super_lyric_prefs");
         XposedServiceHelper.registerListener(this);
 
-        if (SuperLyricHelper.isAvailable()) {
-            SuperLyricHelper.registerPublisher();
+        if (!SuperLyric.isAvailable()) {
+            AndroidLog.logW("Application",
+                "SuperLyric service is not available; install/enable the module and reboot");
         }
     }
 
     /**
-     * 进程级 Application context。
+     * 进程级 Application context
      *
      * <p>供生命周期长于 Activity 的对象（例如 ViewModel 的 lambda）使用，避免把 Activity
-     * 闭包进 ViewModel；不要用它做短生命周期 UI 操作。
+     * 闭包进 ViewModel。不用于短生命周期的 UI 操作。
+     *
+     * @throws IllegalStateException {@code onCreate} 尚未执行
      */
     @NonNull
     public static android.content.Context getAppContext() {
@@ -126,14 +130,14 @@ public class Application extends android.app.Application implements XposedServic
                 try {
                     listener.accept(remotePreferences);
                 } catch (Throwable t) {
-                    // 一个监听器失败不能连坐后面的监听器；否则界面会静默停在旧配置。
+                    // 一个监听器失败不影响后续监听器，否则界面会停在旧配置上
                     android.util.Log.w("SuperLyric", "Prefs-ready listener failed", t);
                 }
             }
             isXposedActive = true;
         } catch (Throwable t) {
-            // 远程 prefs 读取失败时不要抛出 XposedServiceHelper 的回调线程；界面应继续可用，
-            // 只是拿不到远程配置。
+            // 远程 prefs 读取失败不得抛回 XposedServiceHelper 的回调线程；
+            // 界面保持可用，仅缺少远程配置
             android.util.Log.w("SuperLyric", "Failed to bind Xposed service", t);
         }
     }

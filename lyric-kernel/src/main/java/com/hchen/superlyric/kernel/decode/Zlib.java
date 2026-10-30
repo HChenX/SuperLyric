@@ -31,11 +31,9 @@ public final class Zlib {
     private static final int BUFFER_SIZE = 8192;
 
     /**
-     * 解压输出的上限（字节）
-     * <p>
-     * 歌词正文实测在百 KB 量级，这里留足一个数量级。<b>必须设界</b>：压缩流可以只用几 KB
-     * 解出数 GB（解压炸弹），无界增长会直接 OOM 掉宿主进程——本模块的第一条铁律是
-     * 绝不影响宿主稳定性。超限按解码失败处理（可重试），绝不当作"没有歌词"
+     * 解压输出上限，字节。
+     *
+     * <p>压缩流可能解出远大于输入的数据，必须设限以防宿主 OOM。超限按解码失败处理。
      */
     private static final int MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
 

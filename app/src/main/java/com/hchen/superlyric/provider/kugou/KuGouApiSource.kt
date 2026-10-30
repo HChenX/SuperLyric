@@ -46,19 +46,19 @@ import okhttp3.Request
 import okhttp3.Response
 
 /**
- * 酷狗开放接口取词来源：官方 KRC 接口的直查与检索
+ * 酷狗开放接口取词来源：官方 KRC 接口直查与检索
  *
- * 接口
+ * 接口：
  * - 检索：`mobilecdn.kugou.com/api/v3/search/song`（歌名 + 歌手 → 候选 Hash）
  * - 取歌词 id / accesskey：`krcs.kugou.com/search?hash=…`
  * - 下载：`krcs.kugou.com/download?id=…&accesskey=…&fmt=krc`
  *
- * 三个接口均无需鉴权，长期稳定。
+ * 三个接口均无需鉴权。
  *
- * 结果语义（决定是否允许下发纯音乐占位）
+ * 结果语义（决定是否允许下发纯音乐占位）：
  * - 拿到并解析成功 → [LyricOutcome.Success]
- * - 请求成功但平台明确没有这条曲目的歌词 → [LyricOutcome.NoLyrics]（终态）
- * - 网络异常或报文解码失败 → [LyricOutcome.TransientFailure]（可重试，绝不下发占位）
+ * - 请求成功且平台明确没有该曲目歌词 → [LyricOutcome.NoLyrics]（终态）
+ * - 网络异常或报文解码失败 → [LyricOutcome.TransientFailure]（可重试，不下发占位）
  *
  * @author 焕晨HChen
  */
@@ -85,8 +85,8 @@ class KuGouApiSource : LyricSource {
     }
 
     private fun resolve(identity: TrackIdentity): LyricOutcome {
-        // 直查：宿主上报的哈希并不总是歌词哈希（同一首曲目实测会出现多个不同哈希），
-        // 因此落空时必须回退到检索。否则会把有歌词的歌误判为无歌词、下发纯音乐占位。
+        // 直查：宿主上报的哈希不一定是歌词哈希（同一曲目可能出现多个不同哈希），
+        // 落空时必须回退到检索；否则有歌词的曲目会被误判为无歌词并下发纯音乐占位。
         hashOf(identity)?.let { direct ->
             attempt(direct, identity)?.let { return it }
             AndroidLog.logD(
@@ -96,13 +96,13 @@ class KuGouApiSource : LyricSource {
         }
 
         val searchedHash = searchBestHash(identity)
-        // 检索落空 ≠ 平台确定没有歌词：可能只是没匹配上，或报文结构变了。
-        // NoLyrics 允许下发纯音乐占位，误判一次就把有歌词的曲目钉死了
+        // 检索落空不等于平台确定没有歌词：可能只是未匹配上，或报文结构变化。
+        // NoLyrics 允许下发纯音乐占位，一次误判就会把有歌词的曲目永久标记。
             ?: return LyricOutcome.TransientFailure(null)
 
         attempt(searchedHash, identity)?.let { return it }
-        // attempt 返回 null 只说明这个哈希没拿到可用歌词（下载失败、解码失败、
-        // 或平台确实没有），不足以判定"这首歌没有歌词"
+        // attempt 返回 null 只说明该哈希未拿到可用歌词（下载失败、解码失败，
+        // 或平台确实没有），不足以判定“这首歌没有歌词”
         return LyricOutcome.TransientFailure(null)
     }
 
@@ -110,7 +110,7 @@ class KuGouApiSource : LyricSource {
      * 对单个哈希取词
      *
      * @return [LyricOutcome.Success] 或 [LyricOutcome.TransientFailure]；
-     *         返回 `null` 表示这个哈希没有歌词，调用方可继续尝试其它哈希
+     *         返回 `null` 表示该哈希没有歌词，调用方可继续尝试其它哈希
      */
     private fun attempt(hash: String, identity: TrackIdentity): LyricOutcome? {
         val cached = readCachedKrc(hash)
@@ -139,9 +139,9 @@ class KuGouApiSource : LyricSource {
                 )
             )
         } catch (e: DecodeException) {
-            // 解不开是"这次没拿到"，不是"没有歌词"
+            // 解不开表示本次未拿到，不是没有歌词。
             AndroidLog.logW(sourceName, "KRC decode failed: ${e.message}")
-            // 失败也可能来自损坏的缓存条目；删掉它，下次自然回落网络重取
+            // 失败也可能来自损坏的缓存条目；删除后下次回退到网络重取。
             LyricCacheStore.delete(null, PROVIDER_NAME, hash)
             return LyricOutcome.TransientFailure(e)
         }
@@ -151,8 +151,8 @@ class KuGouApiSource : LyricSource {
             return null
         }
 
-        // 只缓存本次从网络取回且已验证可解析的载荷。
-        // 命中缓存时不再回写——否则日志会先报 HIT 再报"已缓存"，自相矛盾。
+        // 只缓存本次从网络取回且已验证可解析的载荷。命中缓存时不再回写，
+        // 避免日志同时出现 HIT 与已缓存。
         if (cached == null) {
             LyricCacheStore.putAsync(null, PROVIDER_NAME, hash, krcPayload)
         }
@@ -184,9 +184,9 @@ class KuGouApiSource : LyricSource {
 
         for (index in 0 until info.length()) {
             val item = info.optJSONObject(index) ?: continue
-            // 这个哈希来自响应而不是本模块，必须与身份里那个同样受正则约束：
-            // 它会不经校验地拼进请求 URL（`downloadKrc`）。顺带也过滤掉形态不对的候选，
-            // 省掉几次注定失败的往返
+            // 该哈希来自响应而非本模块，必须与身份中的哈希使用同一正则约束：
+            // 它会未经校验拼进请求 URL（`downloadKrc`）。该过滤同时排除形态不符的候选，
+            // 减少必然失败的往返
             val hash = item.optString("hash", "")
             if (!HASH_PATTERN.matches(hash)) continue
 
@@ -203,19 +203,18 @@ class KuGouApiSource : LyricSource {
             )
             candidates += "\"$candidateTitle\"/\"$candidateArtist\"/${candidateDurationMs / 1000}s" +
                     "=${score.roundTo1()} hash=$hash"
-            // 用 `>` 而不是 `>=`：同分时采纳检索的排序首位。
-            // 酷狗曲库里同一首歌的不同版本会登记成完全相同的歌名/歌手/时长
-            // （实测 NIGHT DANCER 的韩语版与日语原版三项逐字相同），打分器无从区分，
-            // 平局只能靠顺序决定——取最后一个会随机配上错误语言的歌词。
+            // 使用 `>` 而非 `>=`：同分时采纳检索排序首位。
+            // 酷狗曲库中同一首歌的不同版本可能登记为完全相同的歌名、歌手与时长
+            // （NIGHT DANCER 的韩语版与日语原版三项逐字相同），打分器无法区分；
+            // 平局只能靠顺序决定，取最后一个会随机配上错误语言的歌词。
             if (score > bestScore) {
                 bestScore = score
                 bestHash = hash
             }
         }
 
-        // 无论是否命中都要打出候选明细：只看"通过了/没通过"无法判断
-        // 是检索没找对歌、正确的那版根本不在候选里，还是打分把它判掉了。
-        // 这三种情况（尤其是"取到了同一首歌的另一个版本"）修法完全不同。
+        // 无论是否命中都要输出候选明细：仅看“通过/未通过”无法判断是检索未找对歌、
+        // 正确版本不在候选内，还是打分将其淘汰；这三种情况的处理不同。
         AndroidLog.logD(
             sourceName,
             "Candidates for \"$keyword\" (target \"${identity.title}\"/\"${identity.artist}\"/" +
@@ -252,8 +251,8 @@ class KuGouApiSource : LyricSource {
     /**
      * 读磁盘缓存
      *
-     * 只有成功解析出歌词的载荷才会被写盘（见 [attempt]），因此这里直接采信；
-     * 万一文件损坏导致解密失败，[attempt] 会删除该条目，下次自然回落网络。
+     * 只有成功解析出歌词的载荷才会写盘（见 [attempt]），因此这里直接采信；
+     * 文件损坏导致解密失败时，[attempt] 会删除该条目，下次回退到网络。
      */
     private fun readCachedKrc(hash: String): String? {
         val bytes = LyricCacheStore.getBytes(null, PROVIDER_NAME, hash) ?: return null
@@ -267,9 +266,9 @@ class KuGouApiSource : LyricSource {
     /**
      * 发起一次 GET
      *
-     * 传输层失败必须抛出，绝不能返回 null：调用方用 null 表达"平台没有这条歌词"，
-     * 若把网络异常也压成 null，断网就会被判成「确定性无歌词」并下发纯音乐占位。
-     * 抛出后由 [start] 的外层 `runCatching` 归类为 [LyricOutcome.TransientFailure]，
+     * 传输层失败必须抛出，不能返回 null：调用方用 null 表示平台没有该歌词；
+     * 若把网络异常压成 null，断网会被判为确定性无歌词并下发纯音乐占位。
+     * 抛出后由 [start] 的 `runCatching` 归类为 [LyricOutcome.TransientFailure]，
      * 只重试、不下发占位。
      */
     private fun get(url: String): String {
@@ -292,8 +291,8 @@ class KuGouApiSource : LyricSource {
         /**
          * 取词的整体时限预算
          *
-         * read 超时只约束单次读，每次读到数据就重置，挡不住"永远挤一点数据"的服务端；
-         * callTimeout 给整次调用封顶。与 QQ / 网易云的 4/6/12 一致，Spotify 另有一套更大的值
+         * read 超时只约束单次读取，每次读到数据都会重置，无法阻止服务端持续少量返回；
+         * callTimeout 为整次调用封顶。与 QQ / 网易云的 4/6/12 一致，Spotify 使用另一套更长时限。
          */
         val httpClient: OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(4, TimeUnit.SECONDS)

@@ -27,10 +27,10 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Poweramp LRC 文本解码：UTF-8 严格解码，失败再回退 GBK。
+ * Poweramp LRC 文本解码：UTF-8 严格解码，失败再回退 GBK
  *
  * <p>不能用 {@code new String(bytes, UTF_8)} 做探测：它会把非法序列替换成 U+FFFD，
- * 乱码也能“成功”解码，永远走不到 GBK 分支。
+ * 乱码也能成功解码，永远走不到 GBK 分支。
  *
  * <p>这个类同时供 Java 锚点与 Kotlin Hook 来源使用，避免两份实现漂移。
  */

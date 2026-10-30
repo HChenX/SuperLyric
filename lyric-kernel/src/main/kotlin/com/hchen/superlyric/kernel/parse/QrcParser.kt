@@ -39,20 +39,17 @@ import com.hchen.superlyric.kernel.text.LyricText
  * 译文识别
  * 按标签名与 `LyricType` 属性双向识别，且不依赖属性顺序：平台既可能用 `<Lyric_2>`，
  * 也可能改用 `<Lyric_1 LyricType="2">` 排布，只认字面量 `<Lyric_2>` 会让后一种排布的译文
- * 整段丢失。译文对齐统一走 [TranslationMerger] 的就近匹配——用时间戳精确匹配会因两段
+ * 整段丢失。译文对齐统一走 [TranslationMerger] 的就近匹配：时间戳精确匹配会因两段
  * 载荷相差 1ms 而静默丢弃。XML 实体也必须还原，否则界面会出现 `&#39;` 之类的原始串。
  *
- * 已由真机证实的两种形态
- * 均已对真实报文核实：
+ * 行的两种形态
  * - 文字位于时间标签之前：`文字(start,dur)`，不是标签在前。
  *   按"标签在前"解析会让每个词错配到前一个词的时间上，并丢掉每行第一个词
- * - 词起始有两种排布：歌内绝对毫秒与行内相对偏移都真实存在
- *   （QQ 实测为绝对）。二者必须区分，否则整行逐字时间会整体偏移一个行起始的量。
+ * - 词起始有两种排布：歌内绝对毫秒与行内相对偏移都可能出现
+ *   （QQ 为绝对毫秒）。二者必须区分，否则整行逐字时间会整体偏移一个行起始的量。
  *   本解析器按首词逐行自动判定
  *
- * > [!WARNING]
- * > 判断某一批报文属于哪种排布时，务必看第二个词：首个词的原始值在两种排布下
- * > 恰好相同，只有第二个词才能区分。
+ * 判定排布时看第二个词：首个词的原始值在两种排布下恰好相同，只有第二个词能区分。
  *
  * @author 焕晨HChen
  */
@@ -64,11 +61,10 @@ object QrcParser {
     /**
      * 词形式：`文字(start,dur)` 或 `文字(start,dur,flag)`
      *
-     * 文字位于时间标签之前——这一点已由真机报文证实：
-     * `[138621,3336]我(138621,384)把(139005,305)…` 中，行起始 138621
-     * 与首词起始 138621 相等（行内相对偏移为 0）。
+     * 文字位于时间标签之前，例如 `[138621,3336]我(138621,384)把(139005,305)…`：
+     * 行起始 138621 与首词起始 138621 相等（行内相对偏移为 0）。
      *
-     * 若按"标签在前、文字在后"捕获，会导致每个词错配到前一个词的时间上，
+     * 按"标签在前、文字在后"捕获会让每个词错配到前一个词的时间上，
      * 且每行首个词被整段丢弃（"后会无期" → "会无期"）。
      */
     private val WORD_PATTERN = Regex("""([^(]*)\((\d+),(\d+)(?:,\d+)?\)""")
@@ -95,18 +91,13 @@ object QrcParser {
     /** 整份载荷上限：正则/扫描都必须在有界输入上运行 */
     private const val MAX_INPUT_CHARS = 2_000_000
 
-    /** XML 标签数量上限：大量未闭合 <Lyric_ 会让标签正则按 k·n 回溯 */
+    /** XML 标签数量上限：限制标签扫描与后续处理的规模 */
     private const val MAX_XML_TAGS = 256
 
     /** 单份载荷的有效行上限；正常歌词远小于此值 */
     private const val MAX_LINES = 5_000
 
-    /**
-     * 解析 QRC 明文
-     *
-     * @param text 解密后的 QRC 明文
-     * @return 解析结果；无有效歌词行时返回 null
-     */
+    /** 解析统计；仅在传入非空实例时累加 */
     data class ParseStats(
         var skippedLongLines: Int = 0,
         var skippedUnmatchedLines: Int = 0,
@@ -119,6 +110,12 @@ object QrcParser {
                     "emptyWords=$emptyWords, xmlTags=$skippedXmlTags, truncated=$truncatedLines"
     }
 
+    /**
+     * 解析 QRC 明文
+     *
+     * @param text 解密后的 QRC 明文
+     * @return 解析结果；无有效歌词行时返回 null
+     */
     fun parse(text: String?, stats: ParseStats? = null): LyricDoc? {
         if (text.isNullOrBlank()) return null
         if (text.length > MAX_INPUT_CHARS) return null
@@ -164,7 +161,7 @@ object QrcParser {
     /**
      * 识别并拆出 XML 中主歌词与译文两个块
      *
-     * 兼容两种真实排布：
+     * 兼容两种排布：
      * - `<Lyric_1 LyricContent="main"/>` + `<Lyric_2 LyricContent="trans"/>`
      * - `<Lyric_1 LyricType="1" LyricContent="main"/>` + `<Lyric_1 LyricType="2" LyricContent="trans"/>`
      *
@@ -227,9 +224,7 @@ object QrcParser {
         )
     }
 
-    /**
-     * 解析带逐字标签的主体歌词行
-     */
+    /** 统计 XML 标签数量，超过上限时提前返回 */
     private fun countXmlTags(text: String): Int {
         if (!text.contains("<Lyric_")) return 0
         var count = 0
@@ -242,6 +237,9 @@ object QrcParser {
         return count
     }
 
+    /**
+     * 解析带逐字标签的主体歌词行
+     */
     private fun parseLines(content: String, stats: ParseStats?): LyricDoc? {
         val offset = OFFSET_PATTERN.find(content)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
 
@@ -256,7 +254,7 @@ object QrcParser {
             if (TAG_PATTERN.matches(line)) continue
 
             // 词标签正则以 `([^(]*)` 开头，在没有 `(` 的超长行上会逐位置回溯成 O(n²)，
-            // 把解析线程整个卡住。正常歌词行远小于此上限，超限只可能是畸形载荷。
+            // 长时间占用解析线程。正常歌词行远小于此上限，超限只可能是畸形载荷。
             // 内核不能打日志（零 Android 依赖），这里只能静默跳过
             if (line.length > MAX_LINE_CHARS) {
                 stats?.let { it.skippedLongLines++ }
@@ -306,7 +304,7 @@ object QrcParser {
         // 否则整行逐字时间会整体偏移一个行起始的量。
         //
         // 判据取首词：绝对排布下首词原始值不会小于行起始；相对排布下它是个小偏移。
-        // 必须逐行判定而非逐词——同一行内混用两种解释会自相矛盾。
+        // 必须逐行判定而非逐词：同一行内混用两种解释会自相矛盾。
         // 用未加 offset 的行起始做判定：若拿 startMs（已加 offset）来比，
         // 正 offset 会把绝对排布误判成相对排布，词时间被二次叠加行起始。
         val absoluteTime = matches.firstOrNull()

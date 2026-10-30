@@ -24,7 +24,7 @@ mmkv = "2.4.2"
 # okhttp
 okhttp = "5.5.0"
 # superlyricapi
-superlyricapi = "3.7"
+superlyricapi = "4.0"
 # lyrics-core (pure Kotlin/JVM, Apache-2.0)
 lyricsCore = "0.5.0"
 # test

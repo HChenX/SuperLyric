@@ -25,12 +25,12 @@ import com.hchen.superlyric.kernel.parse.QrcParser
 import com.hchen.superlyric.kernel.parse.SodaJsonParser
 import com.mocharealm.accompanist.lyrics.core.parser.AutoParser
 
-/** 一种文本格式的解析器；输入已解密、已拆分伴随通道。 */
+/** 一种文本格式的解析器；输入已解密、已拆分伴随通道 */
 internal fun interface LyricParser {
     fun parse(text: String, stats: QrcParser.ParseStats?): LyricDoc?
 }
 
-/** 按格式选择解析器，保持与旧 LyricPipeline 相同的优先级。 */
+/** 按格式选择解析器，保持固定优先级 */
 internal object ParserRegistry {
 
     private val autoParser = AutoParser()

@@ -28,8 +28,10 @@ import com.hchen.superlyric.kernel.parse.QrcParser
 import java.nio.charset.StandardCharsets
 
 /**
- * 载荷格式。由调用方（Provider）显式声明——它本来就知道数据来自哪个平台。
- * 仅当确实无法确定时才使用 [AUTO]。
+ * 载荷格式
+ *
+ * 由调用方（Provider）显式声明，它本来就知道数据来自哪个平台。仅当确实无法确定时
+ * 才使用 [AUTO]
  */
 enum class LyricFormat {
     /** QQ 音乐 QRC（加密或明文） */
@@ -52,7 +54,7 @@ enum class LyricFormat {
 }
 
 /**
- * 一次解析请求。
+ * 一次解析请求
  *
  * @property format          载荷格式
  * @property bytes           原始字节（加密载荷走此通道）
@@ -111,25 +113,25 @@ data class LyricRequest @JvmOverloads constructor(
  * 歌词解析管线门面
  *
  * 职责边界
- * - 解密（[KrcCipher] / [QrcCipher]）—— 本模块自研，稳定且需字节级精确
- * - 解析 —— 库覆盖的格式走 [AutoParser]；库不覆盖的（QRC / LRCX / Soda JSON）
+ * - 解密（[KrcCipher] / [QrcCipher]）：本模块自研，稳定且需字节级精确
+ * - 解析：库覆盖的格式走 [AutoParser]；库不覆盖的（QRC / LRCX / Soda JSON）
  *   走本模块自研解析器，直接产出 [LyricDoc]
- * - 对齐 —— 所有译文 / 罗马音统一走 [TranslationMerger]
- * - 规范化 —— 排序、时序单调、丢弃空行，产出的 [LyricDoc] 保证可用
+ * - 对齐：所有译文 / 罗马音统一走 [TranslationMerger]
+ * - 规范化：排序、时序单调、丢弃空行，产出的 [LyricDoc] 保证可用
  *
  * 返回值语义（供上层归类为 LyricOutcome）
- * - 返回 [LyricDoc] → 解析成功
- * - 返回 `null` → 本层没能产出任何有效行：载荷为空、格式不认识、或解析器一行都没读出来。
- *   它不是"平台确定没有歌词"——那句话只能由平台自身给出（如"无版权/无歌词"标记）。
- *   上层据此下发纯音乐占位前，必须自己确认这一点
- * - 抛出 [DecodeException] → 解码失败，属可重试情形，上层绝不可据此下发纯音乐占位
+ * - 返回 [LyricDoc]：解析成功
+ * - 返回 `null`：本层没有产出任何有效行，载荷为空、格式不认识、或解析器一行都没读出来。
+ *   它不是"平台确定没有歌词"，那句话只能由平台自身给出（如"无版权/无歌词"标记）。
+ *   上层据此下发纯音乐占位前，必须自行确认这一点
+ * - 抛出 [DecodeException]：解码失败，属可重试情形，上层不得据此下发纯音乐占位
  *
  * @author 焕晨HChen
  */
 object LyricPipeline {
 
     /**
-     * 解析一次请求。
+     * 解析一次请求
      *
      * @throws DecodeException 原始载荷无法解密
      */
@@ -144,7 +146,7 @@ object LyricPipeline {
 
         // 走通用解析库的载荷，先剥掉"主行 + 同时间戳伴随行"里的伴随行。
         // 库判定哪一行是哪一行的伴随用的是时间区间重叠，相邻主行会互相误配，
-        // 且配对后无法还原——必须在库拿到文本之前拆（详见 [CompanionSplitter]）。
+        // 且配对后无法还原：必须在库拿到文本之前拆（详见 [CompanionSplitter]）。
         val split = when (format) {
             LyricFormat.GENERAL, LyricFormat.KRC -> CompanionSplitter.split(content)
             else -> null
@@ -156,7 +158,7 @@ object LyricPipeline {
         return finalize(doc, if (split == null) request else request.withSplitChannels(split))
     }
 
-    /** 把拆分出的伴随通道并入请求，统一交给 [finalize] 对齐。 */
+    /** 把拆分出的伴随通道并入请求，统一交给 [finalize] 对齐 */
     private fun LyricRequest.withSplitChannels(split: CompanionSplitter.Split): LyricRequest = copy(
         translationText = joinChannels(split.translation, translationText),
         phoneticText = joinChannels(split.phonetic, phoneticText),
@@ -169,7 +171,7 @@ object LyricPipeline {
     }
 
     /**
-     * 取得明文载荷。
+     * 取得明文载荷
      *
      * 加密载荷（QRC / KRC）走字节通道解密；其余格式直接取文本通道。
      */
@@ -190,7 +192,7 @@ object LyricPipeline {
     }
 
     /**
-     * 仅在格式未知时使用的特征嗅探。
+     * 仅在格式未知时使用的特征嗅探
      *
      * 判据全部是结构性强特征（头部标签 / 根 JSON 键 / XML 根元素），
      * 不做"看起来像"的模糊判断。
@@ -210,23 +212,22 @@ object LyricPipeline {
     }
 
     /**
-     * 网易云 YRC 行的结构特征：`[数字,数字]` 后跟三元组 `(数字,数字,数字)` 词标签。
+     * 网易云 YRC 行的结构特征：`[数字,数字]` 后跟三元组 `(数字,数字,数字)` 词标签
      *
-     * 为什么必须与 QRC 分开识别
-     * QRC 与 YRC 的词标签形态极像，词标签分量个数是二者唯一可靠的区分点：
+     * 必须与 QRC 分开识别
+     * QRC 与 YRC 的词标签形态接近，分量个数是二者唯一可靠的区分点：
      * YRC 恒为 `(a,b,flag)` 三元组，QRC 为 `(a,b)` 二元组。
-     * 二者识别错误会让整段报文进错解析器。
+     * 识别错误会让整段报文进入错误的解析器。
      *
-     * 关于词起始的时间基准
-     * 词起始的时间基准不能按格式名推断：两种基准在两种格式里都出现过
-     * （QQ 的 QRC 实测就是绝对毫秒）。
-     * [com.hchen.superlyric.kernel.parse.QrcParser] 因此按首词逐行自动判定基准，
-     * 不要再依据格式名去假设时间基准。
+     * 词起始的时间基准
+     * 时间基准不能按格式名推断，两种基准在两种格式里都出现过
+     * （QQ 的 QRC 使用绝对毫秒）。
+     * [com.hchen.superlyric.kernel.parse.QrcParser] 按首词逐行自动判定基准。
      */
     private val YRC_LINE_MARKER = Regex("""\[\d+,\d+][^\n]*\(\d+,\d+,\d+\)""")
 
     /**
-     * 裸 QRC 行的结构特征：`[数字,数字]` 后跟二元组 `(数字,数字)` 词标签。
+     * 裸 QRC 行的结构特征：`[数字,数字]` 后跟二元组 `(数字,数字)` 词标签
      * 要求闭合括号，因此三元组不会误入此分支。
      */
     private val QRC_LINE_MARKER = Regex("""\[\d+,\d+][^\n]*\(\d+,\d+\)""")
@@ -235,7 +236,7 @@ object LyricPipeline {
     private val KRC_LINE_MARKER = Regex("""\[\d+,\d+][^\n]*<\d+,\d+,\d+>""")
 
     /**
-     * 规范化并补齐伴随通道与元数据。
+     * 规范化并补齐伴随通道与元数据
      */
     private fun finalize(doc: LyricDoc, request: LyricRequest): LyricDoc? {
         // 先折叠同一时刻的行，再挂伴随通道：反过来的话，译文可能先挂到即将被折叠丢弃的

@@ -31,10 +31,10 @@ import java.nio.charset.StandardCharsets
 import java.util.zip.Deflater
 
 /**
- * 管线端到端测试：从原始载荷到规范模型的完整链路。
+ * 管线端到端测试：从原始载荷到规范模型的完整链路
  *
  * 覆盖三个返回值语义的分界：
- * 成功返回文档、确定性无歌词返回 null、解码失败抛 [DecodeException]。
+ * 成功返回文档、无有效行返回 null、解码失败抛 [DecodeException]。
  */
 class LyricPipelineTest {
 
@@ -223,9 +223,9 @@ class LyricPipelineTest {
 
     @Test
     fun `netease yrc is not mistaken for qrc`() {
-        // QRC 的词起始是行内相对偏移，YRC 的是歌曲绝对毫秒。两者词标签形态几乎一样，
-        // 只有分量个数不同（QRC 二元组、YRC 三元组）。误判会让每个词的时间
-        // 被多加一次行起始时间，逐字高光整体漂移。
+        // QRC 与 YRC 的词标签形态接近，分量个数是唯一可靠的区分点
+        // （QRC 二元组、YRC 三元组）。误判会让每个词的时间多叠加一次行起始，
+        // 逐字高光整体漂移。
         val yrc = "[1000,2000](1000,500,0)你(1500,500,0)好"
 
         val doc = LyricPipeline.parse(LyricRequest(text = yrc))
@@ -242,7 +242,7 @@ class LyricPipelineTest {
 
     @Test
     fun `two component word tags are still treated as qrc`() {
-        // 真机 QRC 形态：文字在时间标签之前
+        // QRC 形态：文字在时间标签之前
         val qrc = "[1000,2000]你(0,500)好(500,500)"
 
         val doc = LyricPipeline.parse(LyricRequest(text = qrc))
@@ -255,8 +255,8 @@ class LyricPipelineTest {
 
     @Test
     fun `absurd end time is bounded so the last line cannot span until 2038`() {
-        // 上游库对"结束时间未知"的行会填 Int.MAX_VALUE 之类的哨兵值，末行尤其常见
-        // （它后面没有下一行可以兜住）。实测网易云的 LRC 就出现过 span=[384..2147483647]。
+        // 上游库对"结束时间未知"的行会填 Int.MAX_VALUE 一类的哨兵值，末行尤其常见
+        // （后面没有下一行兜住）。例如网易云 LRC 的 span 可能为 [384..2147483647]。
         val doc = LyricPipeline.parse(
             LyricRequest(text = "[00:00.00]First\n[00:10.00]Last", durationMs = 20_000L)
         )
@@ -272,7 +272,7 @@ class LyricPipelineTest {
 
     @Test
     fun `simultaneous romaji and translation never become independent lyric lines`() {
-        // 真机报文形态（椒盐）：同一时间戳连续三行——主歌词 / 罗马音 / 翻译。
+        // 椒盐报文形态：同一时间戳连续三行，依次为主歌词、罗马音、翻译。
         // 解析库只能为一条主行接纳一条伴随行，于是罗马音被当成译文、
         // 真正的译文留在列表里成了独立歌词行，界面就会把翻译当歌词显示。
         val payload = """
@@ -309,8 +309,8 @@ class LyricPipelineTest {
     }
 
     /**
-     * 真机报文形态（椒盐）：主行末尾的词标签把行的结束时间撑到**下一行起始之后**，
-     * 于是主行之间互相重叠。通用解析库按"区间重叠"配对主行与伴随行，
+     * 椒盐报文形态：主行末尾的词标签把行的结束时间撑到下一行起始之后，
+     * 主行之间因此互相重叠。通用解析库按"区间重叠"配对主行与伴随行，
      * 会把相邻主行误配成「主行 + 译文」，真正的伴随行反而落单成独立歌词行。
      */
     private val overlappingSaltPayload = """
@@ -369,7 +369,7 @@ class LyricPipelineTest {
 
     @Test
     fun `space-only slices are preserved so latin words stay separated`() {
-        // 真机报文（椒盐 · 翻唱版）把**空格本身**也作为一个切片：
+        // 椒盐翻唱版报文把空格本身也作为一个切片：
         // <00:00.106> <00:00.212>。若把它当空切片丢掉，会拼成 Wedon'ttalk。
         val payload = """
             [00:00.000] <00:00.000>We<00:00.106> <00:00.212>Don't<00:00.318> <00:00.424>Talk<00:01.590>

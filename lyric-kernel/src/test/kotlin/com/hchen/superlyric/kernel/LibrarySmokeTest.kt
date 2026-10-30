@@ -34,9 +34,9 @@ import org.junit.jupiter.api.Test
 
 /**
  * 冒烟测试：验证 `lyrics-core` 的公开 API 与既定设计假设一致，
- * 并确认自研插件可通过 [AutoParser] 的解析器列表插入。
+ * 并确认自研插件可通过 [AutoParser] 的解析器列表插入
  *
- * 若本测试失败，说明库的 API 与架构设计不符，应在继续实现前先修正设计。
+ * 若本测试失败，说明库的 API 与架构设计不符，应在继续实现前修正设计。
  */
 private object ProbeParser : ILyricsParser {
     override fun canParse(content: String): Boolean = content.startsWith("PROBE:")

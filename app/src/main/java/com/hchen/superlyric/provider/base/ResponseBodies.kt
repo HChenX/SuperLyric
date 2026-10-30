@@ -29,22 +29,18 @@ import okhttp3.ResponseBody
 /**
  * 读取响应体文本，超过上限即中止
  *
- * 为什么不能用 `ResponseBody.string()`
- * 它把整个响应体一次物化成 String——UTF-16，约等于字节数的两倍，还要额外留一份
- * `byte[]`。响应体的大小完全由对端决定：一个坏掉的端点、运营商劫持页、被构造的响应
- * 都能返回一个超大 body，把宿主进程 OOM 掉。这是本项目最不能碰的一条线
- * （同 zlib 解压炸弹，见 `Zlib.MAX_OUTPUT_BYTES` 的说明）。
+ * `ResponseBody.string()` 会将整个响应体物化为 String（UTF-16，约为字节数的两倍），
+ * 并额外保留一份 `byte[]`。响应体大小由对端决定，超大响应可能耗尽宿主内存；
+ * 与 zlib 解压炸弹相同，见 `Zlib.MAX_OUTPUT_BYTES` 的说明。
  *
- * 两道闸
- * 1. `Content-Length` 预检——廉价，但它可能缺席（分块传输、brotli 压缩后长度未知）
- * 2. 边读边计数——真正的兜底。超限抛出，由调用方的既有路径归类为可重试失败
+ * 两道限制：
+ * 1. `Content-Length` 预检，开销低，但分块传输或压缩后长度可能未知
+ * 2. 边读边计数，超限抛出，由调用方按可重试失败处理
  *
- * 绝不能在超限时返回被截断的文本：那不是"这次没取到"，而是把半截报文体当成完整报文
- * 喂给解析器，比失败更难查。
+ * 超限时不得返回截断文本：截断内容会被当作完整报文交给解析器，比失败更难定位。
  *
- * 上限
- * 与 Spotify 那条路（Java 侧的同名逻辑 `SpotifyLyricAnalysis.readLimited`）共用
- * [LyricCacheStore.MAX_PAYLOAD_BYTES]。它是"单条原始歌词响应"的上限，正文实测在百 KB 量级。
+ * 上限与 Spotify 路径的 Java 同名逻辑 `SpotifyLyricAnalysis.readLimited` 共用
+ * [LyricCacheStore.MAX_PAYLOAD_BYTES]。它是单条原始歌词响应的上限，正文通常在百 KB 量级。
  *
  * @param maxBytes 上限字节数
  * @return 响应体文本，字符集取自 `Content-Type`

@@ -31,26 +31,24 @@ import com.hchen.superlyric.provider.base.HookLyricSource;
 import com.hchen.superlyric.provider.base.MusicProvider;
 
 /**
- * 汽水音乐歌词提供者。
- * <p>
- * 取词路径
- * 只有 Hook 一条，两处锚点：
+ * 汽水音乐歌词提供者
+ *
+ * <p>取词路径只有 Hook 一条，两处锚点：
  * <ul>
  *   <li>解析入口（{@code Lyric} 构造器）：宿主把原始正文交给歌词模型时截获，
  *       拿到的是未经加工的 LRC / KRC 原词。</li>
- *   <li>数据入口（{@code TrackLyric} 的构造 / setter / getter）：宿主从网络或本地库
- *       装载曲目歌词时截获。汽水是按需解析的 —— 后台播放、快速切歌、UGC 视频条目下
+ *   <li>数据入口（{@code TrackLyric} 的构造、setter、getter）：宿主从网络或本地库
+ *       装载曲目歌词时截获。汽水按需解析，后台播放、快速切歌、UGC 视频条目下
  *       解析入口可能整首都不触发，数据入口是这些场景的唯一来源。</li>
  * </ul>
- * <p>
- * 为什么不用宿主的 {@code Sentence} / {@code Word} 模型
- * 那是宿主解析之后的产物，字段名混淆、译文被塞进 {@code translationMap}。锚在解析之前，
- * 拿到的是宿主自己拿到的那份正文，宿主改一次模型与本层无关。
- * <p>
- * 标识一致性
- * 覆写 {@link #buildIdentity} 以 {@code MEDIA_ID} 作为稳定标识（前缀 {@code luna:}）。
- * 不覆写就会让 Hook 上报的曲目标识与元数据上报的标识永不相等，Hook 捕获被当成过期数据
- * 丢弃，整条取词路径静默失效。
+ *
+ * <p>不使用宿主的 {@code Sentence} / {@code Word} 模型：那是解析之后的产物，字段名混淆、
+ * 译文被塞进 {@code translationMap}。锚点位于解析入口，拿到的是宿主自己拿到的正文，
+ * 宿主改一次模型与本层无关。
+ *
+ * <p>标识一致性：覆写 {@link #buildIdentity} 以 {@code MEDIA_ID} 作为稳定标识（前缀
+ * {@code luna:}）。不覆写时 Hook 上报的曲目标识与元数据上报的标识永不相等，Hook 捕获
+ * 会被当成过期数据丢弃，整条取词路径静默失效。
  *
  * @author 焕晨HChen
  */
@@ -75,15 +73,15 @@ public class SodaProvider extends MusicProvider {
     }
 
     /**
-     * 刻意不挂任何跨源 API 兜底。
+     * 刻意不挂任何跨源 API 兜底
      *
-     * <p>汽水的歌词由宿主自己按曲目 id 装载，与当前播放严格同源；而跨源兜底只能按
-     * 「歌名 + 歌手」去别的库检索，命中即发布 —— 对翻唱、同名曲、UGC 视频条目都会
-     * 命中另一份歌词，且它与 Hook 拿到的正文共用同一个身份与播放位置，两套时轴互相顶替，
-     * 表现为播到一半歌词和当前曲目对不上。
+     * <p>汽水的歌词由宿主自己按曲目 id 装载，与当前播放严格同源；跨源兜底只能按歌名 +
+     * 歌手去别的库检索，命中即发布，对翻唱、同名曲、UGC 视频条目都会命中另一份歌词，
+     * 且它与 Hook 拿到的正文共用同一身份与播放位置，两套时轴互相顶替，表现为播到一半
+     * 歌词与当前曲目对不上。
      *
-     * <p>因此这里显式返回 {@code null}，而不是依赖基类默认值：将来基类若给
-     * {@code createApiSource()} 加了默认实现，本 Provider 也不会被悄悄接上兜底。
+     * <p>因此显式返回 {@code null} 而不依赖基类默认值：基类若为 {@code createApiSource()}
+     * 提供默认实现，该 Provider 也不会被接上兜底。
      */
     @Nullable
     @Override
@@ -110,7 +108,7 @@ public class SodaProvider extends MusicProvider {
      * 组合判据（标题 + 歌手 + 时长）。
      *
      * <p>占位值必须当成"没有标识"：{@code MEDIA_ID} 若被写成 {@code 0} / {@code -1} 这类常量，
-     * 所有曲目的身份就会全部相等，编排器按"同一首"处理、永不重新取词——表现为切歌后歌词
+     * 所有曲目的身份就会全部相等，编排器按"同一首"处理、永不重新取词，表现为切歌后歌词
      * 一直停在上一首。
      */
     @NonNull

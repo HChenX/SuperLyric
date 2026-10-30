@@ -38,7 +38,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * 接收者注册、配额与带超时的广播。
+ * 接收者注册、配额与带超时的广播
+ *
+ * <p>全局上限 64 个、每 uid 上限 16 个；单次回调超时 500ms，超时的回调被取消并记录。
  */
 final class ReceiverBroadcaster {
 
@@ -47,6 +49,7 @@ final class ReceiverBroadcaster {
     private static final int MAX_RECEIVERS = 64;
     private static final int MAX_RECEIVERS_PER_UID = 16;
 
+    // 三个集合必须同步维护：注销与 binder 死亡都要回退 uid 配额
     private final ConcurrentHashMap<Integer, Integer> uidCounts = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<IBinder, Integer> binderUids = new ConcurrentHashMap<>();
     private final java.util.Set<IBinder> binders = ConcurrentHashMap.newKeySet();
@@ -107,6 +110,7 @@ final class ReceiverBroadcaster {
         return binders.contains(receiver.asBinder());
     }
 
+    // beginBroadcast 与 finishBroadcast 必须同线程配对；回调在固定线程池中并发执行
     void broadcast(@NonNull String action, @NonNull Invocation invocation) {
         int itemCount = callbacks.beginBroadcast();
         List<ISuperLyricReceiver> dead = null;

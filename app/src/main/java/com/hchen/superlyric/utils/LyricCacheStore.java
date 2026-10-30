@@ -44,12 +44,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
 /**
- * 通用歌词磁盘缓存储存器。
- * <p>
- * 按提供者命名空间独立存储接口原始响应（JSON 或 protobuf 字节），
- * 直接写入宿主 cache 目录：{@code cacheDir/superlyric/lyric/{provider}/{key}.json}。
- * 文件带版本与长度字段（{@code {"v":<CACHE_VERSION>,"n":<len>,"d":<原始响应>}}），版本不符视为未命中并删除。
- * key 仅允许 {@code [A-Za-z0-9._-]} 与 {@code '/'} 分隔，杜绝路径穿越。
+ * 通用歌词磁盘缓存
+ *
+ * <p>按提供者命名空间独立存储接口原始响应（JSON 或 protobuf 字节），写入宿主 cache
+ * 目录：{@code cacheDir/superlyric/lyric/{provider}/{key}.json}。
+ *
+ * <p>文件带版本与长度字段（{@code {"v":<CACHE_VERSION>,"n":<len>,"d":<原始响应>}}），
+ * 版本不符视为未命中并删除。key 仅允许 {@code [A-Za-z0-9._-]} 与 {@code '/'} 分隔，
+ * 防止路径穿越。
  *
  * @author 彼岸喵Higanoneko & 焕晨HChen
  */
@@ -63,15 +65,15 @@ public final class LyricCacheStore {
     private static final long MAX_CACHE_AGE_MS = 30L * 24L * 60L * 60L * 1000L;
     private static final long TEMP_MAX_AGE_MS = 24L * 60L * 60L * 1000L;
     /**
-     * 单个歌词原始响应上限；正常歌词响应远低于此值。
+     * 单个歌词原始响应上限；正常歌词响应远低于此值
      */
     public static final int MAX_PAYLOAD_BYTES = 2 * 1024 * 1024;
     /**
-     * 帧头：{@code {"v":<版本>,"n":<载荷字节数>,"d":}。
-     * <p>
-     * 长度字段是校验用的：只靠"末尾一个 {@code }}"无法发现截断——载荷本身
-     * （JSON、protobuf）里到处是 {@code }}，断在哪都可能恰好以它收尾。声明长度与
-     * 帧内剩余空间必须精确吻合，见 {@link #unpack}
+     * 帧头：{@code {"v":<版本>,"n":<载荷字节数>,"d":}
+     *
+     * <p>长度字段用于校验：只看"末尾一个 {@code }}"无法发现截断，载荷本身
+     * （JSON、protobuf）里常有 {@code }}，断在哪都可能恰好以它收尾。声明长度须与帧内
+     * 剩余空间精确吻合，见 {@link #unpack}。
      */
     private static final String FRAME_HEAD = "{\"v\":" + CACHE_VERSION + ",\"n\":";
     private static final String FRAME_SEPARATOR = ",\"d\":";
@@ -89,8 +91,8 @@ public final class LyricCacheStore {
     /**
      * 帧的最大可能字节数：帧头 + 长度字段的最大位数 + 分隔符 + 上限载荷 + 收尾 '}'
      * <p>
-     * 不能拿 {@link #FRAME_MIN_BYTES} 当基数再加大载荷：那是按一位长度字段算的，
-     * 而接近上限的帧其长度字段有 7 位，于是合法的满额条目会被当成损坏文件删掉
+     * 不能以 {@link #FRAME_MIN_BYTES} 为基数再加最大载荷：那是按一位长度字段算的，
+     * 接近上限的帧其长度字段有 7 位，否则合法的满额条目会被当成损坏文件删掉
      */
     private static final long FRAME_MAX_BYTES =
         FRAME_HEAD_BYTES.length + MAX_LENGTH_DIGITS + FRAME_SEPARATOR_BYTES.length
@@ -100,11 +102,11 @@ public final class LyricCacheStore {
     private static final Pattern SAFE_KEY = Pattern.compile("[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*");
     private static final AtomicInteger sWriteCounter = new AtomicInteger(0);
     /**
-     * 写锁：同 key 并发 put 时串行化"写 tmp + 原子替换"，避免内容交错损坏。
+     * 写锁：同 key 并发 put 时串行化"写 tmp + 原子替换"，避免内容交错损坏
      */
     private static final Object WRITE_LOCK = new Object();
     /**
-     * 存储自有的异步写线程：调用方无需自带执行器，且所有落盘串行执行。
+     * 存储自有的异步写线程：调用方无需自带执行器，所有落盘串行执行
      */
     private static final Executor WRITE_EXECUTOR = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "SuperLyric-LyricCache");
@@ -116,14 +118,14 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 当前缓存格式版本号；缓存写 / 读时与文件内版本比对，不匹配视为失效。
+     * 当前缓存格式版本号；写读时与文件内版本比对，不匹配视为失效
      */
     public static int cacheVersion() {
         return CACHE_VERSION;
     }
 
     /**
-     * 将接口返回的 JSON 文本（UTF-8）写入磁盘缓存。
+     * 将接口返回的 JSON 文本（UTF-8）写入磁盘缓存
      *
      * @param provider 提供者命名空间（如 Spotify / Netease），须为纯名称
      * @param key      缓存键（可为 {locale}/{id} 或纯 id）
@@ -134,7 +136,7 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 异步将接口返回的 JSON 文本写入磁盘缓存，使用存储自有的串行写线程。
+     * 异步将接口返回的 JSON 文本写入磁盘缓存，使用存储自有的串行写线程
      *
      * @param context  宿主 Context；为 {@code null} 时自动解析
      * @param provider 提供者命名空间（如 Netease / Spotify）
@@ -146,7 +148,7 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 异步将接口返回的原始响应字节写入磁盘缓存，使用存储自有的串行写线程。
+     * 异步将接口返回的原始响应字节写入磁盘缓存，使用存储自有的串行写线程
      *
      * @param context  宿主 Context；为 {@code null} 时自动解析
      * @param provider 提供者命名空间（如 Netease / Spotify）
@@ -158,7 +160,7 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 异步将接口返回的 JSON 文本写入磁盘缓存。
+     * 异步将接口返回的 JSON 文本写入磁盘缓存
      *
      * @param executor 执行器，为 {@code null} 时同步写入
      * @param context  宿主 Context；为 {@code null} 时自动解析
@@ -172,7 +174,7 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 异步将接口返回的原始响应字节写入磁盘缓存。
+     * 异步将接口返回的原始响应字节写入磁盘缓存
      *
      * @param executor 执行器，为 {@code null} 时同步写入
      * @param context  宿主 Context；为 {@code null} 时自动解析
@@ -195,11 +197,11 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 将接口返回的原始响应字节（JSON 或 protobuf）写入磁盘缓存。
+     * 将接口返回的原始响应字节（JSON 或 protobuf）写入磁盘缓存
      * <p>
      * 写入只做"临时文件 + 原子改名（{@code REPLACE_EXISTING}）"，不检查既有文件：
-     * 旧格式的迁移发生在读取侧——{@link #get} 发现版本不符就删掉并报未命中，
-     * 下一次取词自然按新格式重写。
+     * 版本迁移发生在读取侧，{@link #get} 发现版本不符即删除并返回未命中，下一次取词
+     * 按当前格式重写。
      *
      * @param provider 提供者命名空间（如 Spotify / Netease），须为纯名称
      * @param key      缓存键（可为 {locale}/{id} 或纯 id）
@@ -235,9 +237,9 @@ public final class LyricCacheStore {
                     Files.move(temp.toPath(), file.toPath(),
                         StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
                 } catch (AtomicMoveNotSupportedException e) {
-                    // 退化为非原子替换：读侧靠"写走 tmp + 原子改名"这一前提而不加锁，
-                    // 该分支下读侧可能读到半成品并判废删除。文件系统不支持原子改名时才会走到，
-                    // 必须留痕——否则"从未进入"与"每次都进入"在日志上无法分辨
+                    // 退化为非原子替换：读侧不加锁，依赖"写走 tmp + 原子改名"这一前提；
+                    // 该分支下读侧可能读到半成品并判废删除。仅在文件系统不支持原子改名时
+                    // 进入，必须留痕，否则未进入与每次都进入在日志上无法分辨
                     AndroidLog.logW(TAG, "Atomic move unsupported; falling back to non-atomic replace for "
                         + file.getAbsolutePath());
                     Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
@@ -260,10 +262,10 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 封装原始响应为带版本与长度字段的帧：{@code {"v":<版本>,"n":<载荷字节数>,"d":<原始响应>}}。
+     * 封装原始响应为带版本与长度字段的帧：{@code {"v":<版本>,"n":<载荷字节数>,"d":<原始响应>}}
      * <p>
-     * 帧头由 {@link #CACHE_VERSION} 拼出来，文档里不写死版本号：写死过一次（v1），
-     * 于是版本升到 2 之后这里就成了假话
+     * 帧头由 {@link #CACHE_VERSION} 拼出；注释中不写死版本号，否则版本升级后描述与实现
+     * 不再一致。
      */
     @NonNull
     private static byte[] wrap(@NonNull byte[] data) {
@@ -276,7 +278,7 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 从帧字节中解出原始响应；帧不完整、版本不符或声明长度与实长不符时返回 {@code null}。
+     * 从帧字节中解出原始响应；帧不完整、版本不符或声明长度与实长不符时返回 {@code null}
      */
     @Nullable
     private static byte[] unpack(@NonNull byte[] data, @NonNull StringBuilder reason) {
@@ -290,7 +292,7 @@ public final class LyricCacheStore {
         int digits = 0;
         while (cursor < data.length && data[cursor] >= '0' && data[cursor] <= '9') {
             declared = declared * 10 + (data[cursor] - '0');
-            // 边解析边设界：定长读取，绝不会因为长度字段本身很长而溢出
+            // 边解析边设界：长度字段再长也不会溢出
             if (declared > MAX_PAYLOAD_BYTES)
                 return invalidFrame(reason, "declared length too large");
             cursor++;
@@ -327,7 +329,7 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 读取磁盘缓存，未命中返回 {@code null}。
+     * 读取磁盘缓存，未命中返回 {@code null}
      */
     @Nullable
     public static String get(@Nullable Context context, @NonNull String provider, @NonNull String key) {
@@ -336,7 +338,7 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 读取磁盘缓存原始字节（protobuf 响应），未命中或版本不符返回 {@code null}。
+     * 读取磁盘缓存原始字节（protobuf 响应），未命中或版本不符返回 {@code null}
      */
     @Nullable
     public static byte[] getBytes(@Nullable Context context, @NonNull String provider, @NonNull String key) {
@@ -355,10 +357,10 @@ public final class LyricCacheStore {
             AndroidLog.logD(TAG, "get: Disk cache MISS (file not found): " + file.getAbsolutePath());
             return null;
         }
-        // 不加写锁：写入走 `tmp + 原子改名`，读到的要么是旧文件、要么是新文件，
-        // 不存在读到写了一半的中间态；而与全局写锁共享会让本方法被别的 provider 的慢写
-        // 或清理扫描堵住，直接拖慢取词热路径。与删除并发也安全：删掉后读会抛 IOException，
-        // 由下面的 catch 兜住并返回未命中
+        // 不加写锁：写入走 tmp + 原子改名，读到的要么是既有文件、要么是新文件，不存在
+        // 写了一半的中间态；共享全局写锁会让本方法被其它 provider 的慢写或清理扫描堵住，
+        // 拖慢取词热路径。与删除并发也安全：删除后读会抛 IOException，由下方 catch 兜住
+        // 并返回未命中
         try {
             if (!isReadableCacheSize(file)) {
                 AndroidLog.logW(TAG, "get: Corrupted file size (" + file.length() + "), deleting: " + file.getAbsolutePath());
@@ -381,7 +383,7 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 删除磁盘缓存；不存在或删除失败时静默忽略。
+     * 删除磁盘缓存；不存在或删除失败时静默忽略
      */
     public static void delete(@Nullable Context context, @NonNull String provider, @NonNull String key) {
         Context ctx = resolveContext(context);
@@ -449,7 +451,7 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 清空全部在线歌词提供者的缓存命名空间。
+     * 清空全部在线歌词提供者的缓存命名空间
      *
      * @param context 宿主 Context；为 {@code null} 时尝试解析当前 Application
      * @return 所有提供者均清理成功时返回 {@code true}；Context 不可用、路径非法或任一项删除失败时返回 {@code false}
@@ -475,8 +477,9 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 递归清空指定提供者的缓存命名空间，用于版本升级后的整体失效。
-     * 删除范围严格限制在合法 provider 目录内，不跟随符号链接。
+     * 递归清空指定提供者的缓存命名空间，用于版本升级后的整体失效
+     *
+     * <p>删除范围严格限制在合法 provider 目录内，不跟随符号链接。
      *
      * @param context  宿主 Context；为 {@code null} 时尝试解析当前 Application
      * @param provider 提供者命名空间
@@ -551,7 +554,7 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 计算缓存文件路径；provider / key 非法时返回 {@code null}。
+     * 计算缓存文件路径；provider / key 非法时返回 {@code null}
      */
     @Nullable
     private static File getFile(@NonNull Context context, @NonNull String provider, @NonNull String key) {
@@ -605,10 +608,10 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 解析宿主 Context：优先使用传入的宿主 Application Context，
-     * 缺失时（onApplicationCreated 未触发的兜底场景）反射获取当前 Application。
-     * <p>
-     * 注意 {@code getApplicationContext()} 可能返回 null：模块在 Hook
+     * 解析宿主 Context：优先使用传入的宿主 Application Context，缺失时（未触发
+     * onApplicationCreated 的兜底场景）反射获取当前 Application
+     *
+     * <p>注意 {@code getApplicationContext()} 可能返回 null：模块在 Hook
      * {@code Application.attach(Context)} 的时点就会调用 {@code onApplicationCreated}，
      * 那一刻 Application 尚未挂上，取不到 Application Context。此时必须退回使用
      * 传入的这个 Context 本身（它同样是可用的宿主 Context，能正常取 cacheDir），
@@ -636,7 +639,7 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 取 Application Context；取不到时退回该 Context 本身，仍然取不到返回 {@code null}。
+     * 取 Application Context；取不到时退回该 Context 本身，仍然取不到返回 {@code null}
      */
     @Nullable
     private static Context applicationOf(@Nullable Context context) {
@@ -646,7 +649,7 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 清洗单个路径段：仅保留 {@code [A-Za-z0-9._-]}，非法返回 {@code null}。
+     * 清洗单个路径段：仅保留 {@code [A-Za-z0-9._-]}，非法返回 {@code null}
      */
     @Nullable
     private static String sanitizeSegment(@NonNull String segment) {
@@ -655,8 +658,8 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 清洗 key：允许 {@code [A-Za-z0-9._-]} 与多层 {@code '/'} 分隔；
-     * 拒绝空段、{@code ..} 与首尾 {@code '/'}。
+     * 清洗 key：允许 {@code [A-Za-z0-9._-]} 与多层 {@code '/'} 分隔；拒绝空段、
+     * {@code ..} 与首尾 {@code '/'}
      */
     @Nullable
     private static String sanitizeKey(@NonNull String key) {
@@ -668,7 +671,7 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 获取当前默认语言的 locale 段（如 zh-CN），用作按语言隔离的缓存键前缀。
+     * 获取当前默认语言的 locale 段（如 zh-CN），用作按语言隔离的缓存键前缀
      */
     @NonNull
     public static String currentLocaleTag() {

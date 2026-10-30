@@ -26,13 +26,13 @@ import org.junit.jupiter.api.Test
 import java.io.File
 
 /**
- * 缓存帧的封装与校验。
+ * 缓存帧的封装与校验
  *
- * 这一层出的错不会报错，只会让**坏数据被当成好数据**喂给解析器：载荷本身（JSON、protobuf）
- * 里到处是 `}`，所以"末尾一个 `}`"这条判据挡不住任何截断。帧里因此写入了载荷长度，
- * 本测试钉住的就是"声明长度与实长必须精确吻合"。
+ * 本层出错不会报错，只会让坏数据被当成好数据交给解析器：载荷（JSON、protobuf）中
+ * 到处是 `}`，末尾一个 `}` 挡不住任何截断。帧中写入了载荷长度，本测试固定
+ * "声明长度与实长精确吻合"。
  *
- * 体积闸也在这里钉住：它错了同样不报错，只是把**合法**条目当损坏删掉。
+ * 体积闸同样在此固定：出错不报错，只是把合法条目当损坏删掉。
  *
  * `wrap` / `unpack` 是私有的纯字节函数，不需要 Context，用反射直接调用。
  */
@@ -77,8 +77,8 @@ class LyricCacheStoreFrameTest {
     @Test
     fun `a frame truncated inside the payload is rejected even though it ends with a brace`() {
         val frame = wrap("""{"a":1}""".toByteArray())
-        // 只丢最后一个字节（收尾的 '}'），于是末尾恰好成了载荷自己的 '}'——
-        // 只验"末字节是 '}'"的旧判据会放它过去，并交出被截短的载荷
+        // 只丢最后一个字节（收尾的 '}'），末尾恰好成为载荷自身的 '}'；
+        // 仅检查末字节会放过它，并交出被截短的载荷
         val truncated = frame.copyOfRange(0, frame.size - 1)
 
         assertTrue(truncated[truncated.size - 1] == '}'.code.toByte())
@@ -97,7 +97,7 @@ class LyricCacheStoreFrameTest {
 
     @Test
     fun `a frame from the previous cache format is rejected`() {
-        // 旧格式 {"v":1,"d":…} 没有长度字段。必须判废，读取路径才会删掉它并按未命中重取
+        // v=1 的帧格式没有长度字段。必须判废，读取路径才会删除它并按未命中重取
         assertNull(unpack("""{"v":1,"d":{"a":1}}""".toByteArray()))
     }
 
@@ -111,8 +111,8 @@ class LyricCacheStoreFrameTest {
 
     @Test
     fun `the size gate accepts everything the writer can produce`() {
-        // 读侧的体积闸与写侧的封装必须对得上。上界若按"一位长度字段"的帧长来算，
-        // 满额载荷（长度字段有 7 位）就会超界，被判成损坏文件**删掉**——而它是合法的
+        // 读侧体积闸与写侧封装必须一致。上界若按一位长度字段的帧长计算，
+        // 满额载荷（长度字段 7 位）会超界，被当作损坏文件删除
         assertTrue(
             isReadableSize(wrap(ByteArray(LyricCacheStore.MAX_PAYLOAD_BYTES))),
             "满额载荷的帧必须被读侧接受",

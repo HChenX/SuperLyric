@@ -19,9 +19,9 @@
 package com.hchen.superlyric.provider.base
 
 /**
- * 单值、按 key 匹配的暂存槽。
+ * 单值、按 key 匹配的暂存槽
  *
- * 宿主可能在会话建立前就吐出一首歌的数据；key 为稳定标识，空 key 永不匹配。
+ * 宿主可能在会话建立前就给出曲目数据。key 为稳定标识，空 key 永不匹配。
  */
 class KeyedStash<T> {
     private val lock = Any()

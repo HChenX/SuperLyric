@@ -31,11 +31,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 歌词数据全局安全清洗与合法性校验防护器。
- * <p>
- * 严防任何 Provider 或外部发布者产生损坏的逐字切片、字符索引倒错、
- * 零宽不可见字符污染或累积字长越界等非法数据，避免下游接收端（如 SuperIslandLyric 在 SystemUI 中）
- * 调用 {@code Canvas.drawTextRun} 时发生 {@link IndexOutOfBoundsException} 导致系统界面崩溃。
+ * 歌词数据的安全清洗与合法性校验
+ *
+ * <p>拦下损坏的逐字切片、倒错的字符索引、零宽不可见字符与累积字长越界，避免下游
+ * 接收端（如 SystemUI 中的 SuperIslandLyric）调用 {@code Canvas.drawTextRun} 时抛出
+ * {@link IndexOutOfBoundsException} 导致系统界面崩溃。
  *
  * @author 焕晨HChen
  */
@@ -46,13 +46,12 @@ public final class LyricSanitizer {
     }
 
     /**
-     * 清理破坏字符长度对齐或导致系统文本测量异常的特殊控制字符。
-     * <p>
-     * 剥离零宽空格 (U+200B)、零宽不连字 (U+200C)、零宽连字 (U+200D)、BOM (U+FEFF)、
+     * 清理破坏字符长度对齐或导致文本测量异常的特殊控制字符
+     *
+     * <p>剥离零宽空格 (U+200B)、零宽不连字 (U+200C)、零宽连字 (U+200D)、BOM (U+FEFF)、
      * 未折行的换行符 (U+000D / U+000A) 与 NUL (U+0000，可由 {@code &#0;} 实体解码得到)。
-     * <p>
-     * 表只有一份，在内核的 {@code LyricText}：此处曾另抄一份（且不含 NUL），于是往表里
-     * 补一个字符会落在没生效的那一份上——发布路径上真正把关的正是本方法。
+     *
+     * <p>字符表只有一份，在内核的 {@code LyricText}；发布路径上把关的是本方法。
      */
     @NonNull
     public static String cleanInvisibleChars(@Nullable String text) {
@@ -60,9 +59,9 @@ public final class LyricSanitizer {
     }
 
     /**
-     * 对单行歌词模型进行深度校验与数据清洗。
-     * <p>
-     * 规则：
+     * 对单行歌词模型做深度校验与数据清洗
+     *
+     * <p>规则：
      * <ol>
      *   <li>标准化文本，剥离不可见零宽字符；</li>
      *   <li>丢弃条件：null 元素、字词累积长度超出行长、或字词文本拼接与行文本严重失配
@@ -115,7 +114,7 @@ public final class LyricSanitizer {
     }
 
     /**
-     * 严密校验并清洗逐字数据。若存在任何越界或破坏性风险，一律拒绝并降级为 null。
+     * 校验并清洗逐字数据；存在越界或破坏性风险时整体降级为 null
      */
     @Nullable
     private static SuperLyricWord[] validateAndCleanWords(@NonNull SuperLyricWord[] rawWords,
@@ -147,7 +146,7 @@ public final class LyricSanitizer {
 
         String combinedWordsText = wordsTextBuilder.toString();
 
-        // 智能自愈：若仅因词元首尾多余空白导致累积词长超出行长，安全裁剪首尾词元空白
+        // 首尾空白导致累积词长超出行长时，先裁剪首尾词元的空白再校验
         if (combinedWordsText.length() > cleanLineText.length()
             && combinedWordsText.trim().equals(cleanLineText.trim())) {
             trimOuterWhitespace(validated, cleanLineText);
@@ -158,7 +157,7 @@ public final class LyricSanitizer {
             combinedWordsText = wordsTextBuilder.toString();
         }
 
-        // 致命防线 1：字词累积长度绝对不能超出整行文本长度（会导致 Canvas.drawTextRun 索引越界崩溃）
+        // 防线 1：字词累积长度不得超过整行文本长度（否则 Canvas.drawTextRun 索引越界崩溃）
         if (combinedWordsText.length() > cleanLineText.length()) {
             AndroidLog.logW(TAG, "Sanitizer: DROPPING CORRUPTED WORDS! Total words length (" + combinedWordsText.length()
                 + ") exceeds line text length (" + cleanLineText.length() + ") | line=\"" + cleanLineText
@@ -166,12 +165,12 @@ public final class LyricSanitizer {
             return null;
         }
 
-        // 致命防线 2：字词文本与整行文本必须保持语义一致性
-        // 允许词文本去除空格后与行文本去除空格后一致（兼容不切空格的逐字约定）
+        // 防线 2：字词文本与整行文本必须保持语义一致；允许去除空格后一致，
+        // 以兼容不切空格的逐字约定
         boolean exactMatch = combinedWordsText.equals(cleanLineText);
         if (!exactMatch) {
-            // 全角空格 U+3000 不属于 \s，必须显式列出：否则"含全角空格"与"不含"的两种
-            // 写法会被判为不等，合法的逐字数据因此被丢弃
+            // 全角空格 U+3000 不属于 \s，必须显式列出：否则含全角空格与不含的两种写法
+            // 会被判为不等，合法的逐字数据因此被丢弃
             String combinedNoSpace = combinedWordsText.replaceAll("[\\s\\u3000]+", "");
             String lineNoSpace = cleanLineText.replaceAll("[\\s\\u3000]+", "");
             if (!combinedNoSpace.equals(lineNoSpace)) {
@@ -181,14 +180,14 @@ public final class LyricSanitizer {
             }
         }
 
-        // 致命防线 3：全局逐字时序自愈与 0ms 持续时间消除
+        // 防线 3：全局逐字时序纠偏，消除 0ms 持续时间
         healWordTimings(validated, lineStart, lineEnd);
 
         return validated.toArray(new SuperLyricWord[0]);
     }
 
     /**
-     * 智能裁剪词元序列两端多余的外层空白字符。
+     * 裁剪词元序列两端多余的外层空白
      */
     private static void trimOuterWhitespace(@NonNull List<SuperLyricWord> words, @NonNull String targetLine) {
         if (words.isEmpty()) return;
@@ -234,24 +233,23 @@ public final class LyricSanitizer {
     }
 
     /**
-     * 全局逐字时序自愈与 0ms/异常时长兜底修复。
-     * <p>
-     * 针对各 Provider（如波点、酷狗、QQ音乐等）可能因上游解析截断或重叠产生的 0ms 词元，
-     * 利用前后词的时序拓扑间隙无缝自愈，确保所有词元持续时间严格大于 0。
+     * 全局逐字时序纠偏与 0ms / 异常时长兜底
+     *
+     * <p>针对各 Provider（如波点、酷狗、QQ音乐等）因上游解析截断或重叠产生的 0ms 词元，
+     * 借助前后词的时序间隙顺推，使每个词元的持续时间大于 0。
      */
     public static void healWordTimings(@NonNull List<SuperLyricWord> words, long lineStart, long lineEnd) {
         int size = words.size();
         if (size == 0) return;
 
-        // 阶段 1：首轮拓扑排序与单调性纠偏 (确保 start 严格非降，消灭时光倒流与 0ms 折叠)
+        // 阶段 1：单调性纠偏，保证 start 非降并消除 0ms 时长
         long runningStart = lineStart;
         for (int i = 0; i < size; i++) {
             SuperLyricWord cur = words.get(i);
             long start = cur.getStartTime();
             long end = cur.getEndTime();
             String text = cur.getWord();
-            // 兜底时长只有一份实现（内核 LyricText）。此处曾另写一遍，且与内核不等价
-            // （这里算的是 trim 后的长度），改一处漏一处
+            // 兜底时长只在 LyricText 中实现一份；两处各写会算出不同的值
             long fallbackDur = LyricText.INSTANCE.fallbackWordDuration(text != null ? text : "");
 
             // 若词起偏早于当前运行水位（发生时间倒流），纠正至当前运行水位
@@ -259,7 +257,7 @@ public final class LyricSanitizer {
                 start = runningStart;
             }
 
-            // 持续时间自愈：杜绝 end <= start 以及异常超长 (>15s)
+            // 持续时间兜底：end <= start 或超过 15s 时重算
             long dur = end - start;
             if (dur <= 0 || dur > 15000L) {
                 // 探测后继词起始以平滑填补
@@ -273,7 +271,7 @@ public final class LyricSanitizer {
                 }
 
                 if (nextValidStart > start) {
-                    // 严防把词间停顿/间隙误当成单词本身的持续时间：最多只取单个字词的合理自然时长
+                    // 词间停顿不得计入单词时长：最多取单个词元的自然时长
                     dur = Math.min(fallbackDur, nextValidStart - start);
                 } else if (lineEnd > start) {
                     dur = Math.min(lineEnd - start, Math.max(fallbackDur, (lineEnd - start) / Math.max(1, size - i)));
@@ -297,14 +295,14 @@ public final class LyricSanitizer {
             SuperLyricWord cur = words.get(i);
             SuperLyricWord next = words.get(i + 1);
 
-            // 如果当前词结束时间大幅越过后继词起始（发生严重重叠）
+            // 当前词结束时间越过后继词起始
             if (cur.getEndTime() > next.getStartTime()) {
                 long adjustedEnd = next.getStartTime();
                 if (adjustedEnd > cur.getStartTime()) {
-                    // 平滑截断到后继词起始
+                    // 截断到后继词起始
                     words.set(i, new SuperLyricWord(cur.getWord(), cur.getStartTime(), adjustedEnd));
                 } else {
-                    // 若重叠导致当前词被压平，顺推后继词起始
+                    // 重叠导致当前词被压平时顺推后继词起始
                     long minCurEnd = cur.getStartTime() + Math.max(80L, (long) Math.max(1, cur.getWord().length()) * 100L);
                     words.set(i, new SuperLyricWord(cur.getWord(), cur.getStartTime(), minCurEnd));
                     if (next.getStartTime() < minCurEnd) {
@@ -334,7 +332,7 @@ public final class LyricSanitizer {
     }
 
     /**
-     * 对完整 SuperLyricData 数据包进行全量深度清洗。
+     * 对完整 {@link SuperLyricData} 数据包做全量深度清洗
      *
      * @param data 原始歌词数据包
      * @return 经过安全校验与清洗的数据包；原始为 null 或清洗过程失败时返回 null
@@ -397,9 +395,9 @@ public final class LyricSanitizer {
                 data.setCurrentLyricIndex(data.getAllLyricsCount() - 1);
             }
         } catch (Throwable t) {
-            // 逐字段清洗是原地写回：失败时 data 里会留下“部分已清洗、部分未清洗”的混合体。
-            // 这道防线一旦放行，未清洗的逐字数据可能直接进入 SystemUI 的 drawTextRun。
-            // 调用方（sendLyric / publishFullLyric）本来就处理 null，宁可丢包也不能半净化发布。
+            // 逐字段清洗是原地写回：失败时 data 会留下部分已清洗、部分未清洗的混合体，
+            // 未清洗的逐字数据可能直接进入 SystemUI 的 drawTextRun。调用方
+            // （sendLyric / publishFullLyric）本就处理 null，丢包优于半清洗发布。
             AndroidLog.logE(TAG, "Dropping lyric packet: sanitization failed", t);
             return null;
         }

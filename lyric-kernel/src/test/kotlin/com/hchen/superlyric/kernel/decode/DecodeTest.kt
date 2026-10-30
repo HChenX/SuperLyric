@@ -29,10 +29,10 @@ import java.nio.charset.StandardCharsets
 import java.util.zip.Deflater
 
 /**
- * 解密层的已知答案测试。
+ * 解密层的已知答案测试
  *
- * KRC 的编码过程在本文件中**独立重写**（而非调用被测代码），
- * 这样"编码 → 解码"才是真正的往返验证，而不是同义反复。
+ * KRC 的编码过程在本文件中独立重写，不调用被测代码，
+ * 使"编码 → 解码"构成往返验证而非同义反复。
  */
 class DecodeTest {
 
@@ -64,10 +64,6 @@ class DecodeTest {
         return out.toByteArray()
     }
 
-    // =========================================================================
-    // KRC
-    // =========================================================================
-
     @Test
     fun `krc round trip recovers the original plaintext`() {
         val plainText = "[0,3500]<0,500,0>Hello <500,400,0>world\n[3500,2000]<0,800,0>Second line"
@@ -95,7 +91,7 @@ class DecodeTest {
 
     @Test
     fun `corrupted krc payload raises instead of silently returning garbage`() {
-        // 带魔数但异或后不是合法 ZLib 流：必须抛错，绝不能回退到未解密的缓冲区
+        // 带魔数但异或后不是合法 ZLib 流：必须抛错，不得回退到未解密的缓冲区
         val corrupted = "krc1".toByteArray(StandardCharsets.US_ASCII) + ByteArray(64) { 0x55 }
 
         assertThrows(DecodeException::class.java) { KrcCipher.decrypt(corrupted) }
@@ -109,15 +105,11 @@ class DecodeTest {
 
     @Test
     fun `qrc cipher rejects short and non-block-aligned ciphertext`() {
-        // 3DES 分组必须是 8 字节；截断的尾部不能静默丢掉，否则会把“缺了几行”解成 Success。
+        // 3DES 分组必须是 8 字节；截断的尾部不能静默丢掉，否则缺失内容会被解成成功结果。
         assertThrows(DecodeException::class.java) { QrcCipher.decrypt(ByteArray(0)) }
         assertThrows(DecodeException::class.java) { QrcCipher.decrypt(ByteArray(7)) }
         assertThrows(DecodeException::class.java) { QrcCipher.decrypt(ByteArray(9)) }
     }
-
-    // =========================================================================
-    // ZLib 严格性
-    // =========================================================================
 
     @Test
     fun `zlib tolerates trailing padding after a complete stream`() {
@@ -136,10 +128,6 @@ class DecodeTest {
             Zlib.inflateToString(compressed.copyOf(compressed.size / 2))
         }
     }
-
-    // =========================================================================
-    // 载荷还原
-    // =========================================================================
 
     @Test
     fun `hex payloads are restored as bytes`() {
@@ -166,8 +154,8 @@ class DecodeTest {
 
     @Test
     fun `a decompression bomb is rejected instead of exhausting the host`() {
-        // 炸弹的可怕之处在于体积不对称：压缩后只有几 KB，解出来是数 MB 乃至数 GB。
-        // 若不设界，宿主进程会被 OOM 杀掉——这是本模块绝不能发生的事
+        // 压缩炸弹的体积不对称：压缩后只有几 KB，解压后可达数 MB 乃至数 GB。
+        // 不设界会耗尽堆内存并终止宿主进程
         val compressed = deflate("A".repeat(4 * 1024 * 1024))
 
         assertTrue(compressed.size < 64 * 1024, "压缩后应当很小，实际 ${compressed.size} 字节")

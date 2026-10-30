@@ -41,7 +41,7 @@ import com.hchen.superlyric.utils.LyricDiag
  * 会话头失效时返回可重试失败，由编排器退避重试。
  *
  * 结果语义
- * - `LyricNotFoundException` → [LyricOutcome.NoLyrics]——平台明确表示无歌词
+ * - `LyricNotFoundException` → [LyricOutcome.NoLyrics]：平台明确表示无歌词
  * - 鉴权失败 / 网络异常 / 会话头尚未就绪 → [LyricOutcome.TransientFailure]
  *
  * @author 焕晨HChen
@@ -72,9 +72,9 @@ class SpotifyApiSource : LyricSource {
     private fun resolve(identity: TrackIdentity, token: Long): LyricOutcome {
         val rawId = TrackIdentity.normalizeStableId(identity.stableId)
             ?: return LyricOutcome.Unsupported("spotify: no track id")
-        // 这个 id 来自宿主上报的 MEDIA_ID，会被直接拼进请求 URL 的路径段。必须过一道
-        // 格式闸：否则含 `/`、`..` 的值能改变请求路径（同域路径注入）。Spotify 的 track id
-        // 是 base62，这里按字符集与长度区间收紧，与酷狗/网易的 HASH/NUMERIC 闸同一目的
+        // 这个 id 来自宿主上报的 MEDIA_ID，会被直接拼进请求 URL 的路径段，因此必须做
+        // 格式校验：含 `/`、`..` 的值能改变请求路径（同域路径注入）。Spotify 的 track id
+        // 是 base62，这里按字符集与长度区间收紧，与酷狗/网易的 HASH/NUMERIC 校验同一目的
         if (!TRACK_ID_PATTERN.matches(rawId)) {
             AndroidLog.logW(sourceName, "Rejecting malformed track id")
             return LyricOutcome.Unsupported("spotify: malformed track id")
@@ -87,8 +87,7 @@ class SpotifyApiSource : LyricSource {
         var lastError: Throwable? = null
         repeat(MAX_ATTEMPTS) { attempt ->
             if (!requests.isCurrent(token)) {
-                // 已切歌或被取消：再重试多少次也没人收。原来是 `return@repeat`，
-                // 那只是跳过本轮、循环照转，白占着线程睡满整个退避窗口
+                // 已切歌或取消：后续尝试不会被接收，直接返回
                 return LyricOutcome.TransientFailure(null)
             }
 
@@ -102,8 +101,8 @@ class SpotifyApiSource : LyricSource {
                 val data = SpotifyLyricAnalysis.fetchLyric(trackId, headers)
                 val lines = SpotifyLyricAnalysis.parseLyrics(data).orEmpty()
                 if (lines.isEmpty()) {
-                    // 真正的"无歌词"已由 404 → LyricNotFoundException 处理掉了。
-                    // 这里是拿到了响应体却读不出行——属"这次查不成"，绝不能当确定无歌词
+                    // 404 已按无歌词处理（LyricNotFoundException）；此处是拿到了响应体却
+                    // 读不出行，属读取失败，不得当作确定无歌词
                     return LyricOutcome.TransientFailure(null)
                 }
                 SpotifyLyricAnalysis.invalidate(headers)
@@ -133,7 +132,7 @@ class SpotifyApiSource : LyricSource {
             }
         }
 
-        // 会话头可能尚未捕获到，或网络/解析异常：都属"这次没查成"，返回可重试失败
+        // 会话头未捕获或网络、解析异常都属读取失败，返回可重试失败
         if (lastError is AuthenticationException) {
             AndroidLog.logW(sourceName, "Session headers were never captured; retry later")
         }
@@ -143,11 +142,11 @@ class SpotifyApiSource : LyricSource {
     /**
      * 读磁盘缓存并复核
      *
-     * 命中后重新解析一遍：缓存损坏、或解析器变更导致旧响应不再可用时，删掉该条目
-     * 并回落网络。绝不把"缓存不可用"当成"平台没有歌词"——后者是终态。
+     * 命中后重新解析一遍：缓存损坏或解析器变更导致既有响应无法解析时，删掉该条目并
+     * 回落网络。缓存不可用不构成平台无歌词的结论，后者是终态。
      *
      * 缓存键带语言标签：`color-lyrics/v2` 的译文随 `clientLanguage` 变化，
-     * 不带语言会在用户切换应用语言后拿到旧语言的歌词。
+     * 不带语言会在切换应用语言后继续返回切换前语言的歌词。
      */
     private fun readCached(key: String, identity: TrackIdentity): LyricOutcome? {
         val bytes = LyricCacheStore.getBytes(null, PROVIDER_NAME, key) ?: return null
@@ -202,9 +201,9 @@ class SpotifyApiSource : LyricSource {
         const val HEADER_WAIT_MS = 400L
 
         /**
-         * Spotify track id：base62。标准长度 22，但历史/迁移期可能略有出入，
-         * 因此只约束字符集与一个宽松的长度区间——目的是挡住路径字符（`/`、`.`），
-         * 不是在断言精确长度
+         * Spotify track id：base62。标准长度 22，实际存在长度略有出入的 id，
+         * 因此只约束字符集与一个宽松的长度区间：目的是挡住路径字符（`/`、`.`），
+         * 不要求精确长度
          */
         val TRACK_ID_PATTERN = Regex("^[A-Za-z0-9]{16,32}$")
     }

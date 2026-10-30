@@ -27,12 +27,12 @@ import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 
 /**
- * 将 `lyrics-core` 的统一模型 [SyncedLyrics] 映射为本模块的规范模型 [LyricDoc]。
+ * 将 `lyrics-core` 的统一模型 [SyncedLyrics] 映射为本模块的规范模型 [LyricDoc]
  *
- * 这是"库世界"与"本模块世界"之间的唯一边界。库覆盖的格式
+ * 这是库模型与本模块模型之间的唯一边界。库覆盖的格式
  * （TTML / 增强 LRC / KRC / YRC / Lyricify Syllable）经此转换；
  * 本模块自研的格式（QRC / LRCX / Soda）直接产出 [LyricDoc]，不经过本映射，
- * 以避免无谓的有损往返。
+ * 以避免有损往返。
  *
  * @author 焕晨HChen
  */

@@ -159,8 +159,8 @@ fun HomeLayout(
                         onClick = {
                             val next = !launcherHidden
                             if (HomeSettingsController.setLauncherHidden(context, next)) {
-                                // DONT_KILL_APP 使组件状态立即持久化；隐藏时结束本应用全部 task，
-                                // 避免从最近任务回到已隐藏的入口。
+                                // 图标状态已由 setLauncherHidden 写入；隐藏时结束本应用全部 task，
+                                // 避免从最近任务回到已隐藏的入口
                                 launcherHidden = next
                                 if (next) (context as? Activity)?.finishAndRemoveTask()
                             } else {
@@ -319,9 +319,9 @@ fun HomeLayout(
 }
 
 /**
- * Modern pill badge indicating whether the app is supported via Hook or native API.
- * Uses high-contrast, theme-adaptive tones (fresh primary for API, vivid violet for Hook)
- * to avoid dull and inactive-looking gray badges.
+ * 标识应用来源的标签：API 或 Hook
+ *
+ * 颜色随主题与深色模式变化，两种来源使用不同色相以便区分
  */
 @Composable
 private fun AppTypeBadge(
@@ -560,8 +560,8 @@ private fun AppDetailsDialog(
                             Toast.makeText(context, R.string.no_activity, Toast.LENGTH_SHORT).show()
                         }
                     } catch (e: Throwable) {
-                        // 留痕：`getLaunchIntentForPackage`/`startActivity` 抛错的原因
-                        // （包不存在、权限、Activity 未导出）各不相同，只给用户一个 Toast 会丢掉它们
+                        // 原因必须留痕：getLaunchIntentForPackage / startActivity 抛错的
+                        // 原因（包不存在、权限、Activity 未导出）各不相同，Toast 无法区分
                         android.util.Log.w("HomeLayout", "Failed to launch app $pkgName", e)
                         Toast.makeText(context, R.string.no_activity, Toast.LENGTH_SHORT).show()
                     }

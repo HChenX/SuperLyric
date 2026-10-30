@@ -23,7 +23,7 @@ import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
 
 /**
- * 用当前曲目身份补齐文档元数据；只填空，不覆盖解析器已有的非空值。
+ * 用当前曲目身份补齐文档元数据；只填空，不覆盖解析器已有的非空值
  */
 fun LyricDoc.withMetadata(
     identity: TrackIdentity?,

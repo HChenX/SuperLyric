@@ -24,11 +24,11 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * 停止判定状态机。
+ * 停止判定状态机
  *
- * 这几条不是随手写的样例，而是这条策略的定义——两侧（宿主进程内的 Provider 与
- * system_server 内的服务）都按它执行。尤其是 `UNKNOWN` 那一条：此前两侧对它
- * 判得**相反**，一侧当成"没停"、一侧当成"停了"。
+ * 这些用例定义停止判定策略，两侧（宿主进程内的 Provider 与 system_server 内的服务）
+ * 都按它执行。`UNKNOWN` 必须保持中性：一侧判为"没停"、另一侧判为"停了"，
+ * 两侧结论就会不一致。
  */
 class StopGateTest {
 
@@ -72,13 +72,13 @@ class StopGateTest {
 
     @Test
     fun `an unknown signal neither arms nor cancels`() {
-        // NONE 的字面含义是"宿主尚未设置过播放状态"。把它当成"已停止"，与把一次失败的
+        // UNKNOWN 表示宿主尚未设置过播放状态。把它当成"已停止"，与把一次失败的
         // 取词当成"平台确定没有歌词"是同一种错误
         assertEquals(StopGate.Decision.IGNORED, gate.onSignal(PlaybackSignal.UNKNOWN))
         assertFalse(gate.isPending, "不知道不能启动排期")
         assertTrue(scheduler.delays.isEmpty(), "不该排任何东西")
 
-        // 有停止悬着时，它也不能撤销——撤销要有"播放仍在继续"的正面证据
+        // 有停止悬着时，它也不能撤销：撤销要有"播放仍在继续"的正面证据
         gate.onSignal(PlaybackSignal.STOPPED)
         assertEquals(StopGate.Decision.IGNORED, gate.onSignal(PlaybackSignal.UNKNOWN))
         assertTrue(gate.isPending)
@@ -125,8 +125,8 @@ class StopGateTest {
 
     @Test
     fun `a repeated terminal signal does not push the window back`() {
-        // 宿主瞬发的是终态与其它状态**交替**的一串。每收到一个终态就重排窗口的话，
-        // 一串持续的状态能把确认无限期往后推，真停止反而永远不生效
+        // 宿主瞬发的是终态与其它状态交替的一串。每收到一个终态就重排窗口，
+        // 会把确认无限期往后推，真正的停止一直不生效
         assertEquals(StopGate.Decision.ARMED, gate.onSignal(PlaybackSignal.STOPPED))
         assertEquals(StopGate.Decision.IGNORED, gate.onSignal(PlaybackSignal.STOPPED))
         assertEquals(StopGate.Decision.IGNORED, gate.onSignal(PlaybackSignal.ERROR))
@@ -167,7 +167,7 @@ class StopGateTest {
             tasks += task
         }
 
-        /** 触发**全部**已排期任务，含已被撤销的过期任务 */
+        /** 触发全部已排期任务，含已被撤销的过期任务 */
         fun fireAll() {
             val pending = tasks.toList()
             tasks.clear()

@@ -18,6 +18,11 @@
  */
 package com.hchen.superlyric.ui.effect
 
+/**
+ * OS 2 与 OS 3 的背景预设
+ *
+ * 颜色为 RGBA 四元组，点位为 x、y、半径三元组，取值均为归一化浮点数
+ */
 internal object BgEffectConfig {
 
     internal class Config(
@@ -135,7 +140,7 @@ internal object BgEffectConfig {
         pointOffset = 0.2f,
     )
 
-    // OS3 Sunset Data (API Screen: Warm Sunset Amber & Rose Gold Twilight)
+    // OS3 Sunset Data (API screen)
 
     private val OS3_SUNSET_PHONE_LIGHT = Config(
         points = floatArrayOf(0.8f, 0.2f, 1.0f, 0.8f, 0.9f, 1.0f, 0.2f, 0.9f, 1.0f, 0.2f, 0.2f, 1.0f),

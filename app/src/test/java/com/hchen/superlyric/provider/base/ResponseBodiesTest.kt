@@ -31,12 +31,12 @@ import org.junit.jupiter.api.Test
 import java.io.IOException
 
 /**
- * 响应体上限。
+ * 响应体读取上限
  *
- * 这一层守的是"宿主绝不被取词拖垮"这条线：响应体大小完全由对端决定，`ResponseBody.string()`
- * 会把整块物化成 String（UTF-16，约两倍字节数），一个超大 body 就能把宿主 OOM。
+ * 响应体大小完全由对端决定，`ResponseBody.string()` 会把整块物化成 String（UTF-16，约两倍字节数），
+ * 超大响应可导致宿主 OOM。
  *
- * 关键的一条是**超限必须抛，不能返回被截断的文本**——半截报文喂给解析器比失败更难查。
+ * 超限必须抛，不能返回被截断的文本：半截报文喂给解析器比失败更难定位。
  */
 class ResponseBodiesTest {
 
@@ -60,8 +60,8 @@ class ResponseBodiesTest {
 
     @Test
     fun `a body without a declared length is bounded while streaming`() {
-        // 分块传输、或经 brotli 压缩后长度未知的响应，Content-Length 会缺席（-1），
-        // 这时只能靠边读边计数兜住 —— 这正是原来 `body.string()` 完全没有的那道闸
+        // 分块传输或经 brotli 压缩后长度未知的响应，Content-Length 为 -1，
+        // 只能边读边计数
         val body = UnknownLengthBody("x".repeat(4096).toByteArray())
 
         assertThrows(IOException::class.java) { body.readTextBounded(1024) }

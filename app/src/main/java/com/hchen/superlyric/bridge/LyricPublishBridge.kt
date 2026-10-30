@@ -29,16 +29,13 @@ import com.hchen.superlyric.utils.LyricDiag
 /**
  * 把内核编排结果发布到系统框架
  *
- * 宿主侧只发布三种包：
- * - 切歌 —— 曲目刚切换、歌词尚未就绪时下发，令客户端立刻作废旧歌词
- * - 全量歌词 —— 曲目解析完成、或确认无歌词时下发
- * - 停止 —— 播放真正停止时下发
+ * 宿主侧只下发全量歌词与停止两种包：曲目切换与播放停止都下发停止包，令客户端立刻
+ * 作废当前歌词；解析完成或确认无歌词时下发全量歌词。
  *
- * 进度推进完全由系统框架侧的时钟负责，宿主不发布任何进度包
+ * 进度推进完全由系统框架侧的时钟负责，宿主不发布任何进度包。
  *
- * 切歌后到新歌词就绪之间有几十毫秒到数百毫秒的空窗期。这段空窗期该显示什么是
- * 客户端的决定，不是本模块的：模块不知道客户端的 UI 意图，也不该替它保留上一首的歌词，
- * 那会让界面显示与当前播放无关的内容
+ * 切歌到新歌词就绪之间有几十毫秒到数百毫秒的空窗期，期间显示什么由客户端决定：
+ * 模块不知道客户端的 UI 意图，也不替它保留上一首的歌词。
  *
  * @author 焕晨HChen
  */
@@ -51,7 +48,7 @@ class LyricPublishBridge : LyricOrchestrator.Listener {
             "Track changed: id=${identity.stableId}, title=\"${identity.title}\", " +
                     "artist=\"${identity.artist}\", duration=${identity.durationMs}ms"
         )
-        // 旧歌词立刻作废，空窗期由客户端自行呈现
+        // 切歌后立刻下发停止，空窗期由客户端自行呈现
         AndroidLog.logI(TAG, "Clearing previous lyric for the new track")
         AbsPublisher.publishStop()
     }
@@ -65,13 +62,12 @@ class LyricPublishBridge : LyricOrchestrator.Listener {
                     "hasWords=${doc.lines.any { it.hasWords }}, " +
                     "hasTranslation=${doc.lines.any { it.hasTranslation }}"
         )
-        AbsPublisher.publishFullLyric(LyricDocAdapter.toFullData(doc).also {
-            LyricDiag.dumpData("Publish", it)
-        })
+        LyricDiag.dumpDoc("Publish", doc)
+        AbsPublisher.publishFullLyric(doc)
     }
 
     override fun onNoLyrics(identity: TrackIdentity?) {
-        // 只有平台或宿主明确说没有歌词才会走到这里；"查不到"走 onUnavailable，不下发占位
+        // 仅平台或宿主明确报告无歌词时进入；查询失败走 onUnavailable，不下发占位
         AndroidLog.logI(
             TAG,
             "Platform/host reported no lyric; publishing instrumental placeholder for " +
@@ -83,13 +79,12 @@ class LyricPublishBridge : LyricOrchestrator.Listener {
             durationMs = identity?.durationMs ?: 0L,
             lyricId = identity?.stableId,
         )
-        AbsPublisher.publishFullLyric(LyricDocAdapter.toFullData(doc).also {
-            LyricDiag.dumpData("PublishPlaceholder", it)
-        })
+        LyricDiag.dumpDoc("PublishPlaceholder", doc)
+        AbsPublisher.publishFullLyric(doc)
     }
 
     override fun onUnavailable(identity: TrackIdentity?) {
-        // 取词失败不等于"没有歌词"：不下发任何内容，否则断网会被钉死为纯音乐
+        // 取词失败不代表没有歌词：不下发任何内容，否则一次断网就会把曲目永久标记为纯音乐
         AndroidLog.logW(
             TAG,
             "Lyric fetch failed and retries are exhausted for id=${identity?.stableId}; " +

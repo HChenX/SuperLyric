@@ -39,21 +39,15 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 
 /**
- * 椒盐音乐 Hook 锚点：从 {@code MusicController} 的歌词设置入口取回原始歌词文本。
- * <p>
- * 为什么只取 {@code sourceText}
- * {@code LyricsDocument} 里保存着宿主收到的原始歌词文本 {@code sourceText}
- * （宿主用它渲染，也用它导出）。它尚未经过宿主内部
- * {@code VerbatimLyricsParserImpl.e()} 对相邻词元的重叠裁切，
- * 因此逐字时戳不会出现 0ms 坍缩。
+ * 椒盐音乐 Hook 锚点：从 {@code MusicController} 的歌词设置入口取回原始歌词文本
  *
- * <p>反过来说，只要拿到了 {@code sourceText}，就不需要再去反射
- * {@code LyricsLine} / {@code LyricsCell} 那套行/词模型——那正是本项目要根除的末端反射。
- * 本实现只读取 {@code LyricsDocument} 上的一个 String 字段。
- * <p>
- * 字段如何定位
- * 不硬编码字段名（R8 会重命名），而是在 {@code LyricsDocument} 内按类型唯一性取字符串字段。
- * 这个类只有一个非静态 String 字段。
+ * <p>只读取 {@code LyricsDocument} 上的原始歌词文本字段 {@code sourceText}，宿主用它渲染，
+ * 也用它导出。该文本尚未经过宿主内部 {@code VerbatimLyricsParserImpl.e()} 对相邻词元的
+ * 重叠裁切，因此逐字时戳不会出现 0ms 坍缩。拿到 {@code sourceText} 后无需再反射
+ * {@code LyricsLine} / {@code LyricsCell} 行/词模型，本实现只读取一个 String 字段。
+ *
+ * <p>字段按类型唯一性定位：不硬编码字段名（R8 会重命名），而是在 {@code LyricsDocument}
+ * 内取唯一的非静态 String 字段。
  *
  * @author 焕晨HChen
  */
@@ -63,12 +57,12 @@ public final class SaltAnchors {
     private static final String DOCUMENT_CACHE_KEY = "salt_lyrics_document_class_v1";
 
     /**
-     * 锚点：{@code LyricsDocument} 的 toString 格式串。
+     * 锚点：{@code LyricsDocument} 的 toString 格式串
      */
     private static final String DOCUMENT_ANCHOR = "LyricsDocument(sourceText=";
 
     /**
-     * 宿主的曲目模型类；带 {@code @Keep}，类名与 getter 名都是稳定的。
+     * 宿主的曲目模型类；带 {@code @Keep}，类名与 getter 名都是稳定的
      */
     private static final String SONG_CLASS = "com.salt.music.data.entry.Song";
 
@@ -80,7 +74,7 @@ public final class SaltAnchors {
     }
 
     /**
-     * 宿主设置歌词时的回调。
+     * 宿主设置歌词时的回调
      */
     public interface LyricsListener {
         /**
@@ -90,12 +84,12 @@ public final class SaltAnchors {
         void onLyrics(@NonNull String sourceText, @NonNull String songId);
 
         /**
-         * 宿主的真实曲目信息。
+         * 宿主的真实曲目信息
          *
          * <p>椒盐在开启蓝牙歌词后会把 {@code METADATA_KEY_TITLE} 写成当前歌词行或制作人名单、
-         * 把 {@code ARTIST} 拼成 {@code "歌手 - 曲名"}——元数据完全不可信。
-         * 这个回调给出的是宿主自己的 {@code Song} 对象里的原始字段，且其
-         * {@code id} 与 {@link #onLyrics} 的 {@code songId} 完全一致，可精确关联。
+         * 把 {@code ARTIST} 拼成 {@code "歌手 - 曲名"}，元数据完全不可信。这个回调给出的是
+         * 宿主自己的 {@code Song} 对象里的原始字段，且其 {@code id} 与 {@link #onLyrics} 的
+         * {@code songId} 完全一致，可精确关联。
          *
          * @param songId     曲目标识，与 {@link #onLyrics} 的 songId 同源
          * @param title      真实曲名
@@ -112,7 +106,7 @@ public final class SaltAnchors {
     }
 
     /**
-     * 定位并挂载 Hook。幂等；失败只记录日志。
+     * 定位并挂载 Hook。幂等；失败只记录日志
      */
     public static void install(@NonNull LyricsListener listener) {
         if (sInstalled) return;
@@ -187,25 +181,20 @@ public final class SaltAnchors {
     }
 
     /**
-     * 挂载宿主那一个"曲目已切换"回调，取回 {@code com.salt.music.data.entry.Song}。
-     * <p>
-     * 为什么是这条路
-     * 不能从 {@code LyriconSongSnapshot} 的构造器取数：它是歌词渲染器的快照，
-     * 只有歌词页面订阅时才生成，切歌时零触发。
-     * 而 {@code MusicController} 内部以 {@code Song} 为参数的回调稳定触发，
-     * 且 {@code Song} 带 {@code @Keep}、{@code Song.getId()} 与
+     * 挂载宿主那一个"曲目已切换"回调，取回 {@code com.salt.music.data.entry.Song}
+     *
+     * <p>取数点不能是 {@code LyriconSongSnapshot} 的构造器：它是歌词渲染器的快照，只在
+     * 歌词页面订阅时生成，切歌时零触发。{@code MusicController} 内部以 {@code Song} 为
+     * 参数的回调稳定触发，且 {@code Song} 带 {@code @Keep}、{@code Song.getId()} 与
      * {@link LyricsListener#onLyrics} 的 songId 完全一致，可精确关联。
-     * <p>
-     * 为什么按签名而不是按名字
-     * 触发的方法名是混淆产物（实测为单个生僻字符），无法跨版本硬编码；
-     * 而参数类型序列 {@code (Song, long, long, Long)} 由 {@code @Keep} 的
-     * {@code Song} 与基本类型构成，是稳定可辨的。
-     * <p>
-     * 签名失配时不退回"广撒网"
-     * 宿主若改动了这个签名，本层就取不到真实曲目信息（退化为使用元数据），
-     * 只记一条警告。刻意不去挂载"所有以 Song 为参数的方法"：
-     * 那会牵进一批与曲目切换无关的方法，违背"最少最精准"。
-     * 真遇到签名变更，再针对具体情况处理。
+     *
+     * <p>按签名而不是按名字匹配：触发方法名是混淆产物（实测为单个生僻字符），无法跨版本
+     * 硬编码；参数类型序列 {@code (Song, long, long, Long)} 由 {@code @Keep} 的
+     * {@code Song} 与基本类型构成，稳定可辨。
+     *
+     * <p>签名失配时不退回广撒网：宿主改动该签名后本层取不到真实曲目信息（退化为使用
+     * 元数据），只记一条警告。挂载所有以 Song 为参数的方法会牵进一批与曲目切换无关的
+     * 方法，违背最少最精准的约束。
      */
     private static void installSongProbe(
         @NonNull Class<?> controllerClass,
@@ -234,7 +223,7 @@ public final class SaltAnchors {
     }
 
     /**
-     * 按精确参数序列挂载静态 void 方法。
+     * 按精确参数序列挂载静态 void 方法
      */
     private static int hookSongCallback(
         @NonNull Class<?> controllerClass,
@@ -276,14 +265,14 @@ public final class SaltAnchors {
                 try {
                     reportSong(getArg(songArgIndex), listener);
                 } catch (Throwable ignored) {
-                    // 绝不干扰宿主
+                    // 探测异常不传到宿主
                 }
             }
         });
     }
 
     /**
-     * 已转储过的曲目标识，避免热路径刷屏。
+     * 已转储过的曲目标识，避免热路径刷屏
      */
     private static volatile String sLastDumpedSongId;
 
@@ -292,9 +281,9 @@ public final class SaltAnchors {
 
         String songId = invokeOrNull(song, "getId");
         if (songId == null || songId.isEmpty()) {
-            // 取不到宿主标识就没法把歌词与曲目关联起来。不能返回 "<XXXException>" 这类
-            // 标记串并当成真实值传下去：songStore 以标记为键、永远查不中，真曲名丢失后退回
-            // 被歌词污染的 MediaMetadata——宁可这一轮不报，也不能报一个假标识
+            // 取不到宿主标识就无法把歌词与曲目关联。不得返回 "<XXXException>" 这类标记串
+            // 并当作真实值传下去：songStore 以标记为键永远查不中，真曲名丢失后只能退回
+            // 被歌词污染的 MediaMetadata。宁可不报，也不报假标识
             AndroidLog.logW(TAG, "Song.getId() unavailable; skipping track info for this callback");
             return;
         }
@@ -333,7 +322,7 @@ public final class SaltAnchors {
     }
 
     /**
-     * 反射调用无参 getter；失败或返回 {@code null} 时返回 {@code null}。
+     * 反射调用无参 getter；失败或返回 {@code null} 时返回 {@code null}
      *
      * <p>给语义路径用：取不到就得是"取不到"，不能用一个字符串冒充真实值。
      * 诊断转储请用 {@link #invoke}。
@@ -349,7 +338,7 @@ public final class SaltAnchors {
     }
 
     /**
-     * 反射调用无参 getter；失败时返回标记串（含异常类型）而不是抛出。仅供诊断转储。
+     * 反射调用无参 getter；失败时返回标记串（含异常类型）而不是抛出。仅供诊断转储
      */
     @NonNull
     private static String invoke(@NonNull Object target, @NonNull String method) {
@@ -362,7 +351,7 @@ public final class SaltAnchors {
     }
 
     /**
-     * 按类型唯一性定位原始文本字段。
+     * 按类型唯一性定位原始文本字段
      */
     @Nullable
     private static Field findSourceTextField(@NonNull Class<?> documentClass) {

@@ -33,18 +33,18 @@ import com.hchen.superlyric.kernel.text.LyricText
  * 行首是行起始时间；其后是「`<时间>文字`」重复若干次。
  * 标签在文字之前，且末尾常有一个没有文字的标签，仅作行结束标记。
  *
- * 为什么要自研，而不是继续用通用解析库
+ * 不交给通用解析库的原因
  * 该库判定「哪一行是哪一行的译文」用的是相邻行的起始时间差：
- * 实测两条互相独立的主行只要起始相差小于 200ms，后一条就会被整体吞并成
+ * 两条互相独立的主行只要起始相差小于 200ms，后一条就会被整体吞并成
  * 前一条的 `translation`，且译文行本身从列表里消失。
- * 真机报文里这种紧邻的主行很常见（制作信息行、歌者标记行），于是会出现
- * 「主行被吞、头部行挂着一段莫名其妙的译文」。这是库的既定行为，
- * 无法通过喂给它的文本绕开（把行尾标签错开仍然被吞）。
- * 本格式本身结构简单，自己解析可以做到完全确定。
+ * 紧邻的主行很常见（制作信息行、歌者标记行），于是会出现
+ * 「主行被吞、头部行挂着一段无关译文」。这是库的既定行为，
+ * 无法通过调整输入文本绕开（错开行尾标签仍会被吞并）。
+ * 本格式结构简单，自行解析可以做到完全确定。
  *
  * 何时启用
  * 只在 [CompanionSplitter] 判定载荷带有「同时间戳伴随行」时启用
- * （见 [LyricPipeline.parse]），因此不会影响其它 Provider 的解析路径。
+ * （见 [LyricPipeline.parse]），不影响其它 Provider 的解析路径。
  *
  * @author 焕晨HChen
  */
@@ -112,7 +112,7 @@ internal object WordTagLrcParser {
                 val wordText = decodeInline(body.substring(textFrom, textTo))
 
                 // 只有空（长度为 0）才判为"末尾那个无文字的行结束标记"。
-                // 不能判 isBlank()——英文歌词会把空格本身作为独立切片
+                // 不能判 isBlank()：英文歌词会把空格本身作为独立切片
                 // （`<00:00.106> <00:00.212>`），跳过它会把 `We don't talk` 拼成 `Wedon'ttalk`。
                 if (wordText.isEmpty()) continue
 
@@ -143,7 +143,7 @@ internal object WordTagLrcParser {
     private fun clean(raw: String): String = decodeInline(raw).trim()
 
     /**
-     * 逐字切片只做净化，不 trim。
+     * 逐字切片只做净化，不 trim
      *
      * 切片之间靠空白分隔（英文歌词尤其明显），trim 掉会把 `We don't talk` 拼成
      * `Wedon'ttalk`。行级文本在最后统一 trim 一次即可。

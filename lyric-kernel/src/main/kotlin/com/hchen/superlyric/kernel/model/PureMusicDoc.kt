@@ -25,8 +25,8 @@ package com.hchen.superlyric.kernel.model
  * [com.hchen.superlyric.kernel.outcome.LyricOutcome.NoLyrics]。
  * 取词失败（[com.hchen.superlyric.kernel.outcome.LyricOutcome.TransientFailure]）
  * 与"来源不可用"（[com.hchen.superlyric.kernel.outcome.LyricOutcome.Unsupported]）
- * 绝不允许落到这里 —— 前者会让一次网络抖动被永久钉死为纯音乐，
- * 后者是在替对方编造"这首没有歌词"的结论
+ * 不得落到这里：前者会把一次网络抖动永久固化为纯音乐，
+ * 后者等于替对方断言"这首没有歌词"
  *
  * @author 焕晨HChen
  */
@@ -35,8 +35,8 @@ object PureMusicDoc {
     /**
      * 曲目时长未知时保持 0（表示未知）
      *
-     * 不要填一个具体值：那是在伪造事实，消费方无法区分"不知道"与"就是 5 分钟"，
-     * 进度与百分比会跟着错到曲末。系统侧会用宿主元数据补齐真实时长
+     * 不得填具体值：消费方无法区分"不知道"与"就是 5 分钟"，
+     * 进度与百分比会随之错到曲末。系统侧用宿主元数据补齐真实时长
      */
     const val DEFAULT_DURATION_MS = 0L
 

@@ -76,7 +76,8 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.unit.sp
 import com.hchen.superlyric.R
-import com.hchen.superlyricapi.SuperLyricLine
+import com.hchen.superlyricapi.model.Line
+import com.hchen.superlyricapi.model.PlaybackState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Card
@@ -89,34 +90,36 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 
 /**
- * 沉浸式开源音乐播放器风格的歌词呈现组件
+ * API 看板的歌词视图
+ *
+ * 展示曲目信息与逐行歌词，按接收到的位置推算逐字高亮，并支持手动浏览与回到当前行
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ApiLyricPlayerView(
     state: ApiReceiverState,
     currentIndex: Int,
-    allLyrics: Array<SuperLyricLine>?,
+    allLyrics: List<Line>?,
     paused: Boolean = false
 ) {
-    val data = state.data
+    val lyric = state.lyric
     val scope = rememberCoroutineScope()
     var isUserBrowsing by remember { mutableStateOf(false) }
     val lyricListState = rememberLazyListState()
 
-    // 严密捕获用户真实物理手指拖拽动作（程序 animateScrollToItem 滚动不会触发 isUserDragging）
+    // 只有用户手指拖拽会置位 isUserDragging，animateScrollToItem 不会触发
     val isUserDragging by lyricListState.interactionSource.collectIsDraggedAsState()
 
-    // 仅当用户手指真实在屏幕上拖拽时才进入手动浏览模式
+    // 用户开始拖拽时进入手动浏览模式
     LaunchedEffect(isUserDragging) {
         if (isUserDragging) {
             isUserBrowsing = true
         }
     }
 
-    // 判断当前正在播放的行是否在当前视口内可见
-    // 必须把 currentIndex/allLyrics 作为 remember 的键：无键的 remember 会捕获首帧参数，
-    // 数据到达后 derivedStateOf 仍按 null/0 判断，胶囊可能永远不出现。
+    // 当前播放行是否在视口内可见
+    // currentIndex 与 allLyrics 必须作为 remember 的键：无键的 remember 会捕获首帧参数，
+    // 数据到达后 derivedStateOf 仍按 null/0 判断，回到当前行的按钮可能永远不出现
     val isCurrentLineVisible by remember(allLyrics, currentIndex) {
         derivedStateOf {
             if (allLyrics.isNullOrEmpty() || currentIndex !in allLyrics.indices) return@derivedStateOf true
@@ -124,29 +127,36 @@ internal fun ApiLyricPlayerView(
         }
     }
 
-    // 严密的悬浮按钮显示条件：仅在用户主动浏览且当前播放行已滑出可视区域时才显示
+    // 用户主动浏览且当前行已滑出视口时显示回到当前行的按钮
     val showBackToCurrentLine by remember(isUserBrowsing, isCurrentLineVisible) {
         derivedStateOf {
             isUserBrowsing && !isCurrentLineVisible
         }
     }
 
-    // 真实毫秒时钟驱动：仅在真实处于动态播放流（ON_LYRIC 且非静态拉取）时才进行流逝插值计算；
-    // 未播放、静态拉取（PULL_LATEST）、停止或暂停时保持静态固定在 basePos，绝不盲目空转或重置从头跑
-    // 位置 state 必须是稳定对象：如果 remember 的键包含 data.position，每次位置包都会
-    // 返回新的 MutableLongState，而派生状态仍捕获旧对象，逐字高亮会冻在首次组合的位置。
-    val playPos = remember { mutableLongStateOf(data?.position ?: 0L) }
+    // 位置只在动态播放流（FULL/STATE 且 PLAYING）中按墙上时钟外推；未播放、
+    // 静态拉取（PULL_LATEST）、停止或暂停时固定在 basePos
+    // playPos 必须是稳定对象：若 remember 的键包含 state.position，每个位置包都会
+    // 产生新的 MutableLongState，派生状态仍捕获旧对象，逐字高亮会停在首次组合的位置
+    val playPos = remember { mutableLongStateOf(state.position) }
     var currentPlayPos by playPos
+    // speed <= 0 或非有限值表示冻结或未知，不能按 1 倍速外推
+    val playbackSpeed = state.speed.takeIf { it.isFinite() && it > 0f } ?: 0f
     val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(data?.position, state.positionTimestamp, paused, state.eventType, state.publisher, lifecycleOwner) {
-        // 只在 RESUMED 时跑：后台/锁屏时停掉 50Hz 唤醒，回前台由新的 position 包重新锚定。
+    LaunchedEffect(state.position, state.positionTimestamp, state.speed, paused, state.eventType, state.source, lifecycleOwner) {
+        // 只在 RESUMED 时运行：后台或锁屏时停止 20ms 轮询，回前台由新的位置包重新锚定
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            val basePos = data?.position ?: 0L
+            val basePos = state.position
             val baseWall = state.positionTimestamp
+            // null 表示播放状态未知（LegacyV37 没有播放状态通道），不能据此冻结；
+            // 只有显式的 PAUSED / STOPPED / ERROR / BUFFERING 才停止外推
+            val stateAllowsPlayback = state.playbackState == null ||
+                    state.playbackState == PlaybackState.PLAYING
             val isStreamingPlaying = !paused &&
-                    state.eventType == "ON_LYRIC" &&
-                    state.publisher != "MockDebugPublisher" &&
-                    data != null
+                    (state.eventType == "FULL" || state.eventType == "STATE") &&
+                    state.source != "MockDebugPublisher" &&
+                    lyric != null && stateAllowsPlayback &&
+                    playbackSpeed > 0f
 
             if (!isStreamingPlaying) {
                 playPos.longValue = basePos
@@ -156,26 +166,27 @@ internal fun ApiLyricPlayerView(
             val currentLine = if (!allLyrics.isNullOrEmpty() && currentIndex in allLyrics.indices) {
                 allLyrics[currentIndex]
             } else {
-                data.lyric
+                lyric.lines.getOrNull(currentIndex)
             }
-            val lineEnd = currentLine?.endTime?.takeIf { it > basePos } ?: (data.duration.takeIf { it > 0L } ?: Long.MAX_VALUE)
+            val lineEnd = currentLine?.end?.takeIf { it > basePos }
+                ?: (lyric.duration.takeIf { it > 0L } ?: Long.MAX_VALUE)
 
             while (true) {
                 val elapsed = (SystemClock.elapsedRealtime() - baseWall).coerceAtLeast(0L)
-                val calculated = basePos + elapsed
+                val calculated = basePos + (elapsed.toDouble() * playbackSpeed).toLong()
                 if (calculated >= lineEnd) {
                     playPos.longValue = lineEnd
                     break
                 }
                 playPos.longValue = calculated
-                // 这个节拍只决定刷新密度，不影响正确性——位置按墙上时钟算，与循环频率无关。
-                // 20ms ≈ 50Hz：比逐字高亮需要的密度高，又明显低于"每帧一次"的代价
+                // 循环周期只决定刷新密度：位置按墙上时钟计算，与循环频率无关；
+                // 20ms（50Hz）高于逐字高亮需要的密度，且低于每帧刷新的开销
                 delay(20)
             }
         }
     }
 
-    // 拦截歌词列表的嵌套滚动，完全消费未消费的滚动量，彻底杜绝外溢影响到外部面板
+    // 消费歌词列表的全部未消费滚动量，避免滚动传递给外部面板
     val lyricNestedScroll = remember {
         object : NestedScrollConnection {
             override fun onPostScroll(
@@ -188,16 +199,15 @@ internal fun ApiLyricPlayerView(
         }
     }
 
-    // 当歌曲发生切换（标题改变）时立即重置浏览状态并复位到当前行
-    LaunchedEffect(data?.title) {
+    // 歌曲切换（lyric.id 变化）时重置浏览状态并回到当前行
+    LaunchedEffect(lyric?.id) {
         isUserBrowsing = false
         if (!allLyrics.isNullOrEmpty() && currentIndex in allLyrics.indices) {
             lyricListState.scrollToItem(currentIndex)
         }
     }
 
-    // 自动居中对齐到舒适视线区：
-    // 当行切换（currentIndex 发生变化）且用户当前未按住屏幕拖拽时，自动退出手动浏览模式并平滑滚动回当前行
+    // 行切换且用户未拖拽时退出手动浏览模式，并平滑滚动回当前行
     LaunchedEffect(currentIndex) {
         if (allLyrics.isNullOrEmpty() || currentIndex !in allLyrics.indices) return@LaunchedEffect
         if (isUserDragging) return@LaunchedEffect
@@ -216,16 +226,16 @@ internal fun ApiLyricPlayerView(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = data?.title?.takeIf { it.isNotEmpty() } ?: stringResource(R.string.api_not_playing),
+                    text = lyric?.title?.takeIf { it.isNotEmpty() } ?: stringResource(R.string.api_not_playing),
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                val album = data?.album
+                val album = lyric?.album
                 Text(
-                    text = "${data?.artist?.takeIf { it.isNotEmpty() } ?: stringResource(R.string.unknown_artist)}${
+                    text = "${lyric?.artist?.takeIf { it.isNotEmpty() } ?: stringResource(R.string.unknown_artist)}${
                         if (!album.isNullOrEmpty()) " · $album" else ""
                     }",
                     fontSize = 14.sp,
@@ -237,7 +247,7 @@ internal fun ApiLyricPlayerView(
 
             Spacer(Modifier.width(12.dp))
 
-            // 发布源标识胶囊
+            // 发布源标识
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(8.dp))
@@ -245,7 +255,7 @@ internal fun ApiLyricPlayerView(
                     .padding(horizontal = 10.dp, vertical = 5.dp)
             ) {
                 Text(
-                    text = state.publisher ?: "SuperLyric API",
+                    text = state.source ?: "SuperLyric API",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Medium,
                     color = colorScheme.onTertiaryContainer,
@@ -262,9 +272,9 @@ internal fun ApiLyricPlayerView(
                     .fillMaxWidth()
             ) {
                 val totalHeight = maxHeight
-                // 舒适视线区设定：当前歌词锚定在视口上部约 32% 黄金舒适区
+                // 当前行锚定在视口上方约 32% 处
                 val comfortableTopPadding = (totalHeight * 0.32f).coerceAtLeast(60.dp)
-                // 底部预留 55% 滚动留白，允许超额滚动，彻底杜绝歌曲末尾歌词被卡死在最底部的问题
+                // 底部预留 55% 滚动空间，末尾歌词也能滚到锚点位置
                 val comfortableBottomPadding = (totalHeight * 0.55f).coerceAtLeast(120.dp)
 
                 LazyColumn(
@@ -282,7 +292,7 @@ internal fun ApiLyricPlayerView(
                 ) {
                     itemsIndexed(
                         items = allLyrics,
-                        key = { index, line -> "${line.startTime}_$index" }
+                        key = { index, line -> "${line.start}_$index" }
                     ) { index, line ->
                         val isActive = (index == currentIndex)
                         val scale by animateFloatAsState(
@@ -300,10 +310,10 @@ internal fun ApiLyricPlayerView(
                                     transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
                                 }
                         ) {
-                            // 1. 整句起止时间 ms 与持续时间标
-                            val lineDuration = (line.endTime - line.startTime).coerceAtLeast(0L)
-                            val timingText = if (line.startTime > 0 || line.endTime > 0) {
-                                "${line.startTime}ms ~ ${line.endTime}ms (${lineDuration}ms)"
+                            // 整句起止时间与持续时长（ms）
+                            val lineDuration = (line.end - line.start).coerceAtLeast(0L)
+                            val timingText = if (line.start > 0 || line.end > 0) {
+                                "${line.start}ms ~ ${line.end}ms (${lineDuration}ms)"
                             } else {
                                 "0ms ~ 0ms"
                             }
@@ -317,22 +327,20 @@ internal fun ApiLyricPlayerView(
                                 modifier = Modifier.padding(bottom = 3.dp)
                             )
 
-                            // 2. 歌词内容展现与逐字排版
+                            // 歌词内容与逐字排版
                             val words = line.words
                             if (isActive && !words.isNullOrEmpty()) {
-                                // 正在演唱的当前行：
-                                // 计算当前句内唯一活跃字词索引：严格互斥，同一时刻最多仅有一个字词处于 singing 激活状态。
-                                //
-                                // 读取的是稳定的 playPos 对象，而不是被 remember 键替换掉的
-                                // 旧 delegate；`derivedStateOf` 只在被读取时按当前位置求值。
+                                // 当前行的活跃字词索引：同一时刻最多一个词处于演唱状态。
+                                // 读取稳定的 playPos，而不是被 remember 键替换的 delegate；
+                                // derivedStateOf 只在被读取时按当前位置求值
                                 val activeWordIndex by remember(words) {
                                     derivedStateOf {
                                         val pos = playPos.longValue
-                                        words.indexOfFirst { pos in it.startTime until it.endTime }
+                                        words.indexOfFirst { pos in it.start until it.end }
                                     }
                                 }
 
-                                // A. 正文流式排版（紧凑自然字间距，绝不拉宽/撑大任何英文字母或汉字）
+                                // 正文逐字排版，只保留 2dp 字间距
                                 FlowRow(
                                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                                     verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -342,7 +350,7 @@ internal fun ApiLyricPlayerView(
                                         val isWordSinging = (wIdx == activeWordIndex)
                                         val isWordSung = when {
                                             activeWordIndex >= 0 -> wIdx < activeWordIndex
-                                            else -> currentPlayPos >= word.endTime
+                                            else -> currentPlayPos >= word.end
                                         }
 
                                         val wordColor = when {
@@ -352,7 +360,7 @@ internal fun ApiLyricPlayerView(
                                         }
 
                                         Text(
-                                            text = word.word,
+                                            text = word.text,
                                             fontSize = 24.sp,
                                             fontWeight = if (isWordSinging || isWordSung) FontWeight.Bold else FontWeight.Medium,
                                             color = wordColor,
@@ -361,8 +369,7 @@ internal fun ApiLyricPlayerView(
                                     }
                                 }
 
-                                // B. 逐字时序微检尺（Active Word Timing Strip）
-                                // 独立陈列当前句每个词的时序切片与持续毫秒，既纯粹直观，又不破坏歌词排版美感
+                                // 逐字时序条：列出当前句每个词的持续时长（ms），与正文排版分离
                                 Spacer(Modifier.height(8.dp))
                                 FlowRow(
                                     horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -370,8 +377,8 @@ internal fun ApiLyricPlayerView(
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     words.forEachIndexed { wIdx, word ->
-                                        val wStart = word.startTime
-                                        val wEnd = word.endTime
+                                        val wStart = word.start
+                                        val wEnd = word.end
                                         val wDuration = (wEnd - wStart).coerceAtLeast(0L)
                                         val isWordSinging = (wIdx == activeWordIndex)
                                         val isWordSung = when {
@@ -400,7 +407,7 @@ internal fun ApiLyricPlayerView(
                                                 .padding(horizontal = 4.dp, vertical = 2.dp)
                                         ) {
                                             Text(
-                                                text = word.word.trim(),
+                                                text = word.text.trim(),
                                                 fontSize = 11.sp,
                                                 fontWeight = if (isWordSinging) FontWeight.Bold else FontWeight.Normal,
                                                 color = stripTextColor
@@ -416,7 +423,7 @@ internal fun ApiLyricPlayerView(
                                     }
                                 }
                             } else {
-                                // 未激活上下文行（保持干净自然的整句排版）或无逐字数据的整句
+                                // 非当前行，或当前行没有逐字数据
                                 Text(
                                     text = line.text,
                                     fontSize = if (isActive) 24.sp else 17.sp,
@@ -427,8 +434,8 @@ internal fun ApiLyricPlayerView(
                                 )
                             }
 
-                            // 3. 翻译歌词
-                            val trans = if (isActive && data != null && data.hasTranslation()) data.translation?.text else line.translation
+                            // 翻译
+                            val trans = line.translation
                             if (!trans.isNullOrEmpty()) {
                                 Spacer(Modifier.height(4.dp))
                                 Text(
@@ -440,8 +447,8 @@ internal fun ApiLyricPlayerView(
                                 )
                             }
 
-                            // 4. 音译 / 副歌词
-                            val sec = if (isActive && data != null && data.hasSecondary()) data.secondary?.text else line.secondary
+                            // 音译
+                            val sec = line.phonetic
                             if (!sec.isNullOrEmpty()) {
                                 Spacer(Modifier.height(2.dp))
                                 Text(
@@ -455,7 +462,7 @@ internal fun ApiLyricPlayerView(
                     }
                 }
 
-                // 用户手动浏览离开当前行时，展示“回到播放行”悬浮小胶囊
+                // 用户浏览到别处时显示回到当前行的入口
                 androidx.compose.animation.AnimatedVisibility(
                     visible = showBackToCurrentLine,
                     enter = fadeIn(tween(200)) + scaleIn(tween(200)),
@@ -501,7 +508,7 @@ internal fun ApiLyricPlayerView(
                 }
             }
         } else {
-            // 待机空状态占位
+            // 无歌词时的空状态
             Box(
                 modifier = Modifier
                     .fillMaxSize()

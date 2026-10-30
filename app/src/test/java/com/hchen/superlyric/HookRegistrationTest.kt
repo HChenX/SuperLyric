@@ -28,12 +28,11 @@ import java.io.File
 /**
  * 注册一致性：`@HookThis` 与 `scope.list` 必须指向同一组包名
  *
- * ## 为什么值得一条测试
- * 新增一个应用要写三处注册，其中 `scope.list` 漏掉了**不报错、不崩溃、也没有日志**——
- * 表现只是"这个应用什么都没发生"。这是本项目第一号静默失效陷阱，此前只靠文档提醒。
+ * 新增一个应用要写三处注册，其中 `scope.list` 漏掉不会报错、不会崩溃、也没有日志，
+ * 表现只是这个应用什么都没发生。
  *
  * 注解处理器生成的 [HookMaps] 与 `scope.list` 都在测试的 classpath / 工作目录里，
- * 因此可以把这条纪律变成**违反即构建失败**。
+ * 因此该约束可在构建期检查。
  *
  * @author 焕晨HChen
  */
@@ -51,8 +50,8 @@ class HookRegistrationTest {
 
     @Test
     fun `every scope list entry is used by a hook target`() {
-        // 反向检查属卫生项：scope.list 决定模块被注入哪些进程，多写一个应用却没有对应的
-        // Hook 只会白白扩大作用域。若确实需要，应当在提交信息里说明理由
+        // 反向检查：scope.list 决定模块被注入哪些进程，多写应用而无对应 Hook
+        // 只会扩大作用域
         val unused = readScopeList() - hookTargets()
 
         assertTrue(
@@ -63,10 +62,9 @@ class HookRegistrationTest {
 
     @Test
     fun `every scoped app is listed as a supported app`() {
-        // 第三处注册。它此前**没有任何测试守着**：漏掉不报错、不崩溃、日志里也没痕迹，
-        // 只是这个应用在界面上凭空消失——与前两处是同一个静默失效陷阱，只是后果轻些
+        // 第三处注册：漏掉不报错、不崩溃、日志无痕迹，应用在界面上消失
         //
-        // `system` 是 system_server 那条 Hook，不是音乐应用，因此从 scope.list 里排掉
+        // `system` 是 system_server 的 Hook，不是音乐应用，从 scope.list 中排除
         val scoped = readScopeList() - SYSTEM_PACKAGE
 
         assertEquals(
@@ -90,8 +88,8 @@ class HookRegistrationTest {
     @Test
     fun `system-start hooks are keyed only by system`() {
         assertEquals(setOf(SYSTEM_PACKAGE), HookMaps.ON_SYSTEM_STARTING.keys)
-        // system 在生成器里同时进入两张表是正常的（处理器按注解两路注册）；
-        // 不允许的是音乐应用出现在 ON_SYSTEM_STARTING 里。
+        // system 同时进入两张表是正常的（处理器按注解两路注册）；
+        // 音乐应用不得出现在 ON_SYSTEM_STARTING 里
         assertEquals(
             setOf(SYSTEM_PACKAGE),
             HookMaps.ON_PACKAGE_LOADED.keys.intersect(HookMaps.ON_SYSTEM_STARTING.keys),

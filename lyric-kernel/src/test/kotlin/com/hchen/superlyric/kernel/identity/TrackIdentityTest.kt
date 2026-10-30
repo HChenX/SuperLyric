@@ -25,9 +25,9 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * 音轨同一性判定。
+ * 音轨同一性判定
  *
- * 每条用例都对应一个重构前的真实缺陷。
+ * 每条用例固定一条同一性判据的边界。
  */
 class TrackIdentityTest {
 
@@ -44,7 +44,7 @@ class TrackIdentityTest {
         val fromHook = id(source = "qq", stableId = "qq:005Ct2abcdefgh")
         val fromSession = id(source = "qq", stableId = "005Ct2abcdefgh")
 
-        // 旧实现按字符串原样比较，两者永远不等，Hook 捕获会被当作过期数据丢弃
+        // 带命名空间与不带命名空间的标识必须判等，否则 Hook 捕获会被当作过期数据丢弃
         assertTrue(fromHook.matches(fromSession))
     }
 
@@ -61,7 +61,7 @@ class TrackIdentityTest {
         val studio = id(title = "Song", artist = "Artist", durationMs = 200_000L)
         val live = id(title = "Song", artist = "Artist", durationMs = 260_000L)
 
-        // 旧实现只看标题，这两首会被永久合并，第二首永远取不到歌词
+        // 同名但歌手与时长不同的曲目不得判等，否则第二首永远取不到歌词
         assertFalse(studio.matches(live))
     }
 

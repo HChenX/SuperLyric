@@ -44,14 +44,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * SuperLyric 核心 Hook 入口。
+ * SuperLyric 核心 Hook 入口
  * <p>
  * 按目标包名加载 {@code HookMaps} 中登记的模块：宿主音乐应用对应各自的
  * {@link com.hchen.superlyric.provider.base.MusicProvider} 子类，
  * {@code system} 对应 {@link com.hchen.superlyric.core.SuperLyricProxy}。
  * <p>
- * 注册表由 {@code @HookThis} 注解在编译期生成，因此新增一个应用支持
- * 只需新增一个带注解的 Provider 类，不需要改动本类。
+ * 注册表由 {@code @HookThis} 在编译期生成，新增 Provider 无需改动本类。
  *
  * @author 焕晨HChen
  */
@@ -115,7 +114,7 @@ public final class HookEntrance extends ModuleEntrance {
                         try {
                             module.handlePackageReady(param);
                         } catch (Throwable t) {
-                            // 同上：单个模块重新注册失败不得中断其余模块，也不得抛回框架
+                            // 单个模块重新注册失败不得中断其余模块，也不得抛回框架
                             AndroidLog.logE(TAG, "Module " + module.getClass().getName()
                                 + " failed during re-registration; skipping it", t);
                         }
@@ -136,9 +135,9 @@ public final class HookEntrance extends ModuleEntrance {
                             .getDeclaredConstructor()
                             .newInstance();
                     } catch (Throwable t) {
-                        // 接 Throwable 而不只是反射异常：`newInstance()` 会执行模块类的静态初始化，
-                        // 那里失败抛的是 ExceptionInInitializerError（Error 而非 Exception）。
-                        // 只接反射异常会让它逃出去，中断该包其余模块的注册并抛回 Xposed 加载路径。
+                        // 必须接 Throwable：newInstance() 会执行模块类的静态初始化，失败时抛
+                        // ExceptionInInitializerError（Error 而非 Exception）。只接反射异常会让它
+                        // 逃出循环，中断该包其余模块的注册并抛回 Xposed 加载路径。
                         // 常见成因：增量构建残留的 HookMaps 引用了已删除的类
                         AndroidLog.logE(TAG, "Failed to load module " + path + "; skipping it", t);
                         continue;
@@ -148,10 +147,9 @@ public final class HookEntrance extends ModuleEntrance {
                         module.handlePackageReady(param);
                         packageModules.add(module);
                     } catch (Throwable t) {
-                        // 模块自己的代码（装钩子、建编排器、DexKit 查找）抛什么都不能中断
-                        // 其余模块的注册，更不能把异常抛回 Xposed 的加载路径——宿主稳定性优先。
-                        // 必须用 Throwable 而不是 Exception：残留的 HookMaps 会抛
-                        // NoClassDefFoundError（Error 而非 Exception），而它正是最常见的成因
+                        // 模块代码（装钩子、建编排器、DexKit 查找）抛什么都不能中断其余模块的
+                        // 注册，也不能抛回 Xposed 的加载路径。必须接 Throwable：残留的
+                        // HookMaps 会抛 NoClassDefFoundError（Error 而非 Exception）
                         AndroidLog.logE(TAG, "Module " + path + " failed during package ready; skipping it", t);
                     }
                 }
@@ -176,8 +174,8 @@ public final class HookEntrance extends ModuleEntrance {
                 try {
                     module.handleApplicationCreated(context);
                 } catch (Throwable t) {
-                    // 与 handlePackageReady 同一纪律：模块自己的代码抛什么都不能穿透到
-                    // 宿主的 Application.attach，否则一个 Provider 的初始化异常就让宿主启动崩溃。
+                    // 模块代码抛什么都不能穿透到宿主的 Application.attach，
+                    // 否则一个 Provider 的初始化异常会让宿主启动崩溃
                     AndroidLog.logE(TAG, "Module " + module.getClass().getName()
                         + " failed during application created; skipping it", t);
                 }
@@ -214,8 +212,8 @@ public final class HookEntrance extends ModuleEntrance {
         super.handleSystemServerStarting(param);
 
         ModuleData.setClassLoader(param.getClassLoader());
-        // 只允许 "system" 这个 key；@HookThis(onSystemStarting=true) 误标到音乐应用时
-        // 不能把该 Provider 实例化进 system_server（L1 作用域最小化）。
+        // 只接受 "system" 这个 key；@HookThis(onSystemStarting = true) 误标到音乐应用时，
+        // 不能把该 Provider 实例化进 system_server
         for (String key : HookMaps.ON_SYSTEM_STARTING.keySet()) {
             if (!"system".equals(key)) {
                 AndroidLog.logE(TAG, "Ignoring ON_SYSTEM_STARTING entry for non-system package: " + key);
@@ -230,7 +228,7 @@ public final class HookEntrance extends ModuleEntrance {
                     .getDeclaredConstructor()
                     .newInstance();
             } catch (Throwable t) {
-                // 同 packageReady：静态初始化失败抛的是 Error，只接反射异常会漏掉它
+                // 静态初始化失败抛的是 Error，只接反射异常会漏掉它
                 AndroidLog.logE(TAG, "Failed to load module " + path + "; skipping it", t);
                 continue;
             }
@@ -238,7 +236,7 @@ public final class HookEntrance extends ModuleEntrance {
             try {
                 module.handleSystemServerStarting(param);
             } catch (Throwable t) {
-                // 同 packageReady：模块自己的代码抛什么都不能把异常抛回框架
+                // 模块代码抛什么都不能把异常抛回框架
                 AndroidLog.logE(TAG, "Module " + path + " failed during system start; skipping it", t);
             }
         }

@@ -78,10 +78,10 @@ public final class MobileMusicAnchors {
     private static final String VIEW_ANCHOR = "treasure song Normal lyrics view apply skin mApplySkinChange = ";
 
     /**
-     * 按类缓存无参 getter。
+     * 按类缓存无参 getter
      *
-     * <p>不要用 {@link ClassValue}：它在 Android 上是 API 34 才有的类，而本模块
-     * {@code minSdk 30}；类初始化时就会在 Android 11–13 上失败，连一次取词都跑不到。
+     * <p>使用自建映射而不是 {@link ClassValue}：后者在 Android 上是 API 34 才有的类，
+     * 而本模块 {@code minSdk 30}，类初始化时就会在 Android 11–13 上失败。
      */
     private static final ConcurrentHashMap<Class<?>, Map<String, Method>> GETTERS =
         new ConcurrentHashMap<>();
@@ -205,8 +205,8 @@ public final class MobileMusicAnchors {
             long offset = 0L;
             OffsetSnapshot live = liveOffset;
             Object offsetView = live == null ? null : live.view.get();
-            // 普通 LRC 没有 MRC 解析器，用户在歌词视图里调整的偏移仍须保留。
-            // 视图重置会直接清零字段，快照读取当前值，且不能延长已销毁界面的生命周期。
+            // 普通 LRC 没有 MRC 解析器，歌词视图里调整的偏移仍须保留。
+            // 视图重置会直接清零字段，因此快照读取当前值，且不延长已销毁界面的生命周期。
             if (offsetView != null && live.parser == parser && sameSong(song, live.song)) {
                 offset = number(invoke(offsetView, "getOffset"));
             } else if (Boolean.TRUE.equals(isMrc.get(manager)) && parser != null) {
@@ -329,7 +329,7 @@ public final class MobileMusicAnchors {
     }
 
     /**
-     * 按 Song 实例缓存首次选中的 getter，避免宿主分步填充时 stableId 在两种表示法之间抖动
+     * 按 Song 实例缓存首次选中的 getter，避免宿主分步填充字段时 stableId 在多个来源之间抖动
      */
     private static final Map<Object, String> STABLE_IDS =
         Collections.synchronizedMap(new WeakHashMap<>());
@@ -357,10 +357,11 @@ public final class MobileMusicAnchors {
     }
 
     /**
-     * 把宿主给的词间隔数组转成列表。
+     * 把宿主给的词间隔数组转成列表
      *
-     * <p>不要用 {@code Arrays.stream(...).toList()}：{@code Stream.toList()} 是 Java 16 / Android 34
-     * 才有的 API，而本模块 {@code minSdk 30}，在 Android 11–13 上会抛 {@link NoSuchMethodError}。
+     * <p>手写循环而不用 {@code Arrays.stream(...).toList()}：{@code Stream.toList()} 是
+     * Java 16 / Android 34 才有的 API，而本模块 {@code minSdk 30}，在 Android 11–13 上会抛
+     * {@link NoSuchMethodError}。
      */
     @Nullable
     private static List<Long> durationsOf(@Nullable int[] intervals) {
@@ -402,7 +403,7 @@ public final class MobileMusicAnchors {
     }
 
     /**
-     * 宿主方法名是 {@code getMicroSecondsDuration}，但不同版本可能实际给毫秒。
+     * 宿主方法名是 {@code getMicroSecondsDuration}，但不同版本可能实际给毫秒
      *
      * <p>用“超过 24 小时”作为不可能出现在毫秒里的上界：一般歌曲远小于它，
      * 而微秒表示 3 分钟就是 1.8e8，必然超过。这样既兼容两种单位，又不会把

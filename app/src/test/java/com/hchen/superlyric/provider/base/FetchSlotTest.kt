@@ -23,15 +23,14 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
- * 取词令牌的语义。
+ * 取词令牌的语义
  *
- * 它取代的是原先共用、会被新 `start()` 重置的 `cancelled` 布尔：没有它，一首旧曲目在途的
- * 请求会把自己**过期**的结果交付出去。本地这次检查只做预筛（权威判定在编排器的 epoch），
- * 但预筛判错一样会把上一首的歌词挂到新曲目上，所以这几条要钉住。
+ * 每次新请求更换令牌，取消时令牌失效，在途请求据此判定结果是否仍可交付。
+ * 本地检查只做预筛，权威判定在编排器的 epoch；预筛判错会把上一首的歌词挂到新曲目上。
  */
 class FetchSlotTest {
 
-    /** 直接执行即可：这里测的是令牌语义，不是线程池 */
+    /** 同步执行任务，此处只测令牌语义，不涉及线程池 */
     private val slot = FetchSlot { it.run() }
 
     @Test
@@ -43,7 +42,7 @@ class FetchSlotTest {
 
     @Test
     fun `a newer request supersedes the previous token`() {
-        // 切歌 = 新请求：上一首在途的请求必须立刻失去投递资格
+        // 切歌即新请求：上一首在途的请求立刻失去投递资格
         val first = slot.open()
         val second = slot.open()
 
@@ -73,7 +72,7 @@ class FetchSlotTest {
 
     @Test
     fun `a result arriving after a newer request is not delivered`() {
-        // 各来源里的写法就是这个形状：令牌对不上就不交付
+        // 各来源的交付路径同此形状：令牌对不上就不交付
         var delivered = false
         val stale = slot.open()
         slot.open()

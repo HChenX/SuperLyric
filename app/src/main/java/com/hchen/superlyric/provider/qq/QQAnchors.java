@@ -41,20 +41,17 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * QQ 音乐 Hook 锚点：从歌词加载请求的载体上取回当前曲目的官方标识。
- * <p>
- * 为什么锚在这里
- * QQ 音乐 20.9+ 的歌词行/词模型位于 {@code com.lyricengine.base.*}，深度混淆且结构随版本变动，
- * 是"末端反射"路线的典型陷阱。但无论模型怎么改，宿主都必须先把
- * {@code LyricLoadBean}（含 {@code SongInfo}）交给歌词引擎——这个构造入口是稳定的。
- * <p>
- * 因此本层只做一件事：拦截该构造器，取出 {@code songMID} / {@code songID}。
- * 歌词本身由模块自行向官方接口拉取原生 QRC 报文并解密，
- * 与宿主内部模型彻底解耦——宿主改一次模型，本层不受影响。
- * <p>
- * 进程约束
- * 只在 {@code :QQPlayerService} 进程内挂载。QQ 音乐的多个子进程都会构造歌词相关对象，
- * 不设约束会引入与播放无关的噪声拦截。
+ * QQ 音乐 Hook 锚点：从歌词加载请求的载体上取回当前曲目的官方标识
+ *
+ * <p>QQ 音乐 20.9+ 的歌词行/词模型位于 {@code com.lyricengine.base.*}，深度混淆且结构
+ * 随版本变动。但无论模型怎么改，宿主都必须先把 {@code LyricLoadBean}（含
+ * {@code SongInfo}）交给歌词引擎，这个构造入口是稳定的。
+ *
+ * <p>本层只做一件事：拦截该构造器，取出 {@code songMID} / {@code songID}。歌词本身由
+ * 模块向官方接口拉取原生 QRC 报文并解密，与宿主内部模型解耦。
+ *
+ * <p>进程约束：只在 {@code :QQPlayerService} 进程内挂载。QQ 音乐的多个子进程都会构造
+ * 歌词相关对象，不设约束会引入与播放无关的噪声拦截。
  *
  * @author 焕晨HChen
  */
@@ -64,7 +61,7 @@ public final class QQAnchors {
     private static final String CACHE_KEY = "qqmusic_lyric_load_bean_class";
 
     /**
-     * 锚点：该构造器 {@code toString()} 的固定格式串。
+     * 锚点：该构造器 {@code toString()} 的固定格式串
      */
     private static final String ANCHOR = "LyricLoadBean(songInfo=";
 
@@ -84,7 +81,7 @@ public final class QQAnchors {
     private static volatile boolean sInstalled;
 
     /**
-     * 上一次已输出的原始串，用于抑制宿主的重复构造刷屏。
+     * 最近一次输出的原始串，用于抑制宿主重复构造造成的刷屏
      */
     private static volatile String sLastRawToString;
     private static volatile String sLastRawShortMessage;
@@ -94,14 +91,14 @@ public final class QQAnchors {
     }
 
     /**
-     * 取回当前曲目标识时的回调。
+     * 取回当前曲目标识时的回调
      */
     public interface SongInfoListener {
         void onSongInfo(@NonNull String songMid, long songId, @NonNull String title, @NonNull String artist);
     }
 
     /**
-     * 定位并挂载 Hook。幂等；失败只记录日志。
+     * 定位并挂载 Hook。幂等；失败只记录日志
      *
      * @param listener 宿主加载某曲目歌词时回调
      */
@@ -111,8 +108,8 @@ public final class QQAnchors {
 
         String process = currentProcessName();
         if (process != null && process.indexOf(':') >= 0 && !process.endsWith(TARGET_PROCESS_SUFFIX)) {
-            // I 级而非 D 级：判据写死了子进程名，宿主一旦改名这里就永不挂载且悄无声息，
-            // 必须能在默认日志级别下看见"没挂"
+            // 用 I 级而非 D 级：判据是写死的子进程名，宿主改名后本层不会挂载且没有
+            // 其他信号，默认日志级别下必须能看见未挂载
             AndroidLog.logI(TAG, "Skipping lyric anchor in non-player sub-process: " + process
                 + " (expected suffix: " + TARGET_PROCESS_SUFFIX + ")");
             return;
@@ -160,7 +157,7 @@ public final class QQAnchors {
     }
 
     /**
-     * 首参是否为宿主曲目信息类型。
+     * 首参是否为宿主曲目信息类型
      * <p>
      * 这里出现的 {@code SongInfo} 是宿主的业务类名（非混淆产物），跨版本稳定；
      * 判据用后缀匹配以容忍包路径调整。
@@ -172,7 +169,7 @@ public final class QQAnchors {
     }
 
     /**
-     * 输出候选构造器清单，用于核对"到底挂了哪一个"。
+     * 输出候选构造器清单，用于核对实际挂载的构造器
      */
     private static void dumpConstructors(@NonNull Class<?> beanClass) {
         StringBuilder builder = new StringBuilder();
@@ -283,7 +280,7 @@ public final class QQAnchors {
     }
 
     /**
-     * 过滤宿主内部字符串（URL、JSON、十六进制指纹等）冒充曲名的情况。
+     * 过滤宿主内部字符串（URL、JSON、十六进制指纹等）冒充曲名的情况
      */
     private static boolean isPlausible(@Nullable String value) {
         if (value == null) return false;

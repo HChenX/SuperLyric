@@ -44,9 +44,9 @@ import com.hchen.superlyric.kernel.text.LyricText
  * ```
  *
  * 三条判据
- * - 译文来源：`translations.cn` 支持两种实际形态——与 `sentences` 平行的对象数组，
- *   或 LRC 形态的字符串——两种形态都归一为 [TimeText]，再统一走 [TranslationMerger] 对齐
- * - 相对时间判定：以逐句局部比较判断词时间戳是否为行内相对值——仅当词的 `startMs`
+ * - 译文来源：`translations.cn` 支持两种实际形态：与 `sentences` 平行的对象数组，
+ *   或 LRC 形态的字符串：两种形态都归一为 [TimeText]，再统一走 [TranslationMerger] 对齐
+ * - 相对时间判定：以逐句局部比较判断词时间戳是否为行内相对值：仅当词的 `startMs`
  *   小于所属句的 `startMs` 时才视其为行内相对偏移。若改用 `lineStart > 1000` 这类全局阈值，
  *   曲目开头 1 秒内的行会全部误判，逐字时序坍缩到行首
  * - 句内插值：词缺失时间戳时按句时长与字长比例插值，而不是一律堆到句首
@@ -62,10 +62,10 @@ object SodaJsonParser {
      *
      * 守的是本层的分配与逐句处理：`sentences` 的规模决定 `ArrayList` 的预分配，
      * 也决定下面这一轮要跑多少次解析。报文的 JSON 早已被上游物化成对象树，这个上限拦不住
-     * 那一次分配——要防它得在读取侧设界（`ResponseBodies.readTextBounded`）。
+     * 那一次分配：要防它得在读取侧设界（`ResponseBodies.readTextBounded`）。
      *
-     * 正常曲目连千行都到不了，超限只可能是畸形载荷；代价是超过上限的合法载荷会被
-     * 静默截断（内核没有日志出口，只能静默）
+     * 正常曲目远少于此值，超限只可能是畸形载荷；超过上限的合法载荷会被
+     * 静默截断（内核没有日志出口）
      */
     private const val MAX_SENTENCES = 4096
 
@@ -188,11 +188,11 @@ object SodaJsonParser {
     /**
      * 解析 `translations.cn`
      *
-     * 该字段在真实载荷中有两种形态，均归一为 [TimeText]：
+     * 该字段有两种形态，均归一为 [TimeText]：
      * - 与 `sentences` 平行的对象数组，逐项读取 `startMs` 与 `text`
      * - LRC 形态字符串（`[mm:ss.xx]译文`）
      *
-     * 形态无法识别时返回空列表——此时只丢失译文，绝不影响主歌词。
+     * 形态无法识别时返回空列表：此时只丢失译文，不影响主歌词
      */
     private fun parseTranslations(root: JsonObject): List<TimeText> {
         val translations = root.get("translations") as? JsonObject ?: return emptyList()
@@ -243,7 +243,7 @@ object SodaJsonParser {
      * 容器嵌套深度上限
      *
      * 递归只沿固定几个键下降，但同一个键可以层层套（`{"lyrics":{"lyrics":{…}}}`），
-     * 因此深度并不天然有界。真实载荷最多两层，超限即判形态不符
+     * 因此深度并不天然有界。常见载荷最多两层，超限即判形态不符
      */
     private const val MAX_CONTAINER_DEPTH = 4
 

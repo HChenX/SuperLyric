@@ -21,7 +21,7 @@ package com.hchen.superlyric.kernel.orchestrate
 import com.hchen.superlyric.kernel.identity.TrackIdentity
 
 /**
- * 一次曲目请求在编排器锁内的可变状态。
+ * 一次曲目请求在编排器锁内的可变状态
  *
  * 所有字段只在 [LyricOrchestrator] 的锁内读写；对外通过编排器的只读属性观察。
  */

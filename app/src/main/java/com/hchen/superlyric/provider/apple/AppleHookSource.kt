@@ -33,8 +33,8 @@ import com.hchen.superlyric.utils.LyricDiag
 /**
  * Apple Music Hook 取词来源
  *
- * 宿主给出的文本是带 HTML 标记的（`` / `<br>` / 实体转义），在这里统一净化：
- * 剥标签、还原实体、剥离零宽字符。Apple 不使用协议报文，因此这里没有解析层，只有模型映射
+ * 宿主文本带有 HTML 标记（`<br>` / 实体转义），在此统一净化：剥离标签、还原实体、
+ * 清理零宽字符。Apple 不使用协议报文，因此没有解析层，只做模型映射。
  *
  * @author 焕晨HChen
  */
@@ -42,7 +42,7 @@ class AppleHookSource : HookLyricSource {
 
     override val sourceName: String = "AppleHook"
 
-    /** session 与 identity 作为一个快照发布，避免回调读到跨代际组合。 */
+    /** session 与 identity 作为一个快照发布，避免回调读到跨代际组合 */
     private val requests = com.hchen.superlyric.provider.base.SourceRequestGate()
 
     override fun install() {
@@ -68,7 +68,7 @@ class AppleHookSource : HookLyricSource {
     /**
      * 宿主明确表示某一首没有歌词
      *
-     * 采纳前必须确认它说的就是当前这一首——见 [trackGuard]
+     * 采纳前必须确认它说的是当前曲目，见 [trackGuard]。
      */
     private fun onNoLyricVerdict(itemId: String?) {
         val current = requests.current() ?: return
@@ -78,28 +78,24 @@ class AppleHookSource : HookLyricSource {
     }
 
     /**
-     * 判定这个回调说的是不是当前这一首，并按 [enforce] 决定对不上时的后果
+     * 判定回调是否属于当前曲目，并按 [enforce] 决定不匹配时的后果
      *
-     * 为什么需要
-     * [AppleAnchors] 的取词有 350ms 去抖，`requestLyrics(item)` 可能在切歌后才完成；
-     * 回调携带的 itemId 可能属于上一首。必须用当前请求身份校验，否则旧歌词会挂到新曲目，
+     * [AppleAnchors] 的取词有 350ms 去抖，`requestLyrics(item)` 可能在切歌后完成，
+     * 回调携带的 itemId 可能属于上一首。必须用当前请求身份校验，否则过期歌词会挂到新曲目，
      * 无词结论还会错误下发纯音乐占位。
      *
-     * 为什么两条路的后果不同
-     * 判等依赖"两套 id 可比"这个未在真机确认的前提（见 [judgeTrack]）。
-     * - 无词结论是终态：判错的代价是把有歌词的曲目永久钉成纯音乐，因此只采纳
-     *   确认同一首（`SAME`）这一种。"确定对不上"与"无从判定"都不采纳——后者同样
-     *   说明这条判据不成立，而它一旦放行就等于押注在一个未经确认的前提上
-     * - 歌词载荷是可自愈的：判错只是显示了一首歌的词，下一次投递就纠正了；
-     *   而从严的代价是——一旦前提不成立，Apple 的歌词会一条都投不出去。两害相权，
-     *   载荷路径只留痕、不丢弃
+     * 两条路径的后果不同：
+     * - 无词结论是终态，误判会把有歌词的曲目永久标记为纯音乐，因此只采纳 `SAME`；
+     *   `DIFFERENT` 与 `UNVERIFIABLE` 都不采纳，后者同样说明判据不成立
+     * - 歌词载荷可被下一次投递纠正，误判只影响一次显示；从严会在 id 规则不成立时
+     * 丢弃全部 Apple 歌词，因此载荷路径只记录、不丢弃
      *
-     * 两条路都把判定结果打进日志：否则"从未收到回调"与"收到但每次都被拦下"长得一模一样
+     * 两条路径都把判定结果写入日志，以区分未收到回调与每次都被拦截。
      *
      * @param itemId  回调携带的曲目标识，可能为 null
      * @param what    用于日志的回调类型
-     * @param enforce 对不上时是否丢弃（投递载荷时传 false）
-     * @return 调用方是否可以继续采纳这次回调
+     * @param enforce 不匹配时是否丢弃（投递载荷时传 false）
+     * @return 调用方是否可以继续采纳该回调
      */
     private fun trackGuard(
         itemId: String?,
@@ -115,9 +111,9 @@ class AppleHookSource : HookLyricSource {
         when (verdict) {
             TrackVerdict.SAME -> Unit
 
-            // 两边有一边取不到标识 ⇒ 无从判定。载荷照旧投递（判错可自愈），
-            // 但无词结论不能采纳：它是终态，而"无从判定"恰恰说明这条判据不成立。
-            // 代价是这首曲目拿不到纯音乐占位（显示为空），比"有歌词却被永久钉死"可接受
+            // 任一侧取不到标识即无从判定。载荷仍投递（判错可自愈），
+            // 但无词结论不能采纳：它是终态，而“无从判定”说明判据不成立。
+            // 该曲目因此拿不到纯音乐占位并显示为空，但不会把有歌词的曲目标为纯音乐
             TrackVerdict.UNVERIFIABLE -> AndroidLog.logW(
                 sourceName,
                 "$what has no comparable track id (reported=$reported, current=$current); " +
@@ -141,8 +137,8 @@ class AppleHookSource : HookLyricSource {
     /**
      * [trackGuard] 的纯判定部分
      *
-     * 六格里只有一格放行——这条规则写错过两次，所以每一格都要有测试钉住：
-     * 先是两条路都不拦（过期结论投给了新曲目），后是 `enforce` 形同虚设（注释说从严、代码照放行）。
+     * 仅 `SAME` 放行；`UNVERIFIABLE` 与 `DIFFERENT` 只在未启用 [enforce] 时放行。
+     * 该规则覆盖六种判定组合，单测固定这些边界。
      *
      * @param enforce 判据不成立时是否丢弃调用方（投递载荷传 false，终态结论传 true）
      */
@@ -155,19 +151,16 @@ class AppleHookSource : HookLyricSource {
     internal enum class TrackVerdict { SAME, DIFFERENT, UNVERIFIABLE }
 
     /**
-     * 判定一个回调说的曲目与当前曲目是否同一首（纯函数，便于单测）
+     * 判定回调曲目与当前曲目是否同一首（纯函数，便于单测）
      *
-     * 为什么需要
-     * [AppleAnchors] 的取词有 350ms 去抖，`requestLyrics(item)` 可能在切歌后才完成；
-     * 回调携带的 itemId 可能属于上一首。必须用当前请求身份校验，否则旧歌词会挂到新曲目，
-     * 无词结论还会错误下发纯音乐占位。
+     * 同样受 350ms 去抖影响，itemId 可能属于上一首；调用方必须校验，
+     * 否则过期歌词会挂到新曲目。
      *
-     * 判等为什么用"相等或互相包含"
-     * 曲目标识在这一层有两个来源：本来源的 [TrackIdentity]（来自基类 `buildIdentity`，
-     * 取 `MediaMetadata` 的 `MEDIA_ID`）与锚点手里的 `PlaybackItem.getId()`。
-     * 两者是否同一套字符串并未在真机上确认，严格判等一旦假设错，会把 Apple 的
-     * 正常投递全部丢掉。因此取宽容判等：只有"两边都有值、且互不包含"才认定对不上。
-     * 代价是极端情况下漏拦一次过期投递——那只是退回改动前的行为，不会更糟。
+     * 判等采用“相等或互相包含”：曲目标识有两个来源，本来源的 [TrackIdentity]
+     * （基类 `buildIdentity` 取 `MediaMetadata.MEDIA_ID`）与锚点持有的
+     * `PlaybackItem.getId()`。两者是否同一套字符串尚未在真机确认；严格判等一旦假设错误，
+     * 会丢弃 Apple 的正常投递。因此只有两边都有值且互不包含时才认定对不上。
+     * 极端情况下可能漏拦一次过期投递，但不会比不校验更差。
      *
      * @param itemId         回调携带的曲目标识，可能为 null
      * @param currentStableId 当前曲目的稳定标识（可能带命名空间前缀），可能为 null
@@ -186,7 +179,7 @@ class AppleHookSource : HookLyricSource {
         val identity = current.identity
         trackGuard(itemId, identity.stableId, "lyric payload", enforce = false)
 
-        // 宿主原始模型（含 HTML 标记）——Apple 没有协议报文，这就是"未解析数据"
+        // 宿主原始模型（含 HTML 标记）；Apple 没有协议报文，这就是未解析数据
         LyricDiag.dumpPayload(sourceName, "RAW-HOST-MODEL", dumpHostLines(lines))
 
         val mapped = lines.mapNotNull { line ->
@@ -243,16 +236,16 @@ class AppleHookSource : HookLyricSource {
     }
 
     /**
-     * 剥离 HTML 标记、还原实体、再剥离零宽字符。
+     * 剥离 HTML 标记、还原实体，再清理零宽字符
      *
-     * Apple 是本项目唯一没有协议报文、只从宿主模型取文本的 Provider，
-     * 因此这段净化是它唯一可被单测覆盖的逻辑（`internal` 仅为测试可见性）。
+     * Apple 没有协议报文，只从宿主模型取文本；这段净化是唯一可被单测覆盖的逻辑
+     * （`internal` 仅为测试可见性）。
      */
     internal fun cleanHtml(raw: String?): String {
         if (raw.isNullOrEmpty()) return ""
 
-        // `<br>` 必须先换成一个空格再剥其它标签：直接删掉会把两段文字粘在一起
-        // （`first<br>second` → `firstsecond`），词组边界就丢了。
+        // `<br>` 必须先替换为空格再剥离其它标签：直接删除会把 `first<br>second`
+        // 变成 `firstsecond`，丢失分词边界。
         val withBreaks = HTML_BREAK.replace(raw, " ")
         val withoutTags = HTML_TAG.replace(withBreaks, "")
         return LyricText.cleanInvisibleChars(LyricText.decodeEntities(withoutTags)).trim()

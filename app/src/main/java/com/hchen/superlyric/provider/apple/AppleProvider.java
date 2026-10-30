@@ -25,15 +25,13 @@ import com.hchen.superlyric.provider.base.HookLyricSource;
 import com.hchen.superlyric.provider.base.MusicProvider;
 
 /**
- * Apple Music 歌词提供者。
+ * Apple Music 歌词提供者
  * <p>
- * 为什么只有 Hook 路径
- * Apple Music 的歌词由 JNI 侧解析后交给 Java 层，模块拿不到可直接解析的明文报文；
- * 同时其歌词接口需要 Apple 的 Music-User-Token，模块不持有、也不应持有用户凭证。
- * 因此本 Provider 只实现 Hook 路径。
+ * 仅实现 Hook 路径：Apple Music 的歌词由 JNI 侧解析后交给 Java 层，模块拿不到可直接解析的
+ * 明文报文；其歌词接口需要 Apple 的 Music-User-Token，模块不持有、也不应持有用户凭证。
  *
- * <p>另一个后果是没有网络兜底：一旦宿主结构变动导致抽取失败，本 Provider 会静默失效，
- * 而不是退化成"从别的平台拉一首同名歌"——后者在跨语言曲库上错配率很高。
+ * <p>没有网络兜底：宿主结构变化导致抽取失败时，该 Provider 不发布结果，而不是从其它平台
+ * 拉取同名歌曲；跨语言曲库的匹配错误率高。
  *
  * @author 焕晨HChen
  */

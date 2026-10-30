@@ -27,17 +27,15 @@ import com.hchen.superlyric.provider.base.HookLyricSource;
 import com.hchen.superlyric.provider.base.MusicProvider;
 
 /**
- * 酷狗概念版歌词提供者。
+ * 酷狗概念版歌词提供者
  * <p>
- * 与酷狗音乐的关系
- * 概念版与酷狗音乐同源（同为 {@code com.kugou.framework} 播放服务），因此两者的取词
- * 路线完全一致：宿主把原生报文放在自己的内存里、不落盘，没有可用的 Hook 取词点，
- * 于是都只走官方 KRC 接口。差异仅在于目标包名，其余（标识构建、直查落空后回退到
- * 「歌名 + 歌手」检索、缓存命名空间）全部共用，理由与边界详见
- * {@link KuGouProvider} 的类注释。
+ * 概念版与酷狗音乐同源（同为 {@code com.kugou.framework} 播放服务），取词路线一致：
+ * 宿主把原生报文放在内存中、不落盘，没有可用的 Hook 取词点，只走官方 KRC 接口。
+ * 差异仅在目标包名；标识构建、直查落空后回退到「歌名 + 歌手」检索、缓存命名空间
+ * 全部共用，边界详见 {@link KuGouProvider} 的类注释。
  *
- * <p>本类必须用 Java 编写：{@code @HookThis} 由 Java 注解处理器消费，
- * 而 Kotlin 类不会经过该处理器，写 Kotlin 会导致整个 Provider 不被注册。
+ * <p>本类必须用 Java：{@code @HookThis} 由 Java 注解处理器消费，Kotlin 类不经过该处理器，
+ * 写 Kotlin 会导致 Provider 不被注册。
  *
  * @author 焕晨HChen
  */
