@@ -246,6 +246,12 @@ with blank lines; split a long explanation at sentence boundaries instead of wri
 - README and other documents use plain Markdown: headings, short paragraphs, lists, tables, and
   links. No HTML, badges, emoji, or marketing copy.
 
+### Fully qualified names
+
+- Import types used in code. Write a package-qualified type inline only when a simple-name conflict
+  requires it.
+- Class-name strings used for reflection, manifests, scope lists, and resources stay fully qualified.
+
 ### Comments explain the current code
 
 - Explain a non-obvious invariant, boundary, or failure mode. Do not restate the identifier.
