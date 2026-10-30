@@ -1,95 +1,52 @@
-<div align="center">
-<h1>SuperLyric</h1>
+# SuperLyric
 
-![stars](https://img.shields.io/github/stars/HChenX/SuperLyric?style=flat)
-![downloads](https://img.shields.io/github/downloads/HChenX/SuperLyric/total)
-![Github repo size](https://img.shields.io/github/repo-size/HChenX/SuperLyric)
-[![GitHub release (latest by date)](https://img.shields.io/github/v/release/HChenX/SuperLyric)](https://github.com/HChenX/SuperLyric/releases)
-[![GitHub Release Date](https://img.shields.io/github/release-date/HChenX/SuperLyric)](https://github.com/HChenX/SuperLyric/releases)
-![last commit](https://img.shields.io/github/last-commit/HChenX/SuperLyric?style=flat)
-![language](https://img.shields.io/badge/language-java%2Fkotlin-purple)
+[简体中文](README.md) | English
 
-<p><b><a href="README-en.md">English</a> | <a href="README.md">简体中文</a></b></p>
-<p>Lyrics Fetcher | Super Lyric</p>
-</div>
+An LSPosed module that publishes lyrics from music apps to Android over Binder.
 
----
+## Features
 
-## ✨ Module Introduction
+- Acquires lyrics through host hooks or online endpoints, choosing the path per app.
+- Publishes lyrics to 4.0 clients through the super_lyric.v4 frame interface and keeps the 3.x super_lyric interface.
+- Playback state and progress come from the system MediaSession; the module publishes full lyrics only.
 
-- A lyrics acquisition and publishing module for music applications based on Binder data
-  transmission!
-- Completely abandons the traditional broadcast approach, fully embracing the higher-performance,
-  lower-latency Binder cross-process capabilities!
-- Lyrics can be acquired via Hook or the network: the acquisition mode is switchable per app for
-  NetEase and Honor Music, Spotify uses the network path, and online lyrics are locally cached.
+## Supported apps
 
----
+| App | Package | Mode |
+| :--- | :--- | :--- |
+| Apple Music | com.apple.android.music | Hook |
+| BoDian Music | cn.wenyu.bodian | Hook |
+| Kugou Music | com.kugou.android | Network |
+| Kugou Music Lite | com.kugou.android.lite | Network |
+| Kuwo Music | cn.kuwo.player | Hook |
+| Kuwo Music Car | cn.kuwo.kwmusiccar | Hook |
+| Migu Music | cmccwm.mobilemusic | Hook |
+| NetEase Cloud Music | com.netease.cloudmusic | Network |
+| Poweramp | com.maxmpz.audioplayer | Hook (local LRC / lyric cache) |
+| QQ Music | com.tencent.qqmusic | Hook |
+| Salt Music | com.salt.music | Hook |
+| Soda Music | com.luna.music | Hook |
+| Spotify | com.spotify.music | Network |
+| Flamingo | No fixed package | Native API |
+| [Cone Player](https://coneplayer.trantor.ink) | ink.trantor.coneplayer | Native API |
 
-## 🛠 Supported Applications
+## Acquisition modes
 
-- Apple Music (com.apple.android.music) -> Hook Acquisition
-- BoDian Music (cn.wenyu.bodian) -> Hook Acquisition
-- Kugou Music (com.kugou.android) -> Network
-- Kugou Music Lite (com.kugou.android.lite) -> Network
-- Migu Music (cmccwm.mobilemusic) -> Hook Acquisition
-- NetEase Cloud Music (com.netease.cloudmusic) -> Network
-- Poweramp (com.maxmpz.audioplayer) -> Hook Acquisition (local LRC / lyric cache)
-- QQ Music (com.tencent.qqmusic) -> Hook Acquisition
-- Salt Music (com.salt.music) -> Hook Acquisition
-- Soda Music (com.luna.music) -> Hook Acquisition
-- Spotify (com.spotify.music) -> Network
-- Flamingo (unknown) -> Native API Support
-- [Cone Player](https://coneplayer.trantor.ink) (ink.trantor.coneplayer) -> Native API Support
-<!-- Applications not yet adapted to the 4.0 Unified Architecture:
-- APlayer (remix.myplayer) -> Meizu Status Bar Lyrics
-- Stream Music (cn.aqzscn.stream_music) -> Meizu Status Bar Lyrics
-- Gramophone (org.akanework.gramophone) -> Meizu Status Bar Lyrics
-- OPPO Music (com.heytap.music) -> Bluetooth Lyrics
-- HiBy Music (com.hiby.music) -> Bluetooth Lyrics
-- Honor Music (com.hihonor.cloudmusic) -> Meizu Status Bar Lyrics / Network
-- Huawei Music (com.huawei.music) -> Bluetooth Lyrics
-- Kde (org.kde.kdeconnect_tp) -> Bluetooth Lyrics
-- Kuwo Music (cn.kuwo.player) -> Bluetooth Lyrics
-- LMusic (com.lalilu.lmusic) -> Meizu Status Bar Lyrics
-- LX Music (cn.toside.music.mobile) -> Desktop Lyrics
-- Meizu Music (com.meizu.media.music) -> Meizu Status Bar Lyrics
-- Mimicry Music (com.mimicry.mymusic) -> Meizu Status Bar Lyrics
-- Mi Music (com.miui.player) -> Bluetooth Lyrics
-- MusicFree (fun.upup.musicfree) -> Desktop Lyrics
-- OPPO Music (com.oppo.music) -> Bluetooth Lyrics
-- QingYan Music (com.xuncorp.qinalt.music) -> Meizu Status Bar Lyrics
-- RPlayer (com.r.rplayer) -> Bluetooth Lyrics
-- Suvine Music (com.xuncorp.suvine.music) -> Meizu Status Bar Lyrics
-- Symfonium (app.symfonik.music.player) -> Hook Acquisition
--->
+- Hook: reads the host's internal lyric model without network access.
+- Network: uses host media information and online endpoints, with local caching.
+- Native API: the host integrates SuperLyric API directly.
 
-> Acquisition and usage notes:
-> - **Hook Acquisition**: Hooks host application's internal lyric models. No setup required, play normally.
-> - **Network**: Fetches online lyrics via MediaSession and online API with local caching. Keep network connected, play normally.
-> - **Native API Support**: Host application natively integrates SuperLyric API. Play normally.
-
----
-
-## 🛠 Unsupported Applications
+## Unsupported
 
 - YouTube Music
-- If you have good adaptation methods, PRs are welcome!
+- Apps not listed above are not supported.
 
----
+## API project
 
-## 🌟 API Project
+[SuperLyricApi](https://github.com/HChenX/SuperLyricApi)
 
-- API Project Repository: [SuperLyricApi](https://github.com/HChenX/SuperLyricApi)
+## Notice
 
----
-
-## 📢 Project Statement
-
-- ⚠ **Using this module implies that you are willing to bear all consequences!**
-- ⚠ **This project assumes no responsibility for any derivative projects!**
-- ⚠ **Please credit the author when using code from this project!**
-
-## 🎉 Closing
-
-💖 **Thank you for your support, and enjoy your day!** 🚀
+- Use of this module is at the user's own risk.
+- This project is not responsible for derivative projects.
+- Credit the author when using code from this project.

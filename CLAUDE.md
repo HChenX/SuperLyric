@@ -234,6 +234,18 @@ Use one summary line, then only the invariant or constraint a reader cannot infe
 No trailing period on the summary line. Separate the summary, paragraphs, lists, and code blocks
 with blank lines; split a long explanation at sentence boundaries instead of writing a dense block.
 
+### Writing style
+
+- Describe current behavior and constraints only. No history, changelogs, anecdotes, or first person.
+- Keep prose short. One sentence for a summary; add a paragraph only for a non-obvious invariant,
+  boundary, or failure mode. Delete comments that restate the code.
+- Stay objective and neutral. No rhetorical questions, exclamations, emphasis, emotion,
+  colloquialisms, or filler transitions.
+- Use standard Javadoc/KDoc structure. No bold, italic, headings, emoji, or decorative separators
+  in either format.
+- README and other documents use plain Markdown: headings, short paragraphs, lists, tables, and
+  links. No HTML, badges, emoji, or marketing copy.
+
 ### Comments explain the current code
 
 - Explain a non-obvious invariant, boundary, or failure mode. Do not restate the identifier.
