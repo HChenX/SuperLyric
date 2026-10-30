@@ -22,6 +22,5 @@ local.properties
 
 # Reverse engineering & Decompiled artifacts
 /music_apks/
-/docs/
-/bugs/
+/bug_logs/
 .kotlin/
