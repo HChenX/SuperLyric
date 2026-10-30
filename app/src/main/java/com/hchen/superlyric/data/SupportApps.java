@@ -38,6 +38,7 @@ public final class SupportApps {
             add("com.kugou.android.lite"); // 酷狗概念版
             add("cn.kuwo.player"); // 酷我音乐
             add("cn.kuwo.kwmusiccar"); // 酷我音乐车机版
+            add("com.miui.player"); // 小米音乐
             add("cmccwm.mobilemusic"); // 咪咕音乐
             add("com.netease.cloudmusic"); // 网易云音乐
             add("com.maxmpz.audioplayer"); // Poweramp
@@ -56,6 +57,7 @@ public final class SupportApps {
             put("com.kugou.android.lite", R.string.kugou_lite_music);
             put("cn.kuwo.player", R.string.kuwo_music);
             put("cn.kuwo.kwmusiccar", R.string.kuwo_car_music);
+            put("com.miui.player", R.string.miui_music);
             put("cmccwm.mobilemusic", R.string.migu_music);
             put("com.netease.cloudmusic", R.string.wangyiyun_music);
             put("com.maxmpz.audioplayer", R.string.poweramp_music);

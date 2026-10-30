@@ -21,6 +21,7 @@ An LSPosed module that publishes lyrics from music apps to Android over Binder.
 | Kuwo Music | cn.kuwo.player | Hook |
 | Kuwo Music Car | cn.kuwo.kwmusiccar | Hook |
 | Migu Music | cmccwm.mobilemusic | Hook |
+| Mi Music | com.miui.player | Hook |
 | NetEase Cloud Music | com.netease.cloudmusic | Network |
 | Poweramp | com.maxmpz.audioplayer | Hook (local LRC / lyric cache) |
 | QQ Music | com.tencent.qqmusic | Hook |

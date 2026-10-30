@@ -21,6 +21,7 @@
 | 酷我音乐 | cn.kuwo.player | Hook 获取 |
 | 酷我音乐车机版 | cn.kuwo.kwmusiccar | Hook 获取 |
 | 咪咕音乐 | cmccwm.mobilemusic | Hook 获取 |
+| 小米音乐 | com.miui.player | Hook 获取 |
 | 网易云音乐 | com.netease.cloudmusic | 网络获取 |
 | Poweramp | com.maxmpz.audioplayer | Hook 获取（本地 LRC / 歌词缓存） |
 | QQ 音乐 | com.tencent.qqmusic | Hook 获取 |
