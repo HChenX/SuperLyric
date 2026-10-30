@@ -33,6 +33,7 @@
 - Kugou Music (com.kugou.android) -> Network
 - Kugou Music Lite (com.kugou.android.lite) -> Network
 - Migu Music (cmccwm.mobilemusic) -> Hook Acquisition
+- Mi Music (com.miui.player) -> Hook Acquisition
 - NetEase Cloud Music (com.netease.cloudmusic) -> Network
 - Poweramp (com.maxmpz.audioplayer) -> Hook Acquisition (local LRC / lyric cache)
 - QQ Music (com.tencent.qqmusic) -> Hook Acquisition
@@ -55,7 +56,6 @@
 - LX Music (cn.toside.music.mobile) -> Desktop Lyrics
 - Meizu Music (com.meizu.media.music) -> Meizu Status Bar Lyrics
 - Mimicry Music (com.mimicry.mymusic) -> Meizu Status Bar Lyrics
-- Mi Music (com.miui.player) -> Bluetooth Lyrics
 - MusicFree (fun.upup.musicfree) -> Desktop Lyrics
 - OPPO Music (com.oppo.music) -> Bluetooth Lyrics
 - QingYan Music (com.xuncorp.qinalt.music) -> Meizu Status Bar Lyrics
