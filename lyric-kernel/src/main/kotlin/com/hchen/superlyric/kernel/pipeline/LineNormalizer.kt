@@ -26,6 +26,9 @@ internal object LineNormalizer {
     private const val MAX_LINE_SPAN_MS = 300_000L
     private const val FALLBACK_LINE_MS = 5_000L
 
+    /** 行起始超出曲目时长的容差；平台会把推广行写成 99:00，但宿主时长偶尔偏短，容差取 2 分钟 */
+    private const val MAX_LINE_OVER_DURATION_MS = 120_000L
+
     fun collapseSimultaneous(lines: List<LyricLine>): List<LyricLine> {
         if (lines.size < 2) return lines
         val sorted = lines.sortedBy { it.startMs }
@@ -71,7 +74,10 @@ internal object LineNormalizer {
 
     fun normalize(lines: List<LyricLine>, durationMs: Long): List<LyricLine> {
         if (lines.isEmpty()) return emptyList()
-        val sorted = lines.filter { it.text.isNotBlank() }.sortedBy { it.startMs }
+        val sorted = lines.filter {
+            it.text.isNotBlank() &&
+                    (durationMs <= 0L || it.startMs <= durationMs + MAX_LINE_OVER_DURATION_MS)
+        }.sortedBy { it.startMs }
         if (sorted.isEmpty()) return emptyList()
         val result = ArrayList<LyricLine>(sorted.size)
         for (index in sorted.indices) {
@@ -84,7 +90,7 @@ internal object LineNormalizer {
                 .let { boundEnd(it, startMs, capByNext, durationMs) }
             val words = current.words.map { word ->
                 val wordStart = word.startMs.coerceIn(startMs, maxOf(startMs, endMs))
-                val wordEnd = word.endMs.coerceAtLeast(wordStart)
+                val wordEnd = word.endMs.coerceIn(wordStart, maxOf(startMs, endMs))
                 if (word.startMs == wordStart && word.endMs == wordEnd) word
                 else word.copy(startMs = wordStart, endMs = wordEnd)
             }
