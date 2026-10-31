@@ -185,6 +185,8 @@ Run every case below for a first adaptation. Run the same matrix for regression.
 | Scoring | Exact match, near-match, artist mismatch, duration mismatch | Correct candidate accepted or rejected; scores match unit-test thresholds |
 | Abnormal | Network failure, no lyrics, malformed response | No crash; logs identify the cause; no false instrumental result |
 
+Execute every row in the matrix individually. Do not combine rows, skip a row, or infer a pass from another row. Record each row as pass, fail, or blocked with its evidence. A blocked row is not a pass.
+
 Data consistency is a separate check. Compare the device output against the provider's local
 golden fixtures and unit-test expectations: title, artist, album, duration, stable ID, line text and
 timing, translation, phonetic, word timing, and line index. If the host version changed, update the
@@ -209,6 +211,15 @@ For each case, record the expected result, actual result, log path, and screensh
 
 Classify failures as environment, account, install, permission, decompilation, anchor, identity, timing, protocol, or test data. Fix the cause, rebuild, reinstall, restart the host, and rerun the failed case before the full matrix.
 
+The final report must contain:
+
+- one result for every row in 3.10, with expected result, actual result, status, and evidence;
+- every discovered issue, including severity, root cause, affected files or components, and proposed fix;
+- an ordered remediation plan, with the first action, reproduction steps, and exact files or commands needed to start the fix;
+- known limitations and the regression scope required after each fix.
+
+On developer approval, start directly at the first item of the remediation plan. Do not repeat environment discovery or ask for evidence already included in the report. If the developer does not approve remediation, stop after the report.
+
 Do not retry indefinitely. If two attempts do not identify the root cause, stop and ask the user. Stop immediately if the next step requires unauthorized settings changes, data clearing, root, a reboot, or bypassing store restrictions.
 
 ### 3.12 Test isolation and cleanup
@@ -227,8 +238,8 @@ Run this after every app, before starting another app:
 The user may submit multiple apps that are already adapted. Process them as a queue:
 
 1. Confirm each app is installed and record its version.
-2. For each app, complete steps 3.8 to 3.11: enable the module, restart the host, run the test matrix, and collect logs.
-3. Finish one app, record its result, and run the cleanup in 3.12 before starting the next.
+2. For each app, complete steps 3.8 to 3.11: enable the module, restart the host, run every test row, and collect logs.
+3. Finish one app, report every row and any issue, record its result, and run the cleanup in 3.12 before starting the next.
 4. If an app fails, pause the queue, return to section 3 to fix the adaptation, then resume the queue.
 5. Do not launch, operate, or collect logs for multiple apps concurrently.
 
@@ -238,6 +249,8 @@ A first adaptation is complete when:
 
 - the target app launches and loads the module;
 - the full test matrix passes;
+- every row in 3.10 has an explicit pass, fail, or blocked result with evidence;
+- the final report lists all issues and an ordered remediation plan;
 - there is no crash, ANR, or unexplained error log;
 - play, pause, stop, track switch, and cache behavior are correct;
 - line, word, translation, and phonetic data are correct;
@@ -282,7 +295,9 @@ APKs and decompiled artifacts remain local and must not be committed or redistri
     APK path and hash / decompiler versions
     Adaptation path: Hook / API / both
     Anchor summary
-    Test cases and results
+    Per-row test results (pass / fail / blocked, expected, actual, evidence)
+    Issues and ordered remediation plan
+    Remediation entry point (first action, files, commands)
     Log and screenshot evidence
     Known issues
     Acceptance result

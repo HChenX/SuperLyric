@@ -197,7 +197,8 @@ acceptance.
 - Restart the host after installing the module. Reboot only after framework changes and only with
   approval.
 - Run the test matrix with full module logs, collect evidence, fix failures, and repeat until the
-  acceptance criteria pass.
+  acceptance criteria pass. Report every matrix row with its result and evidence, and include an
+  ordered remediation plan for any issue.
 - Capture reproducible improvements in the guide only after developer approval. Review the guide
   after each adaptation or release and remove stale or duplicate content.
 
@@ -243,6 +244,7 @@ procedure.
 - `:lyric-kernel:test` and `:app:testDebugUnitTest` green
 - Observed on a real device with the log to back it up
 - The device test matrix in the adaptation guide passed
+- Every test row is reported with result and evidence; issues include a remediation plan
 - A regression test for every parser or orchestrator fix
 
 ---
