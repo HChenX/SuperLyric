@@ -187,8 +187,12 @@ acceptance.
 
 - Adapt one app at a time. Regression may cover multiple supported apps, but every app is tested
   sequentially.
-- Use mobile MCP for screen reads, taps, text input, scrolling, store navigation, and dismissing
-  ads or dialogs. Use ADB only for basic package, install, pull, force-stop, and log operations.
+- Use mobile MCP as the primary device interface for install, uninstall, launch, force-stop, logs,
+  screen reads, taps, text input, scrolling, store navigation, and dismissing ads or dialogs. Prefer
+  accessibility elements and element references; use a screenshot only when the element tree lacks
+  the needed information.
+- Use ADB only as a fallback for operations MCP cannot perform, mainly package path lookup and APK
+  pull. Do not silently switch to ADB when MCP fails.
 - Installing or uninstalling the target app, stopping or launching it, installing the module,
   reading or clearing logs, and selecting the target LSPosed scope are allowed within the task
   authorization.
@@ -218,6 +222,7 @@ This project's defining rule: **a claim is not true until it has been observed.*
 
 `LyricDiag` (log tag `SLDiag`) dumps the full raw payload and the parsed result. It is gated to
 debug builds or a DEBUG log level. Use it to compare the wire format against what the parser assumed.
+Use mobile MCP log access first. If MCP cannot provide filtered logs, the ADB fallback is:
 
 ```bash
 adb logcat -v time -s SLDiag
@@ -231,9 +236,10 @@ The module only takes effect after the host app is restarted, so the order is fi
 install → force-stop the host → clear logcat → launch and play
 ```
 
-ADB is non-root and limited to basic package, install, pull, force-stop, and log operations. Use
-mobile MCP for screen interaction. Do not modify device settings, delete files, clear app data, or
-use root without explicit approval. Do not operate the user's test phone unless asked; hand
+Mobile MCP is the primary interface for package, install, force-stop, log, and screen operations.
+ADB is a non-root fallback for operations MCP cannot perform, mainly package path lookup and APK
+pull; do not silently switch to ADB when MCP fails. Do not modify device settings, delete files,
+clear app data, or use root without explicit approval. Do not operate the user's test phone unless asked; hand
 device commands to the user when approval is required. See
 [docs/music-app-adaptation-and-testing.md](docs/music-app-adaptation-and-testing.md) for the full
 procedure.

@@ -24,21 +24,23 @@ Root is optional. Do not use root unless the user explicitly authorizes it. If m
 
 Record the device model, Android version, LSPosed version, target app version, module version, and source commit before testing.
 
-### 2.2 Permitted operations
+### 2.2 Device operations
 
-ADB is limited to basic operations:
+mobile MCP is the primary device interface. Use it for app installation and uninstallation, launch and force-stop, UI navigation, text input, store operations, log access, and screen inspection. Prefer the accessibility elements returned by the MCP element tree and act through element references. Use a screenshot only when the element tree lacks the required label, state, or coordinates, or when a visual check is necessary.
+
+ADB is a fallback, not the default. Use it only for operations MCP cannot perform, mainly package path lookup and APK pull. The fallback commands are:
 
     adb devices
     adb shell pm list packages
     adb shell pm path <package>
     adb shell dumpsys package <package>     # read-only version/source query
     adb pull <remote> <local>
-    adb install -r <apk>
-    adb uninstall <package>
-    adb shell am force-stop <package>
-    adb logcat -c / -d / filtered by tag
+    adb install -r <apk>                    # only if MCP install is unavailable
+    adb uninstall <package>                 # only if MCP uninstall is unavailable
+    adb shell am force-stop <package>       # only if MCP stop is unavailable
+    adb logcat -c / -d / filtered by tag    # only if MCP log access is insufficient
 
-Use mobile MCP for screen reading, taps, text input, scrolling, store navigation, and dismissing ads or dialogs. Do not use ADB as a substitute for complex UI automation.
+Do not silently fall back to ADB when MCP fails. If MCP is unavailable, ask the user to restore it; use ADB only with explicit approval and only for basic operations.
 
 Within the scope authorized for the task, the following are allowed:
 
@@ -71,7 +73,7 @@ Confirm the app name, package, version or store source, target device, test acco
 
 ### 3.2 Prepare the device
 
-Use ADB and mobile MCP to verify that:
+Use mobile MCP to verify that; use ADB only as a basic fallback:
 
 - the device is online and unlocked;
 - mobile MCP can list the device and read the current screen;
@@ -86,11 +88,11 @@ Check whether the package is already installed.
 
 If installed, record versionName, versionCode, and installation source, then launch it once to confirm it works. If a newer version is required, ask the user before updating.
 
-If not installed, use mobile MCP to open the phone's app store, search for the app, verify the name, developer, and package, and install the latest version. Pause and ask the user to handle store login, captcha, regional restrictions, or payment. Verify the package and version through ADB after installation.
+If not installed, use mobile MCP to open the phone's app store, search for the app, verify the name, developer, and package, and install the latest version. Pause and ask the user to handle store login, captcha, regional restrictions, or payment. Verify the package and version through MCP; use a read-only ADB package query only if MCP cannot provide it.
 
 ### 3.4 Extract and archive the APK
 
-Query the APK paths:
+Use MCP package or file access first. If MCP cannot expose the package paths or pull files, ADB is the fallback for package lookup and APK pull:
 
     adb shell pm path <package>
 
@@ -147,15 +149,16 @@ Complete all three registrations:
 ### 3.8 Build, install, and enable
 
     ./gradlew.bat :app:assembleDebug :app:assembleRelease
-    adb install -r app/build/outputs/apk/debug/<module>.apk
 
-Enable the module in LSPosed and select the target app in its scope. Force-stop and relaunch the target app so the module loads. Reboot only when system framework code changed, and ask the user first.
+Install the module through mobile MCP. If MCP cannot install APKs, use adb install -r app/build/outputs/apk/debug/<module>.apk as a fallback.
+
+Enable the module in LSPosed and select the target app in its scope. Force-stop and relaunch the target app through MCP so the module loads. Reboot only when system framework code changed, and ask the user first.
 
 If the module sees no installed apps, check the app-list read permission. Ask the user to grant it through the system UI. Do not bypass it with ADB or root.
 
 ### 3.9 Launch and prepare for testing
 
-Use mobile MCP to launch the target app, read the screen, and dismiss splash ads, pop-up ads, and update prompts. Confirm that the app reached its main screen, the account is usable, and the network is available. Pause for user input when login, captcha, membership, or regional restrictions block progress.
+Use mobile MCP to launch the target app, inspect the accessibility element tree, and dismiss splash ads, pop-up ads, and update prompts through element references. Use a screenshot only when the tree lacks the needed control or label. Confirm that the app reached its main screen, the account is usable, and the network is available. Pause for user input when login, captcha, membership, or regional restrictions block progress.
 
 Set the module log level to Debug/full, confirm that SLDiag and module logs are visible, clear logcat, and record the device, app, module, and commit identifiers. Do not hide failures by disabling logs.
 
@@ -187,6 +190,10 @@ Run every case below for a first adaptation. Run the same matrix for regression.
 
 Execute every row in the matrix individually. Do not combine rows, skip a row, or infer a pass from another row. Record each row as pass, fail, or blocked with its evidence. A blocked row is not a pass.
 
+Use the current playback queue for startup, play/pause, seek, speed, background or lock-screen control, continuous switching, and stop. Do not search for tracks for these cases.
+
+Actively search for cases that require a specific track: language coverage, instrumental, translation, phonetic or word timing, data consistency against a fixture, and scoring or cache cases where the current queue cannot supply the needed data. The AI selects tracks that maximize coverage: a known local fixture, complete word/translation/phonetic data, Chinese/English/minority content, instrumental material, and varied artists or durations. Prefer free, available tracks and do not purchase content. Use mobile MCP element operations for the search. If no suitable track exists, report the row as blocked.
+
 Data consistency is a separate check. Compare the device output against the provider's local
 golden fixtures and unit-test expectations: title, artist, album, duration, stable ID, line text and
 timing, translation, phonetic, word timing, and line index. If the host version changed, update the
@@ -199,7 +206,9 @@ LyricScorer unit-test thresholds. Cache behavior must cover a successful network
 track change, a version or locale change, an offline or failed response (with user approval), and a
 corrupt entry. No cached lyric may leak into another track.
 
-Use mobile MCP for search, taps, typing, and playback controls. Use ADB only for logs and basic app operations.
+Use mobile MCP for search, taps, typing, playback controls, and log access. Prefer accessibility element references over screenshot coordinates. Use a screenshot only when the accessibility tree does not provide the needed control or state.
+
+If MCP cannot provide filtered logs, use ADB logcat as a fallback:
 
     adb logcat -c
     adb logcat -d -v threadtime > music_apks/<package>/logs/<case>.log
@@ -226,8 +235,8 @@ Do not retry indefinitely. If two attempts do not identify the root cause, stop 
 
 Run this after every app, before starting another app:
 
-1. Stop playback, then force-stop the app with ADB or mobile MCP.
-2. Archive the app logs under music_apks/<package>/logs/, then clear logcat.
+1. Stop playback, then force-stop the app through mobile MCP. Use ADB force-stop only as a fallback.
+2. Archive the app logs under music_apks/<package>/logs/, then clear logs through MCP. Use ADB logcat -c only if MCP log access is unavailable.
 3. Confirm the app has no notification, foreground service, or active media session. Its playback state must not leak into the next test.
 4. Remove temporary screenshots, recordings, downloads, and other test byproducts from the workstation's shared locations. Keep evidence in the per-app directory. On the device, do not delete app data or user files; remove only test artifacts you created, and only with approval.
 5. Reset test-only module settings and log filters to the baseline. Do not leave the previous app log level or filters active.
@@ -278,7 +287,7 @@ APKs and decompiled artifacts remain local and must not be committed or redistri
 
 | Symptom | Action |
 | :--- | :--- |
-| Device offline or MCP unavailable | Ask the user to connect or authorize MCP; do not use a workaround |
+| Device offline or MCP unavailable | Ask the user to connect or authorize MCP; do not silently switch to ADB |
 | Store login, captcha, payment, or region block | Stop and ask the user |
 | Install fails repeatedly | Check package, storage, and version; retry once, then ask |
 | Decompilation fails | Check tools and protection; request guidance |
@@ -286,6 +295,7 @@ APKs and decompiled artifacts remain local and must not be committed or redistri
 | Module not loaded | Check scope, logs, and host restart; reboot only for framework changes and only after approval |
 | Lyrics wrong or stale | Check anchor, identity, timing, and stop semantics; fix and retest |
 | Crash or ANR | Collect logs, stop the test, fix before continuing |
+| Accessibility element missing | Use a screenshot to locate the control, then resume element references |
 | Operation needs unauthorized access | Stop and request permission |
 
 ## 7. Record Template
