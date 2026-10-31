@@ -164,7 +164,8 @@ complete provider.
    `createHookSource` / `createApiSource`, and `buildIdentity` when a stable ID is available.
 5. Register in all three places from §3.2.
 6. Add the app to `README.md` / `README-en.md`.
-7. Verify on a device (§5).
+7. Follow [docs/music-app-adaptation-and-testing.md](docs/music-app-adaptation-and-testing.md)
+   for APK extraction, device testing, and sign-off.
 
 Nothing else needs to change. Track-change detection, dual-path fallback, timeouts, retries and
 publishing are all handled by `MusicProvider` and `LyricOrchestrator`.
@@ -177,6 +178,26 @@ publishing are all handled by `MusicProvider` and `LyricOrchestrator`.
 - Delivering more than once is allowed; the orchestrator takes the first and drops the rest by
   epoch.
 - `cancel()` must make late deliveries harmless. Do not deliver after it.
+
+### 4.4 Device workflow
+
+[docs/music-app-adaptation-and-testing.md](docs/music-app-adaptation-and-testing.md) is the
+operational procedure for APK extraction, decompilation, device testing, log collection, and
+acceptance.
+
+- Adapt one app at a time. Regression may cover multiple supported apps, but every app is tested
+  sequentially.
+- Use mobile MCP for screen reads, taps, text input, scrolling, store navigation, and dismissing
+  ads or dialogs. Use ADB only for basic package, install, pull, force-stop, and log operations.
+- Installing or uninstalling the target app, stopping or launching it, installing the module,
+  reading or clearing logs, and selecting the target LSPosed scope are allowed within the task
+  authorization.
+- Ask before changing system settings, deleting files, clearing app data, using root, rebooting,
+  or bypassing store or account restrictions.
+- Restart the host after installing the module. Reboot only after framework changes and only with
+  approval.
+- Run the test matrix with full module logs, collect evidence, fix failures, and repeat until the
+  acceptance criteria pass.
 
 ---
 
@@ -204,19 +225,22 @@ adb logcat -v time -s SLDiag
 The module only takes effect after the host app is restarted, so the order is fixed:
 
 ```
-install → kill the music app → clear logcat → launch and play
+install → force-stop the host → clear logcat → launch and play
 ```
 
-`adb` here is non-root and read-only: install the module, read logs, kill the music app. **Do not
-modify anything on the device** — no deleting, no editing, no reading private app directories. Do
-not operate the user's test phone unless explicitly asked; hand device commands to the user. If a
-check needs root, hand the command to the user and ask for the output.
+ADB is non-root and limited to basic package, install, pull, force-stop, and log operations. Use
+mobile MCP for screen interaction. Do not modify device settings, delete files, clear app data, or
+use root without explicit approval. Do not operate the user's test phone unless asked; hand
+device commands to the user when approval is required. See
+[docs/music-app-adaptation-and-testing.md](docs/music-app-adaptation-and-testing.md) for the full
+procedure.
 
 ### What a finished change looks like
 
 - Built both variants: `:app:assembleDebug` and `:app:assembleRelease`
 - `:lyric-kernel:test` and `:app:testDebugUnitTest` green
 - Observed on a real device with the log to back it up
+- The device test matrix in the adaptation guide passed
 - A regression test for every parser or orchestrator fix
 
 ---
@@ -321,16 +345,18 @@ refactor could plausibly break.
 
 ## 9. Where the reasoning lives
 
-Only two places are visible to everyone who has the repository:
+The project keeps its reasoning in these visible places:
 
 | Where | Contents |
 | :--- | :--- |
 | `README.md` / `README-en.md` | supported apps and how to use the module |
 | The code itself | every rule above is argued in the KDoc / Javadoc of the thing that enforces it — `StopGate`, `StopEvidence`, `LyricOutcome`, `LyricScorer`, `Zlib`, `FetchSlot`, `LyricCacheStore`, `MusicProvider`. When a rule here feels arbitrary, that comment is the argument |
+| [docs/music-app-adaptation-and-testing.md](docs/music-app-adaptation-and-testing.md) | the operational procedure for APK extraction, adaptation, device testing, and acceptance. It is a checklist, not architecture rationale |
 | `git log` | the body of each commit states why the change was made and what evidence supports it |
 
-There is no separate design document on purpose: it would drift, and a stale rule is worse than no
-rule. If a rule needs a longer argument than a comment can hold, write it in the commit message.
+Do not add other standalone design documents: architecture rules stay in code and this file, and
+operational steps stay in the adaptation guide. If a rule needs a longer argument than a comment can
+hold, write it in the commit message.
 
 ---
 
