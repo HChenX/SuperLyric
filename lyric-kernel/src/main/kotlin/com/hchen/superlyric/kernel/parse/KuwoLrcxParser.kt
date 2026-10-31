@@ -12,15 +12,12 @@
  * GNU General Public License for more details.
  *
  * You should have received a copy of the GNU General Public License
- * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  *
  * Copyright (C) 2025-2026 HChenX
  */
 package com.hchen.superlyric.kernel.parse
 
-import com.hchen.superlyric.kernel.merge.SidecarChannel
-import com.hchen.superlyric.kernel.merge.TimeText
-import com.hchen.superlyric.kernel.merge.TranslationMerger
 import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.model.LyricLine
 import com.hchen.superlyric.kernel.model.LyricWord
@@ -40,11 +37,17 @@ import kotlin.math.max
  * 算式与宿主自身解析器（`com.tme.push.a3.f`）一致。
  * 文本归属规则相同：某个词标签之后、下一个词标签之前的文字属于该标签。
  *
- * 译文判定
- * 仅当某行的时间戳与某条逐字行的时间戳完全相同时，才认定它是该主行的译文。
- * 判据是"成对出现"这一结构事实，而非"缺少标签"这一缺席事实。若把任何不含 `<v1,v2>`
- * 标签的时间行都当作译文，没有逐字数据的正常主行会被挂到相邻行当译文（翻译错位），
- * 或找不到匹配时被静默丢弃（歌词丢失）。
+ * 译文归属
+ * 译文行在文件中紧跟它所翻译的主行，但时间戳可能等于下一条主行的起始，
+ * 而不是本行的起始：
+ * ```
+ * [00:00.529] <main> Running ...
+ * [00:02.145] <0,0>  经历着这种非同寻常的生活
+ * [00:02.145] <main> Chasing ...
+ * ```
+ * 只按时间戳相等配对会把译文挂到 Chasing。判据因此以文件顺序为主：
+ * 无标签行若紧跟某条主行、且时间戳等于下一条主行，则属于前一条主行；
+ * 时间戳与某条主行相同（译文在该主行之前或之后）时仍按时间戳配对。
  *
  * 缺密钥时不猜
  * 必须存在 `[kuwo:]` 头部标签；没有头部就不是 LRCX，交给通用 LRC 解析器处理。
@@ -68,6 +71,11 @@ object KuwoLrcxParser {
     private const val MAX_LINE_DURATION_MS = 4000L
 
     /**
+     * 文件中的一条行记录；保留原始顺序，译文配对需要它
+     */
+    private class Entry(val line: LyricLine, val timed: Boolean)
+
+    /**
      * 判定文本是否为 LRCX
      */
     fun canParse(text: String?): Boolean =
@@ -89,9 +97,7 @@ object KuwoLrcxParser {
         var artist = ""
         var album = ""
 
-        val taggedLines = ArrayList<LyricLine>()
-        val untaggedLines = ArrayList<LyricLine>()
-
+        val entries = ArrayList<Entry>()
         // 被识别成"行"、却没能产出任何文本的时间戳。必须记下来：译文的配对要靠主行的时间戳，
         // 一条主行被丢弃而时间戳没留下痕迹，它的译文就会在下面被误判成独立主行
         val discardedStarts = HashSet<Long>()
@@ -122,8 +128,7 @@ object KuwoLrcxParser {
                 continue
             }
 
-            val line = parseLine(content, lineStart, c, d)
-            if (line == null) {
+            val line = parseLine(content, lineStart, c, d) ?: run {
                 discardedStarts.add(lineStart)
                 continue
             }
@@ -138,42 +143,63 @@ object KuwoLrcxParser {
                 val v2 = tag.groupValues[2].toLongOrNull() ?: 0L
                 v1 != 0L || v2 != 0L
             }
-            if (hasTimedWords) taggedLines.add(line) else untaggedLines.add(line)
+            entries += Entry(line, hasTimedWords)
         }
 
-        // 字幕行：无逐字数据，且时间戳与某条逐字行完全一致 → 判定为那条行的译文
-        val translationEntries = ArrayList<TimeText>()
-        val mainLineStarts = taggedLines.mapTo(HashSet()) { it.startMs }
-        for (untagged in untaggedLines) {
+        val translationByMain = HashMap<Int, String>()
+        val promoted = ArrayList<LyricLine>()
+
+        for (index in entries.indices) {
+            val entry = entries[index]
+            if (entry.timed) continue
+
+            val previousMain = (index - 1 downTo 0).firstOrNull { entries[it].timed }
+            val nextMain = (index + 1 until entries.size).firstOrNull { entries[it].timed }
+            val start = entry.line.startMs
+
             when {
-                untagged.startMs in mainLineStarts ->
-                    translationEntries += TimeText(untagged.startMs, untagged.text)
+                // 主行在前、时间戳指向下一条主行：译文属于前一条主行
+                previousMain != null && nextMain != null &&
+                        start == entries[nextMain].line.startMs &&
+                        start != entries[previousMain].line.startMs ->
+                    translationByMain.putIfAbsent(previousMain, entry.line.text)
+
+                // 译文与主行同时间戳，出现在主行之前或之后
+                previousMain != null && start == entries[previousMain].line.startMs ->
+                    translationByMain.putIfAbsent(previousMain, entry.line.text)
+
+                // 文件开头的译文，其主行紧随其后且时间戳相同
+                previousMain == null && nextMain != null && start == entries[nextMain].line.startMs ->
+                    translationByMain.putIfAbsent(nextMain, entry.line.text)
 
                 // 同一时间戳上还有一条内容为空、被丢弃的主行：这条无标签行就是它的译文，
-                // 只是主行没有内容可挂。提升为主行会把译文当歌词下发；
-                // 波点末行即为此形态，译文会成为整首歌的最后一句"歌词"。
-                untagged.startMs in discardedStarts -> Unit
+                // 只是主行没有内容可挂。提升为主行会把译文当歌词下发
+                start in discardedStarts -> Unit
 
-                else -> taggedLines.add(untagged)
+                // 唯一时间戳：没有逐字数据的正常主行，不是译文
+                else -> promoted += entry.line
             }
         }
 
-        if (taggedLines.isEmpty()) return null
-        taggedLines.sortBy { it.startMs }
-        assignEndTimes(taggedLines)
+        val lines = ArrayList<LyricLine>(entries.size)
+        for (index in entries.indices) {
+            val entry = entries[index]
+            if (!entry.timed) continue
+            val translation = translationByMain[index]
+            lines += if (translation != null) entry.line.copy(translation = translation) else entry.line
+        }
+        lines += promoted
 
-        val doc = LyricDoc(
-            lines = taggedLines,
+        if (lines.isEmpty()) return null
+        lines.sortBy { it.startMs }
+        assignEndTimes(lines)
+
+        return LyricDoc(
+            lines = lines,
             title = title,
             artist = artist,
             album = album,
         )
-
-        return if (translationEntries.isEmpty()) {
-            doc
-        } else {
-            TranslationMerger.attach(doc, translationEntries, SidecarChannel.TRANSLATION)
-        }
     }
 
     /**
