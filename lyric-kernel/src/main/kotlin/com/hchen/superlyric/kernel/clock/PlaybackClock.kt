@@ -60,6 +60,15 @@ class PlaybackClock(
     @Volatile
     var durationMs: Long = durationMs
 
+    /**
+     * 歌词末行的结束时刻；0 表示未知
+     *
+     * 宿主上报的时长可能偏短（元数据滞后或缺失）。只按时长钳制位置，歌词后半段会在
+     * 时长处停住、永远不显示；歌词跨度是位置上界的最低可信值。
+     */
+    @Volatile
+    var lyricsEndMs: Long = 0L
+
     private var status: PlaybackStatus = PlaybackStatus.STOPPED
     private var anchorPosition: Long = 0L
     private var anchorTime: Long = 0L
@@ -144,7 +153,8 @@ class PlaybackClock(
 
     private fun clamp(position: Long): Long {
         if (position < 0L) return 0L
-        if (durationMs > 0L && position > durationMs) return durationMs
+        val upperBound = max(durationMs, lyricsEndMs)
+        if (upperBound > 0L && position > upperBound) return upperBound
         return position
     }
 

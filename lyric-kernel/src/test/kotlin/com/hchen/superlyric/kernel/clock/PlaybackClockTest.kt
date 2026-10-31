@@ -156,6 +156,32 @@ class PlaybackClockTest {
     }
 
     @Test
+    fun `a short host duration does not clip positions inside the lyric span`() {
+        val clock = clock(durationMs = 92_913L)
+        clock.lyricsEndMs = 181_790L
+
+        now = 0L
+        clock.sync(PlaybackStatus.PLAYING, positionMs = 60_000L, speed = 1f, positionUpdateTimeMs = 0L)
+        now = 60_000L
+
+        // 位置远小于歌词末行：宿主时长偏短不能把进度夹回 92913
+        assertEquals(120_000L, clock.positionAt())
+    }
+
+    @Test
+    fun `the lyric end never lowers the duration bound`() {
+        val clock = clock(durationMs = 300_000L)
+        clock.lyricsEndMs = 90_000L
+
+        now = 0L
+        clock.sync(PlaybackStatus.PLAYING, positionMs = 0L, speed = 1f, positionUpdateTimeMs = 0L)
+        now = 400_000L
+
+        // 歌词先结束不代表曲目结束：上界仍取时长
+        assertEquals(300_000L, clock.positionAt())
+    }
+
+    @Test
     fun `no line is current before the first line starts`() {
         val lines = listOf(LyricLine(startMs = 5_000L, endMs = 6_000L, text = "a"))
 

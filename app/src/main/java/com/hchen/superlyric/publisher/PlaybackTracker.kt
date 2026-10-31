@@ -93,8 +93,11 @@ class PlaybackTracker @JvmOverloads constructor(
         // 排到追踪线程上执行会让新曲目的首帧拿到上一首的时长或位置
         if (converted == null) {
             clock.reset()
+            clock.lyricsEndMs = 0L
         } else {
             clock.durationMs = converted.durationMs
+            // 宿主时长可能短于歌词跨度；位置上界取两者较大值，否则后半段歌词永远不推进
+            clock.lyricsEndMs = converted.lastEndMs
         }
         handler.post {
             shownIndex = -1
