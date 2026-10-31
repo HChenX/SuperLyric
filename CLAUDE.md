@@ -198,6 +198,8 @@ acceptance.
   approval.
 - Run the test matrix with full module logs, collect evidence, fix failures, and repeat until the
   acceptance criteria pass.
+- Capture reproducible improvements in the guide only after developer approval. Review the guide
+  after each adaptation or release and remove stale or duplicate content.
 
 ---
 

@@ -286,3 +286,23 @@ APKs and decompiled artifacts remain local and must not be committed or redistri
     Log and screenshot evidence
     Known issues
     Acceptance result
+
+## 8. Knowledge Capture and Continuous Improvement
+
+During adaptation and testing, actively look for new routes, methods, and mechanisms that are
+reproducible and materially better: anchor strategies, acquisition fallbacks, identity rules,
+scoring or cache behavior, MCP automation patterns, and test techniques.
+
+Record each candidate in `music_apks/<package>/notes/` with the app, version, device, problem,
+method, evidence, scope, and limitations. Do not promote a single observation or an inferred
+behavior; require reproduction, a device log, or a test.
+
+Before adding or changing guidance in this document, ask the developer for approval. Present a
+short proposal: what to add or replace, the evidence, the affected section, and whether the
+knowledge is general or app-specific. App-specific details belong in provider notes or comments.
+Add guidance to an existing section unless a genuinely new topic requires one section.
+
+Review this guide after each adaptation cycle and before each release; if no adaptation occurs,
+review it quarterly. Verify commands, paths, tools, test rows, and version references, remove
+obsolete or duplicated content, and keep the document in clear, concise English. Record approved
+changes in the commit message rather than adding a changelog.
