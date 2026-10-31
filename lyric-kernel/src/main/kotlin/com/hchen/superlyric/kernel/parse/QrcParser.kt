@@ -75,6 +75,9 @@ object QrcParser {
     /** 标签形式：`[ti:xxx]` */
     private val TAG_PATTERN = Regex("""^\[([a-zA-Z]+):(.*)]$""")
 
+    /** LRC 行时间戳：`[mm:ss]` / `[mm:ss.xx]` / `[mm:ss:xx]` */
+    private val LRC_TIME_PATTERN = Regex("""^\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?](.*)$""")
+
     private val OFFSET_PATTERN = Regex("""\[offset:\s*(-?\d+)]""", RegexOption.IGNORE_CASE)
 
     /** 从属性串中取 LyricContent */
@@ -121,17 +124,10 @@ object QrcParser {
         if (text.length > MAX_INPUT_CHARS) return null
         if (countXmlTags(text) > MAX_XML_TAGS) return null
 
-        val mainContent: String
-        val translationContent: String?
-
         val blocks = extractXmlBlocks(text, stats)
-        if (blocks != null) {
-            mainContent = blocks.main ?: return null
-            translationContent = blocks.translation
-        } else {
-            mainContent = text
-            translationContent = null
-        }
+        val rawMain = if (blocks != null) blocks.main ?: return null else text
+        val mainContent = normalizeEntityNewlines(rawMain)
+        val translationContent = blocks?.translation?.let(::normalizeEntityNewlines)
 
         val doc = parseLines(mainContent, stats) ?: return null
         if (translationContent.isNullOrBlank()) return doc
@@ -153,8 +149,47 @@ object QrcParser {
         if (text.isNullOrBlank()) return emptyList()
         val blocks = extractXmlBlocks(text, null)
         val content = if (blocks != null) (blocks.translation ?: blocks.main ?: return emptyList()) else text
-        return parsePlainTimeText(content, 0L)
+        return parseTimeText(content, 0L)
     }
+
+    /**
+     * 解析独立的「时间戳 → 文本」载荷
+     *
+     * QRC 与 LRC 两种时间戳都接受：译文块既可能是 `[n,n]`，也可能是 `[mm:ss.xx]` / `[mm:ss:ff]`。
+     */
+    fun parseTimeText(text: String?, offsetMs: Long = 0L): List<TimeText> {
+        if (text.isNullOrBlank()) return emptyList()
+        return parsePlainTimeText(normalizeEntityNewlines(text), offsetMs)
+    }
+
+    /**
+     * 从原始载荷中取出可交给通用解析器的主体与译文块
+     *
+     * QRC 端点可能返回 LRC 形态的明文（无逐字标签），[parse] 此时一行都读不出来。
+     * 兜底必须使用这里已抽好的块：直接拿原始 XML 会丢掉被属性前缀粘住的第一个时间戳，
+     * 并把结尾的标签记进最后一行。
+     */
+    fun fallbackContent(text: String?, stats: ParseStats? = null): Fallback? {
+        if (text.isNullOrBlank()) return null
+        if (text.length > MAX_INPUT_CHARS) return null
+        val blocks = extractXmlBlocks(text, stats)
+        val main = blocks?.main ?: if (blocks == null) text else null
+        if (main.isNullOrBlank()) return null
+        return Fallback(
+            main = normalizeEntityNewlines(main),
+            translation = blocks?.translation?.let(::normalizeEntityNewlines),
+        )
+    }
+
+    /** 通用解析器兜底所需的两个块 */
+    class Fallback(val main: String, val translation: String?)
+
+    /**
+     * XML 属性里的换行常被写成实体；不还原会把整块歌词当成一行，
+     * 标签因此混进正文、后续行全部丢失
+     */
+    private fun normalizeEntityNewlines(text: String): String =
+        text.replace("&#10;", "\n").replace("&#xA;", "\n")
 
     private class XmlBlocks(val main: String?, val translation: String?)
 
@@ -365,15 +400,34 @@ object QrcParser {
             if (line.isEmpty()) continue
             if (TAG_PATTERN.matches(line)) continue
 
-            val lineMatch = LINE_PATTERN.find(line) ?: continue
-            val startMs = lineMatch.groupValues[1].toLongOrNull() ?: continue
+            val qrc = LINE_PATTERN.find(line)
+            val lrc = if (qrc == null) LRC_TIME_PATTERN.find(line) else null
+            if (qrc == null && lrc == null) continue
+            val startMs = if (qrc != null) {
+                qrc.groupValues[1].toLongOrNull() ?: continue
+            } else {
+                parseLrcTime(lrc!!.groupValues[1], lrc.groupValues[2], lrc.groupValues[3])
+            }
+            val body = if (qrc != null) qrc.groupValues[3] else lrc!!.groupValues[4]
             val text = LyricText.cleanInvisibleChars(
-                LyricText.decodeEntities(WORD_TAG_ONLY.replace(lineMatch.groupValues[3], ""))
+                LyricText.decodeEntities(WORD_TAG_ONLY.replace(body, ""))
             ).trim()
 
             if (text.isEmpty()) continue
             entries += TimeText(startMs = (startMs + offsetMs).coerceAtLeast(0L), text = text)
         }
         return entries
+    }
+
+    private fun parseLrcTime(minStr: String, secStr: String, fracStr: String): Long {
+        val minutes = minStr.toLongOrNull() ?: 0L
+        val seconds = secStr.toLongOrNull() ?: 0L
+        val fraction = when {
+            fracStr.isEmpty() -> 0L
+            fracStr.length == 1 -> fracStr.toLongOrNull()?.times(100) ?: 0L
+            fracStr.length == 2 -> fracStr.toLongOrNull()?.times(10) ?: 0L
+            else -> fracStr.take(3).toLongOrNull() ?: 0L
+        }
+        return minutes * 60_000L + seconds * 1_000L + fraction
     }
 }

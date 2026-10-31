@@ -19,10 +19,13 @@
 package com.hchen.superlyric.kernel.pipeline
 
 import com.hchen.superlyric.kernel.map.SyncedLyricsMapper
+import com.hchen.superlyric.kernel.merge.SidecarChannel
+import com.hchen.superlyric.kernel.merge.TranslationMerger
 import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.parse.KuwoLrcxParser
 import com.hchen.superlyric.kernel.parse.QrcParser
 import com.hchen.superlyric.kernel.parse.SodaJsonParser
+import com.hchen.superlyric.kernel.text.LrcTimestamps
 import com.mocharealm.accompanist.lyrics.core.parser.AutoParser
 
 /** 一种文本格式的解析器；输入已解密、已拆分伴随通道 */
@@ -41,12 +44,35 @@ internal object ParserRegistry {
         split: CompanionSplitter.Split?,
         stats: QrcParser.ParseStats?,
     ): LyricDoc? = when (format) {
-        LyricFormat.QRC -> QrcParser.parse(text, stats)
+        LyricFormat.QRC -> parseQrc(text, stats)
         LyricFormat.LRCX -> KuwoLrcxParser.parse(text) ?: parseByLibrary(text)
         LyricFormat.SODA_JSON -> SodaJsonParser.parse(text)
         LyricFormat.KRC, LyricFormat.GENERAL, LyricFormat.AUTO ->
             if (split != null) WordTagLrcParser.parse(text) ?: parseByLibrary(text)
             else parseByLibrary(text)
+    }
+
+    /**
+     * QRC 端点也可能返回 LRC 形态的明文
+     *
+     * 此时 [QrcParser.parse] 一行都读不出来，整首会被上层判为取词失败。兜底必须
+     * 使用已抽好的主体块（而不是原始 XML），并把三段时间戳归一化后交给通用解析器；
+     * 译文块同样要挂回，否则这两类载荷的译文会整段消失。
+     */
+    private fun parseQrc(text: String, stats: QrcParser.ParseStats?): LyricDoc? {
+        QrcParser.parse(text, stats)?.let { return it }
+
+        val fallback = QrcParser.fallbackContent(text, stats) ?: return null
+        var doc = parseByLibrary(LrcTimestamps.normalize(fallback.main)) ?: return null
+
+        val translation = fallback.translation
+        if (!translation.isNullOrBlank()) {
+            val entries = QrcParser.parseTimeText(LrcTimestamps.normalize(translation))
+            if (entries.isNotEmpty()) {
+                doc = TranslationMerger.attach(doc, entries, SidecarChannel.TRANSLATION)
+            }
+        }
+        return doc
     }
 
     private fun parseByLibrary(text: String): LyricDoc? {
