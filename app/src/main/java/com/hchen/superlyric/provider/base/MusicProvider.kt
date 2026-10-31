@@ -88,14 +88,6 @@ abstract class MusicProvider : AbsPublisher() {
     @Volatile
     private var lastDumpedStableId: String? = null
 
-    /** 宿主自己的 MediaSession；仅诊断期用于模拟跳转播放位置 */
-    @Volatile
-    private var hostSession: MediaSession? = null
-
-    /** 宿主最近一次上报的播放状态；`MediaSession` 不提供读取接口，只能缓存 */
-    @Volatile
-    private var hostPlaybackState: PlaybackState? = null
-
     private val stopConfirmer: ScheduledExecutorService =
         Executors.newSingleThreadScheduledExecutor { runnable ->
             Thread(runnable, "SuperLyric-StopConfirm").apply { isDaemon = true }
@@ -195,7 +187,7 @@ abstract class MusicProvider : AbsPublisher() {
             hookSource,
             apiSource,
             ExecutorScheduler("$providerTag-Scheduler"),
-            LyricPublishBridge(),
+            LyricPublishBridge { lastSeenIdentity },
             orchestratorConfig(),
             diagnostics = { reason -> AndroidLog.logD(providerTag, reason) },
         )
@@ -236,6 +228,8 @@ abstract class MusicProvider : AbsPublisher() {
                     // （MediaSession 没有 getPlaybackState()，只能自行记录）
                     hostSession = getThisObject() as? MediaSession
                     hostPlaybackState = state
+                    // 播放进程才有会话；onApplicationCreated 只在主进程触发，这里补注册
+                    ensureSeekSimulator()
                     onPlaybackStateChanged(state)
                 }
             },
@@ -382,6 +376,7 @@ abstract class MusicProvider : AbsPublisher() {
      * 发布构建不注册该接收器，实机用户不受影响。
      */
     private fun registerSeekSimulator(context: Context) {
+        if (seekReceiverRegistered) return
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(receiverContext: Context?, intent: Intent?) {
                 val target = intent?.getLongExtra(EXTRA_SEEK_POSITION, -1L) ?: -1L
@@ -389,12 +384,30 @@ abstract class MusicProvider : AbsPublisher() {
             }
         }
         val filter = IntentFilter(ACTION_DEBUG_SEEK)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
-        } else {
-            @Suppress("UnspecifiedRegisterReceiverFlag")
-            context.registerReceiver(receiver, filter)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                context.registerReceiver(receiver, filter)
+            }
+            seekReceiverRegistered = true
+        } catch (t: Throwable) {
+            // 诊断能力失败不得影响宿主
+            AndroidLog.logW(providerTag, "Failed to register seek simulator", t)
         }
+    }
+
+    /**
+     * 播放状态回调所在的进程才是持有会话的进程
+     *
+     * `onApplicationCreated` 只在主进程触发，多进程宿主的播放进程不会走到那里；
+     * 首次收到 `setPlaybackState` 时补注册，诊断广播才会落到真正能改会话的进程。
+     */
+    private fun ensureSeekSimulator() {
+        if (!BuildConfig.DEBUG || seekReceiverRegistered) return
+        val context = AbsPublisher.getAppContext() ?: return
+        registerSeekSimulator(context)
     }
 
     private fun simulateSeek(positionMs: Long) {
@@ -420,6 +433,18 @@ abstract class MusicProvider : AbsPublisher() {
     }
 
     private companion object {
+        /** 宿主自己的 MediaSession；仅诊断期用于模拟跳转播放位置。进程级共享，接收器与 Hook 可能不在同一实例 */
+        @Volatile
+        var hostSession: MediaSession? = null
+
+        /** 宿主最近一次上报的播放状态；`MediaSession` 不提供读取接口，只能缓存。进程级共享 */
+        @Volatile
+        var hostPlaybackState: PlaybackState? = null
+
+        /** 诊断广播接收器只在每个进程注册一次 */
+        @Volatile
+        var seekReceiverRegistered = false
+
         /** 诊断期模拟跳转播放位置的广播 action */
         const val ACTION_DEBUG_SEEK = "com.hchen.superlyric.DEBUG.SEEK"
 

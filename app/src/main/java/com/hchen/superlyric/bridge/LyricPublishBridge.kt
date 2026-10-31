@@ -20,6 +20,7 @@ package com.hchen.superlyric.bridge
 
 import com.hchen.hooktool.log.AndroidLog
 import com.hchen.superlyric.kernel.identity.TrackIdentity
+import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.model.PureMusicDoc
 import com.hchen.superlyric.kernel.orchestrate.LyricOrchestrator
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
@@ -39,7 +40,15 @@ import com.hchen.superlyric.utils.LyricDiag
  *
  * @author 焕晨HChen
  */
-class LyricPublishBridge : LyricOrchestrator.Listener {
+class LyricPublishBridge(
+    /**
+     * 宿主最近一次上报的身份
+     *
+     * 取词完成时宿主可能已经补上了时长（切歌瞬间常见 duration=0 或上一首的值）。
+     * 发布前用它校正文档时长；稳定标识不一致说明已切到别的曲目，不能借用。
+     */
+    private val currentIdentity: () -> TrackIdentity? = { null },
+) : LyricOrchestrator.Listener {
 
     override fun onTrackChanged(identity: TrackIdentity) {
         // 生命周期事件，用 logI 而非 logD：必须始终可见
@@ -54,7 +63,7 @@ class LyricPublishBridge : LyricOrchestrator.Listener {
     }
 
     override fun onLyricResolved(outcome: LyricOutcome.Success) {
-        val doc = outcome.doc
+        val doc = correctedDuration(outcome.doc)
         AndroidLog.logI(
             TAG,
             "Publishing full lyric: lyricId=${doc.lyricId}, lines=${doc.lines.size}, " +
@@ -64,6 +73,17 @@ class LyricPublishBridge : LyricOrchestrator.Listener {
         )
         LyricDiag.dumpDoc("Publish", doc)
         AbsPublisher.publishFullLyric(doc)
+    }
+
+    /**
+     * 用宿主最新身份校正时长，避免发布 duration=0 或上一首的残留值
+     */
+    private fun correctedDuration(doc: LyricDoc): LyricDoc {
+        val latest = currentIdentity() ?: return doc
+        if (latest.stableId == null || latest.stableId != doc.lyricId) return doc
+        if (latest.durationMs <= 0L || latest.durationMs == doc.durationMs) return doc
+        AndroidLog.logD(TAG, "Doc duration corrected: " + doc.durationMs + " -> " + latest.durationMs)
+        return doc.copy(durationMs = latest.durationMs)
     }
 
     override fun onNoLyrics(identity: TrackIdentity?) {

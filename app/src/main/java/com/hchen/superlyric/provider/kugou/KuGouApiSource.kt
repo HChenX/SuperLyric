@@ -95,14 +95,18 @@ class KuGouApiSource : LyricSource {
             )
         }
 
-        val searchedHash = searchBestHash(identity)
+        val searchedHashes = searchBestHashes(identity)
         // 检索落空不等于平台确定没有歌词：可能只是未匹配上，或报文结构变化。
         // NoLyrics 允许下发纯音乐占位，一次误判就会把有歌词的曲目永久标记。
-            ?: return LyricOutcome.TransientFailure(null)
+        if (searchedHashes.isEmpty()) return LyricOutcome.TransientFailure(null)
 
-        attempt(searchedHash, identity)?.let { return it }
-        // attempt 返回 null 只说明该哈希未拿到可用歌词（下载失败、解码失败，
-        // 或平台确实没有），不足以判定“这首歌没有歌词”
+        // 达到采纳线的候选都可能没有 KRC（平台只对部分曲目提供逐字歌词），
+        // 首个候选落空不代表整首没有；按分数依次尝试
+        for (hash in searchedHashes) {
+            attempt(hash, identity)?.let { return it }
+        }
+        // 全部候选都拿不到可用歌词（下载失败、解码失败，或平台确实没有），
+        // 不足以判定“这首歌没有歌词”
         return LyricOutcome.TransientFailure(null)
     }
 
@@ -164,22 +168,23 @@ class KuGouApiSource : LyricSource {
         TrackIdentity.normalizeStableId(identity.stableId)?.takeIf { HASH_PATTERN.matches(it) }
 
     /**
-     * 按歌名 + 歌手检索候选，返回打分最高的 Hash
+     * 按歌名 + 歌手检索候选，返回达到采纳线的 Hash（按分数降序）
      *
-     * 采纳门槛见 [LyricScorer.MIN_ACCEPT_SCORE]
+     * 采纳门槛见 [LyricScorer.MIN_ACCEPT_SCORE]。同分时保留检索顺序：
+     * 酷狗曲库中同一首歌的不同版本可能登记为完全相同的歌名、歌手与时长，
+     * 打分器无法区分；取最后一个会随机配上错误语言的歌词。
      */
-    private fun searchBestHash(identity: TrackIdentity): String? {
-        if (identity.title.isBlank()) return null
+    private fun searchBestHashes(identity: TrackIdentity): List<String> {
+        if (identity.title.isBlank()) return emptyList()
 
-        val keyword = if (identity.artist.isBlank()) identity.title else "${identity.title} ${identity.artist}"
+        val keyword = if (identity.artist.isBlank()) identity.title else identity.title + " " + identity.artist
         val url = "http://mobilecdn.kugou.com/api/v3/search/song?format=json&page=1&pagesize=5&keyword=" +
                 URLEncoder.encode(keyword, StandardCharsets.UTF_8.name())
 
         val json = get(url)
-        val info = JSONObject(json).optJSONObject("data")?.optJSONArray("info") ?: return null
+        val info = JSONObject(json).optJSONObject("data")?.optJSONArray("info") ?: return emptyList()
 
-        var bestHash: String? = null
-        var bestScore = LyricScorer.MIN_ACCEPT_SCORE
+        val accepted = ArrayList<Pair<String, Double>>(info.length())
         val candidates = ArrayList<String>(info.length())
 
         for (index in 0 until info.length()) {
@@ -201,30 +206,24 @@ class KuGouApiSource : LyricSource {
                 candidateArtist,
                 candidateDurationMs,
             )
-            candidates += "\"$candidateTitle\"/\"$candidateArtist\"/${candidateDurationMs / 1000}s" +
-                    "=${score.roundTo1()} hash=$hash"
-            // 使用 `>` 而非 `>=`：同分时采纳检索排序首位。
-            // 酷狗曲库中同一首歌的不同版本可能登记为完全相同的歌名、歌手与时长
-            // （NIGHT DANCER 的韩语版与日语原版三项逐字相同），打分器无法区分；
-            // 平局只能靠顺序决定，取最后一个会随机配上错误语言的歌词。
-            if (score > bestScore) {
-                bestScore = score
-                bestHash = hash
-            }
+            candidates += "\"" + candidateTitle + "\"/\"" + candidateArtist + "\"/" + (candidateDurationMs / 1000) + "s" +
+                    "=" + score.roundTo1() + " hash=" + hash
+            if (score > LyricScorer.MIN_ACCEPT_SCORE) accepted += hash to score
         }
 
         // 无论是否命中都要输出候选明细：仅看“通过/未通过”无法判断是检索未找对歌、
         // 正确版本不在候选内，还是打分将其淘汰；这三种情况的处理不同。
         AndroidLog.logD(
             sourceName,
-            "Candidates for \"$keyword\" (target \"${identity.title}\"/\"${identity.artist}\"/" +
-                    "${identity.durationMs / 1000}s): ${candidates.joinToString(" | ").ifEmpty { "none" }}",
+            "Candidates for \"" + keyword + "\" (target \"" + identity.title + "\"/\"" + identity.artist + "\"/" +
+                    (identity.durationMs / 1000) + "s): " + candidates.joinToString(" | ").ifEmpty { "none" },
         )
 
-        if (bestHash == null) {
-            AndroidLog.logD(sourceName, "No KuGou candidate reached the acceptance threshold for \"$keyword\"")
+        if (accepted.isEmpty()) {
+            AndroidLog.logD(sourceName, "No KuGou candidate reached the acceptance threshold for \"" + keyword + "\"")
         }
-        return bestHash
+        // 稳定排序：同分候选保持检索顺序，首位优先
+        return accepted.sortedByDescending { it.second }.map { it.first }
     }
 
     private fun Double.roundTo1(): String = String.format(Locale.US, "%.1f", this)

@@ -268,13 +268,19 @@ object LyricDiag {
     @JvmStatic
     fun dumpMetadata(source: String, metadata: MediaMetadata) {
         if (!enabled) return
+        // 诊断输出不得改变控制流：QQ 的 Bundle 可能带 null 键，排序会抛 NPE 并中断
+        // 后续的取消停止与切歌处理
+        runCatching { dumpMetadataUnchecked(source, metadata) }
+            .onFailure { log(source, "META dump failed: " + it.javaClass.simpleName) }
+    }
 
-        val keys = metadata.keySet()
+    private fun dumpMetadataUnchecked(source: String, metadata: MediaMetadata) {
+        val keys = metadata.keySet().filterNotNull()
         val parts = keys.sorted().joinToString(" | ") { key ->
             val text = textOf(metadata, key)
-            if (text != null) "$key=\"${text.take(60)}\"" else "$key=<non-text>"
+            if (text != null) key + "=\"" + text.take(60) + "\"" else key + "=<non-text>"
         }
-        log(source, "META keyCount=${keys.size} :: $parts")
+        log(source, "META keyCount=" + keys.size + " :: " + parts)
     }
 
     /**
