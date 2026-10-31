@@ -170,17 +170,32 @@ Run every case below for a first adaptation. Run the same matrix for regression.
 | Position | Seek, jump, cross-line playback | Current line and position stay synchronized |
 | Word timing | Word-by-word lyrics and highlighting | Timing and segmentation are correct |
 | Track switch | At least 5 consecutive switches and fast switches | No stale or mismatched lyrics |
-| Cache | Switch away and return to the same track | Cache hit or correct re-fetch |
+| Cache | Miss, hit, track change, version/locale change, offline, corrupt entry | Correct fetch or cache; no stale track |
 | Languages | Chinese, English, and a minority language | Title, lyrics, and translation are correct |
 | Instrumental | Search for and play an instrumental track in the app | Correct no-lyrics/instrumental state |
 | Speed | 0.5x, 1x, 1.5x, 2x | Line changes and position do not drift |
 | Translation | Translated lyrics | Translation aligns with the original |
 | Phonetic | Romanization or phonetic text | Correct field is displayed |
 | Lyric data | Full, current-line, and word data | Fields are complete and correctly ordered |
+| Data consistency | Compare device output with local golden fixtures and unit-test expectations | Title, artist, album, duration, stable ID, lines, timestamps, translation, phonetic, and word timing match; no stale fixture or line offset |
 | Background | Background, lock screen, notification controls | State and position remain correct |
 | Stop | Exit, stop, process death | Correct stop reason; pause is not treated as stop |
 | Compatibility | 3.x and 4.0 interfaces | Both consumer contracts behave correctly |
+| Acquisition | Exercise Hook and network paths separately where supported, including fallback | Both paths return correct lyrics; fallback is logged |
+| Scoring | Exact match, near-match, artist mismatch, duration mismatch | Correct candidate accepted or rejected; scores match unit-test thresholds |
 | Abnormal | Network failure, no lyrics, malformed response | No crash; logs identify the cause; no false instrumental result |
+
+Data consistency is a separate check. Compare the device output against the provider's local
+golden fixtures and unit-test expectations: title, artist, album, duration, stable ID, line text and
+timing, translation, phonetic, word timing, and line index. If the host version changed, update the
+fixtures from the newly observed payload; never keep stale expected data.
+
+For acquisition, exercise the Hook path and the network path independently where the provider
+supports it, and verify the fallback. Scoring must be checked with exact candidates, near matches,
+artist mismatches, and duration mismatches; the accepted candidate and the score must match the
+LyricScorer unit-test thresholds. Cache behavior must cover a successful network fetch, a replay, a
+track change, a version or locale change, an offline or failed response (with user approval), and a
+corrupt entry. No cached lyric may leak into another track.
 
 Use mobile MCP for search, taps, typing, and playback controls. Use ADB only for logs and basic app operations.
 
@@ -196,13 +211,24 @@ Classify failures as environment, account, install, permission, decompilation, a
 
 Do not retry indefinitely. If two attempts do not identify the root cause, stop and ask the user. Stop immediately if the next step requires unauthorized settings changes, data clearing, root, a reboot, or bypassing store restrictions.
 
+### 3.12 Test isolation and cleanup
+
+Run this after every app, before starting another app:
+
+1. Stop playback, then force-stop the app with ADB or mobile MCP.
+2. Archive the app logs under music_apks/<package>/logs/, then clear logcat.
+3. Confirm the app has no notification, foreground service, or active media session. Its playback state must not leak into the next test.
+4. Remove temporary screenshots, recordings, downloads, and other test byproducts from the workstation's shared locations. Keep evidence in the per-app directory. On the device, do not delete app data or user files; remove only test artifacts you created, and only with approval.
+5. Reset test-only module settings and log filters to the baseline. Do not leave the previous app log level or filters active.
+6. Start the next app only after the previous app is fully stopped and the log buffer is clean.
+
 ## 4. Regression Testing for Supported Apps
 
 The user may submit multiple apps that are already adapted. Process them as a queue:
 
 1. Confirm each app is installed and record its version.
 2. For each app, complete steps 3.8 to 3.11: enable the module, restart the host, run the test matrix, and collect logs.
-3. Finish one app and record its result before starting the next.
+3. Finish one app, record its result, and run the cleanup in 3.12 before starting the next.
 4. If an app fails, pause the queue, return to section 3 to fix the adaptation, then resume the queue.
 5. Do not launch, operate, or collect logs for multiple apps concurrently.
 
@@ -215,8 +241,11 @@ A first adaptation is complete when:
 - there is no crash, ANR, or unexplained error log;
 - play, pause, stop, track switch, and cache behavior are correct;
 - line, word, translation, and phonetic data are correct;
+- device output matches local golden fixtures and unit-test expectations;
+- Hook, network, scoring, and cache behavior are verified;
 - instrumentals are not misclassified;
 - 3.x and 4.0 interface behavior matches the contract;
+- no app state, logs, or byproducts leak into the next test;
 - all three registrations are present;
 - unit tests and both builds pass;
 - comments and documentation follow CLAUDE.md.
