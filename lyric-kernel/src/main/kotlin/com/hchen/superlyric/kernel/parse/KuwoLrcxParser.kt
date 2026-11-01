@@ -173,8 +173,15 @@ object KuwoLrcxParser {
                     translationByMain.putIfAbsent(nextMain, entry.line.text)
 
                 // 同一时间戳上还有一条内容为空、被丢弃的主行：这条无标签行就是它的译文，
-                // 只是主行没有内容可挂。提升为主行会把译文当歌词下发
-                start in discardedStarts -> Unit
+                // 只是主行没有内容可挂。提升为主行会把译文当歌词下发。
+                // 文件末尾的译文例外：它后面只剩一条空行，前一条主行才是它的归属，
+                // 丢弃会让末句永远没有译文
+                start in discardedStarts ->
+                    if (index == entries.lastIndex && previousMain != null &&
+                        translationByMain[previousMain] == null
+                    ) {
+                        translationByMain[previousMain] = entry.line.text
+                    }
 
                 // 唯一时间戳：没有逐字数据的正常主行，不是译文
                 else -> promoted += entry.line

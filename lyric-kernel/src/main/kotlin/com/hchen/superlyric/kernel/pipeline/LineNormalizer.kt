@@ -19,6 +19,7 @@
 package com.hchen.superlyric.kernel.pipeline
 
 import com.hchen.superlyric.kernel.model.LyricLine
+import com.hchen.superlyric.kernel.model.LyricWord
 
 /** 同一时刻行折叠与最终时序归一化 */
 internal object LineNormalizer {
@@ -86,15 +87,61 @@ internal object LineNormalizer {
             val nextStart = if (index + 1 < sorted.size) sorted[index + 1].startMs else -1L
             val lastWordEnd = current.words.maxOfOrNull { it.endMs } ?: startMs
             val capByNext = if (nextStart > startMs) nextStart else Long.MAX_VALUE
-            val endMs = minOf(maxOf(startMs, current.endMs, lastWordEnd), capByNext)
+            var endMs = minOf(maxOf(startMs, current.endMs, lastWordEnd), capByNext)
                 .let { boundEnd(it, startMs, capByNext, durationMs) }
-            val words = current.words.map { word ->
-                val wordStart = word.startMs.coerceIn(startMs, maxOf(startMs, endMs))
-                val wordEnd = word.endMs.coerceIn(wordStart, maxOf(startMs, endMs))
-                if (word.startMs == wordStart && word.endMs == wordEnd) word
-                else word.copy(startMs = wordStart, endMs = wordEnd)
+            // 宿主会给版权/制作人这类行单点时间戳（start == end）。文本行必须有正时长，
+            // 在下一行开始前留出 1ms；下一行同时开始则无空位可让，保持原样。
+            if (endMs <= startMs && capByNext > startMs) {
+                endMs = minOf(capByNext, startMs + 1)
             }
+            val words = repairWords(current.words, startMs, endMs)
             result += current.copy(startMs = startMs, endMs = endMs, words = words)
+        }
+        return result
+    }
+
+    /**
+     * 修复逐字切片
+     *
+     * KRC/QRC 的空格 token 常与后一字重叠，个别标题行还会给出互相覆盖的切片。
+     * 裁剪任一侧都会改变可见字的高亮边界，因此把重叠的相邻切片合并：文本按原顺序拼接，
+     * 区间取并集。零长切片并入相邻切片，保证发布模型中的词均为正时长。
+     */
+    private fun repairWords(words: List<LyricWord>, lineStart: Long, lineEnd: Long): List<LyricWord> {
+        if (words.isEmpty()) return words
+        val merged = ArrayList<LyricWord>(words.size)
+        for (word in words) {
+            val start = word.startMs.coerceIn(lineStart, lineEnd)
+            val end = word.endMs.coerceIn(start, lineEnd)
+            val last = merged.lastOrNull()
+            when {
+                last == null -> merged += word.copy(startMs = start, endMs = end)
+                start < last.endMs || end <= start -> merged[merged.lastIndex] = last.copy(
+                    text = last.text + word.text,
+                    startMs = minOf(last.startMs, start),
+                    endMs = maxOf(last.endMs, end),
+                )
+                else -> merged += word.copy(startMs = start, endMs = end)
+            }
+        }
+
+        val result = ArrayList<LyricWord>(merged.size)
+        for (word in merged) {
+            var start = word.startMs.coerceIn(lineStart, lineEnd)
+            var end = word.endMs.coerceIn(start, lineEnd)
+            if (end <= start) end = minOf(lineEnd, start + 1)
+            if (end <= start) start = maxOf(lineStart, end - 1)
+
+            val last = result.lastOrNull()
+            if (last != null && start < last.endMs) {
+                result[result.lastIndex] = last.copy(
+                    text = last.text + word.text,
+                    startMs = last.startMs,
+                    endMs = maxOf(last.endMs, end),
+                )
+            } else {
+                result += word.copy(startMs = start, endMs = end)
+            }
         }
         return result
     }

@@ -74,6 +74,43 @@ class ParserRegressionTest {
     }
 
     @Test
+    fun `lrcx trailing translation before the closing blank line belongs to the last main`() {
+        // 真机载荷形态：最后一句的译文出现在文件末尾，时间戳等于其后空行的起始。
+        // 丢弃会让末句永远没有译文
+        val text = """
+            [kuwo:026]
+            [00:13.537]<304,-304>No <544,64>I <992,96>don't <1344,640>need <2050,638>a <3074,1026>cure <4162,1986>for <6004,2320>me
+            [00:16.539]<0,0>我<0,0>不<0,0>需<0,0>要<0,0>治<0,0>愈
+            [00:16.539]
+        """.trimIndent()
+
+        val doc = KuwoLrcxParser.parse(text)
+
+        assertNotNull(doc)
+        assertEquals(1, doc!!.lines.size)
+        assertEquals("No I don't need a cure for me", doc.lines[0].text)
+        assertEquals("我不需要治愈", doc.lines[0].translation)
+    }
+
+    @Test
+    fun `lrcx translation of a mid file blank line is not moved to the previous main`() {
+        val text = """
+            [kuwo:111]
+            [00:01.000]<1000,500>Main one<2000,500>
+            [00:02.000]<0,0>空行译文
+            [00:02.000]
+            [00:03.000]<3000,500>Main two<4000,500>
+        """.trimIndent()
+
+        val doc = KuwoLrcxParser.parse(text)
+
+        assertNotNull(doc)
+        assertEquals(2, doc!!.lines.size)
+        assertNull(doc.lines[0].translation)
+        assertNull(doc.lines[1].translation)
+    }
+
+    @Test
     fun `lrcx translation before its main line still pairs by timestamp`() {
         val text = """
             [kuwo:111]

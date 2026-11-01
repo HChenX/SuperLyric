@@ -305,6 +305,11 @@ class LyricOrchestrator(
 
         epoch++
         val startedEpoch = epoch
+        diagnostics(
+            "new track epoch=" + startedEpoch +
+                    " prev=" + current?.stableId + "/" + current?.title +
+                    " next=" + identity.stableId + "/" + identity.title,
+        )
         cancelHookTimeoutLocked()
         currentIdentity = identity
         activeIdentity = identity
