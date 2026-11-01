@@ -62,9 +62,13 @@ class LyricOrchestratorTest {
         /** 按创建顺序记录每次 start 得到的回投通道，用于回投过期代际 */
         val sessions = ArrayList<LyricSource.Session>()
 
+        /** 按创建顺序记录每次 start 的目标身份，用于验证重试复用了哪一份 */
+        val identities = ArrayList<TrackIdentity>()
+
         override fun start(identity: TrackIdentity, session: LyricSource.Session) {
             startCount++
             sessions += session
+            identities += identity
         }
 
         override fun cancel() {
@@ -79,6 +83,7 @@ class LyricOrchestratorTest {
 
     private class RecordingListener : LyricOrchestrator.Listener {
         var resolved: LyricOutcome.Success? = null
+        var resolvedCount = 0
         var noLyricsCount = 0
         var unavailableCount = 0
         var idleCount = 0
@@ -89,6 +94,7 @@ class LyricOrchestratorTest {
 
         override fun onLyricResolved(outcome: LyricOutcome.Success) {
             resolved = outcome
+            resolvedCount++
         }
 
         override fun onNoLyrics(identity: TrackIdentity?) {
@@ -371,6 +377,45 @@ class LyricOrchestratorTest {
         assertNotNull(f.listener.resolved)
         assertEquals(0, f.listener.unavailableCount, "重试成功后不得再报失败")
         assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
+    }
+
+    @Test
+    fun `late hook success after a hook failure is published`() {
+        val f = Fixture()
+
+        f.orchestrator.onTrackChanged(track("A"))
+        f.hookSource!!.deliver(LyricOutcome.TransientFailure())
+        assertEquals(LyricOrchestrator.State.FETCHING_API, f.orchestrator.state)
+
+        // 同一首曲目稍后才交出歌词；此时网络结果还没回来，成功必须被采信
+        f.hookSource.deliver(success())
+
+        assertNotNull(f.listener.resolved)
+        assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
+        assertEquals(1, f.apiSource!!.cancelCount, "迟到的成功应取消在途网络请求")
+
+        // 取消前已在途的网络结果不得二次发布
+        f.apiSource.deliver(success())
+        assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
+        assertEquals(1, f.listener.resolvedCount, "晚到的网络结果不得二次发布")
+    }
+
+    @Test
+    fun `api retry keeps the identity captured when the fetch started`() {
+        val f = Fixture()
+
+        f.orchestrator.onTrackChanged(track("A", "Original"))
+        f.hookSource!!.deliver(LyricOutcome.TransientFailure())
+        assertEquals(1, f.apiSource!!.startCount)
+
+        // 宿主把当前歌词行写进标题；稳定标识不变，不算切歌
+        f.orchestrator.onTrackChanged(track("A", "Random lyric line"))
+        f.apiSource.deliver(LyricOutcome.TransientFailure())
+        f.scheduler.fireAll()
+
+        assertEquals(2, f.apiSource.startCount)
+        assertEquals("Original", f.apiSource.identities[1].title)
+        assertEquals("qq:A", f.apiSource.identities[1].stableId)
     }
 
     @Test

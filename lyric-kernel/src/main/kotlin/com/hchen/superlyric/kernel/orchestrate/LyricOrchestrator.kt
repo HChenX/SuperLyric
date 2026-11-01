@@ -191,6 +191,13 @@ class LyricOrchestrator(
             track.apiDelivered = value
         }
 
+    /** 本次取词启动时的身份，重试复用它而不是宿主当前（可能被歌词行污染的）身份 */
+    private var apiIdentity: TrackIdentity?
+        get() = track.apiIdentity
+        set(value) {
+            track.apiIdentity = value
+        }
+
     private var hookTimeout: Cancellable?
         get() = track.hookTimeout
         set(value) {
@@ -256,6 +263,7 @@ class LyricOrchestrator(
             apiAttempts = 0
             hookDelivered = false
             apiDelivered = false
+            apiIdentity = null
 
             Plan().apply {
                 plannedEpoch = epoch
@@ -317,6 +325,7 @@ class LyricOrchestrator(
         apiAttempts = 0
         hookDelivered = false
         apiDelivered = false
+        apiIdentity = null
 
         val dispatch = Plan().apply {
             newTrack = identity
@@ -398,7 +407,14 @@ class LyricOrchestrator(
             diagnostics("dropping hook outcome ${outcome.label}: epoch $capturedEpoch != $epoch")
             return null
         }
-        if (hookDelivered) {
+        // 宿主可能先交出一次失败，再交出同一首的歌词（曲目对象分步填充 songID）。
+        // 失败不是终态，网络上还没有结果时，迟到的成功必须采信；否则一次瞬时失败
+        // 会让本已取到的歌词被丢弃，最终落到 UNAVAILABLE。
+        val lateSuccess = hookDelivered &&
+                outcome is LyricOutcome.Success &&
+                state == State.FETCHING_API &&
+                !apiDelivered
+        if (hookDelivered && !lateSuccess) {
             diagnostics("dropping hook outcome ${outcome.label}: hook already delivered")
             return null
         }
@@ -411,6 +427,11 @@ class LyricOrchestrator(
         }
 
         if (outcome is LyricOutcome.Success) {
+            if (lateSuccess) {
+                // 网络结果已无意义：标记并由 execute 取消在途请求，避免二次发布
+                apiDelivered = true
+                dispatch.actions += Action.CancelApi
+            }
             transitionLocked(State.ACTIVE, dispatch)
             dispatch.actions += Action.Resolve(outcome)
             return dispatch
@@ -456,6 +477,7 @@ class LyricOrchestrator(
             return dispatch
         }
 
+        apiIdentity = identity
         transitionLocked(State.FETCHING_API, dispatch)
         dispatch.actions += Action.StartApi(startEpoch, identity)
         return dispatch
@@ -526,7 +548,9 @@ class LyricOrchestrator(
                     transitionLocked(State.UNAVAILABLE, dispatch)
                     dispatch.actions += Action.Unavailable
                 } else {
-                    val identity = currentIdentity
+                    // 重试沿用启动时的身份：宿主会把当前歌词行写进标题，
+                    // 用 currentIdentity 会让后续检索拿被污染的曲名去匹配
+                    val identity = apiIdentity ?: currentIdentity
                     if (identity != null) {
                         val delay = config.retryBaseDelayMs shl (apiAttempts - 1)
                         val retryEpoch = epoch

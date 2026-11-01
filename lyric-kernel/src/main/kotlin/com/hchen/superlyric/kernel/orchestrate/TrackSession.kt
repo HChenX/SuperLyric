@@ -33,4 +33,7 @@ internal class TrackSession {
     var hookDelivered: Boolean = false
     var apiDelivered: Boolean = false
     var hookTimeout: Cancellable? = null
+
+    /** 本次取词启动时的身份；重试必须沿用它，不能被宿主后续改写的标题污染 */
+    var apiIdentity: TrackIdentity? = null
 }
