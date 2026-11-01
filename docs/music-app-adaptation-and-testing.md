@@ -2,33 +2,23 @@
 
 ## 1. Purpose and Scope
 
-This guide defines the end-to-end procedure for adapting one music app to SuperLyric, installing the module on an authorized development phone, validating playback and lyric behavior on the device, and recording the result.
+This guide defines the procedure for adapting one music app to SuperLyric, validating its lyric data on an authorized device, and recording the evidence. It covers a first adaptation and sequential regression testing of previously adapted apps.
 
-It covers a single app that has not been adapted before, and regression testing of one or more previously adapted apps executed sequentially. It includes APK extraction, decompilation, static analysis, implementation, build, installation, device testing, log analysis, and acceptance.
-
-Adaptation and testing are strictly sequential. Do not adapt or test multiple apps in parallel. Follow [CLAUDE.md](../CLAUDE.md) for architecture, provider structure, hook design, identity rules, stop semantics, comment style, and commit conventions.
+Adaptation and testing are strictly sequential. Do not adapt or test multiple apps in parallel. Follow [CLAUDE.md](../CLAUDE.md) for provider architecture, identity rules, stop semantics, and comment conventions.
 
 ## 2. Environment and Access Boundaries
 
 ### 2.1 Device and tools
 
-Required:
+Use one local Android phone connected over ADB and to the network, with developer options, USB debugging, and LSPosed enabled. mobile MCP must be available; if it is missing, ask the user for permission before installing it. Local apktool and jadx are required. Root is optional and requires explicit approval.
 
-- one local Android phone connected to the workstation over ADB and connected to the network;
-- developer options, USB debugging, and LSPosed enabled;
-- mobile MCP available and able to enumerate the device and read the screen;
-- local apktool and jadx;
-- a working SuperLyric build environment.
-
-Root is optional. Do not use root unless the user explicitly authorizes it. If mobile MCP is not installed, ask the user for permission before installing it.
-
-Record the device model, Android version, LSPosed version, target app version, module version, and source commit before testing.
+Record the device model, Android version, LSPosed version, app version, module version, and source commit before testing.
 
 ### 2.2 Device operations
 
-mobile MCP is the primary device interface. Use it for app installation and uninstallation, launch and force-stop, UI navigation, text input, store operations, log access, and screen inspection. Prefer the accessibility elements returned by the MCP element tree and act through element references. Use a screenshot only when the element tree lacks the required label, state, or coordinates, or when a visual check is necessary.
+mobile MCP is the primary interface for install, uninstall, launch, force-stop, logs, screen inspection, and UI interaction. Prefer the accessibility element tree and element references for taps, typing, scrolling, and dialog dismissal. Use a screenshot only when the tree lacks the required label, state, or coordinates, or when visual confirmation is necessary.
 
-ADB is a fallback, not the default. Use it only for operations MCP cannot perform, mainly package path lookup and APK pull. The fallback commands are:
+ADB is a fallback, not the default. Use it only for operations MCP cannot perform, mainly package path lookup and APK pull:
 
     adb devices
     adb shell pm list packages
@@ -40,294 +30,148 @@ ADB is a fallback, not the default. Use it only for operations MCP cannot perfor
     adb shell am force-stop <package>       # only if MCP stop is unavailable
     adb logcat -c / -d / filtered by tag    # only if MCP log access is insufficient
 
-Do not silently fall back to ADB when MCP fails. If MCP is unavailable, ask the user to restore it; use ADB only with explicit approval and only for basic operations.
+Do not silently switch to ADB when MCP fails. Ask the user to restore MCP; use ADB only with explicit approval and only for basic operations.
 
-Within the scope authorized for the task, the following are allowed:
+Allowed within the authorized task: install, uninstall, launch, or force-stop the target app; install or update the module; extract APKs; read and clear logs; select the target in the LSPosed scope; perform in-app test actions.
 
-- install, uninstall, launch, and force-stop the target app;
-- install or update the SuperLyric module;
-- extract APKs and read logs;
-- select the target app in the LSPosed scope when the task authorizes it;
-- perform in-app test actions such as play, pause, track switch, search, speed change, and translation toggles.
+Explicit approval is required before changing system settings, permissions, network, accounts, language, or time; deleting phone files; clearing app data; using root; reading private app data; rebooting; or bypassing store login, captcha, payment, or regional restrictions. The LSPosed scope is a controlled operation. Reboot only after framework changes and only after approval.
 
-### 2.3 Operations requiring explicit approval
+### 2.3 Approval and intervention
 
-Do not perform the following without explicit user approval:
+Pause and ask the user only when the test genuinely cannot continue with the available tools and authorization. Examples include an inaccessible search field, a missing speed control that cannot be reached through the accessibility tree, login or captcha, a required purchase, a blocked permission, or a device operation outside the approved scope.
 
-- change system settings, developer options, permissions, network, accounts, language, or time;
-- delete or move phone files;
-- clear app data;
-- execute arbitrary shell commands on the phone;
-- use root;
-- read private app data;
-- restart the phone;
-- bypass store login, captcha, payment, or regional restrictions.
+Diagnose first. Retry the element lookup, inspect logs, use an alternate visible control, or wait for a transient state before requesting help. Do not escalate trivial issues.
 
-The LSPosed scope is a controlled operation. Confirm it is part of the authorized task before changing it. A reboot is required only after changes to system framework code; ask the user first. Normal provider changes should take effect after force-stopping and relaunching the host app.
+Keep each request minimal and specific. State the one missing action, the exact screen or control, the expected result, and why it is required. For example, ask the user only to search for a track; do not ask them to play, switch, or configure anything else. Ask for one step at a time and resume immediately after it is done.
+
+Never skip a test row. If the user is unavailable or intervention does not unblock the row, record it as blocked with the reason and stop the affected test sequence. Do not report a blocked row as passed.
+
+Stop and ask when MCP is unavailable, a store requires credentials or payment, installation fails repeatedly, decompilation is blocked by protection, the module is not loaded, a crash or ANR occurs, or two attempts fail to identify a root cause.
 
 ## 3. Single-App Adaptation Workflow
 
-### 3.1 Confirm the task
+### 3.1 Acquire and analyze
 
-Confirm the app name, package, version or store source, target device, test account, test tracks, authorized operations, and expected completion criteria. Record these before touching the device.
+1. Confirm the app name, package, version or store source, target device, test account, test tracks, authorized operations, and completion criteria.
 
-### 3.2 Prepare the device
+2. Prepare the device. Verify that MCP can list it and read the screen, the network is available, LSPosed is active, and the module and target app are installed when expected.
 
-Use mobile MCP to verify that; use ADB only as a basic fallback:
+3. Check whether the target package is installed. Record versionName, versionCode, and source, and launch it once. If it is missing, use MCP to open the app store, verify the name, developer, and package, and install the latest version. Ask the user to handle store login, captcha, payment, or region restrictions. If a newer version is required, ask before updating.
 
-- the device is online and unlocked;
-- mobile MCP can list the device and read the current screen;
-- the network is available;
-- LSPosed is active;
-- the target app and SuperLyric module are installed, if expected;
-- logs are available.
-
-### 3.3 Install or verify the target app
-
-Check whether the package is already installed.
-
-If installed, record versionName, versionCode, and installation source, then launch it once to confirm it works. If a newer version is required, ask the user before updating.
-
-If not installed, use mobile MCP to open the phone's app store, search for the app, verify the name, developer, and package, and install the latest version. Pause and ask the user to handle store login, captcha, regional restrictions, or payment. Verify the package and version through MCP; use a read-only ADB package query only if MCP cannot provide it.
-
-### 3.4 Extract and archive the APK
-
-Use MCP package or file access first. If MCP cannot expose the package paths or pull files, ADB is the fallback for package lookup and APK pull:
-
-    adb shell pm path <package>
-
-Pull the base APK and every split APK into this layout:
+4. Extract the APK. Use MCP package or file access first; if it cannot expose paths or pull files, use ADB package lookup and pull. Store base and split APKs in the per-package directory:
 
     music_apks/
     └── <package>/
-        ├── apk/            # base.apk and split-*.apk
-        ├── decompiled/     # apktool and jadx output
-        ├── logs/           # device test logs
-        └── notes/          # version, hashes, anchors, test records
+        ├── apk/
+        ├── decompiled/
+        ├── logs/
+        └── notes/
 
-Create music_apks/ if it does not exist. Use one directory per package. Record package name, versionName, versionCode, ABI, split list, and file hashes. Do not commit APKs or decompiled output to Git and do not redistribute them.
+Record package, versionName, versionCode, ABI, split list, and hashes. Do not commit or redistribute APKs or decompiled output.
 
-### 3.5 Decompile
-
-Decompile locally:
+5. Decompile locally and record the tool versions:
 
     apktool d -f -o decompiled/apktool base.apk
     jadx -d decompiled/jadx --no-res base.apk
 
-Record tool versions and commands. Analyze split resources and code when necessary. Decompilation is for reading only. Do not modify, repackage, or re-sign the host app.
+Decompilation is for reading only. Do not modify, repackage, or re-sign the host app.
 
-### 3.6 Analyze and design the adaptation
+6. Analyze, in this order: Manifest and process model; playback state and current track object; lyric fetch, decrypt, parse, and sidecar channels; stable track identifier; hook anchors; stop and pause semantics. Use DexKit and cached lookups for obfuscated classes. An anchor must be stable across versions or fall back to the API path. Produce an anchor table before coding.
 
-Work in this order:
+### 3.2 Implement, deploy, and launch
 
-1. Manifest: Application entry, activities, services, MediaSession, process, permissions.
-2. Playback: player classes, PlaybackState, MediaMetadata, current track object, position source.
-3. Lyrics: fetch, download, decryption, parser, line and word model, translation, phonetic fields.
-4. Identity: use a stable host identifier when available, such as songID, mediaID, or an audio hash. Fall back to title, artist, and duration only when no stable identifier exists. Never match tracks by title alone.
-5. Hook feasibility: verify that the anchor is stable across versions. Use DexKit and cache lookups for obfuscated classes. Do not hardcode obfuscated names. Define an API or graceful fallback when the anchor is missing.
-6. Semantics: pause is not stop. Reuse the project's StopGate and StopEvidence behavior. The module must not publish playback progress.
-
-Produce an anchor table containing the target class or method, signature, string or field, stability assessment, and fallback. Finalize the design before coding.
-
-### 3.7 Implement
-
-Use the existing provider layout:
+7. Implement the provider in the existing layout:
 
     provider/<app>/XxxAnchors.java
     provider/<app>/XxxHookSource.kt
     provider/<app>/XxxApiSource.kt
     provider/<app>/XxxProvider.java
 
-Concrete providers must be Java. Kotlin may be used for source and helper logic. Implement at least one path and prefer Hook plus API fallback. Add unit tests for parsing, identity, and orchestration logic. Follow the comment and documentation rules in CLAUDE.md.
+Concrete providers must be Java. Add tests for parsing, identity, and orchestration. Complete all three registrations: the HookThis annotation, META-INF/xposed/scope.list, and both SupportApps maps plus the string resources.
 
-Complete all three registrations:
+8. Build both variants. Install the module through MCP; use ADB install only as a fallback. Enable the module in LSPosed, select the target scope, and force-stop and relaunch the host through MCP. Reboot only after framework changes and only after approval. If the module sees no installed apps, ask the user to grant the app-list permission through the system UI.
 
-1. @HookThis(targetPackage = "...")
-2. app/src/main/resources/META-INF/xposed/scope.list
-3. both maps in data/SupportApps.java and res/values{,-zh-rCN}/strings.xml
+9. Launch the app through MCP, inspect the element tree, and dismiss splash ads, pop-ups, and update prompts through element references. Confirm the main screen, usable account, and network. Set module logging to Debug/full, verify SLDiag and module logs, clear the log buffer, and record the app, module, device, and commit identifiers.
 
-### 3.8 Build, install, and enable
+## 4. Test Protocol
 
-    ./gradlew.bat :app:assembleDebug :app:assembleRelease
+### 4.1 Execution and search policy
 
-Install the module through mobile MCP. If MCP cannot install APKs, use adb install -r app/build/outputs/apk/debug/<module>.apk as a fallback.
+Execute every row in 4.3 individually. Do not combine rows, skip a row, or infer a pass from another row. Record pass, fail, or blocked with expected result, actual result, and evidence.
 
-Enable the module in LSPosed and select the target app in its scope. Force-stop and relaunch the target app through MCP so the module loads. Reboot only when system framework code changed, and ask the user first.
+Use the current playback queue for startup, play/pause, seek, speed, background or lock-screen control, continuous switching, and stop. These tests do not require a track search.
 
-If the module sees no installed apps, check the app-list read permission. Ask the user to grant it through the system UI. Do not bypass it with ADB or root.
+Actively search for tests that require a specific track: language coverage, instrumental, translation, phonetic or word timing, data consistency against a fixture, and scoring or cache cases the current queue cannot supply. The AI selects tracks that maximize coverage: a known local fixture, complete word/translation/phonetic data, Chinese/English/minority content, instrumental material, and varied artists or durations. Prefer free, available tracks; do not purchase content. Search through MCP element operations. If no suitable track exists, mark the row blocked.
 
-### 3.9 Launch and prepare for testing
+Use MCP for search, taps, typing, playback controls, and log access. Capture DOC-SUMMARY, QRC STATS when present, and candidate scoring logs as evidence. Use ADB logcat only if MCP cannot provide filtered logs.
 
-Use mobile MCP to launch the target app, inspect the accessibility element tree, and dismiss splash ads, pop-up ads, and update prompts through element references. Use a screenshot only when the tree lacks the needed control or label. Confirm that the app reached its main screen, the account is usable, and the network is available. Pause for user input when login, captcha, membership, or regional restrictions block progress.
+### 4.2 Lyric data validation
 
-Set the module log level to Debug/full, confirm that SLDiag and module logs are visible, clear logcat, and record the device, app, module, and commit identifiers. Do not hide failures by disabling logs.
+Lyric data validation is the primary acceptance gate. A correct-looking screen does not prove correct payload data; wrong timing, identity, sidecars, or cache content must block acceptance even when playback looks normal.
 
-### 3.10 Execute the test matrix
+| Dimension | Required checks | Failure signal |
+| :--- | :--- | :--- |
+| Outcome and completeness | Only NoLyrics may produce an instrumental placeholder; TransientFailure and Unsupported must not. Inspect QRC STATS for skipped lines, empty words, skipped XML, and truncation. Compare line and word counts with the fixture. | Placeholder after a network error; missing first or last lines; truncated payload reported as success |
+| Text integrity | Non-empty publishable lines; no raw entities or invisible control characters; word concatenation matches line text after whitespace normalization; no duplicated, overlapping, or missing slices; no translation line promoted to the main track. | Sanitizer drops words; visible entity text; line text and word text diverge |
+| Line timing and bounds | Starts are sorted; equal starts are allowed only for legitimate simultaneous lines. End must be at least start; when the next start is greater, end must not exceed it. Publishable lines should have positive duration. Starts must stay within the track duration plus the normalization tolerance, and line spans must stay within the 5-minute bound. Verify the first-line index is -1 before the first start and the last index is clamped. | Negative or reversed timing; zero-duration text line; line beyond duration; wrong current-line index |
+| Word timing and text | Words are sorted and lie within the line; end is greater than start; no overlap; last end does not exceed the line end. Word text covers the line after whitespace normalization. Verify the QRC absolute-versus-relative origin on the first word. Validate the published model after sanitizer healing, not only the raw parser output. | Whole-line offset; zero-length word; word outside the line; text mismatch after healing |
+| Sidecar pairing | Translation and phonetic remain separate channels and are never swapped. Each sidecar entry matches one main line within the 150 ms window and is consumed once; its text must belong to that line, not merely share its timestamp. Do not require equal line counts: valid entries may be missing. Detect duplicate attachment, line offset, romanization classified as translation, translation promoted to a main line, and unresolved placeholders such as //. | Translation attached to the next line; duplicated translation; phonetic shown as translation; extra main line |
+| Identity and ID | A stable host ID must be stable across seek, pause, background, reload, and metadata refresh, and distinct tracks must not share it. Allowed transitions are title enrichment on the same stable ID and a provisional upgrade to a stable ID within the 3-second window. Namespace prefixes are stripped for comparison, and the fallback ID title##artist is only a frame cache key, not proof of identity. | ID changes after playback; two tracks share one ID; fallback collision; stale cache attached to another track |
+| Scoring and selection | Check the score table and candidate ordering for exact, near, cover, remix, live, artist-mismatch, and duration-mismatch cases. Verify the 0.3 title-similarity floor, the 50/30/20 weights, the 1/3/5-second duration tiers, the 65-second short-track rule, the 60-point thin-target cap, and the strict greater-than-75 acceptance line. Detect false accept, false reject, missed candidate, wrong version, and unstable tie order. | Wrong version accepted; correct candidate below the line; same versions selected nondeterministically; no candidate despite a match |
+| Cache | Verify frame version and declared length, truncated or corrupt payload handling, atomic replacement, TTL, and provider/locale/track key isolation. A cache hit must belong to the current track and locale; malformed JSON or protobuf must be treated as a miss. | Stale lyric from another track or locale; corrupted frame accepted; cache version mismatch served |
+| API projection and fixture | Both 3.x and 4.0 must preserve title, artist, album, duration, ID, lines, words, translation, phonetic, and current-line index. Verify channel roles, title non-blank, known duration within 1 second of host metadata, duration zero as unknown rather than a fabricated value, and round-trip through the adapter. Compare the published data with local golden fixtures; update fixtures when the host version changes and never keep stale expectations. | 4.0/3.x data loss; swapped channels; fabricated duration; fixture mismatch or stale fixture |
 
-Run every case below for a first adaptation. Run the same matrix for regression.
+Some checks need qualification:
+
+- Line starts need not be strictly increasing. Equal starts can represent a duet or simultaneous text; only a decreasing start or an end beyond the next later start is a defect.
+- Word zero or negative durations are healed on the published path by LyricSanitizer. Test the published result, and still flag any remaining zero, overlap, or out-of-line value.
+- Translation and phonetic are timestamp-aligned, not line-index-aligned. Equal counts are not an invariant; a missing sidecar entry is valid. The defect is a line offset, duplicate attachment, or channel swap.
+- A stable ID is unique within its provider and stable for the same logical track. The namespace prefix is intentionally stripped for comparison, so test cross-provider collisions. The title##artist fallback is not an authoritative ID and can collide for same-named tracks.
+- Repeated lyrics or repeated words with different timestamps are valid. Duplication means overlapping character ranges, duplicate sidecar attachment, or the same content attached twice, not a repeated chorus.
+- A last line may legitimately end beyond a short host-reported duration; PlaybackClock uses max(duration, lyricsEnd) as the upper bound. Treat a missing last line or a large mismatch as the defect, not small host lag.
+- Line and word timings are normalized before publication. Validate the final model and the live line index, not only the parser's intermediate values.
+
+### 4.3 Test matrix
 
 | Area | Action | Pass criterion |
 | :--- | :--- | :--- |
 | Startup | Cold start and first entry to the main screen | No crash or ANR; module loads |
-| Playback | Play, pause, resume | State is correct; pause does not emit STOP |
-| Position | Seek, jump, cross-line playback | Current line and position stay synchronized |
-| Word timing | Word-by-word lyrics and highlighting | Timing and segmentation are correct |
-| Track switch | At least 5 consecutive switches and fast switches | No stale or mismatched lyrics |
-| Cache | Miss, hit, track change, version/locale change, offline, corrupt entry | Correct fetch or cache; no stale track |
-| Languages | Chinese, English, and a minority language | Title, lyrics, and translation are correct |
-| Instrumental | Search for and play an instrumental track in the app | Correct no-lyrics/instrumental state |
+| Playback | Play, pause, resume | Correct state; pause does not emit STOP |
+| Position | Seek, jump, and cross-line playback | Current line and position stay synchronized |
+| Word timing | Word-by-word lyrics and highlighting | Segmentation and timing satisfy 4.2 |
+| Track switch | At least 5 consecutive and rapid switches | No stale or mismatched lyrics |
+| Cache | Miss, hit, track/version/locale change, offline, corrupt entry | Correct fetch or cache; no stale track |
+| Languages | Chinese, English, and a minority language | Title, lyrics, translation, and phonetic data are correct |
+| Instrumental | Search and play an instrumental track | Correct no-lyrics state; no false placeholder |
 | Speed | 0.5x, 1x, 1.5x, 2x | Line changes and position do not drift |
-| Translation | Translated lyrics | Translation aligns with the original |
-| Phonetic | Romanization or phonetic text | Correct field is displayed |
-| Lyric data | Full, current-line, and word data | Fields are complete and correctly ordered |
-| Data consistency | Compare device output with local golden fixtures and unit-test expectations | Title, artist, album, duration, stable ID, lines, timestamps, translation, phonetic, and word timing match; no stale fixture or line offset |
+| Translation | Translated lyrics | Translation aligns and remains on its own channel |
+| Phonetic | Romanization or phonetic text | Correct field and pairing |
+| Lyric data | Apply every check in 4.2 | All required checks pass with evidence |
+| Data consistency | Compare device output with local fixtures | Metadata, lines, timing, words, sidecars, and ID match |
 | Background | Background, lock screen, notification controls | State and position remain correct |
 | Stop | Exit, stop, process death | Correct stop reason; pause is not treated as stop |
-| Compatibility | 3.x and 4.0 interfaces | Both consumer contracts behave correctly |
-| Acquisition | Exercise Hook and network paths separately where supported, including fallback | Both paths return correct lyrics; fallback is logged |
-| Scoring | Exact match, near-match, artist mismatch, duration mismatch | Correct candidate accepted or rejected; scores match unit-test thresholds |
-| Abnormal | Network failure, no lyrics, malformed response | No crash; logs identify the cause; no false instrumental result |
+| Compatibility | 3.x and 4.0 interfaces | Both projections preserve the same data |
+| Acquisition and scoring | Hook and network paths, fallback, candidate table | Both paths work; selection passes 4.2 |
+| Abnormal | Network failure, no lyrics, malformed response | No crash; correct outcome; no false instrumental |
 
-Execute every row in the matrix individually. Do not combine rows, skip a row, or infer a pass from another row. Record each row as pass, fail, or blocked with its evidence. A blocked row is not a pass.
+### 4.4 Reporting and remediation
 
-Use the current playback queue for startup, play/pause, seek, speed, background or lock-screen control, continuous switching, and stop. Do not search for tracks for these cases.
+The final report must include one result for every row in 4.3 with expected result, actual result, status, and evidence. It must list every issue with severity, root cause, affected files or components, and proposed fix, plus an ordered remediation plan with the first action, reproduction steps, and exact files or commands.
 
-Actively search for cases that require a specific track: language coverage, instrumental, translation, phonetic or word timing, data consistency against a fixture, and scoring or cache cases where the current queue cannot supply the needed data. The AI selects tracks that maximize coverage: a known local fixture, complete word/translation/phonetic data, Chinese/English/minority content, instrumental material, and varied artists or durations. Prefer free, available tracks and do not purchase content. Use mobile MCP element operations for the search. If no suitable track exists, report the row as blocked.
+On developer approval, start directly at the first item of the remediation plan. Do not repeat environment discovery or request evidence already in the report. If approval is withheld, stop after the report. Never turn a blocked row into a pass and never omit a failed row from the summary.
 
-Data consistency is a separate check. Compare the device output against the provider's local
-golden fixtures and unit-test expectations: title, artist, album, duration, stable ID, line text and
-timing, translation, phonetic, word timing, and line index. If the host version changed, update the
-fixtures from the newly observed payload; never keep stale expected data.
+### 4.5 Isolation and cleanup
 
-For acquisition, exercise the Hook path and the network path independently where the provider
-supports it, and verify the fallback. Scoring must be checked with exact candidates, near matches,
-artist mismatches, and duration mismatches; the accepted candidate and the score must match the
-LyricScorer unit-test thresholds. Cache behavior must cover a successful network fetch, a replay, a
-track change, a version or locale change, an offline or failed response (with user approval), and a
-corrupt entry. No cached lyric may leak into another track.
+After every app, before starting another, stop playback and force-stop the app through MCP. Archive its logs, then clear the log buffer through MCP. Confirm that no notification, foreground service, or active media session remains. Remove temporary screenshots, recordings, downloads, and other byproducts from shared workstation locations; keep evidence in the per-app directory. Do not delete app data or user files. Reset test-only module settings and log filters. Start the next app only after the previous app is stopped and the log buffer is clean.
 
-Use mobile MCP for search, taps, typing, playback controls, and log access. Prefer accessibility element references over screenshot coordinates. Use a screenshot only when the accessibility tree does not provide the needed control or state.
+## 5. Regression Testing
 
-If MCP cannot provide filtered logs, use ADB logcat as a fallback:
+The user may submit multiple already adapted apps. Process them as a queue: confirm each app and version, run the full 3.2 deployment and 4.1-4.5 protocol for one app, report every row and issue, then clean up before starting the next. If an app fails, pause the queue, fix it through section 3, and resume only after revalidation. Do not launch, operate, or collect logs for multiple apps concurrently.
 
-    adb logcat -c
-    adb logcat -d -v threadtime > music_apks/<package>/logs/<case>.log
-    adb logcat -d -v threadtime SuperLyric:V SLDiag:V *:S
+## 6. Acceptance, Deliverables, and Maintenance
 
-For each case, record the expected result, actual result, log path, and screenshot or recording when useful. Check for FATAL EXCEPTION, ANR in, and unexplained E-level logs. Document known warnings separately.
+A first adaptation is complete only when the full 4.3 matrix and every 4.2 lyric check pass, no crash or unexplained error remains, both 3.x and 4.0 projections are correct, all registrations are present, unit tests and both builds pass, and the final report contains every row and every remediation item.
 
-### 3.11 Fix and repeat
+Deliverables are the provider source and tests, registration changes, needed documentation, the built APK, local APK/decompiled material/logs/report under music_apks/<package>/, and known limitations. APKs and decompiled artifacts stay local and are never committed or redistributed.
 
-Classify failures as environment, account, install, permission, decompilation, anchor, identity, timing, protocol, or test data. Fix the cause, rebuild, reinstall, restart the host, and rerun the failed case before the full matrix.
-
-The final report must contain:
-
-- one result for every row in 3.10, with expected result, actual result, status, and evidence;
-- every discovered issue, including severity, root cause, affected files or components, and proposed fix;
-- an ordered remediation plan, with the first action, reproduction steps, and exact files or commands needed to start the fix;
-- known limitations and the regression scope required after each fix.
-
-On developer approval, start directly at the first item of the remediation plan. Do not repeat environment discovery or ask for evidence already included in the report. If the developer does not approve remediation, stop after the report.
-
-Do not retry indefinitely. If two attempts do not identify the root cause, stop and ask the user. Stop immediately if the next step requires unauthorized settings changes, data clearing, root, a reboot, or bypassing store restrictions.
-
-### 3.12 Test isolation and cleanup
-
-Run this after every app, before starting another app:
-
-1. Stop playback, then force-stop the app through mobile MCP. Use ADB force-stop only as a fallback.
-2. Archive the app logs under music_apks/<package>/logs/, then clear logs through MCP. Use ADB logcat -c only if MCP log access is unavailable.
-3. Confirm the app has no notification, foreground service, or active media session. Its playback state must not leak into the next test.
-4. Remove temporary screenshots, recordings, downloads, and other test byproducts from the workstation's shared locations. Keep evidence in the per-app directory. On the device, do not delete app data or user files; remove only test artifacts you created, and only with approval.
-5. Reset test-only module settings and log filters to the baseline. Do not leave the previous app log level or filters active.
-6. Start the next app only after the previous app is fully stopped and the log buffer is clean.
-
-## 4. Regression Testing for Supported Apps
-
-The user may submit multiple apps that are already adapted. Process them as a queue:
-
-1. Confirm each app is installed and record its version.
-2. For each app, complete steps 3.8 to 3.11: enable the module, restart the host, run every test row, and collect logs.
-3. Finish one app, report every row and any issue, record its result, and run the cleanup in 3.12 before starting the next.
-4. If an app fails, pause the queue, return to section 3 to fix the adaptation, then resume the queue.
-5. Do not launch, operate, or collect logs for multiple apps concurrently.
-
-## 5. Acceptance and Deliverables
-
-A first adaptation is complete when:
-
-- the target app launches and loads the module;
-- the full test matrix passes;
-- every row in 3.10 has an explicit pass, fail, or blocked result with evidence;
-- the final report lists all issues and an ordered remediation plan;
-- there is no crash, ANR, or unexplained error log;
-- play, pause, stop, track switch, and cache behavior are correct;
-- line, word, translation, and phonetic data are correct;
-- device output matches local golden fixtures and unit-test expectations;
-- Hook, network, scoring, and cache behavior are verified;
-- instrumentals are not misclassified;
-- 3.x and 4.0 interface behavior matches the contract;
-- no app state, logs, or byproducts leak into the next test;
-- all three registrations are present;
-- unit tests and both builds pass;
-- comments and documentation follow CLAUDE.md.
-
-Deliverables:
-
-- provider source and tests;
-- registration changes;
-- documentation updates when needed;
-- built APK;
-- local APK, decompiled material, logs, and test report under `music_apks/<package>/`;
-- known limitations and follow-up notes.
-
-APKs and decompiled artifacts remain local and must not be committed or redistributed.
-
-## 6. Failure Handling
-
-| Symptom | Action |
-| :--- | :--- |
-| Device offline or MCP unavailable | Ask the user to connect or authorize MCP; do not silently switch to ADB |
-| Store login, captcha, payment, or region block | Stop and ask the user |
-| Install fails repeatedly | Check package, storage, and version; retry once, then ask |
-| Decompilation fails | Check tools and protection; request guidance |
-| Module sees no apps | Check app-list permission and LSPosed scope; ask the user |
-| Module not loaded | Check scope, logs, and host restart; reboot only for framework changes and only after approval |
-| Lyrics wrong or stale | Check anchor, identity, timing, and stop semantics; fix and retest |
-| Crash or ANR | Collect logs, stop the test, fix before continuing |
-| Accessibility element missing | Use a screenshot to locate the control, then resume element references |
-| Operation needs unauthorized access | Stop and request permission |
-
-## 7. Record Template
-
-    App / package / version / versionCode
-    Device / Android / LSPosed / module version
-    APK path and hash / decompiler versions
-    Adaptation path: Hook / API / both
-    Anchor summary
-    Per-row test results (pass / fail / blocked, expected, actual, evidence)
-    Issues and ordered remediation plan
-    Remediation entry point (first action, files, commands)
-    Log and screenshot evidence
-    Known issues
-    Acceptance result
-
-## 8. Knowledge Capture and Continuous Improvement
-
-During adaptation and testing, actively look for new routes, methods, and mechanisms that are
-reproducible and materially better: anchor strategies, acquisition fallbacks, identity rules,
-scoring or cache behavior, MCP automation patterns, and test techniques.
-
-Record each candidate in `music_apks/<package>/notes/` with the app, version, device, problem,
-method, evidence, scope, and limitations. Do not promote a single observation or an inferred
-behavior; require reproduction, a device log, or a test.
-
-Before adding or changing guidance in this document, ask the developer for approval. Present a
-short proposal: what to add or replace, the evidence, the affected section, and whether the
-knowledge is general or app-specific. App-specific details belong in provider notes or comments.
-Add guidance to an existing section unless a genuinely new topic requires one section.
-
-Review this guide after each adaptation cycle and before each release; if no adaptation occurs,
-review it quarterly. Verify commands, paths, tools, test rows, and version references, remove
-obsolete or duplicated content, and keep the document in clear, concise English. Record approved
-changes in the commit message rather than adding a changelog.
+Capture reproducible improvements in music_apks/<package>/notes/ with the app, version, device, problem, method, evidence, scope, and limitations. Do not promote a single observation or inference. Ask the developer before changing this guide, present a short proposal with the evidence and affected section, and put app-specific details in provider notes rather than here. Review the guide after each adaptation and before each release, or quarterly when idle; remove stale or duplicate content, verify commands and tolerances, and keep the document concise. Record approved changes in the commit message, not a changelog.
