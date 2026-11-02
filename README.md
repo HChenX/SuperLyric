@@ -39,6 +39,7 @@
 - Spotify (com.spotify.music) -> 网络获取
 - Flamingo (unknown) -> Api 原生支持
 - [光锥音乐](https://coneplayer.trantor.ink) (ink.trantor.coneplayer) -> Api 原生支持
+- [BreezyMusic](https://github.com/BlueEve04/BreezyMusic) (com.breezy.music) -> Api 原生支持
 <!-- 暂时未适配至 4.0 统一架构的应用
 - APlayer (remix.myplayer) -> 魅族状态栏歌词
 - 音流音乐 (cn.aqzscn.stream_music) -> 魅族状态栏歌词
