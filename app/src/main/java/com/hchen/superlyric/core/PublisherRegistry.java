@@ -19,7 +19,6 @@
 package com.hchen.superlyric.core;
 
 import android.media.session.PlaybackState;
-import android.os.Process;
 import android.os.SystemClock;
 import android.text.TextUtils;
 
@@ -27,7 +26,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.hchen.hooktool.log.XposedLog;
-import com.hchen.superlyric.data.SupportApps;
 import com.hchen.superlyric.kernel.model.LyricDoc;
 import com.hchen.superlyric.utils.MediaFacts;
 import com.hchen.superlyricapi.SuperLyricData;
@@ -104,14 +102,11 @@ final class PublisherRegistry {
     }
 
     static Registration registerPublisher(@NonNull String packageName, int pid, int uid) {
-        if (uid < Process.FIRST_APPLICATION_UID) {
-            XposedLog.logW("SuperLyricService", "Registration as publisher rejected! Non-app caller, uid: "
-                + uid + ", pid: " + pid);
-            return Registration.REJECTED;
-        }
-        if (!SupportApps.sMediaAppPackages.contains(packageName)) {
-            XposedLog.logW("SuperLyricService",
-                "Registration as publisher rejected! Unsupported package: " + packageName);
+        // 服务入口已拒绝未获 Binder 授权的调用方；此处保留第二道检查，
+        // 防止未来调用方绕过入口直接登记发布者。
+        if (!AccessPolicy.allowsLegacy(uid) && !AccessPolicy.allowsV4(uid)) {
+            XposedLog.logW("SuperLyricService", "Registration as publisher rejected! Unauthorized caller: "
+                + packageName + ", uid: " + uid + ", pid: " + pid);
             return Registration.REJECTED;
         }
 
