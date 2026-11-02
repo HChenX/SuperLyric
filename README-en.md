@@ -42,6 +42,7 @@
 - Spotify (com.spotify.music) -> Network
 - Flamingo (unknown) -> Native API Support
 - [Cone Player](https://coneplayer.trantor.ink) (ink.trantor.coneplayer) -> Native API Support
+- [BreezyMusic](https://github.com/BlueEve04/BreezyMusic) (com.breezy.music) -> Native API Support
 <!-- Applications not yet adapted to the 4.0 Unified Architecture:
 - APlayer (remix.myplayer) -> Meizu Status Bar Lyrics
 - Stream Music (cn.aqzscn.stream_music) -> Meizu Status Bar Lyrics
