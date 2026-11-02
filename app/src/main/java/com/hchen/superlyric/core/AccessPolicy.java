@@ -37,11 +37,10 @@ import com.hchen.superlyric.data.SupportApps;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Resolves which SuperLyric Binder services a caller UID may see and use.
+ * 按调用方 UID 解析可见的 SuperLyric Binder 服务
  *
- * <p>System apps and supported music apps receive both interfaces. Third-party
- * apps receive only the interface declared by their SDK marker version. A
- * failed package lookup is denied and not cached.
+ * <p>系统应用与支持的音乐应用获得两代接口；第三方应用只获得 SDK marker
+ * 版本对应的接口。PackageManager 查询失败按拒绝处理，且不缓存失败结果。
  */
 public final class AccessPolicy {
     private static final String TAG = "SuperLyric-Access";
@@ -75,7 +74,7 @@ public final class AccessPolicy {
     }
 
     /**
-     * The two Binder interfaces enabled by one access decision.
+     * 一次访问判定允许的 Binder 接口集合
      */
     public enum Level {
         DENY(false, false),
@@ -100,6 +99,11 @@ public final class AccessPolicy {
         }
     }
 
+    /**
+     * 初始化系统 Context，并注册包变更监听
+     *
+     * <p>重复调用是安全的；包安装、更新、卸载后清空 UID 缓存。
+     */
     static void initialize(@Nullable Context context) {
         if (context == null) return;
         Context appContext = context.getApplicationContext();
@@ -130,6 +134,9 @@ public final class AccessPolicy {
         }
     }
 
+    /**
+     * 返回 UID 对应的访问级别，失败时按拒绝处理
+     */
     static Level levelForUid(int uid) {
         if (uid <= 0) return Level.DENY;
 
@@ -152,26 +159,38 @@ public final class AccessPolicy {
         return previous != null ? previous : resolved;
     }
 
+    /**
+     * 是否允许旧版 Binder
+     */
     static boolean allowsLegacy(int uid) {
         Level level = levelForUid(uid);
         return level.allowsLegacy();
     }
 
+    /**
+     * 是否允许 v4 Binder
+     */
     static boolean allowsV4(int uid) {
         Level level = levelForUid(uid);
         return level.allowsV4();
     }
 
+    /**
+     * 清空全部 UID 缓存
+     */
     static void invalidateAll() {
         sLevels.clear();
     }
 
+    /**
+     * 清空指定 UID 的缓存
+     */
     static void invalidateUid(int uid) {
         if (uid > 0) sLevels.remove(uid);
     }
 
     /**
-     * Pure policy decision used by the resolver and unit tests.
+     * 纯策略判定，供 UID 解析与单元测试使用
      */
     public static Level resolve(boolean system, boolean supported, boolean marked, int versionCode) {
         if (system || supported) return Level.BOTH;
@@ -181,6 +200,9 @@ public final class AccessPolicy {
         return Level.DENY;
     }
 
+    /**
+     * 解析 UID 的实际权限；PackageManager 异常返回 null，调用方不缓存
+     */
     @Nullable
     private static Level resolveUid(@NonNull Context context, int uid) {
         if (uid < Process.FIRST_APPLICATION_UID) return Level.BOTH;

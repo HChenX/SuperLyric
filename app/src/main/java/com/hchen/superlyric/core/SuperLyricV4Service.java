@@ -95,8 +95,9 @@ public final class SuperLyricV4Service extends ISuperLyricService.Stub {
     }
 
     /**
-     * v4 Binder access is granted to system/support apps and 4.0 SDK clients.
-     * A denied call returns a protocol rejection, never an exception.
+     * v4 Binder 允许系统应用、支持应用和 4.0 SDK 客户端访问
+     *
+     * <p>拒绝时返回协议已有的拒绝码，不向调用方抛异常。
      */
     private static boolean canUseV4Binder() {
         int uid = Binder.getCallingUid();

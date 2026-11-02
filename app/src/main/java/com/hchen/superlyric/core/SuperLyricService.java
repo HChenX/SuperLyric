@@ -1140,8 +1140,9 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     }
 
     /**
-     * Legacy Binder access is granted to supported and system apps, plus 3.x
-     * SDK clients. A denied call is a no-op, never an exception.
+     * 旧版 Binder 允许系统应用、支持应用和 3.x SDK 客户端访问
+     *
+     * <p>拒绝时只返回空操作，不向调用方抛异常。
      */
     private static boolean canUseLegacyBinder() {
         int uid = Binder.getCallingUid();
