@@ -468,7 +468,7 @@ class ParserTest {
         assertFalse(split!!.main.contains("第一次参观卢浮宫"), "译文不得留在主载荷里")
         assertTrue(
             split.translation?.contains("第一次参观卢浮宫") == true,
-            "译文必须**带着时间戳**进入伴随通道，TranslationMerger 靠它对齐",
+            "译文必须带着时间戳进入伴随通道，TranslationMerger 靠它对齐",
         )
     }
 }

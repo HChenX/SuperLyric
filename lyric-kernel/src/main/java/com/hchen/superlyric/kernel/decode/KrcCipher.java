@@ -31,9 +31,6 @@ import java.nio.charset.StandardCharsets;
  * @author 焕晨HChen
  */
 public final class KrcCipher {
-    /**
-     * 酷狗 KRC 的 16 字节静态异或密钥。
-     */
     private static final byte[] KRC_KEY = new byte[]{
         0x40, 0x47, 0x61, 0x77, 0x5e, 0x32, 0x74, 0x47,
         0x51, 0x36, 0x31, 0x2d, (byte) 0xce, (byte) 0xd2, 0x6e, 0x69
@@ -47,7 +44,6 @@ public final class KrcCipher {
     /**
      * 判断字节流是否携带 KRC 魔数。
      *
-     * @param bytes 待检测的字节流
      * @return 前四字节是否为 {@code "krc1"}
      */
     public static boolean hasKrcMagic(byte[] bytes) {
@@ -67,7 +63,6 @@ public final class KrcCipher {
      *
      * <p>带 {@code krc1} 魔数时剥离魔数、异或并解压；否则按已解密明文返回。
      *
-     * @param krcBytes 原始载荷
      * @return 解密后的 KRC 明文
      * @throws DecodeException 载荷为空或解压失败
      */

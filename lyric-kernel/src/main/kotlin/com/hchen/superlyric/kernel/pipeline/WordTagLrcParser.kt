@@ -21,6 +21,7 @@ package com.hchen.superlyric.kernel.pipeline
 import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.model.LyricLine
 import com.hchen.superlyric.kernel.model.LyricWord
+import com.hchen.superlyric.kernel.text.LrcTimestamps
 import com.hchen.superlyric.kernel.text.LyricText
 
 /**
@@ -32,32 +33,8 @@ import com.hchen.superlyric.kernel.text.LyricText
  * ```
  * 行首是行起始时间；其后是「`<时间>文字`」重复若干次。
  * 标签在文字之前，且末尾常有一个没有文字的标签，仅作行结束标记。
- *
- * 不交给通用解析库的原因
- * 该库判定「哪一行是哪一行的译文」用的是相邻行的起始时间差：
- * 两条互相独立的主行只要起始相差小于 200ms，后一条就会被整体吞并成
- * 前一条的 `translation`，且译文行本身从列表里消失。
- * 紧邻的主行很常见（制作信息行、歌者标记行），于是会出现
- * 「主行被吞、头部行挂着一段无关译文」。这是库的既定行为，
- * 无法通过调整输入文本绕开（错开行尾标签仍会被吞并）。
- * 本格式结构简单，自行解析可以做到完全确定。
- *
- * 何时启用
- * 只在 [CompanionSplitter] 判定载荷带有「同时间戳伴随行」时启用
- * （见 [LyricPipeline.parse]），不影响其它 Provider 的解析路径。
- *
- * @author 焕晨HChen
  */
 internal object WordTagLrcParser {
-
-    /** 行首时间戳：`[mm:ss]` / `[mm:ss.xx]` */
-    private val LINE_HEAD = Regex("""^\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?]""")
-
-    /** 词标签：`<mm:ss.mmm>` */
-    private val WORD_TAG = Regex("""<(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?>""")
-
-    /** 元数据指令行：`[ti:xxx]` 之类 */
-    private val DIRECTIVE = Regex("""^\[[a-zA-Z]{1,8}:.*]$""")
 
     /**
      * @return 解析结果；没有任何有效行时返回 null，调用方应回退到通用解析库
@@ -67,13 +44,13 @@ internal object WordTagLrcParser {
 
         for (raw in text.lineSequence()) {
             val line = raw.trim()
-            if (line.isEmpty() || DIRECTIVE.matches(line)) continue
+            if (line.isEmpty() || LrcTimestamps.DIRECTIVE.matches(line)) continue
 
-            val head = LINE_HEAD.find(line) ?: continue
-            val startMs = CompanionSplitter.timestampOf(head.value)
+            val head = LrcTimestamps.LINE_HEAD.find(line) ?: continue
+            val startMs = LrcTimestamps.timestampOf(head.value)
             val body = line.substring(head.range.last + 1)
 
-            val tags = WORD_TAG.findAll(body).toList()
+            val tags = LrcTimestamps.WORD_TAG.findAll(body).toList()
             if (tags.isEmpty()) {
                 val plain = clean(body)
                 if (plain.isNotEmpty()) {
@@ -93,7 +70,7 @@ internal object WordTagLrcParser {
                 builder.append(leadingRaw)
                 val leading = leadingRaw.trim()
                 if (leading.isNotEmpty()) {
-                    val leadingEnd = CompanionSplitter.timestampOf(tags.first().value)
+                    val leadingEnd = LrcTimestamps.timestampOf(tags.first().value)
                     words += LyricWord(leading, startMs, maxOf(startMs, leadingEnd))
                     lineEnd = maxOf(lineEnd, leadingEnd)
                 }
@@ -101,11 +78,11 @@ internal object WordTagLrcParser {
 
             for (index in tags.indices) {
                 val tag = tags[index]
-                val wordStart = CompanionSplitter.timestampOf(tag.value)
+                val wordStart = LrcTimestamps.timestampOf(tag.value)
                 val textFrom = tag.range.last + 1
                 val textTo = tags.getOrNull(index + 1)?.range?.first ?: body.length
                 val wordEnd = tags.getOrNull(index + 1)
-                    ?.let { CompanionSplitter.timestampOf(it.value) } ?: wordStart
+                    ?.let { LrcTimestamps.timestampOf(it.value) } ?: wordStart
 
                 lineEnd = maxOf(lineEnd, wordEnd)
 

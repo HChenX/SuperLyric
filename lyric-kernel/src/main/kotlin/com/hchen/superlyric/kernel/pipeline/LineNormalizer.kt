@@ -121,6 +121,7 @@ internal object LineNormalizer {
                     startMs = minOf(last.startMs, start),
                     endMs = maxOf(last.endMs, end),
                 )
+
                 else -> merged += word.copy(startMs = start, endMs = end)
             }
         }

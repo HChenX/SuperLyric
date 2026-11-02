@@ -27,17 +27,6 @@ import kotlin.math.abs
  * - 双方都有稳定标识时只比较稳定标识，忽略命名空间前缀
  * - 否则比较组合判据：归一化标题须非空且相同，歌手须相容，
  *   双方时长已知时偏差不得超过 [DURATION_TOLERANCE_MS]
- *
- * 不得以"标题相同即同一首"作为唯一判据：同名的 Intro / Interlude 会被永久合并。
- * 稳定标识的表示法不同时，Hook 捕获也不得被当成过期数据丢弃
- *
- * @property source     来源标识（`qq` / `kugou` 等），用于诊断
- * @property stableId   平台侧不可变唯一标识；未知时为 null
- * @property title      曲名
- * @property artist     歌手
- * @property durationMs 曲目总时长；未知时为 0
- *
- * @author 焕晨HChen
  */
 data class TrackIdentity(
     val source: String,
@@ -89,6 +78,13 @@ data class TrackIdentity(
             if (trimmed.isEmpty()) return null
             return "$namespace:$trimmed"
         }
+
+        private val PLACEHOLDER_IDS = setOf("0", "-1", "null", "unknown", "none")
+
+        /** 过滤宿主写入的占位标识；空白与占位值返回 null */
+        @JvmStatic
+        fun usableId(raw: String?): String? =
+            raw?.trim()?.takeIf { it.isNotEmpty() && it.lowercase() !in PLACEHOLDER_IDS }
 
         private val NAMESPACE_PREFIX = Regex("""^[a-zA-Z][a-zA-Z0-9_-]{0,15}:""")
 

@@ -21,7 +21,7 @@ package com.hchen.superlyric.kernel.orchestrate
 /**
  * 播放信号：调用方把宿主的状态常量映射到此处
  *
- * 映射只有一份，在 `:app` 的 `PlaybackSignals`。内核不认识 `android.media.session.PlaybackState`。
+ * 映射只有一份，在 `:app` 的 `PlaybackStates.toSignal`。内核不认识 `android.media.session.PlaybackState`。
  */
 enum class PlaybackSignal {
     /** 正在播放 */
@@ -58,12 +58,6 @@ enum class PlaybackSignal {
  * Provider 与服务各自观察，但共用这里的判定；`UNKNOWN` 保持中性，避免把"不知道"
  * 当成停止。终态信号需要短窗口确认，防止过渡状态清空正在播放的歌词。
  * 判定线程安全；过期任务由令牌作废，不要求调度器支持取消。
- *
- * @param scheduler       排期器；实现方不必支持取消
- * @param onConfirmed     窗口内无人撤销时回调；在调度线程上执行，不得抛异常
- * @param confirmWindowMs 确认窗口
- *
- * @author 焕晨HChen
  */
 class StopGate(
     private val scheduler: Scheduler,

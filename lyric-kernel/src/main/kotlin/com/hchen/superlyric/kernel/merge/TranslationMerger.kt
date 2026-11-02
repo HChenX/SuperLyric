@@ -46,10 +46,6 @@ data class TimeText(val startMs: Long, val text: String)
  * 2. 一对一消费：每条伴随记录至多被消费一次，避免同一译文重复挂载
  * 3. 不覆盖行内译文：主行若已由解析器在行内给出该通道的内容，则跳过
  * 4. 未匹配即丢弃：落空的伴随记录通常是乐器标记或占位符，不得提升为独立歌词行
- *
- * 规则 4 与"禁止把译文输出为主行"共同构成 Translation Track Rule
- *
- * @author 焕晨HChen
  */
 object TranslationMerger {
 
@@ -63,9 +59,6 @@ object TranslationMerger {
     /**
      * 将伴随载荷挂载到主歌词文档上
      *
-     * @param doc     主歌词文档；空文档时原样返回
-     * @param sidecar 伴随载荷；空列表时原样返回
-     * @param channel 目标通道
      * @return 挂载后的新文档（[LyricDoc] 不可变，返回的是新实例）
      */
     fun attach(doc: LyricDoc, sidecar: List<TimeText>, channel: SidecarChannel): LyricDoc {

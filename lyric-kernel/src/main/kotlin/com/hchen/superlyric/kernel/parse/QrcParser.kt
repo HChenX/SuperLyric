@@ -27,31 +27,10 @@ import com.hchen.superlyric.kernel.model.LyricWord
 import com.hchen.superlyric.kernel.text.LyricText
 
 /**
- * QQ 音乐 QRC 明文解析器
+ * QQ 音乐 QRC 明文解析器。
  *
- * 输入形态
- * 本解析器接收的是 [com.hchen.superlyric.kernel.decode.QrcCipher] 解密后的明文，有两种形态：
- * - XML 包裹：`<QrcInfos>` 内含 `<Lyric_1 LyricType="1" LyricContent="…"/>`
- *   与可选的 `<Lyric_2 LyricType="2" LyricContent="…"/>`。译文即内嵌于此
- * - 裸 QRC：直接是 `[start,dur](wStart,wDur,flag)文字…` 行。
- *   此时译文通常由平台以独立字段下发（LRC 形态），由上层走伴随通道处理
- *
- * 译文识别
- * 按标签名与 `LyricType` 属性双向识别，且不依赖属性顺序：平台既可能用 `<Lyric_2>`，
- * 也可能改用 `<Lyric_1 LyricType="2">` 排布，只认字面量 `<Lyric_2>` 会让后一种排布的译文
- * 整段丢失。译文对齐统一走 [TranslationMerger] 的就近匹配：时间戳精确匹配会因两段
- * 载荷相差 1ms 而静默丢弃。XML 实体也必须还原，否则界面会出现 `&#39;` 之类的原始串。
- *
- * 行的两种形态
- * - 文字位于时间标签之前：`文字(start,dur)`，不是标签在前。
- *   按"标签在前"解析会让每个词错配到前一个词的时间上，并丢掉每行第一个词
- * - 词起始有两种排布：歌内绝对毫秒与行内相对偏移都可能出现
- *   （QQ 为绝对毫秒）。二者必须区分，否则整行逐字时间会整体偏移一个行起始的量。
- *   本解析器按首词逐行自动判定
- *
- * 判定排布时看第二个词：首个词的原始值在两种排布下恰好相同，只有第二个词能区分。
- *
- * @author 焕晨HChen
+ * 支持 XML 包裹与裸 QRC 两种形态；译文按标签名与 LyricType 双向识别，实体需还原。
+ * 行文本位于时间标签之前。词起始有绝对毫秒与行内偏移两种排布，按第二个词逐行判定。
  */
 object QrcParser {
 
@@ -116,7 +95,6 @@ object QrcParser {
     /**
      * 解析 QRC 明文
      *
-     * @param text 解密后的 QRC 明文
      * @return 解析结果；无有效歌词行时返回 null
      */
     fun parse(text: String?, stats: ParseStats? = null): LyricDoc? {
@@ -142,7 +120,6 @@ object QrcParser {
     /**
      * 解析独立下发的伴随载荷（平台以 LRC 形态给出的译文或罗马音）
      *
-     * @param text    伴随载荷明文
      * @return 「时间戳 → 文本」列表；无有效记录时返回空列表
      */
     fun parseSidecar(text: String?): List<TimeText> {
@@ -194,15 +171,7 @@ object QrcParser {
     private class XmlBlocks(val main: String?, val translation: String?)
 
     /**
-     * 识别并拆出 XML 中主歌词与译文两个块
-     *
-     * 兼容两种排布：
-     * - `<Lyric_1 LyricContent="main"/>` + `<Lyric_2 LyricContent="trans"/>`
-     * - `<Lyric_1 LyricType="1" LyricContent="main"/>` + `<Lyric_1 LyricType="2" LyricContent="trans"/>`
-     *
-     * 属性顺序不作要求。
-     *
-     * @return 拆解结果；文本不是 XML 包裹形态时返回 null
+     * 拆出 XML 中的主歌词与译文块，兼容 Lyric_2 与 LyricType 两种排布，属性顺序不限。
      */
     private fun extractXmlBlocks(text: String, stats: ParseStats?): XmlBlocks? {
         if (!text.contains("<Lyric_")) return null
@@ -272,9 +241,6 @@ object QrcParser {
         return count
     }
 
-    /**
-     * 解析带逐字标签的主体歌词行
-     */
     private fun parseLines(content: String, stats: ParseStats?): LyricDoc? {
         val offset = OFFSET_PATTERN.find(content)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
 
@@ -318,9 +284,6 @@ object QrcParser {
         return LyricDoc(lines = lines)
     }
 
-    /**
-     * 解析行体，产出逐字切片与重建后的行文本
-     */
     private fun parseBody(
         body: String,
         startMs: Long,
@@ -387,9 +350,6 @@ object QrcParser {
         )
     }
 
-    /**
-     * 解析不含逐字标签的伴随载荷（译文 / 罗马音）
-     */
     private fun parsePlainTimeText(
         content: String,
         offsetMs: Long = 0L,

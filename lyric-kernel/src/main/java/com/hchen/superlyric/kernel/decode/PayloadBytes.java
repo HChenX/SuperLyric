@@ -36,7 +36,6 @@ public final class PayloadBytes {
      * <p>判定顺序：偶数长度且全为十六进制字符时按十六进制；否则按 MIME Base64
      * （容忍换行与空白）；两者都不成立时按 UTF-8 原文处理。
      *
-     * @param payload 原始字符串载荷
      * @return 还原后的字节；载荷为空时返回长度为 0 的数组
      */
     public static byte[] decode(String payload) {
@@ -93,7 +92,6 @@ public final class PayloadBytes {
     /**
      * 十六进制字符串还原为字节。
      *
-     * @param hex 偶数长度的十六进制字符串
      * @return 还原后的字节
      */
     public static byte[] fromHex(String hex) {

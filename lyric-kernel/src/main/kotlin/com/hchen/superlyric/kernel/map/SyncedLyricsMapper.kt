@@ -40,7 +40,6 @@ import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 object SyncedLyricsMapper {
 
     /**
-     * @param lyrics  库解析结果
      * @param lyricId 曲目唯一标识，由调用方注入
      */
     fun toDoc(lyrics: SyncedLyrics, lyricId: String? = null): LyricDoc {

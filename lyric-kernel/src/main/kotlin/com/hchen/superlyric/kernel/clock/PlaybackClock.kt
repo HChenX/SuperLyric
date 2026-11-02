@@ -40,15 +40,6 @@ enum class PlaybackStatus {
  *   进度不随系统回调延迟而滞后
  * - speed ≤ 0 的 PLAYING 视为冻结，而非"运行但速率为 0"
  * - 位置回退合法（重播、拖回开头），不做抑制，由上层据此重置行索引
- *
- * 时间源可注入，漂移、seek、重播、speed=0、暂停等场景均可确定性复现
- *
- * @param durationMs 曲目总时长；未知时为 0（表示不做上界钳制）
- * @param timeSource 单调时间源（毫秒）。默认取纳秒时钟换算（CLOCK_MONOTONIC，
- *                   不含深睡），与 Android 的 `elapsedRealtime()`（CLOCK_BOOTTIME，含深睡）
- *                   并不同基。调用方必须注入与宿主 `lastPositionUpdateTime` 同基的时间源。
- *
- * @author 焕晨HChen
  */
 class PlaybackClock(
     durationMs: Long = 0L,
@@ -84,9 +75,6 @@ class PlaybackClock(
      * 同步一次宿主上报的播放状态
      *
      * @param status               新的播放状态
-     * @param positionMs           该快照对应的播放位置
-     * @param speed                播放速率
-     * @param positionUpdateTimeMs 该快照产生的时刻（与 [timeSource] 同基）；
      *                             传入 0 或负值表示宿主未提供，退回当前时刻
      */
     @Synchronized

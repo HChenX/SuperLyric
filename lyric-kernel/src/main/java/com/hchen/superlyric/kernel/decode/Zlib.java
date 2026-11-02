@@ -42,9 +42,9 @@ public final class Zlib {
 
     /**
      * 将 ZLib 压缩流解压为 UTF-8 文本。
+     * <p>
+     * 解压到流末尾即停止
      *
-     * @param compressed 压缩数据，允许尾部附带填充字节（PKCS5 padding 等），
-     *                   解压到流末尾即停止
      * @return 解压后的文本
      * @throws DecodeException 数据不是合法的 ZLib 流
      */

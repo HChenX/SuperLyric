@@ -37,21 +37,6 @@ import com.hchen.superlyric.kernel.text.LyricText
  * `sentences[]` 数组可能被包裹在多个层级下，逐层探测：
  * `sentences` → `lyrics.sentences` → `audioWithLyricsOption.*`
  * → `track_page.*` → `loaderData.*`。
- *
- * ```
- * sentence: { startMs, endMs, text, words: [ { text, startMs, endMs } ] }
- * 译文位于:  translations.cn
- * ```
- *
- * 三条判据
- * - 译文来源：`translations.cn` 支持两种实际形态：与 `sentences` 平行的对象数组，
- *   或 LRC 形态的字符串：两种形态都归一为 [TimeText]，再统一走 [TranslationMerger] 对齐
- * - 相对时间判定：以逐句局部比较判断词时间戳是否为行内相对值：仅当词的 `startMs`
- *   小于所属句的 `startMs` 时才视其为行内相对偏移。若改用 `lineStart > 1000` 这类全局阈值，
- *   曲目开头 1 秒内的行会全部误判，逐字时序坍缩到行首
- * - 句内插值：词缺失时间戳时按句时长与字长比例插值，而不是一律堆到句首
- *
- * @author 焕晨HChen
  */
 object SodaJsonParser {
 
@@ -81,7 +66,6 @@ object SodaJsonParser {
     /**
      * 解析 JSON 歌词正文
      *
-     * @param text 原始 JSON 字符串
      * @return 解析结果；无有效歌词行时返回 null
      */
     fun parse(text: String?): LyricDoc? {

@@ -47,8 +47,6 @@ object PureMusicDoc {
      * 构造占位文档
      *
      * @param title      曲名；为空时占位行仍可用于展示
-     * @param artist     歌手
-     * @param album      专辑
      * @param durationMs 曲目时长；非正数时使用 [DEFAULT_DURATION_MS]
      * @param lyricId    曲目唯一标识
      */
@@ -71,8 +69,4 @@ object PureMusicDoc {
             lyricId = lyricId,
         )
     }
-
-    /** 判断文档是否为纯音乐占位 */
-    fun isPlaceholder(doc: LyricDoc): Boolean =
-        doc.lines.size == 1 && doc.lines[0].text == TEXT
 }

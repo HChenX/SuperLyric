@@ -27,16 +27,6 @@ package com.hchen.superlyric.kernel.orchestrate
  * armed == false 而放行，"确认成立之后到达的证据"因此无人拦截，刚发布的内容会被清掉。
  * 排期时调用 [snapshot]、确认前调用 [isStillValid]：期间记过任何一笔证据，
  * 本次确认就不成立。
- *
- * 按包或来源各持一个实例
- * 计数属于一次排期，不属于曲目或会话：会话被淘汰重建时计数会归零，
- * 与快照比较后恒等，判别力归零。
- *
- * 线程安全
- * 内部一把锁，[record] / [snapshot] / [isStillValid] 都可并发调用。判定与记账之间
- * 不得插入其它工作，否则会重新打开该窗口。
- *
- * @author 焕晨HChen
  */
 class StopEvidence {
 

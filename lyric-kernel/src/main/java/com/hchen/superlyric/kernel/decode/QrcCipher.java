@@ -41,7 +41,6 @@ public final class QrcCipher {
     /**
      * 判断文本是否已经是明文 QRC 报文（即无需解密）。
      *
-     * @param text 候选文本
      * @return 是否包含 QRC 明文特征
      */
     public static boolean isPlainQrc(String text) {
@@ -54,7 +53,6 @@ public final class QrcCipher {
      * 若载荷本身已是明文 XML 则原样返回；否则执行 3DES 解密 + ZLib 解压。
      * 任一环节失败即抛 {@link DecodeException}，不回退到错误缓冲区。
      *
-     * @param cipherBytes 原始载荷
      * @return 已解密的 QRC 明文
      * @throws DecodeException 载荷为空、3DES 解密失败或解压失败
      */

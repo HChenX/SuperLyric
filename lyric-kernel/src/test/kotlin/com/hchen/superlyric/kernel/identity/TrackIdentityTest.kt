@@ -135,4 +135,14 @@ class TrackIdentityTest {
         assertEquals("abc", TrackIdentity.normalizeStableId("abc"))
         assertNull(TrackIdentity.normalizeStableId("  "))
     }
+
+    @Test
+    fun `placeholder ids are not usable as identity`() {
+        assertNull(TrackIdentity.usableId(null))
+        assertNull(TrackIdentity.usableId("  "))
+        assertNull(TrackIdentity.usableId("0"))
+        assertNull(TrackIdentity.usableId(" -1 "))
+        assertNull(TrackIdentity.usableId("None"))
+        assertEquals("abc", TrackIdentity.usableId(" abc "))
+    }
 }

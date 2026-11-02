@@ -28,11 +28,6 @@ import com.hchen.superlyric.kernel.model.LyricDoc
  * - [NoLyrics]：终态，是唯一可下发纯音乐占位的结论
  * - [Unsupported]：终态，归因于"来源不可用"，不得下发占位
  * - [TransientFailure]：可重试，不得据此下发占位
- *
- * 若把它们压成同一个"失败"，编排器就无从区分"确实没有歌词"与"本次请求失败"，
- * 只能把任何一次网络抖动合成为「纯音乐，请欣赏」并永久固化
- *
- * @author 焕晨HChen
  */
 sealed interface LyricOutcome {
 
@@ -71,12 +66,4 @@ sealed interface LyricOutcome {
      * @property source 来源标识
      */
     data class Unsupported(val source: String) : LyricOutcome
-
-    /** 是否为可重试结果 */
-    val isRetryable: Boolean
-        get() = this is TransientFailure
-
-    /** 是否已可确定最终结论，无需继续等待其他来源 */
-    val isTerminal: Boolean
-        get() = this is Success || this is NoLyrics || this is Unsupported
 }

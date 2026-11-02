@@ -26,34 +26,6 @@ import kotlin.math.max
 
 /**
  * 酷我 / 波点 LRCX 明文解析器
- *
- * 格式
- * LRCX 以头部标签 `[kuwo:KEY]` 与普通 LRC 区分（KEY 为八进制整数）：
- * ```
- * c = KEY / 10      d = KEY % 10
- * 词起始（行内相对）= (v1 + v2) / (c * 2)
- * 词结束（行内相对）= ((v1 - v2) / (d * 2)) + 词起始
- * ```
- * 算式与宿主自身解析器（`com.tme.push.a3.f`）一致。
- * 文本归属规则相同：某个词标签之后、下一个词标签之前的文字属于该标签。
- *
- * 译文归属
- * 译文行在文件中紧跟它所翻译的主行，但时间戳可能等于下一条主行的起始，
- * 而不是本行的起始：
- * ```
- * [00:00.529] <main> Running ...
- * [00:02.145] <0,0>  经历着这种非同寻常的生活
- * [00:02.145] <main> Chasing ...
- * ```
- * 只按时间戳相等配对会把译文挂到 Chasing。判据因此以文件顺序为主：
- * 无标签行若紧跟某条主行、且时间戳等于下一条主行，则属于前一条主行；
- * 时间戳与某条主行相同（译文在该主行之前或之后）时仍按时间戳配对。
- *
- * 缺密钥时不猜
- * 必须存在 `[kuwo:]` 头部标签；没有头部就不是 LRCX，交给通用 LRC 解析器处理。
- * 加密的 `(v1,v2)` 与明文的 `(offset,dur)` 形式相近，误读会产出错误的逐字时序。
- *
- * @author 焕晨HChen
  */
 object KuwoLrcxParser {
 
@@ -70,9 +42,6 @@ object KuwoLrcxParser {
 
     private const val MAX_LINE_DURATION_MS = 4000L
 
-    /**
-     * 文件中的一条行记录；保留原始顺序，译文配对需要它
-     */
     private class Entry(val line: LyricLine, val timed: Boolean)
 
     /**
@@ -84,7 +53,6 @@ object KuwoLrcxParser {
     /**
      * 解析 LRCX 明文
      *
-     * @param text 原始 LRCX 文本
      * @return 解析结果；非 LRCX 或无有效歌词行时返回 null
      */
     fun parse(text: String?): LyricDoc? {

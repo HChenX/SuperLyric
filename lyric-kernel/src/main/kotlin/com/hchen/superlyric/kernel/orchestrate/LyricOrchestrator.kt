@@ -48,8 +48,6 @@ interface LyricSource {
     /**
      * 发起一次取词，必须快速返回
      *
-     * @param identity 目标音轨
-     * @param session  回投通道；结果就绪时调用 [Session.deliver]，
      *                 可多次调用（编排器以先到者为准，并按代际丢弃过期结果）
      */
     fun start(identity: TrackIdentity, session: Session)
@@ -64,27 +62,13 @@ interface LyricSource {
 }
 
 /**
- * 歌词获取编排状态机
+ * 歌词获取编排状态机。
  *
- * 状态
- * - IDLE：无活动音轨
- * - RESOLVING_HOOK：等待 Hook 捕获
- * - FETCHING_API：Hook 超时或失效后请求网络源
- * - ACTIVE：已取得并发布歌词
- * - NO_LYRICS：终态，可下发纯音乐占位
- * - UNAVAILABLE：终态，重试耗尽，不得下发占位
+ * 状态：IDLE 无活动音轨；RESOLVING_HOOK 等 Hook；FETCHING_API 请求网络源；ACTIVE 已发布；
+ * NO_LYRICS 终态可下发占位；UNAVAILABLE 终态不得下发占位。
  *
- * Epoch 取消机制
- * 每次切歌与停止都自增 [epoch]，所有异步回投在送达时校验 epoch，不匹配即静默丢弃。
- * 该守卫阻止停止后迟到的捕获发布歌词、上一首曲目的网络结果覆盖当前曲目，
- * 以及快速连切时的时序竞争
- *
- * 并发模型
- * 所有共享状态由 [lock] 保护，但锁内只做决策，不做执行：每个公开入口在锁内构造一份
- * [Plan]，随后在锁外执行它。这样既不在持锁时做 Binder 发布或来源启动，
- * 也不存在"多个线程在锁外争抢清理同一份待发通知"的竞态
- *
- * @author 焕晨HChen
+ * 每次切歌与停止都自增 epoch，异步回投按 epoch 丢弃过期结果。
+ * 共享状态由 lock 保护；锁内只构造 Plan，锁外执行，不在持锁时做 Binder 发布或来源启动。
  */
 class LyricOrchestrator(
     private val hookSource: LyricSource?,
@@ -153,56 +137,17 @@ class LyricOrchestrator(
     )
 
     private val lock = Any()
-    private val track = TrackSession()
 
-    private var epoch: Long
-        get() = track.epoch
-        set(value) {
-            track.epoch = value
-        }
-
-    private var currentIdentity: TrackIdentity?
-        get() = track.identity
-        set(value) {
-            track.identity = value
-        }
-
-    private var currentSinceMs: Long
-        get() = track.startedAtMs
-        set(value) {
-            track.startedAtMs = value
-        }
-
-    private var apiAttempts: Int
-        get() = track.apiAttempts
-        set(value) {
-            track.apiAttempts = value
-        }
-
-    private var hookDelivered: Boolean
-        get() = track.hookDelivered
-        set(value) {
-            track.hookDelivered = value
-        }
-
-    private var apiDelivered: Boolean
-        get() = track.apiDelivered
-        set(value) {
-            track.apiDelivered = value
-        }
+    private var epoch = 0L
+    private var currentIdentity: TrackIdentity? = null
+    private var currentSinceMs = 0L
+    private var apiAttempts = 0
+    private var hookDelivered = false
+    private var apiDelivered = false
 
     /** 本次取词启动时的身份，重试复用它而不是宿主当前（可能被歌词行污染的）身份 */
-    private var apiIdentity: TrackIdentity?
-        get() = track.apiIdentity
-        set(value) {
-            track.apiIdentity = value
-        }
-
-    private var hookTimeout: Cancellable?
-        get() = track.hookTimeout
-        set(value) {
-            track.hookTimeout = value
-        }
+    private var apiIdentity: TrackIdentity? = null
+    private var hookTimeout: Cancellable? = null
 
     @Volatile
     var state: State = State.IDLE
@@ -277,19 +222,6 @@ class LyricOrchestrator(
     }
 
     /**
-     * 由宿主主动上报 Hook 侧的确定性结论（宿主自己的解析函数明确判定"无歌词"）
-     */
-    fun onHookDeterminedInvalid() {
-        val dispatch = synchronized(lock) {
-            if (state != State.RESOLVING_HOOK) return@synchronized null
-            cancelHookTimeoutLocked()
-            val identity = currentIdentity ?: return@synchronized null
-            planStartApi(identity, epoch, LyricOutcome.NoLyrics("host reported no lyric"))
-        }
-        dispatch?.let(::execute)
-    }
-
-    /**
      * @return 待执行的动作；判定为同一首曲目时返回 null
      */
     private fun planTrackChanged(identity: TrackIdentity): Plan? {
@@ -344,19 +276,10 @@ class LyricOrchestrator(
     }
 
     /**
-     * 判断是否为同一平台标识的两种写法：一侧带标题段、另一侧尚未带上
+     * 判断是否只是同一平台标识补上了标题段。
      *
-     * 稳定标识由「平台 id + 标题」拼成，而标题要等宿主交出曲目对象才拿得到。
-     * 酷我的元数据先到（`kuwo:486777537`），44ms 后曲目探针补上标题
-     * （`kuwo:486777537#南山南…`）。按字符串判等会当成换歌：推进 epoch、清屏、
-     * 重新取词，而取到的仍是同一首。
-     *
-     * 仅在有一侧没有标题段时放宽。两侧都带标题且不同，是有声书换集
-     * （专辑级 rid 下唯一能区分集的依据），必须按换歌处理。
-     *
-     * 必须有时间上界：标题紧接着 id 补上来，而"这一首始终没拿到标题"
-     * （该集没有歌词、探针从未触发）与"换到同一专辑的另一集"在字符串上无法区分。
-     * 窗口外一律按换歌处理，否则新一集会沿用上一集的歌词。
+     * 只在有一侧没有标题段时放宽；两侧都有标题且不同时按换歌处理，避免有声书换集沿用上一集。
+     * 有时间上界，窗口外一律按换歌处理。
      */
     private fun isTitleEnrichment(current: TrackIdentity, next: TrackIdentity): Boolean {
         val age = nowMs() - currentSinceMs
@@ -370,18 +293,10 @@ class LyricOrchestrator(
     }
 
     /**
-     * 判断是否为"同一首歌拿到了更权威的标识"，而不是换歌
+     * 判断是否只是同一首歌拿到了更权威的标识。
      *
-     * 宿主上报标识常分步收敛：先给降级形态，稍后再给权威形态。QQ 音乐先给
-     * 数字 songID、约 30ms 后再给 14 位 songMID，两者是同一音轨；不识别这一步，
-     * 第二次上报会被当成切歌，第一次已完成的取词因代际过期被丢弃
-     *
-     * 不比对标题：部分宿主会把当前正在唱的那句歌词写进 `METADATA_KEY_TITLE`（椒盐音乐即是），
-     * 标题因此不是可信的同一性判据。本判据只用歌手与时长作佐证
-     *
-     * 必须有时间上界：判据放宽了标题这一项，就必须限制它只能在"临时身份刚建立"的短窗口内
-     * 生效，否则长期放宽会吞掉真实的切歌。窗口用 [Config.provisionalGraceMs] 控制。
-     * 这不是去抖：本机制不延迟任何东西，只判断该不该换歌
+     * 宿主常先给降级标识、稍后再给权威标识；不识别会把第二次上报当成切歌并丢弃已完成的结果。
+     * 判据只用歌手与时长，不比对可能被歌词行污染的标题；只在临时身份的时间窗口内生效。
      */
     private fun isProvisionalUpgrade(current: TrackIdentity, next: TrackIdentity): Boolean {
         // 当前已有权威标识：任何变化都按换歌处理，不做任何放宽

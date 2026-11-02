@@ -28,11 +28,6 @@ import com.hchen.superlyric.kernel.parse.SodaJsonParser
 import com.hchen.superlyric.kernel.text.LrcTimestamps
 import com.mocharealm.accompanist.lyrics.core.parser.AutoParser
 
-/** 一种文本格式的解析器；输入已解密、已拆分伴随通道 */
-internal fun interface LyricParser {
-    fun parse(text: String, stats: QrcParser.ParseStats?): LyricDoc?
-}
-
 /** 按格式选择解析器，保持固定优先级 */
 internal object ParserRegistry {
 

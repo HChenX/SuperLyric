@@ -55,17 +55,6 @@ enum class LyricFormat {
 
 /**
  * 一次解析请求
- *
- * @property format          载荷格式
- * @property bytes           原始字节（加密载荷走此通道）
- * @property text            原始文本（已解密载荷走此通道）
- * @property translationText 独立下发的译文载荷（伴随通道）
- * @property phoneticText    独立下发的罗马音载荷（伴随通道）
- * @property title           曲名，用于补齐载荷中缺失的元数据
- * @property artist          歌手
- * @property album           专辑
- * @property durationMs      曲目总时长
- * @property lyricId         曲目唯一标识
  */
 data class LyricRequest @JvmOverloads constructor(
     val format: LyricFormat = LyricFormat.AUTO,
@@ -118,15 +107,6 @@ data class LyricRequest @JvmOverloads constructor(
  *   走本模块自研解析器，直接产出 [LyricDoc]
  * - 对齐：所有译文 / 罗马音统一走 [TranslationMerger]
  * - 规范化：排序、时序单调、丢弃空行，产出的 [LyricDoc] 保证可用
- *
- * 返回值语义（供上层归类为 LyricOutcome）
- * - 返回 [LyricDoc]：解析成功
- * - 返回 `null`：本层没有产出任何有效行，载荷为空、格式不认识、或解析器一行都没读出来。
- *   它不是"平台确定没有歌词"，那句话只能由平台自身给出（如"无版权/无歌词"标记）。
- *   上层据此下发纯音乐占位前，必须自行确认这一点
- * - 抛出 [DecodeException]：解码失败，属可重试情形，上层不得据此下发纯音乐占位
- *
- * @author 焕晨HChen
  */
 object LyricPipeline {
 
@@ -218,11 +198,6 @@ object LyricPipeline {
      * QRC 与 YRC 的词标签形态接近，分量个数是二者唯一可靠的区分点：
      * YRC 恒为 `(a,b,flag)` 三元组，QRC 为 `(a,b)` 二元组。
      * 识别错误会让整段报文进入错误的解析器。
-     *
-     * 词起始的时间基准
-     * 时间基准不能按格式名推断，两种基准在两种格式里都出现过
-     * （QQ 的 QRC 使用绝对毫秒）。
-     * [com.hchen.superlyric.kernel.parse.QrcParser] 按首词逐行自动判定基准。
      */
     private val YRC_LINE_MARKER = Regex("""\[\d+,\d+][^\n]*\(\d+,\d+,\d+\)""")
 
@@ -235,9 +210,6 @@ object LyricPipeline {
     /** KRC 明文行的结构特征：`[数字,数字]` 后跟 `<数字,数字,数字>` */
     private val KRC_LINE_MARKER = Regex("""\[\d+,\d+][^\n]*<\d+,\d+,\d+>""")
 
-    /**
-     * 规范化并补齐伴随通道与元数据
-     */
     private fun finalize(doc: LyricDoc, request: LyricRequest): LyricDoc? {
         // 先折叠同一时刻的行，再挂伴随通道：反过来的话，译文可能先挂到即将被折叠丢弃的
         // 伴随行上，折叠后整段译文消失（只由行序决定）。
