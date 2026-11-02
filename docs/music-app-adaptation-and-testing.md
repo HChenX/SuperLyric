@@ -122,23 +122,19 @@ Some apparent defects are valid data:
 
 Stop playback and force-stop the app through MCP. Archive its logs, then clear the log buffer. Confirm that no notification, foreground service, or active media session remains. Remove temporary screenshots, recordings, downloads, and other byproducts from shared locations; keep evidence in the per-app directory. Do not delete app data or user files. Reset test-only module settings and filters. Start the next app only after the previous app is fully stopped and the log buffer is clean.
 
-## 4. Regression Testing
+## 4. Regression, Reporting, and Acceptance
 
-Process multiple adapted apps as a strict queue. For each app, confirm its version, run the full deployment and test protocol, report every row and issue, then clean up before starting the next app. If an app fails, pause the queue, fix it through the adaptation procedure, and resume only after revalidation. Never launch, operate, or collect logs for multiple apps concurrently.
-
-## 5. Reporting and Remediation
+Process multiple adapted apps as a strict queue. Confirm the version, run the full protocol, report every row, and clean up before the next app. If an app fails, pause the queue, fix it, and resume only after revalidation. Do not operate multiple apps concurrently.
 
 The final report must contain:
 
 - one result for every test row, with expected result, actual result, status, and evidence;
 - every issue with severity, root cause, affected files or components, and proposed fix;
-- an ordered remediation plan with the first action, reproduction steps, and the exact files or commands needed to start;
+- an ordered remediation plan with the first action, reproduction steps, and exact commands;
 - known limitations and the regression scope required after each fix.
 
-On developer approval, start directly at the first remediation item. Do not repeat discovery or request evidence already in the report. If approval is withheld, stop after the report. Never omit a failed row and never turn a blocked row into a pass.
+On approval, start at the first remediation item without repeating discovery. If approval is withheld, stop after the report. Never omit a failed row or turn a blocked row into a pass.
 
-## 6. Acceptance and Maintenance
+Acceptance requires all test rows and lyric checks to pass, no crash or unexplained error, correct legacy and current API projections, complete registrations, passing unit tests and both builds, and a report with every row and remediation item. Deliver the provider, tests, registrations, documentation, built APK, and local evidence. Keep APKs and decompiled artifacts local.
 
-Acceptance requires all test rows and lyric checks to pass, no crash or unexplained error, correct legacy and current API projections, complete registrations, passing unit tests and both builds, and a report containing every row and remediation item. Deliver the provider, tests, registrations, documentation, built APK, local APK/decompiled material/logs/report, and known limitations. Keep APKs and decompiled artifacts local.
-
-Capture reproducible improvements in the per-package notes with the app, version, device, problem, method, evidence, scope, and limitations. Promote only after developer approval, stating what to add or replace, the evidence, and the affected section. Keep app-specific details in provider notes. Review this guide after each adaptation and before each release, or quarterly when idle; remove stale or duplicate content and keep it concise. Record approved changes in the commit message, not a changelog.
+Capture reproducible improvements in the per-package notes with app, version, device, problem, method, evidence, scope, and limitations. Promote only after approval. Review this guide after each adaptation and before each release; remove stale or duplicate content. Record approved changes in the commit message, not a changelog.
