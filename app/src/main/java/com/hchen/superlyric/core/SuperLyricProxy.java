@@ -21,6 +21,7 @@ package com.hchen.superlyric.core;
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
 import android.os.Binder;
+import android.util.ArrayMap;
 
 import androidx.annotation.NonNull;
 
@@ -189,7 +190,7 @@ public final class SuperLyricProxy extends AbsModule {
                                 return;
                             }
 
-                            Map<Object, Object> filtered = new HashMap<>();
+                            Map<Object, Object> filtered = newResultMap(target);
                             for (Map.Entry<?, ?> entry : ((Map<?, ?>) raw).entrySet()) {
                                 filtered.put(entry.getKey(), entry.getValue());
                             }
@@ -304,6 +305,30 @@ public final class SuperLyricProxy extends AbsModule {
                 }
             }
         );
+    }
+
+    /**
+     * 按被 hook 方法的声明返回类型创建副本
+     *
+     * <p>HookTool 会校验返回值必须是声明类型的实例，不能固定返回 HashMap。
+     * AMS 在部分版本声明为 ArrayMap；接口类型则优先使用 ArrayMap。
+     */
+    private static Map<Object, Object> newResultMap(Method method) {
+        Class<?> returnType = method.getReturnType();
+        Map<Object, Object> result;
+        if (returnType.isAssignableFrom(ArrayMap.class)) {
+            result = new ArrayMap<>();
+        } else if (returnType.isAssignableFrom(HashMap.class)) {
+            result = new HashMap<>();
+        } else {
+            throw new IllegalStateException("Unsupported services map type: "
+                + returnType.getName());
+        }
+        if (!returnType.isInstance(result)) {
+            throw new IllegalStateException("Cannot create services map for "
+                + returnType.getName());
+        }
+        return result;
     }
 
     private Class<?> findAmsClass() {
