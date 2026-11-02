@@ -48,6 +48,7 @@ public final class SuperLyricV4Service extends ISuperLyricService.Stub {
 
     @Override
     public int publish(byte[] frame) throws RemoteException {
+        if (!canUseV4Binder()) return SuperLyricService.RESULT_REJECTED_NOT_REGISTERED;
         try {
             int pid = Binder.getCallingPid();
             return mCore.publishFrame(pid, mCore.getPackageNameWithPid(pid), frame);
@@ -60,12 +61,14 @@ public final class SuperLyricV4Service extends ISuperLyricService.Stub {
 
     @Override
     public void clear() throws RemoteException {
+        if (!canUseV4Binder()) return;
         int pid = Binder.getCallingPid();
         mCore.clearFrame(pid, mCore.getPackageNameWithPid(pid));
     }
 
     @Override
     public int registerListener(ILyricFrameListener listener) throws RemoteException {
+        if (!canUseV4Binder()) return FrameBroadcaster.REGISTER_REJECTED;
         if (listener == null) return FrameBroadcaster.REGISTER_REJECTED;
         try {
             int pid = Binder.getCallingPid();
@@ -79,6 +82,7 @@ public final class SuperLyricV4Service extends ISuperLyricService.Stub {
 
     @Override
     public void unregisterListener(ILyricFrameListener listener) throws RemoteException {
+        if (!canUseV4Binder()) return;
         if (listener == null) return;
         int pid = Binder.getCallingPid();
         mCore.unregisterFrameListener(listener, pid, mCore.getPackageNameWithPid(pid));
@@ -86,11 +90,26 @@ public final class SuperLyricV4Service extends ISuperLyricService.Stub {
 
     @Override
     public byte[] latest() throws RemoteException {
+        if (!canUseV4Binder()) return null;
         return mCore.latestFrame();
+    }
+
+    /**
+     * v4 Binder access is granted to system/support apps and 4.0 SDK clients.
+     * A denied call returns a protocol rejection, never an exception.
+     */
+    private static boolean canUseV4Binder() {
+        int uid = Binder.getCallingUid();
+        boolean allowed = AccessPolicy.allowsV4(uid);
+        if (!allowed) {
+            XposedLog.logD(TAG, "Denied v4 Binder call from uid " + uid);
+        }
+        return allowed;
     }
 
     @Override
     public int getApiVersion() throws RemoteException {
+        if (!canUseV4Binder()) return 0;
         return BuildConfig.API_VERSION;
     }
 }

@@ -285,6 +285,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
     @Override
     public void registerPublisher() throws RemoteException {
+        if (!canUseLegacyBinder()) return;
         int pid = Binder.getCallingPid();
         String packageName = getPackageNameWithPid(pid);
         if (packageName.isEmpty()) {
@@ -306,6 +307,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
     @Override
     public void unregisterPublisher() throws RemoteException {
+        if (!canUseLegacyBinder()) return;
         int pid = Binder.getCallingPid();
         String packageName = getPackageNameWithPid(pid);
         if (!packageName.isEmpty()) {
@@ -318,6 +320,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
     @Override
     public boolean isPublisherRegistered() throws RemoteException {
+        if (!canUseLegacyBinder()) return false;
         int pid = Binder.getCallingPid();
         String packageName = getPackageNameWithPid(pid);
         return PublisherRegistry.isPublisherProcess(packageName, pid);
@@ -325,6 +328,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
     @Override
     public void sendLyric(SuperLyricData data) throws RemoteException {
+        if (!canUseLegacyBinder()) return;
         if (data == null) return;
 
         data = LyricSanitizer.sanitizeData(data);
@@ -502,6 +506,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
     @Override
     public void sendStop(SuperLyricData data) throws RemoteException {
+        if (!canUseLegacyBinder()) return;
         if (data == null) return;
 
         int pid = Binder.getCallingPid();
@@ -832,6 +837,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
     @Override
     public void setSystemPlayStateListenerEnabled(boolean enabled) throws RemoteException {
+        if (!canUseLegacyBinder()) return;
         int pid = Binder.getCallingPid();
         String packageName = getPackageNameWithPid(pid);
         if (isPublisherProcess(packageName, pid)) {
@@ -846,6 +852,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
     @Override
     public void registerReceiver(ISuperLyricReceiver receiver) throws RemoteException {
+        if (!canUseLegacyBinder()) return;
         if (receiver == null) return;
         int pid = Binder.getCallingPid();
         mReceivers.register(receiver, Binder.getCallingUid(), pid, getPackageNameWithPid(pid));
@@ -853,6 +860,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
     @Override
     public void unregisterReceiver(ISuperLyricReceiver receiver) throws RemoteException {
+        if (!canUseLegacyBinder()) return;
         if (receiver == null) return;
         int pid = Binder.getCallingPid();
         mReceivers.unregister(receiver, pid, getPackageNameWithPid(pid));
@@ -860,12 +868,14 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
     @Override
     public boolean isReceiverRegistered(ISuperLyricReceiver receiver) throws RemoteException {
+        if (!canUseLegacyBinder()) return false;
         return receiver != null && mReceivers.isRegistered(receiver);
     }
 
     @Nullable
     @Override
     public SuperLyricData getLatestLyric() throws RemoteException {
+        if (!canUseLegacyBinder()) return null;
         synchronized (publishers.lock) {
             String active = publishers.activePublisher;
             if (active != null) {
@@ -884,6 +894,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
      */
     @Override
     public int getServerApiVersion() throws RemoteException {
+        if (!canUseLegacyBinder()) return 0;
         return BuildConfig.API_VERSION;
     }
 
@@ -1126,6 +1137,19 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         PublisherRegistry.Session session = publishers.getOrCreateSession(packageName);
         session.touch();
         return session;
+    }
+
+    /**
+     * Legacy Binder access is granted to supported and system apps, plus 3.x
+     * SDK clients. A denied call is a no-op, never an exception.
+     */
+    private static boolean canUseLegacyBinder() {
+        int uid = Binder.getCallingUid();
+        boolean allowed = AccessPolicy.allowsLegacy(uid);
+        if (!allowed) {
+            XposedLog.logD(TAG, "Denied legacy Binder call from uid " + uid);
+        }
+        return allowed;
     }
 
     String getPackageNameWithPid(int pid) {
