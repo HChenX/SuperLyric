@@ -18,6 +18,11 @@
  */
 package com.hchen.superlyric.ui.effect
 
+enum class DeviceType {
+    PHONE,
+    PAD,
+}
+
 /**
  * OS 2 与 OS 3 的背景预设
  *

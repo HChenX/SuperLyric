@@ -32,7 +32,7 @@ import com.hchen.superlyric.kernel.orchestrate.PlaybackSignal;
 import com.hchen.superlyric.kernel.orchestrate.StopEvidence;
 import com.hchen.superlyric.kernel.orchestrate.StopGate;
 import com.hchen.superlyric.publisher.PlaybackTracker;
-import com.hchen.superlyric.utils.PlaybackSignals;
+import com.hchen.superlyric.utils.PlaybackStates;
 import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.model.StopReason;
 
@@ -247,7 +247,7 @@ final class SystemPlaybackCoordinator {
 
     // 调用方必须持有 registry.lock；终态信号排期，其它信号作为新证据撤销排期
     private void applyStopSignalLocked(@NonNull String packageName, int state) {
-        PlaybackSignal signal = PlaybackSignals.of(state);
+        PlaybackSignal signal = PlaybackStates.toSignal(state);
         if (signal != PlaybackSignal.STOPPED && signal != PlaybackSignal.ERROR
             && signal != PlaybackSignal.SESSION_GONE && signal != PlaybackSignal.UNKNOWN) {
             evidence(packageName).record();

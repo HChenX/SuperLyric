@@ -67,8 +67,8 @@ import com.hchen.superlyric.BuildConfig
 import com.hchen.superlyric.R
 import com.hchen.superlyric.ui.effect.BgEffectBackground
 import com.hchen.superlyric.ui.effect.BlurredBar
-import com.hchen.superlyric.ui.effect.blend.ColorBlendToken
 import com.hchen.superlyric.ui.effect.cardBlur
+import com.hchen.superlyric.ui.effect.cardBlendColors
 import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -146,7 +146,7 @@ fun AboutLayout(
     }
 
     val isInDark = isSystemInDarkTheme()
-    val cardBlend = if (isInDark) ColorBlendToken.Overlay_Thin_Light else ColorBlendToken.Pured_Regular_Light
+    val cardBlend = cardBlendColors(isInDark)
     val logoBlend = remember(isInDark) {
         if (isInDark) {
             listOf(

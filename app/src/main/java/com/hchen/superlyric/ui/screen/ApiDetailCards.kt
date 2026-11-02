@@ -56,9 +56,6 @@ import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import java.util.Locale
 
-/**
- * 看板收起时露在屏幕底部的状态摘要
- */
 @Composable
 internal fun ApiPanelPeekHeader(
     state: ApiReceiverState,
@@ -100,6 +97,7 @@ internal fun ApiPanelPeekHeader(
                     state.eventType == "STOP" -> Triple(stringResource(R.string.api_status_stop), Color(0xFFE53935).copy(alpha = 0.2f), Color(0xFFD32F2F))
                     state.eventType == "FULL" || state.eventType == "STATE" ->
                         Triple(stringResource(R.string.api_status_streaming), colorScheme.primaryContainer, colorScheme.onPrimaryContainer)
+
                     else -> Triple(stringResource(R.string.api_status_standby), colorScheme.tertiaryContainer, colorScheme.onTertiaryContainer)
                 }
 
@@ -142,9 +140,6 @@ internal fun ApiPanelPeekHeader(
     }
 }
 
-/**
- * 监控统计详情卡片
- */
 @Composable
 internal fun ApiMonitorSummaryCard(
     state: ApiReceiverState,
@@ -225,9 +220,6 @@ internal fun ApiMonitorSummaryCard(
     }
 }
 
-/**
- * 媒体元数据与进度条卡片
- */
 @Composable
 internal fun ApiMediaMetadataCard(
     state: ApiReceiverState,
@@ -330,9 +322,6 @@ internal fun ApiMediaMetadataCard(
     }
 }
 
-/**
- * 实时单句歌词与逐字拆解卡片
- */
 @Composable
 internal fun ApiCurrentLineCard(
     state: ApiReceiverState,
@@ -475,9 +464,6 @@ internal fun ApiCurrentLineCard(
     }
 }
 
-/**
- * 全量歌词概览与上下文卡片
- */
 @Composable
 internal fun ApiAllLyricsOverviewCard(
     allLyrics: List<Line>,

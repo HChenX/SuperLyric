@@ -36,8 +36,6 @@ object UIConstants {
      * 主布局与背景效果共用这一判定，避免 840dp / 600dp 边界上 `>` 与 `>=` 的差异
      * 让两侧结论相反
      *
-     * @param widthDp 可用宽度（dp）
-     * @param heightDp 可用高度（dp）
      */
     fun isWideScreen(widthDp: Float, heightDp: Float): Boolean {
         if (widthDp >= WIDE_SCREEN_THRESHOLD.value) return true

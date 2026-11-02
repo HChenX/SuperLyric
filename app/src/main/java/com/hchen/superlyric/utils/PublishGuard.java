@@ -40,9 +40,9 @@ public final class PublishGuard {
     }
 
     /**
-     * @param title          发布内容里的曲名，可为空
-     * @param durationMs     发布内容里的时长，未知时为 0
-     * @param sessionTitle   系统 MediaSession 的曲名，可为空
+     * @param title           发布内容里的曲名，可为空
+     * @param durationMs      发布内容里的时长，未知时为 0
+     * @param sessionTitle    系统 MediaSession 的曲名，可为空
      * @param sessionDuration 系统 MediaSession 的时长，未知时为 0
      * @return 两者不矛盾时为 true
      */

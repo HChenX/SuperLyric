@@ -55,14 +55,6 @@ internal object QQIdentity {
      * 锚点常先于新曲目的元数据到达（实测早约 8~30ms），此时它指向下一首，而元数据可能
      * 仍是上一首。切歌时锚点也可能没有触发（宿主改名或走了别的路径），于是 [capturedMid]
      * 停在上一首，把新曲目伪装成旧的，表现为漏切歌。
-     *
-     * 判据：只有当元数据自带一个合法且不同的 songMID 时才改用它，那一刻元数据与当前曲目
-     * 原子绑定，而锚点值已证明落后。其余情形沿用锚点，它是唯一能把数字 songID 与 songMID
-     * 区分开的来源，元数据的 `MEDIA_ID` 常常只是数字 songID
-     *
-     * @param capturedMid 锚点最近捕获的 songMID；未捕获过时为 null
-     * @param metadataId  `MediaMetadata.MEDIA_ID` 的原始值；缺失时为空串
-     * @return 应当采用的 songMID；两者都不可用时返回 null
      */
     @JvmStatic
     fun preferredMid(capturedMid: String?, metadataId: String?): String? {

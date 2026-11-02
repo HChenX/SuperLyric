@@ -42,16 +42,6 @@ import java.util.concurrent.TimeoutException;
  * <p>与 {@link ReceiverBroadcaster} 分开维护：两代订阅者使用不同的回调接口与线上格式
  * （v4 帧 / 3.x Parcelable），一边的死链或慢链不得影响另一边。全局上限 64 个，
  * 每 uid 上限 16 个，单次回调超时 500ms。
- *
- * <p>不使用 {@code RemoteCallbackList}：它在 {@code beginBroadcast} 期间持锁回调，
- * 回调中进入的注册、注销或 {@code latest()} 都可能与该锁互等。自行维护快照后，
- * 广播期间不持全局锁，慢客户端不会堵住注册与注销路径。
- *
- * <p>首帧由服务端在 {@code registerListener} 返回后排到本类广播线程补发：有在播会话补
- * FULL，否则不发。v4 的 STATE 帧不携带文档，客户端需要时用 {@code latest()} 获取
- * FULL 或最近一次 STOP。
- *
- * @author 焕晨HChen
  */
 final class FrameBroadcaster {
     private static final String TAG = "SuperLyric-Frames";

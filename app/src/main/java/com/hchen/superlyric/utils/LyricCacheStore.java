@@ -18,7 +18,6 @@
  */
 package com.hchen.superlyric.utils;
 
-import android.annotation.SuppressLint;
 import android.content.Context;
 
 import androidx.annotation.NonNull;
@@ -79,14 +78,8 @@ public final class LyricCacheStore {
     private static final String FRAME_SEPARATOR = ",\"d\":";
     private static final byte[] FRAME_HEAD_BYTES = FRAME_HEAD.getBytes(StandardCharsets.UTF_8);
     private static final byte[] FRAME_SEPARATOR_BYTES = FRAME_SEPARATOR.getBytes(StandardCharsets.UTF_8);
-    /**
-     * 帧的最小可能字节数：帧头 + 至少一位长度 + 分隔符 + 一个载荷字节 + 收尾 '}'
-     */
     private static final long FRAME_MIN_BYTES =
         FRAME_HEAD_BYTES.length + 1L + FRAME_SEPARATOR_BYTES.length + 1L + 1L;
-    /**
-     * {@link #MAX_PAYLOAD_BYTES} 的十进制位数
-     */
     private static final int MAX_LENGTH_DIGITS = String.valueOf(MAX_PAYLOAD_BYTES).length();
     /**
      * 帧的最大可能字节数：帧头 + 长度字段的最大位数 + 分隔符 + 上限载荷 + 收尾 '}'
@@ -125,89 +118,28 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 将接口返回的 JSON 文本（UTF-8）写入磁盘缓存
-     *
-     * @param provider 提供者命名空间（如 Spotify / Netease），须为纯名称
-     * @param key      缓存键（可为 {locale}/{id} 或纯 id）
-     * @param json     接口返回的原始 JSON 字符串
-     */
-    public static void put(@Nullable Context context, @NonNull String provider, @NonNull String key, @NonNull String json) {
-        put(context, provider, key, json.getBytes(StandardCharsets.UTF_8));
-    }
-
-    /**
-     * 异步将接口返回的 JSON 文本写入磁盘缓存，使用存储自有的串行写线程
-     *
-     * @param context  宿主 Context；为 {@code null} 时自动解析
-     * @param provider 提供者命名空间（如 Netease / Spotify）
-     * @param key      缓存键
-     * @param json     接口返回的原始 JSON 字符串
-     */
-    public static void putAsync(@Nullable Context context, @NonNull String provider, @NonNull String key, @NonNull String json) {
-        putAsync(WRITE_EXECUTOR, context, provider, key, json);
-    }
-
-    /**
-     * 异步将接口返回的原始响应字节写入磁盘缓存，使用存储自有的串行写线程
-     *
-     * @param context  宿主 Context；为 {@code null} 时自动解析
-     * @param provider 提供者命名空间（如 Netease / Spotify）
-     * @param key      缓存键
-     * @param data     接口返回的原始响应字节
-     */
-    public static void putAsync(@Nullable Context context, @NonNull String provider, @NonNull String key, @NonNull byte[] data) {
-        putAsync(WRITE_EXECUTOR, context, provider, key, data);
-    }
-
-    /**
      * 异步将接口返回的 JSON 文本写入磁盘缓存
-     *
-     * @param executor 执行器，为 {@code null} 时同步写入
-     * @param context  宿主 Context；为 {@code null} 时自动解析
-     * @param provider 提供者命名空间（如 Netease / Spotify）
-     * @param key      缓存键
-     * @param json     接口返回的原始 JSON 字符串
      */
-    public static void putAsync(@Nullable Executor executor, @Nullable Context context,
-                                @NonNull String provider, @NonNull String key, @NonNull String json) {
-        putAsync(executor, context, provider, key, json.getBytes(StandardCharsets.UTF_8));
+    public static void putAsync(@Nullable Context context, @NonNull String provider,
+                                @NonNull String key, @NonNull String json) {
+        putAsync(context, provider, key, json.getBytes(StandardCharsets.UTF_8));
     }
 
     /**
      * 异步将接口返回的原始响应字节写入磁盘缓存
-     *
-     * @param executor 执行器，为 {@code null} 时同步写入
-     * @param context  宿主 Context；为 {@code null} 时自动解析
-     * @param provider 提供者命名空间（如 Netease / Spotify）
-     * @param key      缓存键
-     * @param data     接口返回的原始响应字节
      */
-    public static void putAsync(@Nullable Executor executor, @Nullable Context context,
-                                @NonNull String provider, @NonNull String key, @NonNull byte[] data) {
-        if (executor == null) {
-            put(context, provider, key, data);
-            return;
-        }
-        try {
-            executor.execute(() -> put(context, provider, key, data));
-        } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to dispatch async cache write, falling back to sync: " + t.getMessage());
-            put(context, provider, key, data);
-        }
+    public static void putAsync(@Nullable Context context, @NonNull String provider,
+                                @NonNull String key, @NonNull byte[] data) {
+        WRITE_EXECUTOR.execute(() -> put(context, provider, key, data));
     }
 
     /**
      * 将接口返回的原始响应字节（JSON 或 protobuf）写入磁盘缓存
      * <p>
      * 写入只做"临时文件 + 原子改名（{@code REPLACE_EXISTING}）"，不检查既有文件：
-     * 版本迁移发生在读取侧，{@link #get} 发现版本不符即删除并返回未命中，下一次取词
-     * 按当前格式重写。
-     *
-     * @param provider 提供者命名空间（如 Spotify / Netease），须为纯名称
-     * @param key      缓存键（可为 {locale}/{id} 或纯 id）
-     * @param data     接口返回的原始响应字节
+     * 版本迁移发生在读取侧，发现版本不符即删除并返回未命中，下一次取词按当前格式重写。
      */
-    public static void put(@Nullable Context context, @NonNull String provider, @NonNull String key, @NonNull byte[] data) {
+    private static void put(@Nullable Context context, @NonNull String provider, @NonNull String key, @NonNull byte[] data) {
         if (data.length == 0 || data.length > MAX_PAYLOAD_BYTES) {
             AndroidLog.logW(TAG, "Reject lyric cache payload: provider=" + provider + ", bytes=" + data.length);
             return;
@@ -326,15 +258,6 @@ public final class LyricCacheStore {
     private static boolean isReadableCacheSize(@NonNull File file) {
         long length = file.length();
         return length >= FRAME_MIN_BYTES && length <= FRAME_MAX_BYTES;
-    }
-
-    /**
-     * 读取磁盘缓存，未命中返回 {@code null}
-     */
-    @Nullable
-    public static String get(@Nullable Context context, @NonNull String provider, @NonNull String key) {
-        byte[] data = getBytes(context, provider, key);
-        return data == null ? null : new String(data, StandardCharsets.UTF_8);
     }
 
     /**
@@ -476,24 +399,6 @@ public final class LyricCacheStore {
         return success;
     }
 
-    /**
-     * 递归清空指定提供者的缓存命名空间，用于版本升级后的整体失效
-     *
-     * <p>删除范围严格限制在合法 provider 目录内，不跟随符号链接。
-     *
-     * @param context  宿主 Context；为 {@code null} 时尝试解析当前 Application
-     * @param provider 提供者命名空间
-     * @return 命名空间不存在或全部内容删除成功时返回 {@code true}
-     */
-    public static boolean clearProviderCache(@Nullable Context context, @NonNull String provider) {
-        Context ctx = resolveContext(context);
-        if (ctx == null) return false;
-
-        synchronized (WRITE_LOCK) {
-            return clearProviderCacheLocked(ctx, provider);
-        }
-    }
-
     private static boolean clearProviderCacheLocked(@NonNull Context context, @NonNull String provider) {
         String providerDir = sanitizeSegment(provider);
         if (providerDir == null) {
@@ -608,14 +513,11 @@ public final class LyricCacheStore {
     }
 
     /**
-     * 解析宿主 Context：优先使用传入的宿主 Application Context，缺失时（未触发
-     * onApplicationCreated 的兜底场景）反射获取当前 Application
+     * 解析宿主 Context：优先使用传入的 Context，其次使用发布层缓存的 Application。
      *
-     * <p>注意 {@code getApplicationContext()} 可能返回 null：模块在 Hook
-     * {@code Application.attach(Context)} 的时点就会调用 {@code onApplicationCreated}，
-     * 那一刻 Application 尚未挂上，取不到 Application Context。此时必须退回使用
-     * 传入的这个 Context 本身（它同样是可用的宿主 Context，能正常取 cacheDir），
-     * 否则整条缓存迁移链路每次启动都会静默失败。
+     * <p>{@code getApplicationContext()} 可能返回 null：模块在 Hook
+     * {@code Application.attach(Context)} 时就会调用 {@code onApplicationCreated}，
+     * 那一刻 Application 尚未挂上。此时使用传入的 Context，它仍可正常取 cacheDir。
      */
     @Nullable
     private static Context resolveContext(@Nullable Context context) {
@@ -623,17 +525,8 @@ public final class LyricCacheStore {
         if (direct != null) return direct;
 
         try {
-            Context published = applicationOf(AbsPublisher.getAppContext());
-            if (published != null) return published;
+            return applicationOf(AbsPublisher.getAppContext());
         } catch (Throwable ignored) {
-        }
-        try {
-            @SuppressLint("PrivateApi")
-            Object app = Class.forName("android.app.ActivityThread")
-                .getMethod("currentApplication")
-                .invoke(null);
-            return app instanceof Context ? (Context) app : null;
-        } catch (Throwable t) {
             return null;
         }
     }

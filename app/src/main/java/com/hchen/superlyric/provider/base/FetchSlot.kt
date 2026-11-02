@@ -18,6 +18,10 @@
  */
 package com.hchen.superlyric.provider.base
 
+import com.hchen.hooktool.log.AndroidLog
+import com.hchen.superlyric.kernel.orchestrate.LyricSource
+import com.hchen.superlyric.kernel.outcome.LyricOutcome
+
 import okhttp3.Call
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executor
@@ -32,14 +36,6 @@ import java.util.concurrent.atomic.AtomicLong
  * 单个慢响应最长可阻塞后续切歌一个读超时。编排器按 epoch 丢弃过期结果，因此这里允许
  * 每首歌并发执行。线程池固定 6 线程、队列无界，线程数有上界，单次任务受 callTimeout 约束。
  * 解析宿主报文或本地文件的来源仍走各自单线程，以保持同一曲目的处理顺序。
- *
- * 令牌用于判定请求归属。若这些来源共用一个 `cancelled` 布尔，新的 `start()` 会重置它，
- * 使上一首在途请求的过期结果被交付。`LyricSource.cancel` 约定取消后不再交付，
- * 过期令牌可在本地预筛掉这类投递。
- *
- * 令牌只做预筛，权威判定在消费方。`isCurrent(token)` 与随后的 `deliver(outcome)` 之间
- * 存在窗口，[open] / [invalidate] 可能落入其中；本地检查只过滤明显过期的投递，
- * 最终由编排器的 epoch 丢弃。不要为此在交付路径加锁。
  */
 class FetchSlot(private val executor: Executor = FETCH_POOL) {
 
@@ -75,6 +71,27 @@ class FetchSlot(private val executor: Executor = FETCH_POOL) {
     /** 在共享取词池上执行一次取词 */
     fun execute(task: Runnable) {
         executor.execute(task)
+    }
+
+    /**
+     * 执行一次完整取词：开启代际、在取词池上运行、按代际交付
+     *
+     * 异常统一归类为 [LyricOutcome.TransientFailure]；取消后不交付。
+     */
+    fun launch(
+        tag: String,
+        session: LyricSource.Session,
+        resolve: (Long) -> LyricOutcome,
+    ) {
+        val token = open()
+        execute {
+            if (!isCurrent(token)) return@execute
+            val outcome = runCatching { resolve(token) }.getOrElse {
+                AndroidLog.logW(tag, "Fetch failed: " + it.message)
+                LyricOutcome.TransientFailure(it)
+            }
+            if (isCurrent(token)) session.deliver(outcome)
+        }
     }
 
     private companion object {

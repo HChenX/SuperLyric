@@ -29,7 +29,6 @@ import com.hchen.superlyric.kernel.orchestrate.LyricOrchestrator;
 import com.hchen.superlyric.provider.base.HookLyricSource;
 import com.hchen.superlyric.provider.base.MusicProvider;
 
-import java.util.Locale;
 
 /**
  * 酷我音乐歌词提供者基类。
@@ -55,9 +54,6 @@ abstract class KuwoBaseProvider extends MusicProvider {
      */
     private static final long HOOK_TIMEOUT_MS = 3_000L;
 
-    /**
-     * 以下三项用于补齐 Kotlin 全参构造；前两项保持基类默认值
-     */
     private static final int DEFAULT_MAX_API_ATTEMPTS = 3;
 
     private static final long DEFAULT_RETRY_BASE_DELAY_MS = 500L;
@@ -104,14 +100,6 @@ abstract class KuwoBaseProvider extends MusicProvider {
      *
      * <p>Hook 侧拿到宿主本地已解密的 LRCX 明文，与当前播放严格同源，不需要联网或按标题
      * 检索，因此不存在匹配误差。
-     *
-     * <p>酷狗兜底是「按歌名 + 歌手搜索」的跨源检索：酷我的有声书 / TME AI 字幕在酷狗库中
-     * 的标题、歌手对不上，检索器只能模糊命中其它内容，从而发布另一本书的歌词。
-     *
-     * <p>一旦挂上，hook 超时后它会被无条件启用（编排器 {@code planStartApi} 不判断能否匹配），
-     * 正确的整首歌词会被顶掉，两套歌词共用同一 rid 与播放位置互相覆盖。
-     *
-     * <p>因此返回 null：等待 hook 窗口已放宽到 3 秒，避免错误结果。
      */
     @Nullable
     @Override
@@ -157,8 +145,8 @@ abstract class KuwoBaseProvider extends MusicProvider {
     @NonNull
     @Override
     protected TrackIdentity buildIdentity(@NonNull MediaMetadata metadata) {
-        String title = readString(metadata, MediaMetadata.METADATA_KEY_TITLE);
-        String artist = readString(metadata, MediaMetadata.METADATA_KEY_ARTIST);
+        String title = metadataString(metadata, MediaMetadata.METADATA_KEY_TITLE);
+        String artist = metadataString(metadata, MediaMetadata.METADATA_KEY_ARTIST);
         long duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION);
 
         // 当前曲目的 rid 只能取元数据自己的 MEDIA_ID，不能取 Hook 侧最近一次取词的 rid。
@@ -171,8 +159,10 @@ abstract class KuwoBaseProvider extends MusicProvider {
         //
         // 探针的 rid 仍用于把 Hook 歌词正文绑定到所属曲目（见 KuwoHookSource）；
         // 预取的歌词因此可按 rid 暂存，待该曲目开始播放时补投。
-        String mediaId = usableRid(readString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID));
-        String captured = usableRid(hookStableId());
+        String mediaId = TrackIdentity.usableId(metadataString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID));
+        String captured = TrackIdentity.usableId(hookStableId());
+        if (mediaId == null) mediaId = "";
+        if (captured == null) captured = "";
         String rid = !mediaId.isEmpty() ? mediaId : captured;
         if (!rid.isEmpty()) {
             KuwoHookSource hook = kuwoHookSource;
@@ -194,23 +184,6 @@ abstract class KuwoBaseProvider extends MusicProvider {
     }
 
     /**
-     * 过滤占位标识
-     *
-     * <p>宿主可能把 {@code 0} / {@code -1} / {@code null} 等常量写入 {@code MEDIA_ID}。
-     * 把它们当作真实标识会让所有曲目身份相等，编排器按同一首处理、永不重新取词。
-     */
-    @NonNull
-    private static String usableRid(@Nullable String raw) {
-        String trimmed = raw != null ? raw.trim() : "";
-        switch (trimmed.toLowerCase(Locale.ROOT)) {
-            case "", "0", "-1", "null", "unknown", "none":
-                return "";
-            default:
-                return trimmed;
-        }
-    }
-
-    /**
      * 组装稳定标识：rid 与标题的组合
      *
      * <p>标题参与哈希，同一部有声书的不同集会得到不同标识；歌曲场景标题稳定，
@@ -224,11 +197,5 @@ abstract class KuwoBaseProvider extends MusicProvider {
         }
         // 标题直接拼在 rid 后：stableId 只是 opaque 字符串，比较时整体判等
         return TrackIdentity.stableId(NAMESPACE, rid + "#" + trimmedTitle);
-    }
-
-    @NonNull
-    private static String readString(@NonNull MediaMetadata metadata, @NonNull String key) {
-        String value = metadata.getString(key);
-        return value != null ? value : "";
     }
 }

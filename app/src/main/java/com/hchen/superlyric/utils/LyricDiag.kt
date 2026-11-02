@@ -37,16 +37,6 @@ import org.json.JSONObject
  *
  * 解析假设（例如 QQ 的标识正则、网易云的歌词版本参数）无法凭代码判别对错，唯一可靠的
  * 办法是把原始载荷与解析结果原样打出，与预期逐条对照。
- *
- * 诊断集中在 `:app`：`:lyric-kernel` 是纯 JVM 模块，不得依赖任何 `android.*` 类型，
- * 因此不能调用 [AndroidLog]。
- *
- * logcat 单条消息上限约 4KB，超出会被截断；长文本按 [CHUNK] 字符分块并带 `[i/n]`
- * 序号输出，可完整还原。
- *
- * 过滤命令：`adb logcat -v time -s SLDiag`
- *
- * @author 焕晨HChen
  */
 object LyricDiag {
 

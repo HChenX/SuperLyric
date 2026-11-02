@@ -54,47 +54,39 @@ public final class HotfixDisabler {
         disableTencentSword();
     }
 
-    /**
-     * 禁用腾讯 Tinker（dex 类加载器替换）热更新
-     */
     private static void disableTencentTinker() {
         if (findClassIfExists("com.tencent.tinker.loader.shareutil.ShareTinkerInternals") == null) {
             AndroidLog.logD(TAG, "Tinker not present");
             return;
         }
         AndroidLog.logD(TAG, "Tinker present; disabling");
-        logHook("Tinker.isTinkerEnableWithSharedPreferences",
-            hookMethodIfExists("com.tencent.tinker.loader.shareutil.ShareTinkerInternals",
-                "isTinkerEnableWithSharedPreferences",
-                new AbsHook() {
-                    @Override
-                    public void before() {
-                        setResult(false);
-                    }
+        hookMethodIfExists("com.tencent.tinker.loader.shareutil.ShareTinkerInternals",
+            "isTinkerEnableWithSharedPreferences",
+            new AbsHook() {
+                @Override
+                public void before() {
+                    setResult(false);
                 }
-            ));
+            }
+        );
 
         Class<?> tinkerApplication = findClassIfExists("com.tencent.tinker.loader.app.TinkerApplication");
         if (tinkerApplication == null) {
             AndroidLog.logD(TAG, "TinkerApplication not present; only preferences hook installed");
             return;
         }
-        logHook("Tinker.TinkerLoader.tryLoad",
-            hookMethodIfExists("com.tencent.tinker.loader.TinkerLoader",
-                "tryLoad",
-                tinkerApplication,
-                new AbsHook() {
-                    @Override
-                    public void before() {
-                        setResult(null);
-                    }
+        hookMethodIfExists("com.tencent.tinker.loader.TinkerLoader",
+            "tryLoad",
+            tinkerApplication,
+            new AbsHook() {
+                @Override
+                public void before() {
+                    setResult(null);
                 }
-            ));
+            }
+        );
     }
 
-    /**
-     * 禁用字节跳动 Frankie（Robust 思路）方法级热更新
-     */
     private static void disableBytedanceHotfix() {
         Class<?> frankieConfig = findClassIfExists("com.bytedance.frankie.IFrankieConfig");
         Class<?> frankieListener = findClassIfExists("com.bytedance.frankie.IFrankieListener");
@@ -103,47 +95,32 @@ public final class HotfixDisabler {
             return;
         }
         AndroidLog.logD(TAG, "Frankie present; disabling");
-        if (frankieConfig != null) {
-            logHook("Frankie.init(config)",
-                hookMethodIfExists("com.bytedance.frankie.Frankie",
-                    "init",
-                    frankieConfig,
-                    returnResult(null)
-                ));
-            if (frankieListener != null) {
-                logHook("Frankie.init(config, listener)",
-                    hookMethodIfExists("com.bytedance.frankie.Frankie",
-                        "init",
-                        frankieConfig,
-                        frankieListener,
-                        returnResult(null)
-                    ));
-            }
+
+        hookMethodIfExists("com.bytedance.frankie.Frankie",
+            "init",
+            frankieConfig,
+            returnResult(null)
+        );
+        if (frankieListener != null) {
+            hookMethodIfExists("com.bytedance.frankie.Frankie",
+                "init",
+                frankieConfig,
+                frankieListener,
+                returnResult(null)
+            );
         }
     }
 
-    private static void logHook(@NonNull String name, @Nullable Object handle) {
-        if (handle == null) {
-            AndroidLog.logW(TAG, name + " hook not installed (method/class missing)");
-        } else {
-            AndroidLog.logD(TAG, name + " hooked");
-        }
-    }
-
-    /**
-     * 禁用腾讯剑（Sword）热更新
-     */
     private static void disableTencentSword() {
         if (findClassIfExists("com.tencent.qqmusic.sword.cmd.CmdManager") == null) {
             AndroidLog.logD(TAG, "Sword not present");
             return;
         }
         AndroidLog.logD(TAG, "Sword present; disabling");
-        logHook("Sword.CmdManager.init",
-            hookMethodIfExists("com.tencent.qqmusic.sword.cmd.CmdManager",
-                "init",
-                String.class,
-                returnResult(null)
-            ));
+        hookMethodIfExists("com.tencent.qqmusic.sword.cmd.CmdManager",
+            "init",
+            String.class,
+            returnResult(null)
+        );
     }
 }

@@ -51,12 +51,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
  * - `lyric`：原生 QRC 逐字报文（主歌词）
  * - `trans`：译文，解密后是 `[start,dur]译文` 形态
  * - `roma`：罗马音，解密后同样是 `[start,dur]` 形态
- *
- * 三者都经 [QrcCipher] 解密（腾讯改造版 3DES + ZLib）。
- *
- * 译文与罗马音分别送入翻译通道与音译通道，两者互不覆盖。
- *
- * @author 焕晨HChen
  */
 internal object QQNetwork {
 

@@ -42,18 +42,6 @@ import io.github.libxposed.api.XposedModuleInterface;
 
 /**
  * 宿主进程中的底层发布基类
- *
- * <p>统一管理宿主上下文、版本信息与系统 SuperLyricService 的发布链路。
- *
- * <p>按「音乐软件仅负责发布完整歌词，系统框架负责分发」的边界，宿主侧只发送：
- * <ul>
- *   <li>全量歌词：{@link #publishFullLyric}；</li>
- *   <li>清除：{@link #publishStop}。</li>
- * </ul>
- *
- * <p>进度推进由系统服务端的唯一时钟负责，宿主不发布任何进度包。
- *
- * @author 焕晨HChen
  */
 public abstract class AbsPublisher extends AbsModule {
     private static final String TAG = "AbsPublisher";
@@ -61,8 +49,6 @@ public abstract class AbsPublisher extends AbsModule {
 
     private static volatile Context sAppContext;
     private static volatile String sPackageName;
-    private static volatile long sVersionCode = -1L;
-    private static volatile String sVersionName = "unknown";
     private static volatile boolean sContextFallbackLogged;
 
     @CallSuper
@@ -79,9 +65,8 @@ public abstract class AbsPublisher extends AbsModule {
         sPackageName = context.getPackageName();
         try {
             PackageInfo packageInfo = context.getPackageManager().getPackageInfo(sPackageName, 0);
-            sVersionName = packageInfo.versionName;
-            sVersionCode = packageInfo.getLongVersionCode();
-            logI(tag, "Loaded publisher for: " + sPackageName + " (v" + sVersionName + ", " + sVersionCode + ")");
+            logI(tag, "Loaded publisher for: " + sPackageName + " (v"
+                + packageInfo.versionName + ", " + packageInfo.getLongVersionCode() + ")");
         } catch (PackageManager.NameNotFoundException e) {
             logE(tag, "Failed to retrieve package info: " + sPackageName, e);
         }
@@ -111,14 +96,6 @@ public abstract class AbsPublisher extends AbsModule {
 
     public static String getPackageName() {
         return sPackageName;
-    }
-
-    public static long getVersionCode() {
-        return sVersionCode;
-    }
-
-    public static String getVersionName() {
-        return sVersionName;
     }
 
     /**

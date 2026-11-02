@@ -20,15 +20,17 @@ package com.hchen.superlyric.utils;
 
 import android.media.session.PlaybackState;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.hchen.superlyric.kernel.orchestrate.PlaybackSignal;
+
 /**
- * Android 播放状态常量到 v4 模型的唯一映射
+ * Android 播放状态常量的两种映射
  *
- * <p>v4 状态与 {@link PlaybackState} 同名，代码中保留 v4 的全限定名。
- * <p>与 {@link PlaybackSignals} 回答的问题不同：那里决定"要不要排期停止、要不要撤销"，
- * 这里只决定"下发的 State 帧写什么状态"。{@code STATE_NONE} 因此映射为 {@code null}
- * （不知道）而不是 {@code STOPPED}，写成停止会让客户端冻结在一个并未观察到的结论上。
+ * <p>{@link #toV4(int)} 决定下发的 State 帧写什么状态；{@link #toSignal(int)} 决定
+ * 是否排期停止、是否撤销。{@code STATE_NONE} 在两者中都表示"不知道"：前者返回
+ * {@code null}，后者返回 {@link PlaybackSignal#UNKNOWN}。
  *
  * @author 焕晨HChen
  */
@@ -37,7 +39,6 @@ public final class PlaybackStates {
     }
 
     /**
-     * @param state {@link PlaybackState#getState()} 的取值
      * @return v4 状态；未知或未设置时为 null
      */
     @Nullable
@@ -66,6 +67,29 @@ public final class PlaybackStates {
             default:
                 // STATE_NONE 是"尚未设置过"，不是"已停止"
                 return null;
+        }
+    }
+
+    /**
+     * 映射为停止判定使用的语义信号
+     *
+     * <p>未知取值按"仍在播放流程中"处理；只有明确的终态才返回停止信号。
+     */
+    @NonNull
+    public static PlaybackSignal toSignal(int state) {
+        switch (state) {
+            case PlaybackState.STATE_PLAYING:
+                return PlaybackSignal.PLAYING;
+            case PlaybackState.STATE_PAUSED:
+                return PlaybackSignal.PAUSED;
+            case PlaybackState.STATE_STOPPED:
+                return PlaybackSignal.STOPPED;
+            case PlaybackState.STATE_ERROR:
+                return PlaybackSignal.ERROR;
+            case PlaybackState.STATE_NONE:
+                return PlaybackSignal.UNKNOWN;
+            default:
+                return PlaybackSignal.ACTIVE;
         }
     }
 }

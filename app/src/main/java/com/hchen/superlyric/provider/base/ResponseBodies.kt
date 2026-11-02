@@ -32,19 +32,6 @@ import okhttp3.ResponseBody
  * `ResponseBody.string()` 会将整个响应体物化为 String（UTF-16，约为字节数的两倍），
  * 并额外保留一份 `byte[]`。响应体大小由对端决定，超大响应可能耗尽宿主内存；
  * 与 zlib 解压炸弹相同，见 `Zlib.MAX_OUTPUT_BYTES` 的说明。
- *
- * 两道限制：
- * 1. `Content-Length` 预检，开销低，但分块传输或压缩后长度可能未知
- * 2. 边读边计数，超限抛出，由调用方按可重试失败处理
- *
- * 超限时不得返回截断文本：截断内容会被当作完整报文交给解析器，比失败更难定位。
- *
- * 上限与 Spotify 路径的 Java 同名逻辑 `SpotifyLyricAnalysis.readLimited` 共用
- * [LyricCacheStore.MAX_PAYLOAD_BYTES]。它是单条原始歌词响应的上限，正文通常在百 KB 量级。
- *
- * @param maxBytes 上限字节数
- * @return 响应体文本，字符集取自 `Content-Type`
- * @throws IOException 超过上限，或读取过程中出错
  */
 internal fun ResponseBody.readTextBounded(
     maxBytes: Int = LyricCacheStore.MAX_PAYLOAD_BYTES,

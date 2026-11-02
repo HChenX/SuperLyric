@@ -18,6 +18,7 @@
  */
 package com.hchen.superlyric.provider.base
 
+import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -82,5 +83,35 @@ class FetchSlotTest {
         }
 
         assertFalse(delivered)
+    }
+
+    @Test
+    fun `launch delivers the resolved outcome`() {
+        var delivered: LyricOutcome? = null
+
+        slot.launch("test", { delivered = it }) { LyricOutcome.NoLyrics("none") }
+
+        assertTrue(delivered is LyricOutcome.NoLyrics)
+    }
+
+    @Test
+    fun `launch does not deliver after cancel`() {
+        var delivered = false
+
+        slot.launch("test", { delivered = true }) {
+            slot.invalidate()
+            LyricOutcome.NoLyrics("none")
+        }
+
+        assertFalse(delivered)
+    }
+
+    @Test
+    fun `launch turns an exception into a transient failure`() {
+        var delivered: LyricOutcome? = null
+
+        slot.launch("test", { delivered = it }) { error("boom") }
+
+        assertTrue(delivered is LyricOutcome.TransientFailure)
     }
 }

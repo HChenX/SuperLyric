@@ -84,19 +84,6 @@ class AppleHookSource : HookLyricSource {
      * [AppleAnchors] 的取词有 350ms 去抖，`requestLyrics(item)` 可能在切歌后完成，
      * 回调携带的 itemId 可能属于上一首。必须用当前请求身份校验，否则过期歌词会挂到新曲目，
      * 无词结论还会错误下发纯音乐占位。
-     *
-     * 两条路径的后果不同：
-     * - 无词结论是终态，误判会把有歌词的曲目永久标记为纯音乐，因此只采纳 `SAME`；
-     *   `DIFFERENT` 与 `UNVERIFIABLE` 都不采纳，后者同样说明判据不成立
-     * - 歌词载荷可被下一次投递纠正，误判只影响一次显示；从严会在 id 规则不成立时
-     * 丢弃全部 Apple 歌词，因此载荷路径只记录、不丢弃
-     *
-     * 两条路径都把判定结果写入日志，以区分未收到回调与每次都被拦截。
-     *
-     * @param itemId  回调携带的曲目标识，可能为 null
-     * @param what    用于日志的回调类型
-     * @param enforce 不匹配时是否丢弃（投递载荷时传 false）
-     * @return 调用方是否可以继续采纳该回调
      */
     private fun trackGuard(
         itemId: String?,
@@ -156,15 +143,6 @@ class AppleHookSource : HookLyricSource {
      *
      * 同样受 350ms 去抖影响，itemId 可能属于上一首；调用方必须校验，
      * 否则过期歌词会挂到新曲目。
-     *
-     * 判等采用“相等或互相包含”：曲目标识有两个来源，本来源的 [TrackIdentity]
-     * （基类 `buildIdentity` 取 `MediaMetadata.MEDIA_ID`）与锚点持有的
-     * `PlaybackItem.getId()`。两者是否同一套字符串尚未在真机确认；严格判等一旦假设错误，
-     * 会丢弃 Apple 的正常投递。因此只有两边都有值且互不包含时才认定对不上。
-     * 极端情况下可能漏拦一次过期投递，但不会比不校验更差。
-     *
-     * @param itemId         回调携带的曲目标识，可能为 null
-     * @param currentStableId 当前曲目的稳定标识（可能带命名空间前缀），可能为 null
      */
     internal fun judgeTrack(itemId: String?, currentStableId: String?): TrackVerdict {
         val reported = TrackIdentity.normalizeStableId(itemId)

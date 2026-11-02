@@ -28,7 +28,7 @@ import com.hchen.superlyric.provider.qq.QQNetwork
 /**
  * 小米音乐 API 取词来源。Hook 路径没有 songID 时按标题和歌手检索。
  *
- * <p>检索落空按可重试失败处理，不发布纯音乐占位。
+ * 检索落空按可重试失败处理，不发布纯音乐占位。
  *
  * @author 焕晨HChen
  */
@@ -39,16 +39,7 @@ class MiuiApiSource : LyricSource {
     private val requests = FetchSlot()
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
-        val token = requests.open()
-        requests.execute {
-            if (!requests.isCurrent(token)) return@execute
-            val outcome = runCatching { resolve(identity) }
-                .getOrElse { error ->
-                    AndroidLog.logW(sourceName, "Resolve failed: ${error.message}")
-                    LyricOutcome.TransientFailure(error)
-                }
-            if (requests.isCurrent(token)) session.deliver(outcome)
-        }
+        requests.launch(sourceName, session) { resolve(identity) }
     }
 
     override fun cancel() {
@@ -64,7 +55,7 @@ class MiuiApiSource : LyricSource {
         }
 
         val candidate = QQNetwork.searchBest(identity)
-            // 检索落空表示未匹配，按可重试失败处理
+        // 检索落空表示未匹配，按可重试失败处理
             ?: return LyricOutcome.TransientFailure(null)
 
         AndroidLog.logI(sourceName, "Matched candidate mid=${candidate.first}")

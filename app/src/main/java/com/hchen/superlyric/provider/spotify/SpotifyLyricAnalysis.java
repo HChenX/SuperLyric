@@ -39,7 +39,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -87,7 +86,6 @@ public final class SpotifyLyricAnalysis {
         new AtomicReference<>(new HeaderSnapshot(Collections.emptyMap(), 0L, false));
 
     private static volatile boolean sHeaderCompleteLogged = false;
-    private static final List<Runnable> sHeaderListeners = new CopyOnWriteArrayList<>();
 
     private static final Gson gson = new Gson();
 
@@ -104,14 +102,6 @@ public final class SpotifyLyricAnalysis {
     private SpotifyLyricAnalysis() {
     }
 
-    public static void addHeaderListener(@NonNull Runnable listener) {
-        sHeaderListeners.add(listener);
-    }
-
-    public static void removeHeaderListener(@NonNull Runnable listener) {
-        sHeaderListeners.remove(listener);
-    }
-
     /**
      * 判断是否为关键会话头（key 需已小写）
      */
@@ -122,7 +112,6 @@ public final class SpotifyLyricAnalysis {
     /**
      * 从同一批 okhttp Headers 构造参数发布完整会话头快照
      *
-     * @param namesAndValues okhttp 名称和值交替排列的数组
      * @return 本次数据是否包含全部关键头
      */
     @Nullable
@@ -146,13 +135,6 @@ public final class SpotifyLyricAnalysis {
                 if (!sHeaderCompleteLogged) {
                     sHeaderCompleteLogged = true;
                     AndroidLog.logI(TAG, "All required session headers captured");
-                }
-                for (Runnable listener : sHeaderListeners) {
-                    try {
-                        listener.run();
-                    } catch (Throwable t) {
-                        AndroidLog.logW(TAG, "Header listener threw exception: " + t.getMessage());
-                    }
                 }
                 return next;
             }

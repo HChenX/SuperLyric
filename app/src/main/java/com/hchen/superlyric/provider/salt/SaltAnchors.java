@@ -45,25 +45,14 @@ import java.lang.reflect.Modifier;
  * 也用它导出。该文本尚未经过宿主内部 {@code VerbatimLyricsParserImpl.e()} 对相邻词元的
  * 重叠裁切，因此逐字时戳不会出现 0ms 坍缩。拿到 {@code sourceText} 后无需再反射
  * {@code LyricsLine} / {@code LyricsCell} 行/词模型，本实现只读取一个 String 字段。
- *
- * <p>字段按类型唯一性定位：不硬编码字段名（R8 会重命名），而是在 {@code LyricsDocument}
- * 内取唯一的非静态 String 字段。
- *
- * @author 焕晨HChen
  */
 public final class SaltAnchors {
     private static final String TAG = "SaltAnchors";
 
     private static final String DOCUMENT_CACHE_KEY = "salt_lyrics_document_class_v1";
 
-    /**
-     * 锚点：{@code LyricsDocument} 的 toString 格式串
-     */
     private static final String DOCUMENT_ANCHOR = "LyricsDocument(sourceText=";
 
-    /**
-     * 宿主的曲目模型类；带 {@code @Keep}，类名与 getter 名都是稳定的
-     */
     private static final String SONG_CLASS = "com.salt.music.data.entry.Song";
 
     private static final String CONTROLLER_CLASS = "com.salt.music.service.MusicController";
@@ -78,8 +67,7 @@ public final class SaltAnchors {
      */
     public interface LyricsListener {
         /**
-         * @param sourceText 原始歌词文本
-         * @param songId     宿主显式给出的曲目标识；可能为空
+         * @param songId 宿主显式给出的曲目标识；可能为空
          */
         void onLyrics(@NonNull String sourceText, @NonNull String songId);
 
@@ -90,11 +78,6 @@ public final class SaltAnchors {
          * 把 {@code ARTIST} 拼成 {@code "歌手 - 曲名"}，元数据完全不可信。这个回调给出的是
          * 宿主自己的 {@code Song} 对象里的原始字段，且其 {@code id} 与 {@link #onLyrics} 的
          * {@code songId} 完全一致，可精确关联。
-         *
-         * @param songId     曲目标识，与 {@link #onLyrics} 的 songId 同源
-         * @param title      真实曲名
-         * @param artist     真实歌手
-         * @param durationMs 曲目时长（毫秒）
          */
         default void onSong(
             @NonNull String songId,
@@ -187,14 +170,6 @@ public final class SaltAnchors {
      * 歌词页面订阅时生成，切歌时零触发。{@code MusicController} 内部以 {@code Song} 为
      * 参数的回调稳定触发，且 {@code Song} 带 {@code @Keep}、{@code Song.getId()} 与
      * {@link LyricsListener#onLyrics} 的 songId 完全一致，可精确关联。
-     *
-     * <p>按签名而不是按名字匹配：触发方法名是混淆产物（实测为单个生僻字符），无法跨版本
-     * 硬编码；参数类型序列 {@code (Song, long, long, Long)} 由 {@code @Keep} 的
-     * {@code Song} 与基本类型构成，稳定可辨。
-     *
-     * <p>签名失配时不退回广撒网：宿主改动该签名后本层取不到真实曲目信息（退化为使用
-     * 元数据），只记一条警告。挂载所有以 Song 为参数的方法会牵进一批与曲目切换无关的
-     * 方法，违背最少最精准的约束。
      */
     private static void installSongProbe(
         @NonNull Class<?> controllerClass,
@@ -222,9 +197,6 @@ public final class SaltAnchors {
         }
     }
 
-    /**
-     * 按精确参数序列挂载静态 void 方法
-     */
     private static int hookSongCallback(
         @NonNull Class<?> controllerClass,
         @NonNull LyricsListener listener,
@@ -281,9 +253,8 @@ public final class SaltAnchors {
 
         String songId = invokeOrNull(song, "getId");
         if (songId == null || songId.isEmpty()) {
-            // 取不到宿主标识就无法把歌词与曲目关联。不得返回 "<XXXException>" 这类标记串
-            // 并当作真实值传下去：songStore 以标记为键永远查不中，真曲名丢失后只能退回
-            // 被歌词污染的 MediaMetadata。宁可不报，也不报假标识
+            // 取不到宿主标识就无法把歌词与曲目关联。不得把异常类型标记串当作真实值传下去：
+            // songStore 以标记为键永远查不中，真曲名丢失后只能退回被歌词污染的 MediaMetadata。
             AndroidLog.logW(TAG, "Song.getId() unavailable; skipping track info for this callback");
             return;
         }

@@ -46,23 +46,12 @@ import java.util.regex.Pattern;
  * <p>QQ 音乐 20.9+ 的歌词行/词模型位于 {@code com.lyricengine.base.*}，深度混淆且结构
  * 随版本变动。但无论模型怎么改，宿主都必须先把 {@code LyricLoadBean}（含
  * {@code SongInfo}）交给歌词引擎，这个构造入口是稳定的。
- *
- * <p>本层只做一件事：拦截该构造器，取出 {@code songMID} / {@code songID}。歌词本身由
- * 模块向官方接口拉取原生 QRC 报文并解密，与宿主内部模型解耦。
- *
- * <p>进程约束：只在 {@code :QQPlayerService} 进程内挂载。QQ 音乐的多个子进程都会构造
- * 歌词相关对象，不设约束会引入与播放无关的噪声拦截。
- *
- * @author 焕晨HChen
  */
 public final class QQAnchors {
     private static final String TAG = "QQAnchors";
 
     private static final String CACHE_KEY = "qqmusic_lyric_load_bean_class";
 
-    /**
-     * 锚点：该构造器 {@code toString()} 的固定格式串
-     */
     private static final String ANCHOR = "LyricLoadBean(songInfo=";
 
     private static final String TARGET_PROCESS_SUFFIX = ":QQPlayerService";
@@ -80,9 +69,6 @@ public final class QQAnchors {
 
     private static volatile boolean sInstalled;
 
-    /**
-     * 最近一次输出的原始串，用于抑制宿主重复构造造成的刷屏
-     */
     private static volatile String sLastRawToString;
     private static volatile String sLastRawShortMessage;
     private static volatile String sLastExtracted;
@@ -168,9 +154,6 @@ public final class QQAnchors {
         return "SongInfo".equals(name) || name.endsWith(".SongInfo");
     }
 
-    /**
-     * 输出候选构造器清单，用于核对实际挂载的构造器
-     */
     private static void dumpConstructors(@NonNull Class<?> beanClass) {
         StringBuilder builder = new StringBuilder();
         for (Constructor<?> constructor : beanClass.getDeclaredConstructors()) {
@@ -279,9 +262,6 @@ public final class QQAnchors {
         }
     }
 
-    /**
-     * 过滤宿主内部字符串（URL、JSON、十六进制指纹等）冒充曲名的情况
-     */
     private static boolean isPlausible(@Nullable String value) {
         if (value == null) return false;
         String text = value.trim();

@@ -71,7 +71,7 @@ import com.hchen.superlyric.ui.data.UIConstants
 import com.hchen.superlyric.ui.effect.BgEffectBackground
 import com.hchen.superlyric.ui.effect.BgEffectTheme
 import com.hchen.superlyric.ui.effect.BlurredBar
-import com.hchen.superlyric.ui.effect.blend.ColorBlendToken
+import com.hchen.superlyric.ui.effect.cardBlendColors
 import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Card
@@ -177,7 +177,7 @@ fun ApiLayout(
     )
 
     val isInDark = isSystemInDarkTheme()
-    val cardBlend = if (isInDark) ColorBlendToken.Overlay_Thin_Light else ColorBlendToken.Pured_Regular_Light
+    val cardBlend = cardBlendColors(isInDark)
 
     val density = LocalDensity.current
     val viewportHeightDp by remember {

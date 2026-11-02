@@ -65,7 +65,9 @@ public final class MiuiAnchors {
     private MiuiAnchors() {
     }
 
-    /** 宿主曲目对象的最小快照。 */
+    /**
+     * 宿主曲目对象的最小快照。
+     */
     public static final class SongSnapshot {
         public final long id;
         @NonNull
@@ -89,7 +91,9 @@ public final class MiuiAnchors {
         }
     }
 
-    /** 捕获到宿主当前曲目时的回调。 */
+    /**
+     * 捕获到宿主当前曲目时的回调。
+     */
     public interface SongInfoListener {
         void onSongInfo(@NonNull SongSnapshot snapshot);
     }

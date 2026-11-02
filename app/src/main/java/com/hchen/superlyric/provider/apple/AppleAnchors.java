@@ -46,20 +46,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Apple Music Hook 锚点与歌词抽取
+ * Apple Music Hook 锚点：遍历 JNI 歌词向量取出文本、译文与逐字时戳。
  * <p>
- * Apple Music 的歌词由 JNI 侧解析后通过裸指针（{@code SongInfo$SongInfoPtr}）交给 Java 层，
- * 没有可直接读取的明文报文。因此在 {@code buildTimeRangeToLyricsMap} 的入参上遍历
- * {@code LyricsSectionVector} 到 {@code LyricsWordVector}，取出文本、译文与逐字时戳。
- * <p>
- * 本层读取宿主歌词对象，并调用 {@code setTranslation} 设置译文语言、
- * 调用 {@code PlayerLyricsViewModel.loadLyrics} 触发一次歌词加载；不修改宿主播放状态。
- * 所有调用均捕获异常，失败只影响该 Provider。
- * <p>
- * {@code buildTimeRangeToLyricsMap} 只在宿主构建歌词时调用。用户未打开歌词界面时
- * 歌词不会构建，因此需要主动触发 {@code loadLyrics}。
- *
- * @author 焕晨HChen
+ * buildTimeRangeToLyricsMap 只在宿主构建歌词时调用，因此还要主动触发 loadLyrics。
+ * 所有调用捕获异常，失败只影响本 Provider。
  */
 public final class AppleAnchors {
     private static final String TAG = "AppleAnchors";
@@ -466,9 +456,6 @@ public final class AppleAnchors {
         }
     }
 
-    /**
-     * 遍历 JNI 侧的 {@code LyricsSectionVector} 取出全部歌词行
-     */
     private static void handleSongInfo(@NonNull Object songInfoPtr) {
         Object songInfo = CoreTool.callMethodIfExists(songInfoPtr, "get");
         if (songInfo == null) return;
@@ -582,9 +569,6 @@ public final class AppleAnchors {
         return new AppleLine(text, translation, start, stop, words);
     }
 
-    /**
-     * JNI 向量元素是指针包装对象，需要再调用一次 {@code get()} 才能取得实体
-     */
     @Nullable
     private static Object unwrap(@Nullable Object pointer) {
         if (pointer == null) return null;

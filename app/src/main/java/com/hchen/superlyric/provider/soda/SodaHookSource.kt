@@ -45,24 +45,6 @@ import java.util.concurrent.TimeUnit
  * - `LRC`：通用 LRC，交 [LyricFormat.GENERAL]
  * - `KRC`：酷狗系逐字格式 `[行起始,行时长]<词偏移,词时长,0>词`，交 [LyricFormat.KRC]
  * - `TEXT`：纯文本、无时间轴；按内容再嗅探一次，仍然没有时间轴就不发布
- *
- * 只投递成功结果
- * 编排器对同一代际只接受第一次投递，投出一次否定结论就把这一代际关死了：
- * 宿主先给一份占位或纯文本载荷、几百毫秒后才给真正的逐字载荷，是常见时序。
- * 若把前者的 [LyricOutcome.Unsupported] 投出去，后者会被当成重复投递丢弃，
- * 表现为同一首歌时而取到歌词、时而没有。
- *
- * 因此本来源只投递 [LyricOutcome.Success]。读不出来就保持沉默，由编排器的 Hook 超时
- * 把状态落到 `UNAVAILABLE`（不发布任何占位），迟到的成功结果仍会被接受
- *
- * 译文要等待一小会儿
- * 主歌词与译文是两份独立载荷（宿主按语言各构造一个歌词实体），到达时间不固定。
- * 编排器对同一代际只接受第一次投递，先到就投会把译文整份丢掉。这里给译文一个
- * [TRANSLATION_GRACE_MS] 的窗口，窗口内没等到就按主歌词单独发布：译文缺失优于把发布
- * 拖到 Hook 等待窗口之外。只有译文、没有主歌词时多等 [MAIN_WAIT_MS]：译文本身也是带
- * 时间轴的，等不到主歌词才拿它当正文。
- *
- * @author 焕晨HChen
  */
 class SodaHookSource : HookLyricSource {
 
@@ -351,10 +333,8 @@ class SodaHookSource : HookLyricSource {
         return false
     }
 
-    private fun usableId(raw: String?): String? {
-        val normalized = TrackIdentity.normalizeStableId(raw) ?: return null
-        return normalized.takeIf { it.lowercase() !in PLACEHOLDER_IDS }
-    }
+    private fun usableId(raw: String?): String? =
+        TrackIdentity.usableId(TrackIdentity.normalizeStableId(raw))
 
     private companion object {
         /** 主歌词的语言枚举名；其余语言视为译文 */
@@ -371,9 +351,6 @@ class SodaHookSource : HookLyricSource {
 
         /** 载荷先于元数据到达时允许补投的时间跨度 */
         const val STASH_WINDOW_MS = 4_000L
-
-        /** 宿主可能写进标识位的占位值；它们不是曲目标识 */
-        val PLACEHOLDER_IDS = setOf("", "0", "-1", "null", "unknown", "none")
 
         /** 按曲目标识暂存的载荷上限；够覆盖"当前 + 预加载下一首"即可 */
         const val MAX_STASH = 4

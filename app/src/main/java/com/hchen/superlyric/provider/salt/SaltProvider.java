@@ -32,21 +32,6 @@ import com.hchen.superlyric.provider.kugou.KuGouApiSource;
 
 /**
  * 椒盐音乐歌词提供者
- *
- * <p>取词路径
- * <ul>
- *   <li>Hook 路径（准确优先）：单锚点读取 {@code MusicController} 设置歌词时携带的
- *       {@code LyricsDocument.sourceText}，即宿主的原始歌词文本，未经任何内部裁切。
- *       不需要反射 {@code LyricsLine} / {@code LyricsCell}。</li>
- *   <li>API 路径（兜底）：复用酷狗开放接口做跨源检索。</li>
- * </ul>
- *
- * <p>标题污染：椒盐音乐的状态栏歌词功能会把当前歌词行写进
- * {@code MediaMetadata.METADATA_KEY_TITLE}，使标题高频变动、无法用于标识曲目。本实现
- * 优先采用 Hook 侧捕获的显式曲目标识；完全没有标识时才退回标题比对，并依赖
- * {@link TrackIdentity} 的时长约束降低误判。
- *
- * @author 焕晨HChen
  */
 @HookThis(targetPackage = "com.salt.music")
 public class SaltProvider extends MusicProvider {
@@ -97,10 +82,10 @@ public class SaltProvider extends MusicProvider {
 
         String title = info != null && !info.getTitle().isEmpty()
             ? info.getTitle()
-            : readString(metadata, MediaMetadata.METADATA_KEY_TITLE);
+            : metadataString(metadata, MediaMetadata.METADATA_KEY_TITLE);
         String artist = info != null && !info.getArtist().isEmpty()
             ? info.getArtist()
-            : readString(metadata, MediaMetadata.METADATA_KEY_ARTIST);
+            : metadataString(metadata, MediaMetadata.METADATA_KEY_ARTIST);
         long duration = info != null && info.getDurationMs() > 0L
             ? info.getDurationMs()
             : metadata.getLong(MediaMetadata.METADATA_KEY_DURATION);
@@ -110,17 +95,12 @@ public class SaltProvider extends MusicProvider {
                 TAG, TrackIdentity.stableId(NAMESPACE, captured), title, artist, duration);
         }
 
-        String mediaId = readString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID).trim();
+        String mediaId = metadataString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID).trim();
         if (!mediaId.isEmpty()) {
             return new TrackIdentity(
                 TAG, TrackIdentity.stableId(NAMESPACE, mediaId), title, artist, duration);
         }
 
         return super.buildIdentity(metadata);
-    }
-
-    private static String readString(@NonNull MediaMetadata metadata, @NonNull String key) {
-        String value = metadata.getString(key);
-        return value != null ? value : "";
     }
 }

@@ -60,19 +60,6 @@ public final class LyricSanitizer {
 
     /**
      * 对单行歌词模型做深度校验与数据清洗
-     *
-     * <p>规则：
-     * <ol>
-     *   <li>标准化文本，剥离不可见零宽字符；</li>
-     *   <li>丢弃条件：null 元素、字词累积长度超出行长、或字词文本拼接与行文本严重失配
-     *       （如重叠重复切片），此时认定逐字数据损坏并降级为 {@code null}；</li>
-     *   <li>修正条件：时间倒错、0ms、重叠由 {@code healWordTimings} 纠偏/顺推，不丢弃；</li>
-     *   <li>校准行起止时间戳，确保 {@code endTime >= startTime >= 0}；</li>
-     *   <li>递归清洗翻译与副歌词行。</li>
-     * </ol>
-     *
-     * @param line 待校验的原始行
-     * @return 清洗校准后的安全行；若原始行为 null 则返回 null
      */
     @Nullable
     public static SuperLyricLine sanitizeLine(@Nullable SuperLyricLine line) {
@@ -186,9 +173,6 @@ public final class LyricSanitizer {
         return validated.toArray(new SuperLyricWord[0]);
     }
 
-    /**
-     * 裁剪词元序列两端多余的外层空白
-     */
     private static void trimOuterWhitespace(@NonNull List<SuperLyricWord> words, @NonNull String targetLine) {
         if (words.isEmpty()) return;
 
@@ -334,7 +318,6 @@ public final class LyricSanitizer {
     /**
      * 对完整 {@link SuperLyricData} 数据包做全量深度清洗
      *
-     * @param data 原始歌词数据包
      * @return 经过安全校验与清洗的数据包；原始为 null 或清洗过程失败时返回 null
      */
     @Nullable

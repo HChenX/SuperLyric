@@ -33,7 +33,6 @@ import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyric.bridge.LyricDocAdapter;
 import com.hchen.superlyric.kernel.clock.PlaybackClock;
 import com.hchen.superlyric.kernel.model.LyricDoc;
-import com.hchen.superlyric.kernel.orchestrate.StopEvidence;
 import com.hchen.superlyric.utils.LyricSanitizer;
 import com.hchen.superlyric.utils.PlaybackStates;
 import com.hchen.superlyric.utils.PublishGuard;
@@ -56,34 +55,17 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Super Lyric 核心系统服务
- *
- * <p>运行于 {@code system_server}，同时承载两代 Binder 接口的状态与广播：
- * <ul>
- *   <li>{@code super_lyric}（{@link ISuperLyricManager}）：3.x 的 Parcelable 通道；</li>
- *   <li>{@code super_lyric.v4}（v4 帧通道）：由 {@link SuperLyricV4Service} 转发到本类。</li>
- * </ul>
- *
- * <p>职责：
- * <ol>
- *   <li>维护发布者生命周期与进程死亡感知；</li>
- *   <li>按包隔离歌词会话（{@link PublisherRegistry.Session}），避免多应用并发覆盖；</li>
- *   <li>监听全局系统媒体播放状态，基于播放焦点驱动中央歌词时钟（{@code playback.tracker}）；</li>
- *   <li>按订阅者能力分别广播：3.x 接收器收 Parcelable 数据，v4 监听器收帧；</li>
- *   <li>限制会话数量与生命周期，避免 {@code system_server} 内的状态累积。</li>
- * </ol>
- *
- * <p>进度归系统：发布端只提交全量文档，position、speed、state 全部来自
- * {@link PlaybackState}，跨行与状态变化时由本类下发 State 帧。
- *
- * @author 焕晨HChen
+ * 系统服务：承载 3.x Parcelable 与 v4 帧两代 Binder 接口。
+ * <p>
+ * 负责发布者生命周期、按包会话、系统播放时钟与广播。发布端只提交全量文档；
+ * position、speed、state 来自系统 PlaybackState，跨行与状态变化时下发 State 帧。
  */
 public final class SuperLyricService extends ISuperLyricManager.Stub {
     private static final String TAG = "SuperLyricService";
 
     /**
      * {@code Publisher.PublishResult} 的线上取值
-     *
+     * <p>
      * 客户端枚举的 {@code code} 是 internal 的，Java 侧不能直接引用；AIDL 的返回值语义
      * 已冻结，这里按同一份数值对齐。
      */
@@ -99,13 +81,6 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     private final ReceiverBroadcaster mReceivers = new ReceiverBroadcaster();
     private final FrameBroadcaster mFrames = new FrameBroadcaster();
 
-    /**
-     * 最近一次停止帧
-     *
-     * {@code latest()} 在会话结束后返回它；注册首帧不补发 STOP（AIDL 的 registerListener
-     * 契约只发在播 FULL）。有新的 FULL/STATE 到达时清空，与客户端 lastStop 的
-     * "收到新歌词后清空"一致。
-     */
     @Nullable
     private volatile byte[] mLastStopFrame;
 
@@ -130,9 +105,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     );
 
     /**
-     * v4 帧广播线程
-     *
-     * <p>与 3.x 通道分开：v4 是主通道，3.x 接收者的 500ms 超时不得把帧的投递拖在后面。
+     * v4 帧广播线程；与 3.x 通道分开，避免 3.x 的超时拖住主通道。
      */
     private final ExecutorService mFrameExecutor = Executors.newSingleThreadExecutor(
         new ThreadFactory() {
@@ -146,10 +119,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     );
 
     /**
-     * 停止确认的计时器
-     * <p>
-     * 必须与广播线程分开：{@link #mBroadcastExecutor} 会同步调用每个接收者的 Binder 接口，
-     * 一个卡住的或垂死的接收者足以把那一条线程堵住数秒，确认计时不能跟着一起被拖住
+     * 停止确认计时器；与广播线程分开，避免被慢接收者拖住。
      */
     private final ScheduledExecutorService mStopConfirmer = Executors.newSingleThreadScheduledExecutor(
         new ThreadFactory() {
@@ -163,13 +133,9 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     );
 
     /**
-     * 发布者死亡 / 反注册时的停止通知专用线程
+     * 发布者死亡 / 反注册时的停止通知线程。
      * <p>
-     * 不能复用 {@link #mBroadcastExecutor}：那条线程会同步等待每个接收者的 Binder 返回，
-     * 一个卡住的消费者能把它堵住数秒，死亡通知便一直排在它后面发不出去，消费方会永远
-     * 停在最后一句歌词上。两条线程并发广播是安全的（{@code RemoteCallbackList} 自身同步），
-     * 而"先播出歌词、后播出停止"由世代守卫保证：死亡时世代已被移除，排队中的歌词
-     * 到达时对不上世代，会被丢弃
+     * 不能复用广播线程：卡住的接收者会阻塞 Binder 返回。世代守卫保证排队的旧歌词被丢弃。
      */
     private final ExecutorService mDeathNotifier = Executors.newSingleThreadExecutor(
         new ThreadFactory() {
@@ -219,7 +185,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
     /**
      * 时钟推进到新的一行
-     *
+     * <p>
      * 在追踪线程上调用：只做读快照与派发，实际的 Binder 调用在专用广播线程上执行。
      */
     private void onLineAdvanced(int newIndex, long positionMs) {
@@ -355,7 +321,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
             session.publishingPid = pid;
             session.published = true;
             // 计数在锁内自增：它要与 confirmStop 的读取互斥，否则"窗口内有没有新证据"判不准
-            stopEvidence(packageName).record();
+            playback.evidence(packageName).record();
 
             if (data.hasAllLyrics()) {
                 session.latestLyric = data;
@@ -520,30 +486,16 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         // 发布者自己下发的停止是权威结论，作废一切待确认的停止
         cancelPendingStop(packageName);
 
-        boolean wasActive = false;
-        byte[] stopFrame = null;
+        StopState stop;
         synchronized (publishers.lock) {
-            PublisherRegistry.Session session = publishers.sessions.get(packageName);
-            if (session != null) {
-                session.publishingPid = pid;
-                session.published = true;
-                stopEvidence(packageName).record();
-                stopFrame = encode(Frame.stop(new Stop(lyricIdLocked(packageName), StopReason.STOPPED, packageName)));
-                session.clear();
-            }
-            if (TextUtils.equals(publishers.activePublisher, packageName)) {
-                publishers.activePublisher = null;
-                playback.tracker.stop();
-                playback.tracker.setLyrics(null);
-                wasActive = true;
-            }
+            stop = clearSessionLocked(packageName, pid, StopReason.STOPPED);
         }
 
-        if (wasActive) {
-            if (stopFrame != null) mLastStopFrame = stopFrame;
+        if (stop.wasActive()) {
+            if (stop.stopFrame() != null) mLastStopFrame = stop.stopFrame();
             notifyReceiver(packageName, data,
                 (receiver, publisher, payload) -> receiver.onStop(publisher, payload));
-            notifyFrames(packageName, stopFrame);
+            notifyFrames(packageName, stop.stopFrame());
         }
     }
 
@@ -687,7 +639,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
             session.publishingPid = pid;
             session.published = true;
-            stopEvidence(packageName).record();
+            playback.evidence(packageName).record();
             session.latestDoc = cleanDoc;
             session.latestV4Lyric = cleanLyric;
             session.latestLyric = LyricDocAdapter.INSTANCE.toFullData(cleanDoc, index, position);
@@ -735,31 +687,17 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         // 发布者主动清除是权威结论，无需再让一个待确认的停止去清第二次
         cancelPendingStop(packageName);
 
-        boolean wasActive = false;
-        byte[] stopFrame = null;
+        StopState stop;
         synchronized (publishers.lock) {
-            PublisherRegistry.Session session = publishers.sessions.get(packageName);
-            if (session != null) {
-                session.publishingPid = pid;
-                session.published = true;
-                stopEvidence(packageName).record();
-                stopFrame = encode(Frame.stop(new Stop(lyricIdLocked(packageName), StopReason.CLEARED, packageName)));
-                session.clear();
-            }
-            if (TextUtils.equals(publishers.activePublisher, packageName)) {
-                publishers.activePublisher = null;
-                playback.tracker.stop();
-                playback.tracker.setLyrics(null);
-                wasActive = true;
-            }
+            stop = clearSessionLocked(packageName, pid, StopReason.CLEARED);
         }
 
-        if (wasActive) {
+        if (stop.wasActive()) {
             XposedLog.logI(TAG, "Cleared lyric for " + packageName + " (pid " + pid + ")");
-            if (stopFrame != null) mLastStopFrame = stopFrame;
+            if (stop.stopFrame() != null) mLastStopFrame = stop.stopFrame();
             notifyReceiver(packageName, new SuperLyricData(),
                 (receiver, publisher, payload) -> receiver.onStop(publisher, payload));
-            notifyFrames(packageName, stopFrame);
+            notifyFrames(packageName, stop.stopFrame());
         }
     }
 
@@ -915,29 +853,10 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
         mDeathNotifier.execute(() -> {
             boolean superseded = result.lastPid
-                ? isPublisher(packageName) : isStillPublishing(packageName);
+                ? isPublisher(packageName) : publishers.isStillPublishing(packageName);
             if (superseded) return;
-            broadcastToReceivers("onProcessDied",
-                receiver -> receiver.onStop(packageName, new SuperLyricData()));
-            // 发布者已经注销，notifyFrames 的发布者守卫会丢掉这一帧；死亡通知必须直发
-            byte[] stopFrame = encode(Frame.stop(new Stop(null, StopReason.PROCESS_DIED, packageName)));
-            if (stopFrame != null) {
-                mLastStopFrame = stopFrame;
-                mFrameExecutor.execute(() -> mFrames.broadcast(stopFrame));
-            }
+            broadcastDeath("onProcessDied", packageName, StopReason.PROCESS_DIED);
         });
-    }
-
-    private boolean isStillPublishing(@NonNull String packageName) {
-        return publishers.isStillPublishing(packageName);
-    }
-
-    /**
-     * 每包的"播放仍在继续"证据计数
-     */
-    @NonNull
-    private StopEvidence stopEvidence(@NonNull String packageName) {
-        return playback.evidence(packageName);
     }
 
     /**
@@ -969,11 +888,6 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
     public void onSystemMetadataChanged(@NonNull String packageName, @Nullable MediaMetadata metadata) {
         playback.onMetadataChanged(packageName, metadata);
-    }
-
-    private void broadcastToReceivers(@NonNull String action,
-                                      @NonNull ReceiverBroadcaster.Invocation invocation) {
-        mReceivers.broadcast(action, invocation);
     }
 
     /**
@@ -1079,7 +993,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
                     return;
                 }
 
-                broadcastToReceivers("notifyReceiver", receiver -> callback.call(receiver, publisher, data));
+                mReceivers.broadcast("notifyReceiver", receiver -> callback.call(receiver, publisher, data));
             });
         }
     }
@@ -1123,13 +1037,7 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
 
         mDeathNotifier.execute(() -> {
             if (isPublisher(packageName)) return;
-            broadcastToReceivers("removePublisherProcess",
-                receiver -> receiver.onStop(packageName, new SuperLyricData()));
-            byte[] stopFrame = encode(Frame.stop(new Stop(null, StopReason.CLEARED, packageName)));
-            if (stopFrame != null) {
-                mLastStopFrame = stopFrame;
-                mFrameExecutor.execute(() -> mFrames.broadcast(stopFrame));
-            }
+            broadcastDeath("removePublisherProcess", packageName, StopReason.CLEARED);
         });
     }
 
@@ -1137,6 +1045,47 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
         PublisherRegistry.Session session = publishers.getOrCreateSession(packageName);
         session.touch();
         return session;
+    }
+
+    /**
+     * 清理指定包的会话；调用方必须持有 {@code publishers.lock}
+     */
+    @NonNull
+    private StopState clearSessionLocked(@NonNull String packageName, int pid,
+                                         @NonNull StopReason reason) {
+        byte[] stopFrame = null;
+        PublisherRegistry.Session session = publishers.sessions.get(packageName);
+        if (session != null) {
+            session.publishingPid = pid;
+            session.published = true;
+            playback.evidence(packageName).record();
+            stopFrame = encode(Frame.stop(new Stop(lyricIdLocked(packageName), reason, packageName)));
+            session.clear();
+        }
+
+        boolean wasActive = false;
+        if (TextUtils.equals(publishers.activePublisher, packageName)) {
+            publishers.activePublisher = null;
+            playback.tracker.stop();
+            playback.tracker.setLyrics(null);
+            wasActive = true;
+        }
+        return new StopState(wasActive, stopFrame);
+    }
+
+    private void broadcastDeath(@NonNull String action, @NonNull String packageName,
+                                @NonNull StopReason reason) {
+        mReceivers.broadcast(action,
+            receiver -> receiver.onStop(packageName, new SuperLyricData()));
+        // 发布者已经注销，notifyFrames 的发布者守卫会丢掉这一帧；死亡通知必须直发
+        byte[] stopFrame = encode(Frame.stop(new Stop(null, reason, packageName)));
+        if (stopFrame != null) {
+            mLastStopFrame = stopFrame;
+            mFrameExecutor.execute(() -> mFrames.broadcast(stopFrame));
+        }
+    }
+
+    private record StopState(boolean wasActive, @Nullable byte[] stopFrame) {
     }
 
     /**

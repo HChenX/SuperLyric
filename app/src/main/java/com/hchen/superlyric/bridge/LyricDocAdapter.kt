@@ -37,13 +37,6 @@ import com.hchen.superlyricapi.model.Word
  *   不可变内核不能依赖它们；本适配器是 `:app` 侧唯一做取舍的业务代码
  * - 深拷贝是硬性要求：跨线程、跨 Binder 共享可变实例会产生难以定位的缺陷，本适配器每次
  *   都从不可变模型重新分配全部行与逐字对象，不共享任何实例
- *
- * 4.0 的双轨
- * - [toLyric] / [fromLyric] 服务 `super_lyric.v4` 的帧接口
- * - [toFullData] / [toLineData] / [toDoc] 服务 `super_lyric` 的 3.x Parcelable 接口，
- *   供 3.x 客户端与接收器使用；v4 服务端也用它向 3.x 订阅者投影
- *
- * @author 焕晨HChen
  */
 object LyricDocAdapter {
 
@@ -60,7 +53,6 @@ object LyricDocAdapter {
      * 3.x 的 [SuperLyricData] 没有独立的播放状态通道，暂停与播完只能由「当前行 + 进度」
      * 表达；服务端向 3.x 订阅者投影全量数据时须带上真实行号。
      *
-     * @param index      当前行下标；越界时不声明当前行
      * @param positionMs 当前播放位置；负数归一化为 0
      */
     fun toFullData(doc: LyricDoc, index: Int, positionMs: Long): SuperLyricData {
@@ -99,9 +91,6 @@ object LyricDocAdapter {
      * 数组时随行过线：`SuperLyricData.writeToParcel` 会把 `allLyrics` 每行的译文/次歌词写成
      * 并列数组），以及顶层 [SuperLyricData.setTranslation] / [SuperLyricData.setSecondary]
      * （只带一行的增量包只有这一条通道）。消费端两条都要读，见 [toDoc]
-     *
-     * @param index      行下标；越界时返回 null
-     * @param positionMs 当前播放位置
      */
     fun toLineData(doc: LyricDoc, index: Int, positionMs: Long): SuperLyricData? {
         val line = doc.lines.getOrNull(index) ?: return null

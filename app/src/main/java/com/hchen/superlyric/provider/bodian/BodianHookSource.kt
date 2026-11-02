@@ -42,11 +42,6 @@ import java.util.concurrent.Executors
  * - 宿主给出路径且解析成功 → [LyricOutcome.Success]
  * - 宿主明确未给路径 → [LyricOutcome.NoLyrics]：宿主的确定性信号，此时允许下发纯音乐占位
  * - 给出路径但文件读不到或解不开 → [LyricOutcome.Unsupported]：交给网络路径重试
- *
- * 格式识别交给 [LyricFormat.AUTO]，按载荷结构判断：LRCX 有 `[kuwo:]` 头部，
- * JSON 有 `sentences` 根键，其余走通用解析器。
- *
- * @author 焕晨HChen
  */
 class BodianHookSource : HookLyricSource {
 
@@ -87,7 +82,7 @@ class BodianHookSource : HookLyricSource {
         requests.open(identity, session)
         lastProcessedPath = null
 
-        docStash.takeIfAny(identity.stableId)?.let { stashed ->
+        docStash.takeIf(identity.stableId)?.let { stashed ->
             AndroidLog.logD(sourceName, "Replaying stashed lyric for id=${identity.stableId}")
             session.deliver(LyricOutcome.Success(stashed.doc.withMetadata(identity)))
         }

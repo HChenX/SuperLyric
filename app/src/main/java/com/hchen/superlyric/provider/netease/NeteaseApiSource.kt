@@ -54,15 +54,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
  * - `yrc`：逐字（YRC，绝对毫秒），优先；`lyric` 为 LRC，兜底
  * - `ytlrc` / `tlyric`：译文
  * - `yromalrc` / `romalrc`：罗马音
- *
- * 解析全部交给 `lyrics-core`：YRC 走其内置的 `NeteaseYrcParser`，
- * LRC 走 `EnhancedLrcParser`，译文与罗马音作为伴随载荷统一对齐。
- *
- * VIP 与逐字
- * 从宿主 WebView 的 CookieManager 中取登录凭证，用于解锁 VIP 曲目的完整逐字歌词；
- * 取不到时降级为普通歌词，不影响主流程。
- *
- * @author 焕晨HChen
  */
 class NeteaseApiSource : LyricSource {
 
@@ -77,15 +68,7 @@ class NeteaseApiSource : LyricSource {
     private var cookieLoaded = false
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
-        val token = requests.open()
-        requests.execute {
-            val outcome = runCatching { resolve(identity) }
-                .getOrElse { error ->
-                    AndroidLog.logW(sourceName, "Fetch failed: ${error.message}")
-                    LyricOutcome.TransientFailure(error)
-                }
-            if (requests.isCurrent(token)) session.deliver(outcome)
-        }
+        requests.launch(sourceName, session) { resolve(identity) }
     }
 
     override fun cancel() {
@@ -93,15 +76,10 @@ class NeteaseApiSource : LyricSource {
     }
 
     private fun resolve(identity: TrackIdentity): LyricOutcome {
-        val songId = songIdOf(identity) ?: when (val outcome = searchSongId(identity)) {
-            is SearchOutcome.Found -> outcome.songId
-            // 检索返回空集不代表平台声明该曲目无歌词：宿主上报的曲名/歌手并不总是干净
-            // （同名版本、修饰后缀、被改写的字段都会导致检索落空）。
-            // 判成 NoLyrics 会给一首有歌词的曲目下发纯音乐占位
-            SearchOutcome.NoCandidate -> return LyricOutcome.TransientFailure(null)
-            // 报文读取失败同样不是曲目结论
-            SearchOutcome.Failed -> return LyricOutcome.TransientFailure(null)
-        }
+        // 检索落空不等于平台确定没有歌词：同名版本、修饰后缀或被改写的字段都会导致
+        // 检索失败。判成 NoLyrics 会给有歌词的曲目下发纯音乐占位
+        val songId = songIdOf(identity) ?: searchSongId(identity)
+        ?: return LyricOutcome.TransientFailure(null)
 
         val payload = fetchLyricPayload(songId)
             ?: return LyricOutcome.TransientFailure(null)
@@ -218,39 +196,24 @@ class NeteaseApiSource : LyricSource {
     private fun hasAnyLyricChannel(payload: JSONObject): Boolean =
         NET_LYRIC_KEYS.any { key -> lyricText(payload, key).isNotBlank() }
 
-    /**
-     * 检索结果
-     *
-     * 三者都不构成该曲目没有歌词这一结论：平台从未就曲目表态，只回答了本次检索的结果。
-     * 因此 [NoCandidate] 与 [Failed] 都归为可重试失败
-     */
-    private sealed interface SearchOutcome {
-        data class Found(val songId: Long) : SearchOutcome
-
-        /** 平台检索返回空集：本次没有命中，不代表平台声明无歌词 */
-        data object NoCandidate : SearchOutcome
-
-        /** 检索未完成：缺少标题、报文畸形，或候选均未通过校验 */
-        data object Failed : SearchOutcome
-    }
-
-    private fun searchSongId(identity: TrackIdentity): SearchOutcome {
-        if (identity.title.isBlank()) return SearchOutcome.Failed
+    /** 按标题与歌手检索 songId；未命中或读取失败时返回 null，均按可重试失败处理 */
+    private fun searchSongId(identity: TrackIdentity): Long? {
+        if (identity.title.isBlank()) return null
 
         val keyword = if (identity.artist.isBlank()) identity.title else "${identity.title} ${identity.artist}"
         val json = get("$URL_SEARCH?s=${URLEncoder.encode(keyword, StandardCharsets.UTF_8.name())}&type=1&limit=5")
             ?: run {
                 AndroidLog.logW(sourceName, "Search request failed for \"$keyword\"")
-                return SearchOutcome.Failed
+                return null
             }
 
         val songs = json.optJSONObject("result")?.optJSONArray("songs") ?: run {
             AndroidLog.logW(sourceName, "Search response has no result.songs for \"$keyword\"")
-            return SearchOutcome.Failed
+            return null
         }
         if (songs.length() == 0) {
             AndroidLog.logD(sourceName, "No NetEase search candidate for \"$keyword\"")
-            return SearchOutcome.NoCandidate
+            return null
         }
 
         // 网易云接口不返回时长，无法做时长校验；只接受歌名完全一致的候选，
@@ -263,10 +226,10 @@ class NeteaseApiSource : LyricSource {
             if (!TrackIdentity.artistCompatible(identity.artist, songArtists(song))) continue
 
             val id = song.optLong("id", 0L)
-            if (id > 0L) return SearchOutcome.Found(id)
+            if (id > 0L) return id
         }
         AndroidLog.logD(sourceName, "No credible NetEase candidate for \"$keyword\"")
-        return SearchOutcome.Failed
+        return null
     }
 
     /** 候选的歌手名；接口未给出 artists 数组时返回空串（此时不做歌手约束） */

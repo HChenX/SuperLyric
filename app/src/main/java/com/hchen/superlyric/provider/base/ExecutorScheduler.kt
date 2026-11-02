@@ -50,9 +50,4 @@ class ExecutorScheduler(private val threadName: String = "SuperLyric-Scheduler")
         )
         return Cancellable { future.cancel(false) }
     }
-
-    /** 释放线程；宿主进程退出时无需显式调用，此处仅供测试与显式清理使用 */
-    fun shutdown() {
-        executor.shutdownNow()
-    }
 }

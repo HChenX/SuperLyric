@@ -49,15 +49,6 @@ import java.util.concurrent.Executors
  * 切歌时先查宿主自己的歌词缓存：Poweramp 只在歌词界面打开时才走 UI 解析链，但它的
  * 数据库里长期保存着 `cached_lyrics.content` 与 `lrc_files` 路径。切歌时直接查这两处，
  * 即可在不打开界面的情况下拿到整首歌词；UI 钩子只作为补充来源。
- *
- * 查询使用宿主的数据库连接：`RestProvider.getWritableDatabase()` 返回宿主已经打开的
- * 连接，自行打开 WAL 数据库会与宿主争锁，且只读打开时可能因 `-shm` 缺失而失败。
- *
- * LRC 文件交给宿主解析：Poweramp 的 LRC 路径是 `primary/...` 这类相对卷路径，模块直接
- * 读会被 scoped storage 拒绝（实测 EACCES）。调用宿主自己的 `LrcParser` 可走它的存储
- * 通道，`LrcParser.A` 钩子会同步把原始文本交回来。
- *
- * @author HChenX
  */
 class PowerampHookSource : HookLyricSource {
 
@@ -561,9 +552,6 @@ class PowerampHookSource : HookLyricSource {
             ?: ("title:" + TrackIdentity.normalizeTitle(identity.title) + "|" +
                     TrackIdentity.normalizeTitle(identity.artist))
 
-    /**
-     * 有界读取：content:// 可能返回无限流，先读到内存再判大小已经太晚
-     */
     private fun readBounded(input: InputStream, limit: Long): ByteArray? {
         val output = ByteArrayOutputStream(8192)
         val buffer = ByteArray(8192)

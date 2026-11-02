@@ -52,15 +52,6 @@ import okhttp3.Response
  * - 检索：`mobilecdn.kugou.com/api/v3/search/song`（歌名 + 歌手 → 候选 Hash）
  * - 取歌词 id / accesskey：`krcs.kugou.com/search?hash=…`
  * - 下载：`krcs.kugou.com/download?id=…&accesskey=…&fmt=krc`
- *
- * 三个接口均无需鉴权。
- *
- * 结果语义（决定是否允许下发纯音乐占位）：
- * - 拿到并解析成功 → [LyricOutcome.Success]
- * - 请求成功且平台明确没有该曲目歌词 → [LyricOutcome.NoLyrics]（终态）
- * - 网络异常或报文解码失败 → [LyricOutcome.TransientFailure]（可重试，不下发占位）
- *
- * @author 焕晨HChen
  */
 class KuGouApiSource : LyricSource {
 
@@ -69,15 +60,7 @@ class KuGouApiSource : LyricSource {
     private val requests = FetchSlot()
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
-        val token = requests.open()
-        requests.execute {
-            val outcome = runCatching { resolve(identity) }
-                .getOrElse { error ->
-                    AndroidLog.logW(sourceName, "Fetch failed: ${error.message}")
-                    LyricOutcome.TransientFailure(error)
-                }
-            if (requests.isCurrent(token)) session.deliver(outcome)
-        }
+        requests.launch(sourceName, session) { resolve(identity) }
     }
 
     override fun cancel() {

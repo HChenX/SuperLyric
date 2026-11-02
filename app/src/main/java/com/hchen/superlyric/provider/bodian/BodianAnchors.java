@@ -36,19 +36,9 @@ import org.luckypray.dexkit.result.ClassDataList;
 import java.lang.reflect.Constructor;
 
 /**
- * 波点音乐 Hook 锚点：在歌词引擎构造入口截获本地原生歌词文件路径
+ * 波点音乐 Hook 锚点：在 LyricsRunner4Flutter 构造入口截获本地歌词文件路径。
  * <p>
- * {@code LyricsRunner4Flutter} 是波点把歌词交给 Flutter 渲染层的入口，
- * 其构造参数 {@code (Music, int, String lyricPath)} 的第三个参数是宿主下载好的
- * 歌词文件路径，属于未经加工的原始载荷。
- * <p>
- * 从宿主行/词模型反射取数据需要经过 {@code VerbatimLyricsParserImpl.e()}，
- * 该实现会对相邻词元做重叠裁切，造成逐字时戳 0ms 坍缩与动效异常；
- * 构造入口绕开该模型。
- * <p>
- * 只挂这一个构造器。
- *
- * @author 焕晨HChen
+ * 该路径是宿主下载好的原始载荷，绕开会做重叠裁切的宿主行/词模型。只挂这一个构造器。
  */
 public final class BodianAnchors {
     private static final String TAG = "BodianAnchors";
@@ -134,9 +124,6 @@ public final class BodianAnchors {
         }
     }
 
-    /**
-     * 检索锚点类；优先取非内部类（内部类通常是伴生类，构造签名不同）
-     */
     @Nullable
     private static Class<?> locateRunnerClass() {
         return DexkitCache.findMember(CACHE_KEY, new IDexkit<ClassData>() {

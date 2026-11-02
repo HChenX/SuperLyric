@@ -28,16 +28,6 @@ import java.util.Objects;
  * <p>曲名不能无条件用于校验发布内容：部分宿主会把当前歌词行写进
  * {@code METADATA_KEY_TITLE}，同一首歌内该字段每次回调都可能变化。把它直接当作
  * 当前曲目的标题会拒掉合法的重新发布。
- *
- * <p>因此在同一个曲目内观察标题是否变化：变过即标记为不可信，校验时退化为只比时长。
- * 只观察到一个取值同样不算证据，那可能恰好是被改写的歌词行；至少连续两次取到同一个
- * 标题才允许用它做校验。
- *
- * <p>判定"同一个曲目"优先用 {@code METADATA_KEY_MEDIA_ID}，没有标识时看时长是否在
- * {@link PublishGuard#DURATION_TOLERANCE_MS} 内。这是启发式而非身份判定：错误只会让
- * 校验更宽松，不会拒掉合法歌词。
- *
- * @author 焕晨HChen
  */
 public final class MediaFacts {
     @Nullable

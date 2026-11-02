@@ -64,20 +64,7 @@ public class SpotifyProvider extends MusicProvider {
     @NonNull
     @Override
     protected TrackIdentity buildIdentity(@NonNull MediaMetadata metadata) {
-        String title = readString(metadata, MediaMetadata.METADATA_KEY_TITLE);
-        String artist = readString(metadata, MediaMetadata.METADATA_KEY_ARTIST);
-        long duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION);
-
-        String mediaId = readString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID).trim();
-        if (!mediaId.isEmpty()) {
-            return new TrackIdentity(
-                TAG, TrackIdentity.stableId(NAMESPACE, mediaId), title, artist, duration);
-        }
-        return super.buildIdentity(metadata);
-    }
-
-    private static String readString(@NonNull MediaMetadata metadata, @NonNull String key) {
-        String value = metadata.getString(key);
-        return value != null ? value : "";
+        String mediaId = metadataString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID).trim();
+        return trackIdentity(metadata, TrackIdentity.stableId(NAMESPACE, mediaId));
     }
 }

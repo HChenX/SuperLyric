@@ -34,49 +34,21 @@ import java.lang.reflect.Method;
  *
  * <p>汽水的歌词模型 {@code com.luna.common.arch.db.entity.lyrics.Lyric} 的构造器签名是
  * {@code (NetLyricType type, String content, NetLyricsLanguage lang, ILunaQueueItem item,
-     * boolean …, Function1 …)}。该构造器的字节码先把 {@code content} 按换行符切行，
+ * boolean …, Function1 …)}。该构造器的字节码先把 {@code content} 按换行符切行，
  * 再按 {@code type} 分派给 {@code KrcLyricParser} / {@code LrcLyricParser}，因此入参就是
  * 宿主拿到的未加工歌词文本，格式（LRC / KRC / TEXT）也由宿主一并给出。
- *
- * <p>宿主的 {@code Sentence} / {@code Word} 模型是解析之后的产物：字段名被混淆、译文被
- * 塞进 {@code translationMap}，从它反射取数等于跟随宿主的内部结构。锚点位于解析入口，
- * 宿主改一次模型与本层无关。
- *
- * <p>类名与包名都不是混淆产物（{@code com.luna.*} 全部可读），因此按名字定位；
- * 定位不到就明确报错，不硬编码备选类名。
- *
- * <p>代价：只挂一个构造器，含 Kotlin 为默认参数合成的桥接构造器。
- *
- * @author 焕晨HChen
  */
 public final class SodaAnchors {
     private static final String TAG = "SodaAnchors";
 
-    /**
-     * 歌词实体：宿主解析歌词的入口
-     */
     private static final String LYRIC_CLASS = "com.luna.common.arch.db.entity.lyrics.Lyric";
 
-    /**
-     * 格式枚举：{@code LRC} / {@code KRC} / {@code TEXT}
-     */
     private static final String TYPE_CLASS_SUFFIX = ".NetLyricType";
 
-    /**
-     * 语言枚举：区分主歌词与译文
-     */
-    private static final String LANGUAGE_CLASS_SUFFIX = ".NetLyricsLanguage";
-
-    /**
-     * 曲目歌词实体：{@code getTrackId()} 给出该份歌词所属的曲目
-     */
     private static final String TRACK_LYRIC_CLASS = "com.luna.common.arch.db.entity.TrackLyric";
 
     private static volatile boolean sInstalled;
 
-    /**
-     * 数据入口上一次已上报的内容指纹，用于压掉构造 / setter / getter 的重复
-     */
     private static volatile String sLastEntityKey;
 
     /**
@@ -95,10 +67,9 @@ public final class SodaAnchors {
      */
     public interface PayloadListener {
         /**
-         * @param type     宿主的格式声明（{@code LRC} / {@code KRC} / {@code TEXT}）
-         * @param language 语言枚举名；译文与主歌词靠它区分
-         * @param payload  原始歌词正文
-         * @param trackId  该份歌词所属曲目的标识；无法取得时为 {@code null}
+         * @param type    宿主的格式声明（{@code LRC} / {@code KRC} / {@code TEXT}）
+         * @param payload 原始歌词正文
+         * @param trackId 该份歌词所属曲目的标识；无法取得时为 {@code null}
          */
         void onPayload(@NonNull String type,
                        @NonNull String language,

@@ -33,20 +33,6 @@ import com.hchen.superlyric.kernel.model.LyricDoc
  *
  * 按「音乐软件仅负责发布完整歌词，系统框架负责分发」的边界，这是整条链路上唯一的进度
  * 来源，宿主侧不发布任何进度包。
- *
- * - 漂移：进度以宿主自报的 `lastPositionUpdateTime` 为锚（见 [PlaybackClock]）；改以
- *   回调到达时刻为锚，漂移会恒等于快照年龄
- * - 速率为 0：PLAYING 而速率为 0 时由 [PlaybackClock] 视为冻结，否则时钟会表现为
- *   运行却停住
- * - 重播与拖回开头：位置回退是合法事件（seek / 重播），重新锚定并重置行索引即可；
- *   "虚假 0ms" 抑制会让合法的重播把时钟留在曲尾
- * - 线程：行索引与循环调度只在内部 HandlerThread 上修改；[PlaybackClock] 自带同步，
- *   时钟可跨线程读写，State 帧经 [positionNow] / [indexNow] 取快照
- *
- * 时钟必须与 `PlaybackState.getLastPositionUpdateTime()` 同基，因此显式使用
- * `SystemClock.elapsedRealtime()`，不能用内核的默认纳秒时钟，否则两者相减没有意义。
- *
- * @author 焕晨HChen
  */
 class PlaybackTracker @JvmOverloads constructor(
     threadName: String,
@@ -270,7 +256,7 @@ class PlaybackTracker @JvmOverloads constructor(
      * `FAST_FORWARDING` / `REWINDING` / `SKIPPING_*` 属于"仍在播放、只是位置在动"，
      * 归为 PLAYING；并进 `else` 会让时钟在快进与跳转期间冻结
      *
-     * `NONE` 在这里归为 STOPPED，与 `PlaybackSignals` 判其为 `UNKNOWN` 并不冲突：
+     * `NONE` 在这里归为 STOPPED，与 `PlaybackStates.toSignal` 判其为 `UNKNOWN` 并不冲突：
      * 这里决定"时钟是否继续走"，那里决定"是否清空并下发停止"。冻结可逆（宿主随后报
      * 任何状态都会重新锚定），清空不可逆，因此同一个"不知道"在本层可按停止处理，
      * 在停止判定里必须保持中性；把这里也改成中性会让时钟在宿主停止上报后继续推进。

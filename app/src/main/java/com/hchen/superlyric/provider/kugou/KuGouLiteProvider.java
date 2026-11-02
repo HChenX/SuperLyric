@@ -33,11 +33,6 @@ import com.hchen.superlyric.provider.base.MusicProvider;
  * 宿主把原生报文放在内存中、不落盘，没有可用的 Hook 取词点，只走官方 KRC 接口。
  * 差异仅在目标包名；标识构建、直查落空后回退到「歌名 + 歌手」检索、缓存命名空间
  * 全部共用，边界详见 {@link KuGouProvider} 的类注释。
- *
- * <p>本类必须用 Java：{@code @HookThis} 由 Java 注解处理器消费，Kotlin 类不经过该处理器，
- * 写 Kotlin 会导致 Provider 不被注册。
- *
- * @author 焕晨HChen
  */
 @HookThis(targetPackage = "com.kugou.android.lite")
 public class KuGouLiteProvider extends MusicProvider {

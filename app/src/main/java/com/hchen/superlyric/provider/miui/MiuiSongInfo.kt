@@ -23,8 +23,8 @@ import com.hchen.superlyric.kernel.identity.TrackIdentity
 /**
  * 宿主曲目快照与音轨身份的对应关系。
  *
- * <p>{@code SongInfo} 更新早于 {@code MediaSession}，回调也可能与切歌交错。快照只在身份
- * 匹配时采信，否则等待下一个，避免把 A 的歌词发布给 B。
+ * `SongInfo` 更新早于 `MediaSession`，回调也可能与切歌交错。快照只在身份匹配时采信，
+ * 否则等待下一个，避免把 A 的歌词发布给 B。
  *
  * @author 焕晨HChen
  */
@@ -33,7 +33,7 @@ internal object MiuiSongInfo {
     /**
      * 快照是否属于当前音轨。
      *
-     * <p>快照没有稳定标识，按标题、歌手和时长匹配；双方时长已知时偏差不超过 1 秒。
+     * 快照没有稳定标识，按标题、歌手和时长匹配；双方时长已知时偏差不超过 1 秒。
      */
     fun matches(identity: TrackIdentity, snapshot: MiuiAnchors.SongSnapshot): Boolean {
         if (snapshot.id <= 0L) return false
@@ -51,7 +51,7 @@ internal object MiuiSongInfo {
     /**
      * 用宿主快照校正音轨身份。
      *
-     * <p>曲名、歌手和时长以宿主对象模型为准；稳定标识保持不变，只用于判定切歌。
+     * 曲名、歌手和时长以宿主对象模型为准；稳定标识保持不变，只用于判定切歌。
      */
     fun merge(identity: TrackIdentity, snapshot: MiuiAnchors.SongSnapshot): TrackIdentity =
         identity.copy(

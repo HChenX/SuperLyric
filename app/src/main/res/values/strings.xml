@@ -16,7 +16,6 @@
 
     <!-- Log Level -->
     <string name="log_level">Log level</string>
-    <string name="log_level_details">The modifications can only take full effect after restarting the system</string>
     <string name="log_I">Info</string>
     <string name="log_W">Warn</string>
     <string name="log_E">Error</string>
@@ -54,47 +53,17 @@
     <string name="project_url">Project Page</string>
 
     <!-- Debug -->
-    <string name="debug">Debug</string>
     <string name="clear_dexkit_cache">Clear Cache</string>
-    <string name="clear_dexkit_cache_summary">May fix some apps not working properly</string>
     <string name="cleared">Cleared</string>
     <string name="clear_failed">Clear failed</string>
     <string name="hide_icon">Hide icon</string>
     <string name="show_icon">Show icon</string>
     <string name="icon_toggle_failed">Could not change icon</string>
-    <string name="api_test">API Test</string>
-    <string name="service_not_started">SuperLyric service is not started</string>
 
     <!-- Debug > Basic Status -->
-    <string name="basic_status">Basic Status</string>
-    <string name="api_status">API Status</string>
-    <string name="api_status_format">API Status: %s</string>
-        <string name="api_status_available">Available</string>
+    <string name="api_status_available">Available</string>
     <string name="api_status_available_version">Available (API v%1$d)</string>
     <string name="api_status_unavailable">Unavailable</string>
-    <string name="api_version_format">API Version: %s</string>
-    <string name="registration_status">Registration Status</string>
-    <string name="registered">Registered</string>
-    <string name="unregistered">Unregistered</string>
-    <string name="registration_status_format">Registration Status: %s</string>
-    <string name="service_status_format">SuperLyricService: %s</string>
-
-    <!-- Debug > Simulate Publish -->
-    <string name="simulate_publish">Simulate Publish</string>
-    <string name="test_publish_lyric">Test Publish Lyric</string>
-    <string name="test_publish_stop">Test Publish Stop Event</string>
-    <string name="published">Published</string>
-
-    <!-- Debug > Simulate Receive -->
-    <string name="simulate_receive">Simulate Receive</string>
-    <string name="register_receiver">Register Receiver</string>
-    <string name="unregister_receiver">Unregister Receiver</string>
-    <string name="current_status_format">Current Status: %s</string>
-    <string name="destroyed">Destroyed</string>
-    <string name="pause_receive">Pause Receive</string>
-    <string name="resume_receive">Resume Receive</string>
-    <string name="receiver_data">Receiver Real-time Data</string>
-    <string name="receiver_data_format">Publisher: %1$s\nData: %2$s</string>
 
     <!-- API Screen -->
     <string name="api_debug">API Debug</string>
@@ -165,28 +134,7 @@
     <string name="spotify_music">Keep network connected, play normally</string>
     <string name="poweramp_music">No additional setup required, play normally</string>
 
-    <!-- Legacy / Standby App Instructions -->
-    <string name="symfonium_music">No additional setup required</string>
-    <string name="tidal_music">No additional setup required</string>
-    <string name="haibei_music">Unknown</string>
-    <string name="wangyiyun_rongyao_music">Enable the "Meizu status bar lyrics" option in settings</string>
-    <string name="aplayer_music">Enable the "Status bar lyrics" option in settings</string>
-    <string name="lmusic_music">Enable the "Meizu status bar lyrics" option in settings</string>
-    <string name="yinliu_music">Enable the "Meizu status bar lyrics" option in settings</string>
-    <string name="meizu_music">Enable the "Meizu status bar lyrics" option in settings</string>
-    <string name="tangcu_music">Enable the "Meizu status bar lyrics" option in settings</string>
-    <string name="qingyan_music">Enable the "Meizu status bar lyrics" option in settings</string>
-    <string name="gramophone_music">Enable the "Meizu status bar lyrics" option in settings</string>
-    <string name="musicfree_music">Enable the "desktop lyrics" feature</string>
-    <string name="luoxue_music">Enable the "desktop lyrics" feature</string>
-    <string name="qq_music_xiaomi">Enable the "Car Bluetooth Lyrics" or "Notification Bar Lyrics" function</string>
-    <string name="qq_music_meizu">Enable the "Bluetooth lyrics" feature</string>
-    <string name="oppo_music">Enable the "Bluetooth lyrics" feature</string>
-    <string name="rplayer_music">Enable the "Bluetooth lyrics" feature</string>
     <string name="qishui_music">Enable the "Bluetooth lyrics" feature</string>
     <string name="kuwo_music">No additional setup required, play normally</string>
     <string name="kuwo_car_music">No additional setup required, play normally</string>
-    <string name="nisheng_music">Enable the "Bluetooth lyrics" feature</string>
-    <string name="huawei_music">Enable the "Bluetooth lyrics" feature</string>
-    <string name="kde_music">Enable the "Bluetooth lyrics" feature</string>
 </resources>

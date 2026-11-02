@@ -40,13 +40,6 @@ import io.github.libxposed.api.XposedModuleInterface;
  * <p>该 Provider 不提供 Hook 来源，只走官方接口：由 {@code MediaSession} 提供曲目标识，
  * 模块在后台拉取原生 YRC/LRC 并自行解析。宿主 9.6+ 的歌词模型混淆严重且与状态栏、
  * 界面强耦合，Hook 路径的收益低于其脆弱性。
- *
- * <p>易盾加固绕过：网易云用易盾加固壳把真实 Application 包了一层。不处理时模块在宿主
- * 进程内的初始化会落在壳的 Application 上，后续 Hook 全部失配。因此在
- * {@code Instrumentation#newApplication} 处把参数从壳类改回真实类。这是该 Provider
- * 唯一的非歌词 Hook，只挂一个方法。
- *
- * @author 焕晨HChen
  */
 @HookThis(targetPackage = "com.netease.cloudmusic")
 public class NeteaseProvider extends MusicProvider {
@@ -77,21 +70,10 @@ public class NeteaseProvider extends MusicProvider {
     @NonNull
     @Override
     protected TrackIdentity buildIdentity(@NonNull MediaMetadata metadata) {
-        String title = readString(metadata, MediaMetadata.METADATA_KEY_TITLE);
-        String artist = readString(metadata, MediaMetadata.METADATA_KEY_ARTIST);
-        long duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION);
-
-        String mediaId = readString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID).trim();
-        if (!mediaId.isEmpty()) {
-            return new TrackIdentity(
-                TAG, TrackIdentity.stableId(NAMESPACE, mediaId), title, artist, duration);
-        }
-        return super.buildIdentity(metadata);
+        String mediaId = metadataString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID).trim();
+        return trackIdentity(metadata, TrackIdentity.stableId(NAMESPACE, mediaId));
     }
 
-    /**
-     * 将易盾壳的 Application 类名重定向为真实类名
-     */
     private void bypassPackProtection() {
         try {
             hookMethod("android.app.Instrumentation",
@@ -118,8 +100,4 @@ public class NeteaseProvider extends MusicProvider {
         }
     }
 
-    private static String readString(@NonNull MediaMetadata metadata, @NonNull String key) {
-        String value = metadata.getString(key);
-        return value != null ? value : "";
-    }
 }

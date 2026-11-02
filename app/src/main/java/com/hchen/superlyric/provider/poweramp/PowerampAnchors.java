@@ -48,19 +48,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Poweramp Hook 锚点
- *
- * <p>Poweramp 的整首歌词只有两种形态：
- * <ul>
- * <li>{@code cached_lyrics.content}，即插件或上次解析的结果；</li>
- * <li>{@code lrc_files} 里的路径，即同名 LRC 文件。</li>
- * </ul>
- * <p>前者由 {@link PowerampHookSource} 直接查库；后者交给宿主自己的 {@code LrcParser}
- * 解析，本类在解析流上截获原始文本。该路径既不依赖歌词界面，也不触碰 Poweramp 的行/词模型。
- *
- * <p>LRC 文件必须由宿主解析器读取：Poweramp 通过自己的存储通道读取 {@code primary/...}
- * 相对路径，模块直接 {@code File} 读取会被 scoped storage 拒绝（实测 EACCES）。
- *
- * @author HChenX
  */
 public final class PowerampAnchors {
     private static final String TAG = "PowerampAnchors";
@@ -121,9 +108,6 @@ public final class PowerampAnchors {
      * 预加载的下一首歌词算到当前曲目头上。
      */
     private static final ThreadLocal<Boolean> sHostParse = new ThreadLocal<>();
-    /**
-     * 本次主动调用宿主解析器时，open 钩子是否真的交付了文本
-     */
     private static final ThreadLocal<Boolean> sCaptureDelivered = ThreadLocal.withInitial(() -> false);
 
     private PowerampAnchors() {
@@ -134,8 +118,6 @@ public final class PowerampAnchors {
      */
     public interface LyricsListener {
         /**
-         * @param source     命中点，仅用于诊断
-         * @param text       原始歌词文本；也可能是本地 LRC 文件路径
          * @param title      宿主给出的曲名；未知时为空
          * @param artist     宿主给出的歌手；未知时为空
          * @param album      宿主给出的专辑；未知时为空
@@ -208,22 +190,11 @@ public final class PowerampAnchors {
     }
 
     /**
-     * Application 初始化后重试 LRC 存储钩子
-     *
-     * <p>{@link #install} 在 packageReady 时可能拿不到宿主的 LrcParser engine，
-     * 单次失败不视为永久失效。
-     */
-    public static void retryLrcHook() {
-        retryAnchors();
-    }
-
-    /**
      * 用宿主自己的 LRC 解析器读取一个歌词路径
      *
      * <p>调用链与 Poweramp 内部完全一致，因此 {@link #hookLrcStorage(LyricsListener)} 挂上的
      * 解析流钩子会同步拿到原始文本。
      *
-     * @param path Poweramp 数据库里的相对路径，例如 {@code primary/Music/x.lrc}
      * @return 是否成功进入宿主解析器
      */
     public static boolean parseLrcViaHost(@NonNull String path) {
@@ -533,9 +504,6 @@ public final class PowerampAnchors {
             fieldString(tag, "album"), fieldLong(tag, "durationMS"), "");
     }
 
-    /**
-     * 把 SYLT 的两个平行数组还原成标准 LRC，复用内核已有的 LRC 解析器
-     */
     @NonNull
     private static String buildLrcFromSync(@Nullable Object tag) {
         Object linesValue = field(tag, "syncLyricsLines");
@@ -559,9 +527,6 @@ public final class PowerampAnchors {
         return builder.toString();
     }
 
-    /**
-     * 任何探测异常都留在本模块内，不传进宿主进程
-     */
     private static void safe(@NonNull Runnable action) {
         try {
             action.run();

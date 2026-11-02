@@ -121,7 +121,7 @@ public class Application extends android.app.Application implements XposedServic
             synchronized (PREFS_LOCK) {
                 mXposedService = service;
                 mRemotePreferences = remotePreferences;
-                listenersSnapshot = List.of(listeners.toArray(new Consumer[0]));
+                listenersSnapshot = List.copyOf(listeners);
             }
 
             PrefsTool.prefs(this)

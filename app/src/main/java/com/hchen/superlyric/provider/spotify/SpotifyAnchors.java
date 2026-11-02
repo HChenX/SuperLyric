@@ -39,22 +39,6 @@ import java.util.List;
 
 /**
  * Spotify 会话头捕获锚点
- *
- * <p>{@code color-lyrics/v2} 接口需要 Bearer 鉴权，而令牌只存在于宿主自己的网络请求里。
- * 本模块不发起登录、也不持有任何凭证，而是从宿主已经发出的 {@code okhttp3.Headers} 中
- * 旁路复制最新的一份会话头。
- *
- * <p>锚点是 {@code okhttp3.Headers} 的构造器：它是所有请求头的唯一汇聚点，挂一个构造器
- * 即可覆盖全部请求，无需逐个匹配歌词接口的调用点。
- *
- * <p>两级降级：
- * <ol>
- *   <li>能直接引用到 {@code okhttp3.Headers} 时走明文快速通道；</li>
- *   <li>否则用 DexKit 按"含 {@code <init>(String[])} 且实现 {@code Iterable}"的结构指纹
- *       定位，这正是 {@code okhttp3.Headers} 的结构特征，类名被混淆也能命中。</li>
- * </ol>
- *
- * @author 焕晨HChen
  */
 public final class SpotifyAnchors {
     private static final String TAG = "SpotifyAnchors";

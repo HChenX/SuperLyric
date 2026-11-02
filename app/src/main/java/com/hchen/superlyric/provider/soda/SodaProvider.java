@@ -30,29 +30,9 @@ import com.hchen.superlyric.kernel.orchestrate.LyricSource;
 import com.hchen.superlyric.provider.base.HookLyricSource;
 import com.hchen.superlyric.provider.base.MusicProvider;
 
-import java.util.Locale;
 
 /**
  * 汽水音乐歌词提供者
- *
- * <p>取词路径只有 Hook 一条，两处锚点：
- * <ul>
- *   <li>解析入口（{@code Lyric} 构造器）：宿主把原始正文交给歌词模型时截获，
- *       拿到的是未经加工的 LRC / KRC 原词。</li>
- *   <li>数据入口（{@code TrackLyric} 的构造、setter、getter）：宿主从网络或本地库
- *       装载曲目歌词时截获。汽水按需解析，后台播放、快速切歌、UGC 视频条目下
- *       解析入口可能整首都不触发，数据入口是这些场景的唯一来源。</li>
- * </ul>
- *
- * <p>不使用宿主的 {@code Sentence} / {@code Word} 模型：那是解析之后的产物，字段名混淆、
- * 译文被塞进 {@code translationMap}。锚点位于解析入口，拿到的是宿主自己拿到的正文，
- * 宿主改一次模型与本层无关。
- *
- * <p>标识一致性：覆写 {@link #buildIdentity} 以 {@code MEDIA_ID} 作为稳定标识（前缀
- * {@code luna:}）。不覆写时 Hook 上报的曲目标识与元数据上报的标识永不相等，Hook 捕获
- * 会被当成过期数据丢弃，整条取词路径静默失效。
- *
- * @author 焕晨HChen
  */
 @HookThis(targetPackage = "com.luna.music")
 public class SodaProvider extends MusicProvider {
@@ -116,37 +96,11 @@ public class SodaProvider extends MusicProvider {
     @NonNull
     @Override
     protected TrackIdentity buildIdentity(@NonNull MediaMetadata metadata) {
-        String title = readString(metadata, MediaMetadata.METADATA_KEY_TITLE);
-        String artist = readString(metadata, MediaMetadata.METADATA_KEY_ARTIST);
-        long duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION);
-
-        String id = usableId(readString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID));
-        if (id.isEmpty()) {
-            id = usableId(hookStableId());
+        String id = TrackIdentity.usableId(
+            metadataString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID));
+        if (id == null) {
+            id = TrackIdentity.usableId(hookStableId());
         }
-        if (!id.isEmpty()) {
-            return new TrackIdentity(
-                TAG, TrackIdentity.stableId(NAMESPACE, id), title, artist, duration);
-        }
-        return super.buildIdentity(metadata);
-    }
-
-    /**
-     * 过滤占位标识，见 {@link #buildIdentity}
-     */
-    @NonNull
-    private static String usableId(String raw) {
-        String trimmed = raw != null ? raw.trim() : "";
-        switch (trimmed.toLowerCase(Locale.ROOT)) {
-            case "", "0", "-1", "null", "unknown", "none":
-                return "";
-            default:
-                return trimmed;
-        }
-    }
-
-    private static String readString(@NonNull MediaMetadata metadata, @NonNull String key) {
-        String value = metadata.getString(key);
-        return value != null ? value : "";
+        return trackIdentity(metadata, TrackIdentity.stableId(NAMESPACE, id));
     }
 }

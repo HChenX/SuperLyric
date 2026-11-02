@@ -41,16 +41,7 @@ class QQApiSource : LyricSource {
     private val requests = FetchSlot()
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
-        val token = requests.open()
-        requests.execute {
-            if (!requests.isCurrent(token)) return@execute
-            val outcome = runCatching { resolve(identity) }
-                .getOrElse { error ->
-                    AndroidLog.logW(sourceName, "Search failed: ${error.message}")
-                    LyricOutcome.TransientFailure(error)
-                }
-            if (requests.isCurrent(token)) session.deliver(outcome)
-        }
+        requests.launch(sourceName, session) { resolve(identity) }
     }
 
     override fun cancel() {

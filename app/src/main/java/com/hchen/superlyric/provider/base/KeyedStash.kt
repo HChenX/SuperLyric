@@ -39,9 +39,7 @@ class KeyedStash<T> {
         }
     }
 
-    fun takeIf(key: String?): T? = takeIfAny(key)
-
-    fun takeIfAny(key: String?): T? {
+    fun takeIf(key: String?): T? {
         if (key.isNullOrBlank()) return null
         synchronized(lock) {
             if (key !in keys) return null

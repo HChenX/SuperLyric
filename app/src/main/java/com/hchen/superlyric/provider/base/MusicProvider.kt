@@ -39,7 +39,7 @@ import com.hchen.superlyric.kernel.orchestrate.StopEvidence
 import com.hchen.superlyric.kernel.orchestrate.StopGate
 import com.hchen.superlyric.publisher.AbsPublisher
 import com.hchen.superlyric.utils.LyricDiag
-import com.hchen.superlyric.utils.PlaybackSignals
+import com.hchen.superlyric.utils.PlaybackStates
 
 import io.github.libxposed.api.XposedModuleInterface
 
@@ -48,39 +48,22 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 
 /**
- * 音乐应用 Provider 的统一骨架
+ * 音乐应用 Provider 的统一骨架。
  *
- * 一个 Provider 只需实现三处：
- * 1. 类上的 `@HookThis(targetPackage = "…")`
- * 2. [createHookSource] / [createApiSource]：至少实现一个
- * 3. [buildIdentity]：从 `MediaSession` 元数据构建稳定标识
+ * 子类只需实现 @HookThis、createHookSource / createApiSource 中的至少一个，
+ * 以及可选的 buildIdentity。切歌、降级、超时、重试与发布由本类与 LyricOrchestrator 处理。
  *
- * 切歌感知、双轨降级、超时、重试与发布包装由基类与 [LyricOrchestrator] 处理。
- * Provider 只发布全量歌词与停止包，进度推进由系统框架侧的唯一时钟负责。
- *
- * 具体 Provider 必须用 Java：`@HookThis` 是 `SOURCE` 级注解，由 `:processor` 的
- * Java 注解处理器消费；Kotlin 类不经过该处理器，不会进入生成的 `HookMaps`，
- * 模块不会被挂载。
- *
- * @author 焕晨HChen
+ * 具体 Provider 必须用 Java：@HookThis 由 Java 注解处理器消费，Kotlin 类不会进入 HookMaps。
  */
 abstract class MusicProvider : AbsPublisher() {
 
     /**
-     * Hook 取词来源
-     *
-     * 必须 volatile：在 `onPackageReady` 线程写，在宿主 `MediaSession` 回调线程读
-     * （子类经 [hookStableId] 或自己的旁路字段读取同一状态）。可见性失败时读到 null，
-     * 会退化为使用宿主元数据，而宿主元数据不可信。
+     * Hook 取词来源；在 onPackageReady 写，在 MediaSession 回调线程读，必须 volatile。
      */
     @Volatile
     private var hookSource: HookLyricSource? = null
 
-    /**
-     * 上一次已输出日志的元数据；宿主会高频重发同一份，用它降噪
-     *
-     * `@Volatile`：与 [hookSource] 相同，在宿主 `MediaSession` 回调线程读写。
-     */
+    /** 上一次已输出日志的身份，用于压掉宿主重复上报的同一份元数据。 */
     @Volatile
     private var lastSeenIdentity: TrackIdentity? = null
 
@@ -94,16 +77,9 @@ abstract class MusicProvider : AbsPublisher() {
         }
 
     /**
-     * “播放仍在继续”的证据计数（见 [StopEvidence]）
+     * “播放仍在继续”的证据计数（见 StopEvidence）。
      *
-     * 确认在 [stopConfirmer] 线程执行，撤销在宿主 `MediaSession` 回调线程执行。
-     * StopGate 只保证排期时无人撤销，无法保证之后无人发布：撤销若落在“令牌已确认消费、
-     * 回调尚未执行”之间，会读到 `armed == false` 而放行，随后
-     * [LyricOrchestrator.onPlaybackStopped] 无条件推进 epoch、清空并取消两个来源，
-     * 清掉刚切到的新曲目。
-     *
-     * 因此排期时调用 [StopEvidence.snapshot]，确认前调用 [StopEvidence.isStillValid]。
-     * system_server 侧对应 `SuperLyricService#mStopEvidence`。
+     * 排期时 snapshot，确认前 isStillValid；期间记过任何证据，本次确认都不成立。
      */
     private val stopEvidence = StopEvidence()
 
@@ -162,15 +138,23 @@ abstract class MusicProvider : AbsPublisher() {
      * 能拿到平台侧不可变标识（songMID / 音频 hash / rid）的 Provider 应当覆写；
      * 否则 Hook 与元数据上报的标识表示法不一致，捕获会被当作过期数据丢弃。
      */
-    protected open fun buildIdentity(metadata: MediaMetadata): TrackIdentity {
-        val mediaId = metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID)?.trim()
-        return TrackIdentity(
+    /** 读取元数据文本；缺失时返回空串 */
+    protected fun metadataString(metadata: MediaMetadata, key: String): String =
+        metadata.getString(key).orEmpty()
+
+    /** 用当前 Provider 标签和稳定标识构造身份；stableId 为 null 时退化为标题 + 歌手 + 时长 */
+    protected fun trackIdentity(metadata: MediaMetadata, stableId: String?): TrackIdentity =
+        TrackIdentity(
             source = providerTag,
-            stableId = mediaId?.takeIf { it.isNotEmpty() },
-            title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE).orEmpty(),
-            artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST).orEmpty(),
+            stableId = stableId,
+            title = metadataString(metadata, MediaMetadata.METADATA_KEY_TITLE),
+            artist = metadataString(metadata, MediaMetadata.METADATA_KEY_ARTIST),
             durationMs = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION),
         )
+
+    protected open fun buildIdentity(metadata: MediaMetadata): TrackIdentity {
+        val mediaId = metadataString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID).trim()
+        return trackIdentity(metadata, mediaId.takeIf { it.isNotEmpty() })
     }
 
     override fun onPackageReady(param: XposedModuleInterface.PackageReadyParam) {
@@ -237,26 +221,21 @@ abstract class MusicProvider : AbsPublisher() {
     }
 
     /**
-     * 播放状态变化
+     * 播放状态变化。
      *
-     * 停止必须确认后才生效：宿主在过渡期会瞬发 `STATE_STOPPED`，网易云在一次切歌前后
-     * 会连发多次停止状态，随后回到正常播放。而 `onPlaybackStopped` 是终态操作，
-     * 会清空当前音轨、推进 epoch 并向系统下发停止包；瞬发停止被当作终态时，歌词会短暂清空。
-     *
-     * 判定规则与 system_server 侧一致，见 [StopGate]：终态排期、旁证撤销、`NONE` 中性。
-     * 本侧的旁证包括随后到达的其它播放状态与可用元数据；后者必需，因为网易云停止风暴中的
-     * 几次 STOPPED 之间可能没有别的播放状态。
+     * 停止必须确认后才生效：宿主在过渡期会瞬发 STOPPED，随后又回到播放。判定规则与
+     * system_server 侧一致，见 StopGate；元数据到达同样算“仍在播放”的证据。
      */
     private fun onPlaybackStateChanged(state: PlaybackState) {
-        val signal = PlaybackSignals.of(state.state)
+        val signal = PlaybackStates.toSignal(state.state)
 
         // 非终态信号一律记一笔证据，且必须在判定之前记录：判定为 `IGNORED` 的情形
         // （令牌已被确认消费）正是需要拦截的，此时 StopGate 已放行，只有这笔账能拦住。
         // 这里与 StopGate 的分类有意重复：那里决定是否排期，这里回答是否算证据；
-        // `UNKNOWN` 在两处都不算（见 [PlaybackSignals]）
+        // `UNKNOWN` 在两处都不算（见 [PlaybackStates.toSignal]）
         when (signal) {
             PlaybackSignal.PLAYING, PlaybackSignal.PAUSED, PlaybackSignal.ACTIVE ->
-                recordStopEvidence()
+                stopEvidence.record()
 
             PlaybackSignal.STOPPED, PlaybackSignal.ERROR, PlaybackSignal.SESSION_GONE,
             PlaybackSignal.UNKNOWN -> Unit
@@ -296,15 +275,6 @@ abstract class MusicProvider : AbsPublisher() {
     }
 
     /**
-     * 记一笔“播放仍在继续”的证据
-     *
-     * 与确认的读取互斥，见 [stopEvidence]。
-     */
-    private fun recordStopEvidence() {
-        stopEvidence.record()
-    }
-
-    /**
      * 撤销待确认的停止
      *
      * 撤销与确认都必须留下日志：否则“从未收到 STOPPED”与“收到但每次都被撤销”
@@ -312,7 +282,7 @@ abstract class MusicProvider : AbsPublisher() {
      */
     private fun cancelPendingStop(reason: String) {
         // 元数据到达同样是“播放仍在继续”的证据，先记账，再读取 StopGate 的判定
-        recordStopEvidence()
+        stopEvidence.record()
         if (stopGate.onEvidence() == StopGate.Decision.CANCELLED) {
             AndroidLog.logD(providerTag, "Pending stop cancelled by $reason")
         }
@@ -363,17 +333,9 @@ abstract class MusicProvider : AbsPublisher() {
     }
 
     /**
-     * 仅诊断期：注册广播接收器，用于模拟宿主跳转播放位置
+     * 仅诊断期：用宿主 MediaSession 模拟跳转播放位置。
      *
-     * 验收清单中的大幅拖动与拖回开头需要改变播放位置，而 adb 无法 seek。本模块持有宿主
-     * [MediaSession] 引用，可替它发布带新位置的 `PlaybackState`；对下游时钟与行索引而言
-     * 与用户拖动等价。
-     *
-     * `adb shell am broadcast -a com.hchen.superlyric.DEBUG.SEEK --el position 60000`
-     *
-     * 只在 debug 构建注册。刻意未加权限：`adb shell am broadcast` 以 shell uid 发出，
-     * 加权限或不导出都会使诊断失效。风险是 debug 构建下任意应用也能触发一次位置跳转；
-     * 发布构建不注册该接收器，实机用户不受影响。
+     * 只在 debug 构建注册；刻意不加权限，使 adb shell broadcast 可用。发布构建不注册。
      */
     private fun registerSeekSimulator(context: Context) {
         if (seekReceiverRegistered) return

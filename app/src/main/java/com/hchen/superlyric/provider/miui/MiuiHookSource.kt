@@ -28,7 +28,7 @@ import com.hchen.superlyric.provider.qq.QQNetwork
 /**
  * 小米音乐 Hook 取词来源。从宿主曲目对象取 songID，再请求 QQ 音乐接口。
  *
- * <p>切歌时读取 {@code MusicPlayerHelper#getPlaySong()}；快照与当前身份不匹配时等待下一个；
+ * 切歌时读取 `MusicPlayerHelper#getPlaySong()`；快照与当前身份不匹配时等待下一个；
  * 取到匹配的 songID 后拉取 QRC，不读取宿主内部歌词模型。
  *
  * @author 焕晨HChen
@@ -117,7 +117,7 @@ class MiuiHookSource : HookLyricSource {
     /**
      * 发起一次取词。
      *
-     * <p>按 songID 去重：播放期间宿主会反复推送元数据，失败也登记，避免按回调频率重试。
+     * 按 songID 去重：播放期间宿主会反复推送元数据，失败也登记，避免按回调频率重试。
      */
     private fun fetchAsync(id: Long, identity: TrackIdentity, session: LyricSource.Session) {
         if (!claimFetch(id)) return

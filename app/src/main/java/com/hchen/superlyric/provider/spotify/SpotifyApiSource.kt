@@ -36,15 +36,6 @@ import com.hchen.superlyric.utils.LyricDiag
  * - 等 [SpotifyAnchors] 从宿主的 `okhttp3.Headers` 旁路捕获到会话头
  * - 以该会话头拉取 `color-lyrics/v2`（protobuf）
  * - 解析结果（含逐字与音译）映射为内核模型
- *
- * 本模块不持有任何 Spotify 凭证，只是复用宿主已经发出的请求头；
- * 会话头失效时返回可重试失败，由编排器退避重试。
- *
- * 结果语义
- * - `LyricNotFoundException` → [LyricOutcome.NoLyrics]：平台明确表示无歌词
- * - 鉴权失败 / 网络异常 / 会话头尚未就绪 → [LyricOutcome.TransientFailure]
- *
- * @author 焕晨HChen
  */
 class SpotifyApiSource : LyricSource {
 
@@ -53,15 +44,7 @@ class SpotifyApiSource : LyricSource {
     private val requests = FetchSlot()
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
-        val token = requests.open()
-        requests.execute {
-            val outcome = runCatching { resolve(identity, token) }
-                .getOrElse { error ->
-                    AndroidLog.logW(sourceName, "Fetch failed: ${error.message}")
-                    LyricOutcome.TransientFailure(error)
-                }
-            if (requests.isCurrent(token)) session.deliver(outcome)
-        }
+        requests.launch(sourceName, session) { token -> resolve(identity, token) }
     }
 
     override fun cancel() {

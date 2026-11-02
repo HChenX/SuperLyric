@@ -19,6 +19,7 @@
 package com.hchen.superlyric.utils
 
 import android.media.session.PlaybackState
+import com.hchen.superlyric.kernel.orchestrate.PlaybackSignal
 import com.hchen.superlyricapi.model.PlaybackState as V4PlaybackState
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -71,5 +72,13 @@ class PlaybackStatesTest {
     @Test
     fun `none means unknown rather than stopped`() {
         assertNull(PlaybackStates.toV4(PlaybackState.STATE_NONE))
+    }
+
+    @Test
+    fun `signal mapping keeps none neutral and only terminal states stop`() {
+        assertEquals(PlaybackSignal.UNKNOWN, PlaybackStates.toSignal(PlaybackState.STATE_NONE))
+        assertEquals(PlaybackSignal.ACTIVE, PlaybackStates.toSignal(PlaybackState.STATE_BUFFERING))
+        assertEquals(PlaybackSignal.STOPPED, PlaybackStates.toSignal(PlaybackState.STATE_STOPPED))
+        assertEquals(PlaybackSignal.PLAYING, PlaybackStates.toSignal(PlaybackState.STATE_PLAYING))
     }
 }

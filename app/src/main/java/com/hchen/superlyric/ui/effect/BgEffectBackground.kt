@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalDensity
@@ -39,6 +40,7 @@ import com.hchen.superlyric.ui.data.UIConstants
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import top.yukonga.miuix.kmp.blur.BlendColorEntry
+import top.yukonga.miuix.kmp.blur.BlurBlendMode
 import top.yukonga.miuix.kmp.blur.BlurDefaults
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.isRuntimeShaderSupported
@@ -173,6 +175,20 @@ fun BlurredBar(
 
 /** `colorInterpPeriod` 刻度换算为毫秒的系数 */
 private const val MILLIS_PER_PERIOD_UNIT = 500f
+
+/** 卡片背景的混合色 */
+internal fun cardBlendColors(isDark: Boolean): List<BlendColorEntry> =
+    if (isDark) {
+        listOf(
+            BlendColorEntry(Color(0x4DA9A9A9), BlurBlendMode.Luminosity),
+            BlendColorEntry(Color(0x1A9C9C9C), BlurBlendMode.PlusDarker),
+        )
+    } else {
+        listOf(
+            BlendColorEntry(Color(0x340034F9), BlurBlendMode.Overlay),
+            BlendColorEntry(Color(0xB3FFFFFF), BlurBlendMode.HardLight),
+        )
+    }
 
 @Composable
 fun Modifier.cardBlur(

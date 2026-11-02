@@ -30,23 +30,10 @@ import com.hchen.superlyric.provider.base.MusicProvider;
 import com.hchen.superlyric.provider.kugou.KuGouApiSource;
 
 /**
- * 波点音乐歌词提供者
+ * 波点音乐歌词提供者。
  * <p>
- * 取词路径：
- * <ul>
- *   <li>Hook 路径（准确优先）：单锚点截获 {@code LyricsRunner4Flutter} 构造参数中的
- *       本地歌词文件路径，由模块自行解析。该路径不读取宿主裁切过的逐字数据，
- *       避开 {@code VerbatimLyricsParserImpl.e()} 造成的 0ms 坍缩。</li>
- *   <li>API 路径（兜底）：复用酷狗开放接口做跨源检索。波点没有可用的公开歌词接口，
- *       跨源是唯一选择；采纳门槛用于避免翻唱错配。</li>
- * </ul>
- * <p>
- * 标识一致性：覆写 {@code buildIdentity}，以同一次 {@code setMetadata} 中的
- * {@code MEDIA_ID} 作为权威标识（前缀 {@code kuwo:}），{@code rid} 只在
- * {@code MEDIA_ID} 为空时兜底。Hook 与元数据是两个独立更新源，预加载时 rid 会先翻，
- * 元数据仍属于当前曲目；反过来使用会产生交叉组合。
- *
- * @author 焕晨HChen
+ * Hook 路径截获 LyricsRunner4Flutter 构造参数中的本地歌词文件路径；API 路径复用酷狗接口
+ * 做跨源检索。身份以 MEDIA_ID 为准，rid 只在其为空时兜底。
  */
 @HookThis(targetPackage = "cn.wenyu.bodian")
 public class BodianProvider extends MusicProvider {
@@ -83,24 +70,11 @@ public class BodianProvider extends MusicProvider {
     @NonNull
     @Override
     protected TrackIdentity buildIdentity(@NonNull MediaMetadata metadata) {
-        String title = readString(metadata, MediaMetadata.METADATA_KEY_TITLE);
-        String artist = readString(metadata, MediaMetadata.METADATA_KEY_ARTIST);
-        long duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION);
-
-        String id = readString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID);
+        String id = metadataString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID);
         if (id.isEmpty()) {
             String rid = hookStableId();
             id = rid != null ? rid : "";
         }
-        if (!id.isEmpty()) {
-            return new TrackIdentity(
-                TAG, TrackIdentity.stableId(NAMESPACE, id), title, artist, duration);
-        }
-        return super.buildIdentity(metadata);
-    }
-
-    private static String readString(@NonNull MediaMetadata metadata, @NonNull String key) {
-        String value = metadata.getString(key);
-        return value != null ? value : "";
+        return trackIdentity(metadata, TrackIdentity.stableId(NAMESPACE, id));
     }
 }

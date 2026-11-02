@@ -165,9 +165,6 @@ public final class SuperLyricProxy extends AbsModule {
         }
     }
 
-    /**
-     * 按当前绑定 UID 返回一份裁剪后的 map 副本，绝不修改 AMS 的共享 map。
-     */
     private void hookCommonServices() {
         try {
             Class<?> amsClass = findAmsClass();

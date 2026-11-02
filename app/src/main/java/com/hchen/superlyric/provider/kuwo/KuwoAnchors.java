@@ -56,25 +56,15 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 酷我 Hook 锚点，取回解密后的 LRCX 全文
+ * 酷我 Hook 锚点：按 LRCX 参数名定位歌词包，再按签名查找解析与取词入口。
  * <p>
- * 手机版与车机版共用逻辑：按 LRCX 参数名定位歌词包，再按签名查找解析入口与取词入口。
- * 锚点位于宿主行/词模型之前，避免其重叠裁切破坏逐字时间。曲目探针只提供
- * {@code Music.rid}，不参与取词。
- *
- * @author 焕晨HChen
+ * 锚点位于宿主行/词模型之前，避免重叠裁切破坏逐字时间。曲目探针只提供 rid。
  */
 public final class KuwoAnchors {
     private static final String TAG = "KuwoAnchors";
 
     /**
-     * 解析入口的缓存键
-     *
-     * <p>按方法而不是按类缓存：类名随混淆变化，而“单 String 入参、返回歌词实现”的签名
-     * 由宿主接口决定，跨版本稳定。宿主升级后缓存失效会自动重新检索。
-     *
-     * <p>改动检索条件（搜索域、匹配器）必须同时更换键：已有缓存保存的是过期条件的
-     * 方法集，继续复用会使新条件不生效。后缀只用于使已有缓存失效，不代表版本语义。
+     * 解析入口的缓存键；检索条件变化时必须更换。
      */
     private static final String KEY_PARSER_METHODS = "kuwo_parser_methods_v5";
 
@@ -84,45 +74,20 @@ public final class KuwoAnchors {
     private static final String KEY_DECRYPT_METHODS = "kuwo_decrypt_methods_v2";
 
     /**
-     * 歌词包的缓存键
-     *
-     * <p>键中带返回值形态：{@code ClassData} 与 {@code ClassDataList} 会缓存为不同的
-     * Java 类型（{@code Class} 与 {@code Class[]}），复用同一键会强转失败。
-     * 更换检索形态时必须更换键。
+     * 歌词包的缓存键；键中带返回值形态，复用会导致强转失败。
      */
     private static final String KEY_LYRIC_PACKAGE = "kuwo_lyric_module_anchor_v1";
 
     /**
-     * 包内类列表的缓存键前缀；后接包名，避免不同包共用同一键
-     *
-     * <p>v2：检索结果补齐 {@code null} 与空列表归一，“空结果”的形态变化，必须更换键；
-     * 否则已有缓存中的空数组会被当成有效命中继续复用。
+     * 包内类列表的缓存键前缀；后接包名，避免不同包共用同一键。
      */
     private static final String KEY_PACKAGE_CLASSES = "kuwo_pkg_classes_v2_";
 
     /**
-     * 解析入口的名字
-     *
-     * <p>两个变体的解析入口当前都叫 {@code a}（混淆产物）。它不作为判据，只用于缩小
-     * DexKit 检索范围：只给 {@code paramCount} 时 DexKit 在该版本匹配不到任何方法，
-     * 手机版会因此整条失效。真正判据是 {@link #isLyricParser} 的签名
-     * （单 {@code String} 入参 + 返回歌词包内类型）。
-     *
-     * <p>名字变化不会导致失联：车机版通过反射扫描歌词包，不看名字。
+     * 解析入口的混淆名，只用于缩小 DexKit 检索范围，不是判据。
      */
     private static final String ANCHOR_PARSER_NAME = "a";
 
-    /**
-     * LRCX 的 URL 查询参数名
-     *
-     * <p>形如 {@code lrcx=}，是酷我请求逐字歌词时携带的参数名。两个变体的 dex 中各只
-     * 出现一次，且只属于歌词模块内的类（车机版在 {@code lyric/h}，即解密类）。
-     * 用它定位歌词模块，再由类名推出包名。
-     *
-     * <p>选择理由：比字段名唯一（{@code lrcx_roma} 会被网络层引用），比类名稳定，
-     * 比正则片段精确（{@code \d{1,2}} 会被一批工具类引用）。该参数属于酷我歌词协议，
-     * 只要支持逐字歌词就会存在。
-     */
     private static final String ANCHOR_LRCX_PARAM = "lrcx=";
 
     /**
@@ -130,20 +95,10 @@ public final class KuwoAnchors {
      */
     private static final int MAX_INSTALL_ATTEMPTS = 3;
 
-    /**
-     * 两次安装尝试之间的最小间隔
-     */
     private static final long MIN_INSTALL_RETRY_INTERVAL_MS = 5000L;
 
     /**
-     * 解析入口是否已成功挂上
-     *
-     * <p>语义是“成功”而非“尝试过”：{@link #installParsers} 定位不到时只记日志、
-     * 不抛异常；若把一次失败当成已安装，本进程内不会再有第二次机会，而 {@link #install}
-     * 只在宿主进程注入时调用一次（{@code MusicProvider.onPackageReady()}）。
-     *
-     * <p>宿主 dex 未完全加载、DexKit 首轮检索超时都会使首次定位落空。表现为歌词时有时无，
-     * 重启宿主后恢复。
+     * 解析入口是否已成功挂上；失败不能置位，否则本进程内不会再有重试。
      */
     private static volatile boolean sParserInstalled;
 
@@ -152,9 +107,6 @@ public final class KuwoAnchors {
      */
     private static boolean sDecryptorsInstalled;
 
-    /**
-     * 已尝试安装的次数；用于封顶重试，避免每次切歌重复执行 DexKit 检索
-     */
     private static int sInstallAttempts;
 
     /**
@@ -170,13 +122,7 @@ public final class KuwoAnchors {
     private static volatile LyricTextListener sListener;
 
     /**
-     * 最近一次取词入口上报的 rid
-     *
-     * <p>宿主的取词入口（{@code (Music, boolean, Music)}）一定早于解析入口调用，
-     * 两者属于同一次取词流程。解析入口的入参只有歌词正文，拿不到 rid，因此由这里转交。
-     *
-     * <p>该字段放在 Java 侧：宿主是单线程同步调用，跨线程传递会使“谁属于哪次取词”
-     * 重新变得不确定，而那正是要消除的错配。
+     * 取词入口最近上报的 rid；解析入口只拿到正文，由这里转交。
      */
     private static volatile String sCurrentRid = "";
 
@@ -188,13 +134,11 @@ public final class KuwoAnchors {
      */
     public interface LyricTextListener {
         /**
-         * @param lyricText 明文歌词全文；LRCX 或普通 LRC
-         * @param rid       这份歌词所属曲目的 rid，与 {@link TrackListener#onTrack} 上报同源；
-         *                  拿不到时为空串
+         * 拿不到时为空串
          *
-         *                  <p>必须由回调自带 rid：宿主的取词入口与曲目探针是两次独立回调；
-         *                  切歌时探针先翻到新 rid，而歌词回调持有的是上一首正文。若此处读取
-         *                  共享当前 rid，会把过期正文配上新标识，解析结果被身份校验判掉而丢失。
+         * <p>必须由回调自带 rid：宿主的取词入口与曲目探针是两次独立回调；
+         * 切歌时探针先翻到新 rid，而歌词回调持有的是上一首正文。若此处读取
+         * 共享当前 rid，会把过期正文配上新标识，解析结果被身份校验判掉而丢失。
          */
         void onLyricText(@NonNull String lyricText, @NonNull String rid);
     }
@@ -204,20 +148,13 @@ public final class KuwoAnchors {
      */
     public interface TrackListener {
         /**
-         * @param rid    宿主曲目标识
-         * @param title  曲名
-         * @param artist 歌手
+         * @param rid 宿主曲目标识
          */
         void onTrack(@NonNull String rid, @NonNull String title, @NonNull String artist);
     }
 
     /**
-     * 定位并挂载 Hook，可重复调用
-     *
-     * <p>全工程只有 {@code MusicProvider#onPackageReady()} 一处调用，一个进程一次；
-     * 首次定位可能因宿主 dex 未加载完或 DexKit 首轮检索超时而落空。定位失败时不置
-     * “已安装”，留给 {@link #retryInstallIfNeeded()} 在切歌时重试；否则解析入口在本进程内
-     * 永久缺失，表现为歌词时有时无、重启宿主后恢复。
+     * 定位并挂载 Hook；失败时不置已安装，留给 retryInstallIfNeeded 重试。
      */
     public static void install(@NonNull LyricTextListener listener) {
         sListener = listener;
@@ -225,27 +162,11 @@ public final class KuwoAnchors {
     }
 
     /**
-     * 解析入口尚未挂上时再试一次安装
-     *
-     * <p>由 {@link KuwoHookSource} 在每次切歌（{@code start()}）时调用：此时宿主已运行，
-     * dex 必然加载完毕，是首轮失败后的补救时机。
-     *
-     * <p>限流与封顶：两次尝试至少间隔 {@link #MIN_INSTALL_RETRY_INTERVAL_MS}，
-     * 总次数不超过 {@link #MAX_INSTALL_ATTEMPTS}。DexKit 全包检索开销高，
-     * 无节制重试会使每次切歌都执行一次。
-     *
-     * @return 解析入口当前是否已挂上
+     * 首轮失败后在切歌时重试；有时间间隔与次数上限，避免反复执行 DexKit 全包检索。
      */
     public static boolean retryInstallIfNeeded() {
         if (sParserInstalled) return true;
         return attemptInstall();
-    }
-
-    /**
-     * 解析入口是否已成功挂上
-     */
-    public static boolean isParserInstalled() {
-        return sParserInstalled;
     }
 
     /**
@@ -287,36 +208,11 @@ public final class KuwoAnchors {
     }
 
     /**
-     * 检索歌词解析入口的方法
-     *
-     * <p>解析入口的签名是唯一稳定的锚：{@code (String) → 歌词对象}。入参是宿主解密的
-     * 歌词明文，返回值是其歌词模型。两个变体都按该签名命中：
-     * <ul>
-     *   <li>手机版：{@code j6/d.a(String)}、{@code j6/f.a(String)}，返回值是
-     *       {@code cn.kuwo.mod.lyrics.e}</li>
-     *   <li>车机版：{@code cn.kuwo.mod.lyric.g.a(String)}（普通 LRC）与
-     *       {@code cn.kuwo.mod.lyric.n.a(String)}（逐字 LRCX），返回值是
-     *       {@code cn.kuwo.mod.lyric.a}</li>
-     * </ul>
-     *
-     * <p>两条检索路径互补，都必须执行：
-     * <ol>
-     *   <li>DexKit：实现歌词包内任意接口的类及其直接子类。手机版解析入口
-     *       （{@code j6/d}、{@code j6/f}）不在歌词包内，只有这一路能圈到。</li>
-     *   <li>反射扫描歌词包内全部类。车机版解析入口就在歌词包内
-     *       （{@code g} / {@code n} 实现包外的解析器接口 {@code a8.b}），按接口实现类
-     *       圈定会全部漏掉，只挂到 {@code a(int)} 这类接口实现方法，导致整首没有歌词。</li>
-     * </ol>
-     * 第二条不走 DexKit 方法检索：包内类列表已由 {@link #classesInPackage} 缓存，
-     * 直接反射扫描开销低，也不依赖 DexKit 匹配器行为。
-     *
-     * <p>方法名只用于缩小 DexKit 检索范围，不是判据：它是混淆产物，也不保证两个变体一致。
-     * 真正约束是参数类型（单个 {@code String}）与返回类型（位于歌词包内），见
-     * {@link #isLyricParser}。
-     *
-     * <p>DexKit 侧结果为空时必须返回 {@code null} 而非空列表：DexkitCache 只对 {@code null}
-     * 跳过缓存写入；空列表会被当成有效结果落盘，之后命中缓存反序列化出空数据并抛
-     * {@code Illegal state}，检索条件修改后不再生效。
+     * 检索歌词解析入口：单 String 入参、返回歌词包内类型。
+     * <p>
+     * DexKit 覆盖不在歌词包内的手机版入口；反射扫描覆盖包内的车机版入口，两路都必须执行。
+     * 方法名只用于缩小 DexKit 范围，不是判据。空结果必须返回 null，否则会被 DexkitCache
+     * 当成有效结果缓存。
      */
     @NonNull
     private static List<Method> locateParserMethods() {
@@ -401,15 +297,9 @@ public final class KuwoAnchors {
     }
 
     /**
-     * 反射路径：歌词包内的全部类
-     *
-     * <p>车机版解析入口在此。不依赖 DexKit 方法检索，只依赖包内类列表；该列表由
-     * {@link #classesInPackage} 取得，曲目探针走同一路径。
-     *
-     * <p>{@code strictOnly} 为真时只收返回类型为歌词模型的方法。收紧是必要的：
-     * 歌词包内还有 {@code AIColorPicker$Companion.g(String)} 这类工具方法，
-     * 签名同样是单 String 入参、返回歌词包内类型。调用方仅在两条路径合计无结果时
-     * 使用宽松判据重扫，避免把工具方法重新加入。
+     * 反射扫描歌词包内的全部类。
+     * <p>
+     * strictOnly 为真时只收返回歌词模型的方法；两条路径都无结果时调用方才用宽松判据重扫。
      */
     private static void collectParsersByReflection(@NonNull String lyricPackage,
                                                    @NonNull Set<Method> out,
@@ -437,13 +327,6 @@ public final class KuwoAnchors {
         }
     }
 
-    /**
-     * 返回类型是否为歌词模型：歌词包内的接口，或实现了歌词包内接口的类
-     *
-     * <p>解析入口的返回值必然是宿主自己的歌词模型：车机版返回接口
-     * {@code cn.kuwo.mod.lyric.a}，手机版返回接口 {@code cn.kuwo.mod.lyrics.e}。
-     * 而同一包里还有颜色选择器一类工具类型，它们不实现歌词接口。
-     */
     private static boolean isLyricModelType(@NonNull Class<?> type, @NonNull String lyricPackage) {
         if (type.isInterface()) {
             return type.getName().startsWith(lyricPackage + ".");
@@ -456,18 +339,6 @@ public final class KuwoAnchors {
             && isLyricModelType(superClass, lyricPackage);
     }
 
-    /**
-     * 是否为歌词解析入口：单 {@code String} 入参、返回歌词包内的类型、可挂载
-     *
-     * <p>参数类型这一条不能省：只按"返回歌词对象"会命中接口实现方法（如 {@code a(int)}），
-     * 它们永远拿不到歌词正文，挂上去只是噪音。
-     *
-     * <p>抽象方法与接口一并排除：歌词接口本身带着同签名的抽象方法，
-     * 挂上去只会得到 "Cannot hook abstract methods" 的噪音。
-     *
-     * <p>枚举也排除：{@code LyricsDefine$LyricsType.valueOf(String)} 这类方法签名同样是
-     * "单 String 入参、返回歌词包内类型"，但它只是枚举反查，永远不会收到歌词正文。
-     */
     private static boolean isLyricParser(@NonNull Method method, @NonNull String lyricPackage) {
         if (Modifier.isAbstract(method.getModifiers())) return false;
         Class<?> declaring = method.getDeclaringClass();
@@ -479,13 +350,7 @@ public final class KuwoAnchors {
     }
 
     /**
-     * 由 LRCX 参数名定位歌词模块所在的包
-     *
-     * <p>不硬编码包名：两个变体的歌词包名不同（{@code lyrics} / {@code lyric}），
-     * 且都可能随版本变化。使用一个只可能在歌词模块出现的参数名反查所在类，
-     * 再由类名推出包名，不依赖固定包名。
-     *
-     * @return 歌词包名；定位不到返回 {@code null}
+     * 由 LRCX 参数名定位歌词模块包；定位不到返回 null。
      */
     @Nullable
     private static String locateLyricPackage() {
@@ -742,9 +607,6 @@ public final class KuwoAnchors {
         return found;
     }
 
-    /**
-     * 是否为取词入口：参数形如 {@code (Music, boolean, Music)}
-     */
     private static boolean isTrackEntry(@NonNull Executable member) {
         Class<?>[] params = member.getParameterTypes();
         if (params.length != 3) return false;
@@ -785,30 +647,14 @@ public final class KuwoAnchors {
     }
 
     /**
-     * 挂载宿主曲目探针（对外入口）
-     *
-     * <p>探针不参与取词，只用于取得宿主自己的 {@code Music}：其中 {@code rid} 是稳定标识，
-     * {@code name}/{@code artist} 是干净曲名。酷我的 {@code MediaMetadata} 会把当前歌词行
-     * 写进 {@code METADATA_KEY_TITLE}，元数据不可信。
-     *
-     * <p>读不到时不影响运行：车机版的 {@code Music} 字段名全被混淆成单字母，{@code rid}
-     * 会落空，标识退化为元数据身份；手机版字段名未混淆，可以读取。
-     *
-     * @see #installTrackProbes 实际的定位与挂载
+     * 挂载曲目探针：只读取宿主 Music 中的 rid、曲名与歌手。
+     * <p>
+     * 酷我的 MediaMetadata 会把当前歌词行写进 TITLE，因此标识与曲名只信探针。
      */
     public static void installTrackProbe(@NonNull TrackListener listener) {
         installTrackProbes(listener);
     }
 
-    /**
-     * 从宿主 {@code Music} 对象读取字段并转成字符串
-     *
-     * <p>直读字段而不调用 getter：{@code Music} 有上百个字段与方法，大量 getter 会查询数据库
-     * 或产生副作用，而 {@code rid} / {@code name} / {@code artist} 都是普通字段。
-     *
-     * <p>字段不存在时返回空串而非抛异常：混淆后的字段名（车机版是单字母）会变化；
-     * 读取失败只应使标识退化，不应影响宿主。
-     */
     @NonNull
     private static String readStringField(@NonNull Object target, @NonNull String name) {
         try {
