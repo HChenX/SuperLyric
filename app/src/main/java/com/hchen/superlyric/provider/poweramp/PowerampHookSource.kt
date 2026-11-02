@@ -140,10 +140,7 @@ class PowerampHookSource : HookLyricSource {
         )
         if (rows.isEmpty() || !requests.isCurrent(request)) return
 
-        val matching = rows.filter { row ->
-            TrackIdentity.artistCompatible(identity.artist, row.artist) &&
-                    TrackIdentity.durationCompatible(identity.durationMs, row.durationMs)
-        }
+        val matching = rows.filter { row -> matchesIdentity(identity, row) }
         val withContent = matching.firstOrNull { !it.content.isNullOrBlank() }
         if (withContent != null && deliverParsed(withContent.content!!, "db.cached", identity)) {
             return
@@ -170,9 +167,18 @@ class PowerampHookSource : HookLyricSource {
         )
     }
 
-    /** Poweramp 的 MEDIA_ID 形如 `/folders_hier/21/files/505`，末尾即 `folder_files._id`。 */
-    private fun trackIdOf(identity: TrackIdentity): Long? {
+    /**
+     * Poweramp 的 MEDIA_ID 有两种形态：
+     * - 文件夹层级 `/folders/20/files/362`、`/folders_hier/21/files/505`，末尾是 `folder_files._id`；
+     * - 播放列表 `/playlists/3/files/6`，末尾是列表条目 id，**不是**曲库文件 id。
+     *
+     * 只有文件夹层级可以按末尾数字直查；播放列表照做会命中同 id 的无关曲目。
+     */
+    internal fun trackIdOf(identity: TrackIdentity): Long? {
         val raw = TrackIdentity.normalizeStableId(identity.stableId) ?: return null
+        if (raw.contains('/') && !raw.startsWith("/folders/") && !raw.startsWith("/folders_hier/")) {
+            return null
+        }
         raw.toLongOrNull()?.let { return it }
         return raw.substringAfterLast('/').toLongOrNull()
     }
@@ -192,19 +198,21 @@ class PowerampHookSource : HookLyricSource {
             }
         }
 
+        // id 命中不等于身份吻合：播放列表 id 已被 [trackIdOf] 拦截，但曲库重扫后
+        // 旧 id 也可能指向别的曲目。只有拿到相容行才停止回退。
         val title = identity.title.trim()
-        if (rows.isEmpty() && title.isNotEmpty()) {
+        if (rows.none { matchesIdentity(identity, it) } && title.isNotEmpty()) {
             for (table in tables) {
                 if (!hasColumn(database, table, "title_tag")) continue
                 queryTable(
                     database, table, "TRIM(ff.title_tag) = ? COLLATE NOCASE",
                     arrayOf(title), rows,
                 )
-                if (rows.isNotEmpty()) break
+                if (rows.any { matchesIdentity(identity, it) }) break
             }
         }
 
-        if (rows.isEmpty()) {
+        if (rows.none { matchesIdentity(identity, it) }) {
             val raw = TrackIdentity.normalizeStableId(identity.stableId)
             val name = raw?.substringAfterLast('/') ?: title
             if (name.isNotEmpty()) {
@@ -214,12 +222,16 @@ class PowerampHookSource : HookLyricSource {
                         database, table, "ff.name = ? COLLATE NOCASE",
                         arrayOf(name), rows,
                     )
-                    if (rows.isNotEmpty()) break
+                    if (rows.any { matchesIdentity(identity, it) }) break
                 }
             }
         }
         return rows.distinctBy { it.id }
     }
+
+    private fun matchesIdentity(identity: TrackIdentity, row: HostLyric): Boolean =
+        TrackIdentity.artistCompatible(identity.artist, row.artist) &&
+                TrackIdentity.durationCompatible(identity.durationMs, row.durationMs)
 
     /**
      * 只查询确认存在的表：普通曲库用 `folder_files`，SAF/raw 模式可能是
