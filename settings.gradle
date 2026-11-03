@@ -25,6 +25,7 @@ dependencyResolutionManagement {
             url 'https://jitpack.io'
             content {
                 includeGroup "com.github.HChenX"
+                includeGroup "com.github.getActivity"
             }
         }
     }
