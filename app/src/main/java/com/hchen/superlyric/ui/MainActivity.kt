@@ -33,8 +33,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -68,6 +70,10 @@ import com.hchen.superlyric.ui.viewmodel.MainViewModel
 import com.hchen.superlyric.ui.viewmodel.MainViewModelFactory
 import com.hchen.superlyric.utils.PackageLoader
 import com.hchen.superlyricapi.SuperLyricHelper
+import com.hjq.permissions.OnPermissionCallback
+import com.hjq.permissions.XXPermissions
+import com.hjq.permissions.permission.PermissionLists
+import com.hjq.permissions.permission.base.IPermission
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -104,6 +110,15 @@ class MainActivity : ComponentActivity() {
      * 那时读 `lateinit` 字段会以"属性未初始化"再抛一次，把一个启动失败变成崩溃
      */
     private var prefsReadyListener: Consumer<SharedPreferences>? = null
+
+    /**
+     * 进入页面时是否已具备读取应用列表的权限
+     *
+     * 记录进入时的状态，[onResume] 只在"无 -> 有"时重新扫描。
+     * 每次回到前台都重扫会让一次普通的后台切换也触发全量包扫描。
+     */
+    private var appListPermissionGranted = false
+
     private val viewModel: MainViewModel by viewModels {
         MainViewModelFactory(
             addPrefsReadyListener = Application::addPrefsReadyListener,
@@ -120,6 +135,9 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         window.isNavigationBarContrastEnforced = false
+        appListPermissionGranted = XXPermissions.isGrantedPermission(
+            this, PermissionLists.getGetInstalledAppsPermission()
+        )
         // 用 applicationContext 而不是 Activity：这个匿名监听器注册在静态表上、不会随
         // Activity 销毁而注销，捕获 Activity 会让每次重建都泄漏一个已销毁实例，
         // 还会对着它调 loadPackages
@@ -138,10 +156,25 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (appListPermissionGranted) return
+        // 用户可能从系统设置页返回，这里补上"设置中授予"的路径；
+        // 请求对话框内授予的路径由 OnPermissionCallback 处理。
+        if (XXPermissions.isGrantedPermission(this, PermissionLists.getGetInstalledAppsPermission())) {
+            onAppListPermissionGranted()
+        }
+    }
+
     override fun onDestroy() {
         // 摘掉的必须是**本次注册的那个实例**：静态表是按实例移除的
         prefsReadyListener?.let(Application::removePrefsReadyListener)
         super.onDestroy()
+    }
+
+    private fun onAppListPermissionGranted() {
+        appListPermissionGranted = true
+        PackageLoader.loadPackages(applicationContext)
     }
 
     @Composable
@@ -159,6 +192,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+
+        val appListPermission = remember { PermissionLists.getGetInstalledAppsPermission() }
+        var showAppListPermission by remember { mutableStateOf(!appListPermissionGranted) }
+        var permissionDenied by remember { mutableStateOf(false) }
 
         var showUnavailable by remember { mutableStateOf(false) }
         var unavailableReason by remember { mutableStateOf("") }
@@ -197,6 +234,60 @@ class MainActivity : ComponentActivity() {
                     TextButton(
                         text = stringResource(android.R.string.ok),
                         onClick = { showUnavailable = false },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.textButtonColorsPrimary()
+                    )
+                }
+            }
+
+            WindowDialog(
+                show = showAppListPermission,
+                title = stringResource(R.string.app_list_permission_title),
+                summary = stringResource(
+                    if (permissionDenied) R.string.app_list_permission_denied_summary
+                    else R.string.app_list_permission_summary
+                )
+            ) {
+                Row(horizontalArrangement = Arrangement.Absolute.SpaceBetween) {
+                    TextButton(
+                        text = stringResource(android.R.string.cancel),
+                        onClick = { showAppListPermission = false },
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(20.dp))
+                    TextButton(
+                        text = stringResource(
+                            if (permissionDenied) R.string.go_to_settings else R.string.grant
+                        ),
+                        onClick = {
+                            if (permissionDenied) {
+                                XXPermissions.startPermissionActivity(
+                                    this@MainActivity, appListPermission
+                                )
+                                showAppListPermission = false
+                            } else {
+                                XXPermissions.with(this@MainActivity)
+                                    .permission(appListPermission)
+                                    .request(object : OnPermissionCallback {
+                                        override fun onPermissionResult(
+                                            granted: MutableList<IPermission>,
+                                            denied: MutableList<IPermission>
+                                        ) {
+                                            if (denied.isEmpty()) {
+                                                permissionDenied = false
+                                                showAppListPermission = false
+                                                onAppListPermissionGranted()
+                                            } else {
+                                                // 普通拒绝还可以再请求；只有"不再提示"才引导去设置
+                                                permissionDenied =
+                                                    XXPermissions.isDoNotAskAgainPermission(
+                                                        this@MainActivity, appListPermission
+                                                    )
+                                            }
+                                        }
+                                    })
+                            }
+                        },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.textButtonColorsPrimary()
                     )
