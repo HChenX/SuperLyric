@@ -46,7 +46,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 final class SystemPlaybackCoordinator {
 
-    private static final String TAG = "SuperLyricService";
+    private static final String TAG = "SystemPlaybackCoordinator";
 
     interface Host {
         void onLyric(@NonNull String packageName, @NonNull Lyric lyric);

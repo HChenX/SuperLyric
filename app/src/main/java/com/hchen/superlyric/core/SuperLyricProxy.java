@@ -38,7 +38,7 @@ import io.github.libxposed.api.XposedModuleInterface;
 /**
  * 代理并发布 Super Lyric 系统级服务到 system_server
  *
- * <p>{@code systemReady} 之后创建服务；{@code attachApplicationLocked} 记录本次绑定的目标 UID，
+ * <p>{@code systemReady} 之后创建运行时与两代 Binder 服务；{@code attachApplicationLocked} 记录本次绑定的目标 UID，
  * {@code getCommonServicesLocked} 按该 UID 裁剪服务 map；{@code appDiedLocked}
  * 之后回收进程状态。锚点缺失时只记日志，不下发服务。
  *
@@ -49,11 +49,12 @@ public final class SuperLyricProxy extends AbsModule {
     /**
      * 由 systemReady 的 after 写入，其它钩子线程读取：必须 volatile，否则可能读到 null
      */
-    private static volatile SuperLyricService sSuperLyricService;
+    private static volatile LyricRuntime sRuntime;
 
     /**
-     * 与 {@link #sSuperLyricService} 共享会话与时钟；两个 IBinder 分别承载两代接口
+     * 两个 IBinder 分别承载两代接口，共享 {@link #sRuntime}
      */
+    private static volatile SuperLyricService sSuperLyricService;
     private static volatile SuperLyricV4Service sSuperLyricV4Service;
 
     /**
@@ -89,11 +90,12 @@ public final class SuperLyricProxy extends AbsModule {
                     }
 
                     try {
-                        if (sSuperLyricService == null && context != null) {
-                            sSuperLyricService = new SuperLyricService(getThisObject());
-                            sSuperLyricV4Service = new SuperLyricV4Service(sSuperLyricService);
-                            SystemPlayStateListener playStateListener = new SystemPlayStateListener(context, sSuperLyricService);
-                            sSuperLyricService.setSystemPlayStateListener(playStateListener);
+                        if (sRuntime == null && context != null) {
+                            sRuntime = new LyricRuntime(getThisObject());
+                            sSuperLyricService = new SuperLyricService(sRuntime);
+                            sSuperLyricV4Service = new SuperLyricV4Service(sRuntime);
+                            SystemPlayStateListener playStateListener = new SystemPlayStateListener(context, sRuntime);
+                            sRuntime.setSystemPlayStateListener(playStateListener);
                             if (playStateListener.register()) {
                                 logI(tag, "Super lyric system service initialized successfully.");
                             } else {
@@ -250,7 +252,7 @@ public final class SuperLyricProxy extends AbsModule {
                 @Override
                 public void after() {
                     try {
-                        if (sSuperLyricService == null) return;
+                        if (sRuntime == null) return;
 
                         Object app = getArg(0);
                         ApplicationInfo info = (ApplicationInfo) getField(app, "info");
@@ -263,7 +265,7 @@ public final class SuperLyricProxy extends AbsModule {
                         // 此时该字段仍为 false，过滤会漏掉 LMK 这一种。
                         //
                         // 也不在这里判断死亡进程是否为播放进程：这里看不到该信息。兜底的是
-                        // SuperLyricService#onProcessDied 的两级守卫：pid 必须是注册过的
+                        // LyricRuntime#onProcessDied 的两级守卫：pid 必须是注册过的
                         // 发布者（子进程也会注册），且同包其它注册 pid 已全部退出；无关子进程
                         // 的死亡在第 2 级返回，不触碰任何状态。
                         Object procLock = getField(getThisObject(), "mProcLock");
@@ -273,12 +275,12 @@ public final class SuperLyricProxy extends AbsModule {
                                 logW(tag, "AMS#mProcLock not found; ProcessRecord fields are read "
                                     + "unsynchronized. Process-death reclaim still works.");
                             }
-                            sSuperLyricService.onProcessDied(info.packageName, pid);
+                            sRuntime.onProcessDied(info.packageName, pid);
                             return;
                         }
 
                         synchronized (procLock) {
-                            sSuperLyricService.onProcessDied(info.packageName, pid);
+                            sRuntime.onProcessDied(info.packageName, pid);
                         }
                     } catch (Throwable t) {
                         // 进程死亡回调同样不能把异常抛回 AMS；一次失败最多漏掉一次回收。

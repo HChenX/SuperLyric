@@ -42,7 +42,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 系统级播放状态监听器
  *
  * <p>在 system_server 内部监听全局活动的 MediaSession，把系统级播放状态与元数据变更同步至
- * {@link SuperLyricService}。回调经 {@code mMainHandler} 派发到主线程，服务端方法因此不能
+ * {@link LyricRuntime}。回调经 {@code mMainHandler} 派发到主线程，运行时方法因此不能
  * 在该线程上阻塞。
  *
  * @author 焕晨HChen
@@ -53,7 +53,7 @@ public final class SystemPlayStateListener {
     @NonNull
     private final Context mContext;
     @NonNull
-    private final SuperLyricService mService;
+    private final LyricRuntime mRuntime;
     @NonNull
     private final MediaSessionManager mMediaSessionManager;
     @NonNull
@@ -69,11 +69,8 @@ public final class SystemPlayStateListener {
 
             long token = Binder.clearCallingIdentity();
             try {
-                // 锁内只做 map 维护，反注册、注册与初始状态同步一律放到锁外：两者都会对
-                // 宿主 App 做 Binder 调用，registerMediaControllerCallback 还会回调进
-                // SuperLyricService 并取 mSnapshotLock；而 sendLyric 的顺序是
-                // 「先取 mSnapshotLock、再进 mCallbacks」，锁内回调构成 AB-BA 死锁，
-                // 主线程将被卡到 watchdog 触发。慢 Binder 调用本身也会阻塞主线程
+                // 锁内只做 map 维护。注册/反注册会对宿主做 Binder 调用并可能同步回调进
+                // LyricRuntime；放到锁外，避免主线程持锁等待宿主 Binder。
                 List<Map.Entry<MediaController, MediaControllerCallback>> toUnregister;
                 List<MediaController> toRegister;
                 synchronized (mCallbacks) {
@@ -94,9 +91,9 @@ public final class SystemPlayStateListener {
         }
     };
 
-    public SystemPlayStateListener(@NonNull Context context, @NonNull SuperLyricService service) {
+    public SystemPlayStateListener(@NonNull Context context, @NonNull LyricRuntime runtime) {
         mContext = context;
-        mService = service;
+        mRuntime = runtime;
         mMediaSessionManager = (MediaSessionManager) mContext.getSystemService(Context.MEDIA_SESSION_SERVICE);
     }
 
@@ -127,18 +124,18 @@ public final class SystemPlayStateListener {
     public void syncCurrentStateForPackage(@NonNull String packageName) {
         // 与 onPlaybackStateChanged/onMetadataChanged 使用同一判定：否则按包禁用只挡住
         // 后续回调，主动 sync 仍会把状态喂给服务端。
-        if (SuperLyricService.isSystemPlayStateListenerDisabled(packageName)) return;
+        if (mRuntime.isSystemPlayStateListenerDisabled(packageName)) return;
         long token = Binder.clearCallingIdentity();
         try {
             for (MediaController controller : mCallbacks.keySet()) {
                 if (TextUtils.equals(controller.getPackageName(), packageName)) {
                     PlaybackState state = controller.getPlaybackState();
                     if (state != null) {
-                        mService.onSystemPlaybackStateChanged(packageName, state);
+                        mRuntime.onSystemPlaybackStateChanged(packageName, state);
                     }
                     MediaMetadata metadata = controller.getMetadata();
                     if (metadata != null) {
-                        mService.onSystemMetadataChanged(packageName, metadata);
+                        mRuntime.onSystemMetadataChanged(packageName, metadata);
                     }
                     return;
                 }
@@ -203,12 +200,12 @@ public final class SystemPlayStateListener {
             super.onPlaybackStateChanged(state);
             if (state == null) return;
             String pkg = mController.getPackageName();
-            if (SuperLyricService.isSystemPlayStateListenerDisabled(pkg)) {
+            if (mRuntime.isSystemPlayStateListenerDisabled(pkg)) {
                 return;
             }
 
-            if (SuperLyricService.isPublisher(pkg)) {
-                mService.onSystemPlaybackStateChanged(pkg, state);
+            if (mRuntime.isPublisher(pkg)) {
+                mRuntime.onSystemPlaybackStateChanged(pkg, state);
             }
         }
 
@@ -217,12 +214,12 @@ public final class SystemPlayStateListener {
             super.onMetadataChanged(metadata);
             if (metadata == null) return;
             String pkg = mController.getPackageName();
-            if (SuperLyricService.isSystemPlayStateListenerDisabled(pkg)) {
+            if (mRuntime.isSystemPlayStateListenerDisabled(pkg)) {
                 return;
             }
 
-            if (SuperLyricService.isPublisher(pkg)) {
-                mService.onSystemMetadataChanged(pkg, metadata);
+            if (mRuntime.isPublisher(pkg)) {
+                mRuntime.onSystemMetadataChanged(pkg, metadata);
             }
         }
 
@@ -237,12 +234,12 @@ public final class SystemPlayStateListener {
         public void onSessionDestroyed() {
             super.onSessionDestroyed();
             String pkg = mController.getPackageName();
-            if (SuperLyricService.isSystemPlayStateListenerDisabled(pkg)) {
+            if (mRuntime.isSystemPlayStateListenerDisabled(pkg)) {
                 return;
             }
 
-            if (SuperLyricService.isPublisher(pkg)) {
-                mService.onSystemSessionDestroyed(pkg);
+            if (mRuntime.isPublisher(pkg)) {
+                mRuntime.onSystemSessionDestroyed(pkg);
             }
         }
     }

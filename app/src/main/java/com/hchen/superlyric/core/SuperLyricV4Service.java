@@ -29,51 +29,43 @@ import com.hchen.superlyricapi.v4.ILyricFrameListener;
 import com.hchen.superlyricapi.v4.ISuperLyricService;
 
 /**
- * {@code super_lyric.v4} 的 Binder 门面
- *
- * <p>一个 IBinder 只能实现一套 stub 与事务号，4.0 接口与 3.x 的
- * {@link com.hchen.superlyricapi.ISuperLyricManager} 因此必须是两个对象。本类只解析
- * 调用方身份，会话、时钟与广播逻辑集中在 {@link SuperLyricService}，两代接口共享同一份状态。
- *
- * @author 焕晨HChen
+ * 4.0 Binder 门面：只解析调用方身份、判定访问权限并转发到 {@link LyricRuntime}。
  */
 public final class SuperLyricV4Service extends ISuperLyricService.Stub {
     private static final String TAG = "SuperLyricV4Service";
 
-    private final SuperLyricService mCore;
+    @NonNull
+    private final LyricRuntime mCore;
 
-    public SuperLyricV4Service(@NonNull SuperLyricService core) {
+    public SuperLyricV4Service(@NonNull LyricRuntime core) {
         mCore = core;
     }
 
     @Override
     public int publish(byte[] frame) throws RemoteException {
-        if (!canUseV4Binder()) return SuperLyricService.RESULT_REJECTED_NOT_REGISTERED;
+        if (!canUseV4Binder()) return LyricRuntime.RESULT_REJECTED_NOT_REGISTERED;
         try {
-            int pid = Binder.getCallingPid();
-            return mCore.publishFrame(pid, mCore.getPackageNameWithPid(pid), frame);
+            Caller caller = caller();
+            return mCore.publishFrame(caller.pid, caller.packageName, caller.uid, frame);
         } catch (Throwable t) {
-            // Binder 方法不应把异常抛回发布方；无法归类的失败按 REJECTED(3) 返回
             XposedLog.logE(TAG, "publish failed", t);
-            return SuperLyricService.RESULT_REJECTED;
+            return LyricRuntime.RESULT_REJECTED;
         }
     }
 
     @Override
     public void clear() throws RemoteException {
         if (!canUseV4Binder()) return;
-        int pid = Binder.getCallingPid();
-        mCore.clearFrame(pid, mCore.getPackageNameWithPid(pid));
+        Caller caller = caller();
+        mCore.clearFrame(caller.pid, caller.packageName);
     }
 
     @Override
     public int registerListener(ILyricFrameListener listener) throws RemoteException {
-        if (!canUseV4Binder()) return FrameBroadcaster.REGISTER_REJECTED;
-        if (listener == null) return FrameBroadcaster.REGISTER_REJECTED;
+        if (!canUseV4Binder() || listener == null) return FrameBroadcaster.REGISTER_REJECTED;
         try {
-            int pid = Binder.getCallingPid();
-            return mCore.registerFrameListener(listener, Binder.getCallingUid(), pid,
-                mCore.getPackageNameWithPid(pid));
+            Caller caller = caller();
+            return mCore.registerFrameListener(listener, caller.uid, caller.pid, caller.packageName);
         } catch (Throwable t) {
             XposedLog.logE(TAG, "registerListener failed", t);
             return FrameBroadcaster.REGISTER_REJECTED;
@@ -82,35 +74,33 @@ public final class SuperLyricV4Service extends ISuperLyricService.Stub {
 
     @Override
     public void unregisterListener(ILyricFrameListener listener) throws RemoteException {
-        if (!canUseV4Binder()) return;
-        if (listener == null) return;
-        int pid = Binder.getCallingPid();
-        mCore.unregisterFrameListener(listener, pid, mCore.getPackageNameWithPid(pid));
+        if (!canUseV4Binder() || listener == null) return;
+        Caller caller = caller();
+        mCore.unregisterFrameListener(listener, caller.pid, caller.packageName);
     }
 
     @Override
     public byte[] latest() throws RemoteException {
-        if (!canUseV4Binder()) return null;
-        return mCore.latestFrame();
-    }
-
-    /**
-     * v4 Binder 允许系统应用、支持应用和 4.0 SDK 客户端访问
-     *
-     * <p>拒绝时返回协议已有的拒绝码，不向调用方抛异常。
-     */
-    private static boolean canUseV4Binder() {
-        int uid = Binder.getCallingUid();
-        boolean allowed = AccessPolicy.allowsV4(uid);
-        if (!allowed) {
-            XposedLog.logD(TAG, "Denied v4 Binder call from uid " + uid);
-        }
-        return allowed;
+        return canUseV4Binder() ? mCore.latestFrame() : null;
     }
 
     @Override
     public int getApiVersion() throws RemoteException {
-        if (!canUseV4Binder()) return 0;
-        return BuildConfig.API_VERSION;
+        return canUseV4Binder() ? BuildConfig.API_VERSION : 0;
+    }
+
+    private Caller caller() {
+        int pid = Binder.getCallingPid();
+        return new Caller(pid, Binder.getCallingUid(), mCore.packageNameForPid(pid));
+    }
+
+    private static boolean canUseV4Binder() {
+        int uid = Binder.getCallingUid();
+        boolean allowed = AccessPolicy.allowsV4(uid);
+        if (!allowed) XposedLog.logD(TAG, "Denied v4 Binder call from uid " + uid);
+        return allowed;
+    }
+
+    private record Caller(int pid, int uid, @NonNull String packageName) {
     }
 }

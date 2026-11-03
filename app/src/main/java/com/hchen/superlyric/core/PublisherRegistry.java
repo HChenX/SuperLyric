@@ -103,7 +103,7 @@ final class PublisherRegistry {
         // 服务入口已拒绝未获 Binder 授权的调用方；此处保留第二道检查，
         // 防止未来调用方绕过入口直接登记发布者。
         if (!AccessPolicy.allowsLegacy(uid) && !AccessPolicy.allowsV4(uid)) {
-            XposedLog.logW("SuperLyricService", "Registration as publisher rejected! Unauthorized caller: "
+            XposedLog.logW("LyricRuntime", "Registration as publisher rejected! Unauthorized caller: "
                 + packageName + ", uid: " + uid + ", pid: " + pid);
             return Registration.REJECTED;
         }
@@ -114,18 +114,18 @@ final class PublisherRegistry {
         }
         if (registrations == null) {
             if (pids.size() >= MAX_PUBLISHER_PACKAGES) {
-                XposedLog.logW("SuperLyricService", "Registration as publisher rejected! Quota: "
+                XposedLog.logW("LyricRuntime", "Registration as publisher rejected! Quota: "
                     + pids.size() + "/" + MAX_PUBLISHER_PACKAGES + " packages, caller: " + packageName);
                 return Registration.QUOTA;
             }
         } else if (registrations.size() >= MAX_PIDS_PER_PACKAGE) {
-            XposedLog.logW("SuperLyricService", "Registration as publisher rejected! Quota: "
+            XposedLog.logW("LyricRuntime", "Registration as publisher rejected! Quota: "
                 + registrations.size() + "/" + MAX_PIDS_PER_PACKAGE + " pids for " + packageName);
             return Registration.QUOTA;
         }
 
         register(packageName, pid);
-        XposedLog.logI("SuperLyricService", "Register publisher: " + packageName + ", pid: " + pid);
+        XposedLog.logI("LyricRuntime", "Register publisher: " + packageName + ", pid: " + pid);
         return Registration.OK;
     }
 
