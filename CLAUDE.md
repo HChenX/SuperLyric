@@ -70,6 +70,10 @@ failure, not a statement about the track.
   host object model or the hook-captured identity.
 - Filter placeholder IDs with TrackIdentity.usableId. Constants such as 0, -1, null, unknown, and
   none are not identifiers.
+- The core session stores only 4.0 Lyric, State, and Stop. SuperLyricData may appear only at the
+  3.x Binder entry/exit and in the 3.x receiver UI. Never store or merge it in core state.
+- 3.x receivers below API 35 receive the current line only; 35 and above receive full payloads.
+  The version is read from superlyricapi_version_code; a missing version means current line only.
 
 ### 2.4 Stop and clock
 
@@ -196,9 +200,10 @@ Layout:
 - provider/<app>/: anchors, sources, provider.
 - provider/base/: MusicProvider, HookLyricSource, ExecutorScheduler, FetchSlot, SourceRequestGate,
   KeyedStash, metadata helpers.
-- bridge/: conversion boundary between kernel models and SuperLyricApi wire models.
-- core/: SuperLyricService, PublisherRegistry, ReceiverBroadcaster, FrameBroadcaster,
-  SystemPlaybackCoordinator, SuperLyricProxy, SystemPlayStateListener, AccessPolicy.
+- bridge/: conversion boundary between kernel models and SuperLyricApi wire models. 3.x
+  SuperLyricData conversion lives only here.
+- core/: SuperLyricService holds only 4.0 Lyric sessions; PublisherRegistry stores the session;
+  ReceiverBroadcaster tracks 3.x full/current-line capability; AccessPolicy resolves it.
 - ui/: Compose screens and effects. BgEffectConfig owns DeviceType; BgEffectBackground owns
   cardBlendColors.
 - utils/: PlaybackStates maps Android playback constants to the v4 state and the StopGate signal.
