@@ -23,6 +23,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import android.widget.Toast
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -91,6 +92,12 @@ import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import top.yukonga.miuix.kmp.window.WindowDialog
 
+private data class Contributor(
+    val name: String,
+    val url: String,
+    @DrawableRes val icon: Int,
+)
+
 @Composable
 @SuppressLint("LocalContextGetResourceValueCall")
 fun AboutLayout(
@@ -99,31 +106,13 @@ fun AboutLayout(
 ) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
-    val contributor = remember {
+    val contributors = remember {
         listOf(
-            "ghhccghk",
-            "YifePlayte",
-            "YuKongA",
-            "AnserJim",
-            "BlueEve04"
-        )
-    }
-    val contributorUri = remember {
-        listOf(
-            "https://github.com/ghhccghk",
-            "https://github.com/YifePlayte",
-            "https://github.com/YuKongA",
-            "https://github.com/killerprojecte",
-            "https://github.com/BlueEve04"
-        )
-    }
-    val contributorIcon = remember {
-        listOf(
-            R.drawable.ghhccghk,
-            R.drawable.yifeplayte,
-            R.drawable.yukonga,
-            R.drawable.anserjim,
-            R.drawable.blueeve04
+            Contributor("ghhccghk", "https://github.com/ghhccghk", R.drawable.ghhccghk),
+            Contributor("YifePlayte", "https://github.com/YifePlayte", R.drawable.yifeplayte),
+            Contributor("YuKongA", "https://github.com/YuKongA", R.drawable.yukonga),
+            Contributor("AnserJim", "https://github.com/killerprojecte", R.drawable.anserjim),
+            Contributor("BlueEve04", "https://github.com/BlueEve04", R.drawable.blueeve04),
         )
     }
 
@@ -439,15 +428,15 @@ fun AboutLayout(
                         color = MiuixTheme.colorScheme.secondaryContainer,
                     )
                 ) {
-                    contributor.forEachIndexed { index, name ->
+                    contributors.forEach { contributor ->
                         ArrowPreference(
-                            title = name,
+                            title = contributor.name,
                             summary = "Github | Contributor",
                             startAction = {
                                 Box(Modifier.padding(end = 8.dp)) {
                                     Icon(
-                                        painter = painterResource(contributorIcon[index]),
-                                        contentDescription = name,
+                                        painter = painterResource(contributor.icon),
+                                        contentDescription = contributor.name,
                                         tint = Color.Unspecified,
                                         modifier = Modifier
                                             .size(48.dp)
@@ -456,7 +445,7 @@ fun AboutLayout(
                                 }
                             },
                             onClick = {
-                                openUrl(context, contributorUri[index])
+                                openUrl(context, contributor.url)
                             }
                         )
                     }

@@ -111,6 +111,7 @@ class MainActivity : ComponentActivity() {
      * `lateinit` 字段会再次抛出，把启动失败升级为崩溃
      */
     private var prefsReadyListener: Consumer<SharedPreferences>? = null
+    private val appListPermission by lazy { PermissionLists.getGetInstalledAppsPermission() }
 
     /**
      * 进入页面时是否已具备读取应用列表的权限
@@ -135,9 +136,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         window.isNavigationBarContrastEnforced = false
-        appListPermissionGranted = XXPermissions.isGrantedPermission(
-            this, PermissionLists.getGetInstalledAppsPermission()
-        )
+        appListPermissionGranted = hasAppListPermission()
         // 监听器注册在静态表上，不随 Activity 销毁而注销：捕获 Activity 会让每次重建
         // 泄漏一个已销毁实例，后续 prefs 就绪时还会对已销毁实例调用 loadPackages
         val appContext = applicationContext
@@ -157,12 +156,26 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (appListPermissionGranted) return
-        // 用户可能从系统设置页返回，这里补上"设置中授予"的路径；
-        // 请求对话框内授予的路径由 OnPermissionCallback 处理。
-        if (XXPermissions.isGrantedPermission(this, PermissionLists.getGetInstalledAppsPermission())) {
+        // 覆盖从系统设置返回的授权；对话框内授权由回调处理
+        if (!appListPermissionGranted && hasAppListPermission()) {
             onAppListPermissionGranted()
         }
+    }
+
+    private fun hasAppListPermission(): Boolean =
+        XXPermissions.isGrantedPermission(this, appListPermission)
+
+    private fun requestAppListPermission(onGranted: () -> Unit, onDenied: () -> Unit) {
+        XXPermissions.with(this)
+            .permission(appListPermission)
+            .request(object : OnPermissionCallback {
+                override fun onPermissionResult(
+                    granted: MutableList<IPermission>,
+                    denied: MutableList<IPermission>
+                ) {
+                    if (denied.isEmpty()) onGranted() else onDenied()
+                }
+            })
     }
 
     override fun onDestroy() {
@@ -172,6 +185,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun onAppListPermissionGranted() {
+        if (appListPermissionGranted) return
         appListPermissionGranted = true
         PackageLoader.loadPackages(applicationContext)
     }
@@ -192,9 +206,11 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        val appListPermission = remember { PermissionLists.getGetInstalledAppsPermission() }
+        val permission = remember { appListPermission }
         var showAppListPermission by remember { mutableStateOf(!appListPermissionGranted) }
-        var permissionDenied by remember { mutableStateOf(false) }
+        var permissionDenied by remember {
+            mutableStateOf(XXPermissions.isDoNotAskAgainPermission(this@MainActivity, permission))
+        }
 
         var showUnavailable by remember { mutableStateOf(false) }
         var unavailableReason by remember { mutableStateOf("") }
@@ -260,30 +276,23 @@ class MainActivity : ComponentActivity() {
                         onClick = {
                             if (permissionDenied) {
                                 XXPermissions.startPermissionActivity(
-                                    this@MainActivity, appListPermission
+                                    this@MainActivity, permission
                                 )
                                 showAppListPermission = false
                             } else {
-                                XXPermissions.with(this@MainActivity)
-                                    .permission(appListPermission)
-                                    .request(object : OnPermissionCallback {
-                                        override fun onPermissionResult(
-                                            granted: MutableList<IPermission>,
-                                            denied: MutableList<IPermission>
-                                        ) {
-                                            if (denied.isEmpty()) {
-                                                permissionDenied = false
-                                                showAppListPermission = false
-                                                onAppListPermissionGranted()
-                                            } else {
-                                                // 普通拒绝还可以再请求；只有"不再提示"才引导去设置
-                                                permissionDenied =
-                                                    XXPermissions.isDoNotAskAgainPermission(
-                                                        this@MainActivity, appListPermission
-                                                    )
-                                            }
-                                        }
-                                    })
+                                requestAppListPermission(
+                                    onGranted = {
+                                        permissionDenied = false
+                                        showAppListPermission = false
+                                        onAppListPermissionGranted()
+                                    },
+                                    onDenied = {
+                                        permissionDenied =
+                                            XXPermissions.isDoNotAskAgainPermission(
+                                                this@MainActivity, permission
+                                            )
+                                    }
+                                )
                             }
                         },
                         modifier = Modifier.weight(1f),
