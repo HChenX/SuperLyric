@@ -27,13 +27,12 @@ import androidx.annotation.Nullable;
 
 import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyric.bridge.LyricDocAdapter;
-import com.hchen.superlyric.kernel.model.LyricDoc;
 import com.hchen.superlyric.kernel.orchestrate.PlaybackSignal;
 import com.hchen.superlyric.kernel.orchestrate.StopEvidence;
 import com.hchen.superlyric.kernel.orchestrate.StopGate;
 import com.hchen.superlyric.publisher.PlaybackTracker;
 import com.hchen.superlyric.utils.PlaybackStates;
-import com.hchen.superlyricapi.SuperLyricData;
+import com.hchen.superlyricapi.model.Lyric;
 import com.hchen.superlyricapi.model.StopReason;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -50,10 +49,9 @@ final class SystemPlaybackCoordinator {
     private static final String TAG = "SuperLyricService";
 
     interface Host {
-        void onLyric(@NonNull String packageName, @NonNull SuperLyricData data);
+        void onLyric(@NonNull String packageName, @NonNull Lyric lyric);
 
-        void onStop(@NonNull String packageName, @NonNull SuperLyricData data,
-                    @NonNull StopReason reason);
+        void onStop(@NonNull String packageName, @NonNull StopReason reason);
     }
 
     final PlaybackTracker tracker = new PlaybackTracker("SuperLyric-SysTracker");
@@ -135,7 +133,7 @@ final class SystemPlaybackCoordinator {
             + ", speed=" + state.getPlaybackSpeed());
 
         boolean notifyLyric = false;
-        SuperLyricData lyricToNotify = null;
+        Lyric lyricToNotify = null;
 
         synchronized (registry.lock) {
             PublisherRegistry.Session session = registry.getOrCreateSession(packageName);
@@ -151,26 +149,25 @@ final class SystemPlaybackCoordinator {
                         registry.activePublisher = packageName;
                         tracker.stop();
 
-                        if (session.latestLyric != null) {
-                            tracker.setLyrics(session.latestDoc);
-                            tracker.onPlaybackStateChanged(state);
-                            SuperLyricData currentData = session.latestLyric;
-                            if (currentData.hasLyric()) {
-                                notifyLyric = true;
-                                lyricToNotify = currentData;
+                        if (session.lyric != null) {
+                            if (session.fullLyric) {
+                                tracker.setLyrics(session.lyric);
+                                tracker.onPlaybackStateChanged(state);
                             }
+                            notifyLyric = true;
+                            lyricToNotify = session.lyric;
                         } else {
                             tracker.setLyrics(null);
                             if (!TextUtils.isEmpty(prevPublisher)) {
-                                host.onStop(prevPublisher, new SuperLyricData(), StopReason.STOPPED);
+                                host.onStop(prevPublisher, StopReason.STOPPED);
                             }
                         }
-                    } else {
+                    } else if (session.fullLyric) {
                         tracker.onPlaybackStateChanged(state);
                     }
                 }
                 case PlaybackState.STATE_PAUSED -> {
-                    if (TextUtils.equals(registry.activePublisher, packageName)) {
+                    if (TextUtils.equals(registry.activePublisher, packageName) && session.fullLyric) {
                         tracker.onPlaybackStateChanged(state);
                     }
                 }
@@ -178,7 +175,7 @@ final class SystemPlaybackCoordinator {
                      PlaybackState.STATE_ERROR -> {
                 }
                 default -> {
-                    if (TextUtils.equals(registry.activePublisher, packageName)) {
+                    if (TextUtils.equals(registry.activePublisher, packageName) && session.fullLyric) {
                         tracker.onPlaybackStateChanged(state);
                     }
                 }
@@ -209,38 +206,10 @@ final class SystemPlaybackCoordinator {
             session.mediaFacts.update(mediaId, title, duration > 0L ? duration : 0L);
             evidence(packageName).record();
 
-            SuperLyricData base = session.latestLyric;
-            if (base != null && base.getDuration() <= 0 && duration > 0) {
-                SuperLyricData enriched = new SuperLyricData()
-                    .setTitle(base.getTitle())
-                    .setArtist(base.getArtist())
-                    .setAlbum(base.getAlbum())
-                    .setLyricId(base.getLyricId())
-                    .setDuration(duration)
-                    .setAllLyrics(base.getAllLyrics())
-                    .setCurrentLyricIndex(base.getCurrentLyricIndex())
-                    .setPosition(base.getPosition())
-                    .setLyric(base.getLyric())
-                    .setExtra(base.getExtra());
-                if (base.hasTranslation()) enriched.setTranslation(base.getTranslation());
-                if (base.hasSecondary()) enriched.setSecondary(base.getSecondary());
-                session.latestLyric = enriched;
-
-                // v4 投影同样要补：它按末行结束时间推算时长，补不上会让客户端在
-                // 末行结束后提前结束进度
-                LyricDoc doc = session.latestDoc;
-                if (doc != null) {
-                    try {
-                        LyricDoc enrichedDoc = LyricDocAdapter.INSTANCE.withDuration(doc, duration);
-                        if (enrichedDoc != doc) {
-                            session.latestDoc = enrichedDoc;
-                            session.latestV4Lyric = LyricDocAdapter.INSTANCE.toLyric(enrichedDoc);
-                        }
-                    } catch (Throwable t) {
-                        // 元数据回调跑在 system_server 的主线程上，不能因为一次投影失败中断
-                        XposedLog.logW(TAG, "Failed to enrich the v4 document for " + packageName, t);
-                    }
-                }
+            Lyric base = session.lyric;
+            if (base != null && base.getDuration() <= 0L && duration > 0L) {
+                // 时长补齐后 v4 客户端不会在末行提前结束进度；歌词本身不变。
+                session.lyric = LyricDocAdapter.INSTANCE.withDuration(base, duration);
             }
         }
     }
@@ -304,7 +273,7 @@ final class SystemPlaybackCoordinator {
         }
         if (notify) {
             XposedLog.logD(TAG, "Playback stopped (confirmed) for " + packageName + ": " + reason);
-            host.onStop(packageName, new SuperLyricData(), reason);
+            host.onStop(packageName, reason);
         }
     }
 }

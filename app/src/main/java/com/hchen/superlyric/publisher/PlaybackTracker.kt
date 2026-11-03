@@ -26,7 +26,7 @@ import android.os.SystemClock
 import com.hchen.hooktool.log.AndroidLog
 import com.hchen.superlyric.kernel.clock.PlaybackClock
 import com.hchen.superlyric.kernel.clock.PlaybackStatus
-import com.hchen.superlyric.kernel.model.LyricDoc
+import com.hchen.superlyricapi.model.Lyric
 
 /**
  * 系统服务端的播放时钟与跨行推进器
@@ -56,7 +56,7 @@ class PlaybackTracker @JvmOverloads constructor(
      * 当前曲目。必须 volatile：发布线程写入后，追踪线程与构造 State 帧的 binder 线程都要读
      */
     @Volatile
-    private var doc: LyricDoc? = null
+    private var lyric: Lyric? = null
 
     /** 以下字段只在追踪线程上访问 */
     private var shownIndex = -1
@@ -70,20 +70,20 @@ class PlaybackTracker @JvmOverloads constructor(
     /**
      * 绑定当前曲目的全量歌词；传入 null 表示清空
      *
-     * 换歌时必须调用本方法，它会重置行索引并重新开始推演。
+     * 只接受全量文档；单行来源由服务直接生成 FULL 帧，不启动时钟。
      */
-    fun setLyrics(doc: LyricDoc?) {
-        val converted = doc?.takeIf { !it.isEmpty }
-        this.doc = converted
+    fun setLyrics(lyric: Lyric?) {
+        val converted = lyric?.takeIf { it.lineCount > 0 }
+        this.lyric = converted
         // 时长与清空都同步生效：构造 FULL 帧的 binder 线程会立刻读 positionNow()/durationMs，
         // 排到追踪线程上执行会让新曲目的首帧拿到上一首的时长或位置
         if (converted == null) {
             clock.reset()
             clock.lyricsEndMs = 0L
         } else {
-            clock.durationMs = converted.durationMs
+            clock.durationMs = converted.duration
             // 宿主时长可能短于歌词跨度；位置上界取两者较大值，否则后半段歌词永远不推进
-            clock.lyricsEndMs = converted.lastEndMs
+            clock.lyricsEndMs = converted.lines.last().end
         }
         handler.post {
             shownIndex = -1
@@ -143,18 +143,18 @@ class PlaybackTracker @JvmOverloads constructor(
     /**
      * 当前行下标；没有曲目或早于首行开始时间为 -1（与 4.0 的 `Lyric.indexAt` 一致）
      *
-     * 与 [dispatchIfNeeded] 使用同一个 [PlaybackClock.lineIndexAt]，State 帧里的行号与
-     * 真正触发回调的行号不会分叉。
+     * 与 [dispatchIfNeeded] 使用同一个 Lyric.indexAt，State 帧里的行号与真正触发回调的
+     * 行号不会分叉。
      */
     fun indexNow(): Int {
-        val current = doc ?: return -1
-        if (current.isEmpty) return -1
-        return PlaybackClock.lineIndexAt(current.lines, positionNow())
+        val current = lyric ?: return -1
+        if (current.lineCount == 0) return -1
+        return current.indexAt(positionNow())
     }
 
     /** 停止追踪并清空全部状态 */
     fun stop() {
-        doc = null
+        lyric = null
         // 同步复位：tracker.stop() 之后紧接着就会构造 State/快照，排队复位会让它读到过期位置
         clock.reset()
         handler.post {
@@ -165,7 +165,7 @@ class PlaybackTracker @JvmOverloads constructor(
     }
 
     private fun updateLoop() {
-        val shouldRun = clock.currentStatus == PlaybackStatus.PLAYING && doc != null
+        val shouldRun = clock.currentStatus == PlaybackStatus.PLAYING && lyric != null
         if (shouldRun && !running) {
             running = true
             val token = ++loopToken
@@ -201,11 +201,11 @@ class PlaybackTracker @JvmOverloads constructor(
      * 只能在追踪线程上调用。
      */
     private fun delayUntilNextLine(): Long {
-        val lines = doc?.lines ?: return MAX_LOOP_SLEEP_MS
+        val lines = lyric?.lines ?: return MAX_LOOP_SLEEP_MS
         val position = clock.positionAt(timeSource())
-        val index = PlaybackClock.lineIndexAt(lines, position)
+        val index = lyric?.indexAt(position) ?: -1
         // 末行之后没有可推的内容；位置跳转有专门的入口，不需要 20Hz 空转。
-        val nextStart = lines.getOrNull(index + 1)?.startMs ?: return MAX_LOOP_SLEEP_MS
+        val nextStart = lines.getOrNull(index + 1)?.start ?: return MAX_LOOP_SLEEP_MS
         return (nextStart - position).coerceIn(LOOP_INTERVAL_MS, MAX_LOOP_SLEEP_MS)
     }
 
@@ -237,16 +237,16 @@ class PlaybackTracker @JvmOverloads constructor(
      * 本方法只能在追踪线程上调用。
      */
     private fun dispatchIfNeeded(positionMs: Long) {
-        val current = doc ?: return
-        if (current.isEmpty) return
+        val current = lyric ?: return
+        if (current.lineCount == 0) return
 
-        val index = PlaybackClock.lineIndexAt(current.lines, positionMs)
+        val index = current.indexAt(positionMs)
         if (index < 0 || index == shownIndex) return
         shownIndex = index
 
         AndroidLog.logD(
             TAG,
-            "Advance line [$index/${current.lines.size}] at ${positionMs}ms: " +
+            "Advance line [$index/${current.lineCount}] at ${positionMs}ms: " +
                     "\"${current.lines[index].text}\""
         )
         listener?.onProgressAdvance(index, positionMs)

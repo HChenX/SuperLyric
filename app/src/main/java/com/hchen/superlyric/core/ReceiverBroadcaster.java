@@ -41,7 +41,8 @@ import java.util.concurrent.TimeoutException;
 /**
  * 接收者注册、配额与带超时的广播
  *
- * <p>全局上限 64 个、每 uid 上限 16 个；单次回调超时 500ms，超时的回调被取消并记录。
+ * <p>每个接收者记录其 3.x API 版本能力：低于 3.5 的客户端只接收当前句，较新的客户端
+ * 接收全量载荷。全局上限 64 个、每 uid 上限 16 个，单次回调超时 500ms。
  */
 final class ReceiverBroadcaster {
 
@@ -50,9 +51,21 @@ final class ReceiverBroadcaster {
     private static final int MAX_RECEIVERS = 64;
     private static final int MAX_RECEIVERS_PER_UID = 16;
 
+    private static final class Entry {
+        final ISuperLyricReceiver receiver;
+        final int uid;
+        final boolean supportsFullLyric;
+
+        Entry(@NonNull ISuperLyricReceiver receiver, int uid, boolean supportsFullLyric) {
+            this.receiver = receiver;
+            this.uid = uid;
+            this.supportsFullLyric = supportsFullLyric;
+        }
+    }
+
     // 三个集合必须同步维护：注销与 binder 死亡都要回退 uid 配额
     private final ConcurrentHashMap<Integer, Integer> uidCounts = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<IBinder, Integer> binderUids = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<IBinder, Entry> entries = new ConcurrentHashMap<>();
     private final Set<IBinder> binders = ConcurrentHashMap.newKeySet();
 
     private final RemoteCallbackList<ISuperLyricReceiver> callbacks = new RemoteCallbackList<>() {
@@ -61,8 +74,8 @@ final class ReceiverBroadcaster {
             super.onCallbackDied(callback);
             IBinder binder = callback.asBinder();
             binders.remove(binder);
-            Integer uid = binderUids.remove(binder);
-            if (uid != null) decrement(uid);
+            Entry removed = entries.remove(binder);
+            if (removed != null) decrement(removed.uid);
             XposedLog.logI(TAG, "Receiver died: " + callback + ", binder: " + binder);
         }
     };
@@ -75,10 +88,11 @@ final class ReceiverBroadcaster {
 
     @FunctionalInterface
     interface Invocation {
-        void invoke(@NonNull ISuperLyricReceiver receiver) throws Throwable;
+        void invoke(@NonNull ISuperLyricReceiver receiver, boolean supportsFullLyric) throws Throwable;
     }
 
-    void register(@NonNull ISuperLyricReceiver receiver, int uid, int pid, @NonNull String pkg) {
+    void register(@NonNull ISuperLyricReceiver receiver, int uid, int pid, @NonNull String pkg,
+                  boolean supportsFullLyric) {
         if (callbacks.getRegisteredCallbackCount() >= MAX_RECEIVERS) {
             XposedLog.logW(TAG, "Refusing receiver: over limit " + MAX_RECEIVERS);
             return;
@@ -87,21 +101,24 @@ final class ReceiverBroadcaster {
             XposedLog.logW(TAG, "Refusing receiver: uid " + uid + " over per-uid limit");
             return;
         }
+
+        IBinder binder = receiver.asBinder();
         if (callbacks.register(receiver)) {
-            binders.add(receiver.asBinder());
-            binderUids.put(receiver.asBinder(), uid);
+            binders.add(binder);
             uidCounts.merge(uid, 1, Integer::sum);
-            XposedLog.logI(TAG, "Register receiver: " + receiver + ", pkg: " + pkg
-                + ", pid: " + pid + ", uid: " + uid + ", binder: " + receiver.asBinder());
         }
+        entries.put(binder, new Entry(receiver, uid, supportsFullLyric));
+        XposedLog.logI(TAG, "Register receiver: " + receiver + ", pkg: " + pkg
+            + ", pid: " + pid + ", uid: " + uid + ", fullLyric: " + supportsFullLyric
+            + ", binder: " + binder);
     }
 
     void unregister(@NonNull ISuperLyricReceiver receiver, int pid, @NonNull String pkg) {
         IBinder binder = receiver.asBinder();
         if (callbacks.unregister(receiver)) {
             binders.remove(binder);
-            Integer uid = binderUids.remove(binder);
-            if (uid != null) decrement(uid);
+            Entry removed = entries.remove(binder);
+            if (removed != null) decrement(removed.uid);
             XposedLog.logI(TAG, "Unregister receiver: " + receiver + ", pkg: " + pkg
                 + ", pid: " + pid + ", binder: " + binder);
         }
@@ -119,10 +136,12 @@ final class ReceiverBroadcaster {
             for (int i = 0; i < itemCount; i++) {
                 ISuperLyricReceiver receiver = callbacks.getBroadcastItem(i);
                 if (receiver == null) continue;
+                Entry entry = entries.get(receiver.asBinder());
+                boolean supportsFullLyric = entry != null && entry.supportsFullLyric;
                 try {
                     Future<?> future = callExecutor.submit(() -> {
                         try {
-                            invocation.invoke(receiver);
+                            invocation.invoke(receiver, supportsFullLyric);
                         } catch (Throwable t) {
                             throw new RuntimeException(t);
                         }
@@ -169,8 +188,8 @@ final class ReceiverBroadcaster {
                     callbacks.unregister(receiver);
                     IBinder binder = receiver.asBinder();
                     binders.remove(binder);
-                    Integer uid = binderUids.remove(binder);
-                    if (uid != null) decrement(uid);
+                    Entry removed = entries.remove(binder);
+                    if (removed != null) decrement(removed.uid);
                     XposedLog.logI(TAG, "Unregistered dead receiver: " + binder);
                 }
             }

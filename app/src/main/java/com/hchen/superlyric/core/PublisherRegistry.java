@@ -26,9 +26,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.hchen.hooktool.log.XposedLog;
-import com.hchen.superlyric.kernel.model.LyricDoc;
 import com.hchen.superlyric.utils.MediaFacts;
-import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.model.Lyric;
 
 import java.util.Set;
@@ -231,20 +229,18 @@ final class PublisherRegistry {
         @NonNull
         final String packageName;
         /**
-         * 3.x 订阅者与 {@code getLatestLyric()} 看到的数据包，始终保持全量行
+         * 唯一的歌词状态；全量来源含全部行，单行来源只含当前句
          */
         @Nullable
-        volatile SuperLyricData latestLyric;
+        volatile Lyric lyric;
         /**
-         * 内核文档，时钟与 v4 帧的投影源
+         * lyric 是否包含全部行；单行来源为 false
          */
-        @Nullable
-        volatile LyricDoc latestDoc;
+        volatile boolean fullLyric;
         /**
-         * v4 的不可变歌词模型；没有可投影的行时为 null
+         * 单行来源的当前位置；全量来源以 tracker 为准
          */
-        @Nullable
-        volatile Lyric latestV4Lyric;
+        volatile long positionMs;
         @Nullable
         volatile PlaybackState playbackState;
         /**
@@ -272,9 +268,9 @@ final class PublisherRegistry {
         }
 
         void clear() {
-            latestLyric = null;
-            latestDoc = null;
-            latestV4Lyric = null;
+            lyric = null;
+            fullLyric = false;
+            positionMs = 0L;
             playbackState = null;
         }
     }

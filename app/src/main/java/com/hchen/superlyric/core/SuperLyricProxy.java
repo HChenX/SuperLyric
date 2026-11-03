@@ -20,7 +20,6 @@ package com.hchen.superlyric.core;
 
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
-import android.os.Binder;
 import android.util.ArrayMap;
 
 import androidx.annotation.NonNull;
@@ -39,9 +38,9 @@ import io.github.libxposed.api.XposedModuleInterface;
 /**
  * 代理并发布 Super Lyric 系统级服务到 system_server
  *
- * <p>只挂三个 AMS 锚点：{@code systemReady} 之后创建服务；{@code attachApplication}
- * 记录本次绑定的调用方 UID，{@code getCommonServicesLocked} 按该 UID 裁剪服务 map；
- * {@code appDiedLocked} 之后回收进程状态。锚点缺失时只记日志，不下发服务。
+ * <p>{@code systemReady} 之后创建服务；{@code attachApplicationLocked} 记录本次绑定的目标 UID，
+ * {@code getCommonServicesLocked} 按该 UID 裁剪服务 map；{@code appDiedLocked}
+ * 之后回收进程状态。锚点缺失时只记日志，不下发服务。
  *
  * @author 焕晨HChen
  */
@@ -109,7 +108,7 @@ public final class SuperLyricProxy extends AbsModule {
             }
         );
 
-        hookAttachApplication();
+        attachApplicationLocked();
         hookCommonServices();
         hookAppDiedLocked();
     }
@@ -117,32 +116,25 @@ public final class SuperLyricProxy extends AbsModule {
     /**
      * 记录每次应用绑定的 UID，供同一线程随后执行的 getCommonServicesLocked 使用。
      */
-    private void hookAttachApplication() {
+    private void attachApplicationLocked() {
         try {
             Class<?> amsClass = findAmsClass();
             if (amsClass == null) return;
 
-            int count = 0;
-            for (Method method : amsClass.getDeclaredMethods()) {
-                if (!"attachApplication".equals(method.getName())) continue;
-
-                Class<?>[] parameters = method.getParameterTypes();
-                if (parameters.length == 0
-                    || !"android.app.IApplicationThread".equals(parameters[0].getName())) {
-                    continue;
-                }
-
-                final Method target = method;
-                hook(target, new AbsHook() {
+            hookAllMethod(amsClass,
+                "attachApplicationLocked",
+                new AbsHook() {
                     @Override
                     public void before() {
                         try {
-                            int uid = Binder.getCallingUid();
+                            // 这是 AMS 内部方法，Binder.getCallingUid() 永远是 system_server(1000)；
+                            // 目标进程 UID 必须取参数表里的 uid（thread, pid, uid, ...）。
+                            int uid = ((Number) getArg(2)).intValue();
                             sBindUid.set(uid);
                             AccessPolicy.invalidateUid(uid);
                         } catch (Throwable t) {
                             logE(tag, "Failed to record bind UID for "
-                                + target.getName() + ".", t);
+                                + getExecutable().getName() + ".", t);
                         }
                     }
 
@@ -150,18 +142,10 @@ public final class SuperLyricProxy extends AbsModule {
                     public void after() {
                         sBindUid.remove();
                     }
-                });
-                count++;
-            }
-
-            if (count == 0) {
-                logE(tag, "ActivityManagerService#attachApplication not found; "
-                    + "access control will deny all app binds.");
-            } else {
-                logI(tag, "Hooked " + count + " attachApplication overload(s).");
-            }
+                }
+            );
         } catch (Throwable t) {
-            logE(tag, "Failed to hook attachApplication; access control will fail closed.", t);
+            logE(tag, "Failed to hook attachApplicationLocked; access control will fail closed.", t);
         }
     }
 
@@ -170,13 +154,21 @@ public final class SuperLyricProxy extends AbsModule {
             Class<?> amsClass = findAmsClass();
             if (amsClass == null) return;
 
-            int count = 0;
+            Method target = null;
             for (Method method : amsClass.getDeclaredMethods()) {
-                if (!"getCommonServicesLocked".equals(method.getName())) continue;
-                if (!Map.class.isAssignableFrom(method.getReturnType())) continue;
+                if ("getCommonServicesLocked".equals(method.getName()) &&
+                    Map.class.isAssignableFrom(method.getReturnType())) {
+                    target = method;
+                    break;
+                }
+            }
+            if (target == null) {
+                logE(tag, "ActivityManagerService#getCommonServicesLocked not found; "
+                    + "access control will deny all app binds.");
+                return;
+            }
 
-                final Method target = method;
-                hook(target, new AbsHook() {
+            hook(target, new AbsHook() {
                     @Override
                     public void after() {
                         try {
@@ -187,6 +179,7 @@ public final class SuperLyricProxy extends AbsModule {
                                 return;
                             }
 
+                            Method target = (Method) getExecutable();
                             Map<Object, Object> filtered = newResultMap(target);
                             for (Map.Entry<?, ?> entry : ((Map<?, ?>) raw).entrySet()) {
                                 filtered.put(entry.getKey(), entry.getValue());
@@ -225,16 +218,8 @@ public final class SuperLyricProxy extends AbsModule {
                             return true;
                         }
                     }
-                });
-                count++;
-            }
-
-            if (count == 0) {
-                logE(tag, "ActivityManagerService#getCommonServicesLocked not found; "
-                    + "access control will deny all app binds.");
-            } else {
-                logI(tag, "Hooked " + count + " getCommonServicesLocked overload(s).");
-            }
+            });
+            logI(tag, "Hooked getCommonServicesLocked.");
         } catch (Throwable t) {
             logE(tag, "Failed to hook getCommonServicesLocked; access control will fail closed.", t);
         }

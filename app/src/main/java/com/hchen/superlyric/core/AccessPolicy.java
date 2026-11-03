@@ -52,6 +52,10 @@ public final class AccessPolicy {
     private static final String META_API_VERSION = "superlyricapi_version_code";
     private static final int API_LEGACY = 31;
     private static final int API_V4 = 40;
+    /**
+     * 3.x 3.5 起支持全量歌词；低于该版本只支持当前句。
+     */
+    static final int LEGACY_FULL_API = 35;
     private static final long ERROR_LOG_INTERVAL_MS = 10_000L;
 
     private static final ConcurrentHashMap<Integer, Level> sLevels = new ConcurrentHashMap<>();
@@ -176,6 +180,63 @@ public final class AccessPolicy {
     }
 
     /**
+     * 3.x 版本是否支持全量歌词。
+     */
+    static boolean supportsFullLegacy(int versionCode) {
+        return versionCode >= LEGACY_FULL_API;
+    }
+
+    /**
+     * 读取包的 SuperLyricApi 版本；缺失或查询失败返回 0。
+     */
+    static int apiVersionOf(@Nullable String packageName) {
+        Context context = sContext;
+        if (context == null || packageName == null || packageName.isEmpty()) return 0;
+
+        try {
+            ApplicationInfo info = context.getPackageManager()
+                .getApplicationInfo(packageName, PackageManager.GET_META_DATA);
+            return versionOf(info);
+        } catch (PackageManager.NameNotFoundException e) {
+            return 0;
+        } catch (Throwable t) {
+            logError("Failed to resolve API version for " + packageName, t);
+            return 0;
+        }
+    }
+
+    /**
+     * 按 UID 读取其所含包的最高 API 版本；用于无法解析包名的接收者。
+     */
+    static int apiVersionOfUid(int uid) {
+        Context context = sContext;
+        if (context == null || uid <= 0) return 0;
+
+        try {
+            String[] packages = context.getPackageManager().getPackagesForUid(uid);
+            if (packages == null) return 0;
+
+            int version = 0;
+            for (String packageName : packages) {
+                version = Math.max(version, apiVersionOf(packageName));
+            }
+            return version;
+        } catch (Throwable t) {
+            logError("Failed to resolve API version for uid " + uid, t);
+            return 0;
+        }
+    }
+
+    /**
+     * 3.x 接收端是否支持全量歌词；优先按包名，解析失败时按 UID。
+     */
+    static boolean supportsFullLegacyLyric(@Nullable String packageName, int uid) {
+        int version = apiVersionOf(packageName);
+        if (version <= 0) version = apiVersionOfUid(uid);
+        return supportsFullLegacy(version);
+    }
+
+    /**
      * 清空全部 UID 缓存
      */
     static void invalidateAll() {
@@ -262,6 +323,11 @@ public final class AccessPolicy {
         boolean marked = readBoolean(metadata.get(META_API));
         int versionCode = readInt(metadata.get(META_API_VERSION));
         return resolve(false, false, marked, versionCode);
+    }
+
+    private static int versionOf(@Nullable ApplicationInfo info) {
+        if (info == null || info.metaData == null) return 0;
+        return readInt(info.metaData.get(META_API_VERSION));
     }
 
     private static boolean readBoolean(@Nullable Object value) {

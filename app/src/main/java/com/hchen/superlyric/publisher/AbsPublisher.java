@@ -35,7 +35,6 @@ import com.hchen.superlyric.utils.HotfixDisabler;
 import com.hchen.superlyric.utils.LyricSanitizer;
 import com.hchen.superlyricapi.Publisher;
 import com.hchen.superlyricapi.SuperLyric;
-import com.hchen.superlyricapi.SuperLyricData;
 import com.hchen.superlyricapi.model.Lyric;
 
 import io.github.libxposed.api.XposedModuleInterface;
@@ -106,16 +105,14 @@ public abstract class AbsPublisher extends AbsModule {
      * {@link LyricSanitizer} 唯一负责。
      */
     public static void publishFullLyric(@NonNull LyricDoc doc) {
-        SuperLyricData raw = LyricDocAdapter.INSTANCE.toFullData(doc);
-        SuperLyricData clean = LyricSanitizer.sanitizeData(raw);
-        if (clean == null) {
-            AndroidLog.logW(TAG, "Dropping lyric: sanitization failed");
-            return;
-        }
-
-        Lyric lyric = LyricDocAdapter.INSTANCE.toLyric(LyricDocAdapter.INSTANCE.toDoc(clean));
+        Lyric lyric = LyricDocAdapter.INSTANCE.toLyric(doc);
         if (lyric == null) {
             AndroidLog.logW(TAG, "Dropping lyric: no publishable line");
+            return;
+        }
+        lyric = LyricSanitizer.sanitizeLyric(lyric);
+        if (lyric == null) {
+            AndroidLog.logW(TAG, "Dropping lyric: sanitization failed");
             return;
         }
         if (lyric.getTitle().trim().isEmpty()) {

@@ -19,6 +19,8 @@
 package com.hchen.superlyric.core
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class AccessPolicyTest {
@@ -59,5 +61,13 @@ class AccessPolicyTest {
     fun invalidUidIsDeniedWithoutContext() {
         assertEquals(AccessPolicy.Level.DENY, AccessPolicy.levelForUid(0))
         assertEquals(AccessPolicy.Level.DENY, AccessPolicy.levelForUid(-1))
+    }
+
+    @Test
+    fun legacyFullLyricsStartAt35() {
+        assertFalse(AccessPolicy.supportsFullLegacy(34))
+        assertTrue(AccessPolicy.supportsFullLegacy(35))
+        assertTrue(AccessPolicy.supportsFullLegacy(39))
+        assertTrue(AccessPolicy.supportsFullLegacy(40))
     }
 }
