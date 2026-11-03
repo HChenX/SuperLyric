@@ -11,7 +11,7 @@ system_server owns playback state and progress and broadcasts lyrics to SuperLyr
 
     host (:app): Provider -> Hook / API source -> LyricOutcome -> LyricOrchestrator
                  LyricDocAdapter -> AbsPublisher -> Binder (full lyric | stop)
-    system_server (:app): SuperLyricService -> receiver / frame subscribers
+    system_server (:app): SuperLyricService / SuperLyricV4Service -> LyricRuntime -> subscribers
 
 | Module | Kind | Contains |
 | :--- | :--- | :--- |
@@ -202,8 +202,9 @@ Layout:
   KeyedStash, metadata helpers.
 - bridge/: conversion boundary between kernel models and SuperLyricApi wire models. 3.x
   SuperLyricData conversion lives only here.
-- core/: SuperLyricService holds only 4.0 Lyric sessions; PublisherRegistry stores the session;
-  ReceiverBroadcaster tracks 3.x full/current-line capability; AccessPolicy resolves it.
+- core/: LyricRuntime owns publisher lifecycle, session, clock, receivers, frames, and the
+  3.x/4.0 boundary. SuperLyricService and SuperLyricV4Service are Binder facades only. AccessPolicy
+  resolves caller access and 3.x full capability.
 - ui/: Compose screens and effects. BgEffectConfig owns DeviceType; BgEffectBackground owns
   cardBlendColors.
 - utils/: PlaybackStates maps Android playback constants to the v4 state and the StopGate signal.
