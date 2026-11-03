@@ -154,17 +154,12 @@ class PowerampHookSource : HookLyricSource {
     }
 
     /**
-     * Poweramp 的 MEDIA_ID 有两种形态：
-     * - 文件夹层级 `/folders/20/files/362`、`/folders_hier/21/files/505`，末尾是 `folder_files._id`；
-     * - 播放列表 `/playlists/3/files/6`，末尾是列表条目 id，**不是**曲库文件 id。
-     *
-     * 只有文件夹层级可以按末尾数字直查；播放列表照做会命中同 id 的无关曲目。
+     * 文件夹层级的末段是 folder_files._id；播放列表的末段是列表条目 id，不能直查。
      */
     internal fun trackIdOf(identity: TrackIdentity): Long? {
         val raw = TrackIdentity.normalizeStableId(identity.stableId) ?: return null
-        if (raw.contains('/') && !raw.startsWith("/folders/") && !raw.startsWith("/folders_hier/")) {
-            return null
-        }
+        val folder = raw.startsWith("/folders/") || raw.startsWith("/folders_hier/")
+        if (raw.contains('/') && !folder) return null
         raw.toLongOrNull()?.let { return it }
         return raw.substringAfterLast('/').toLongOrNull()
     }
@@ -184,8 +179,7 @@ class PowerampHookSource : HookLyricSource {
             }
         }
 
-        // id 命中不等于身份吻合：播放列表 id 已被 [trackIdOf] 拦截，但曲库重扫后
-        // 旧 id 也可能指向别的曲目。只有拿到相容行才停止回退。
+        // id 命中不等于身份吻合：旧 id 也可能指向别的曲目，只有相容行才停止回退。
         val title = identity.title.trim()
         if (rows.none { matchesIdentity(identity, it) } && title.isNotEmpty()) {
             for (table in tables) {
