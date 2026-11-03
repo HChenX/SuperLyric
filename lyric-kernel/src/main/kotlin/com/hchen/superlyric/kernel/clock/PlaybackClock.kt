@@ -18,9 +18,7 @@
  */
 package com.hchen.superlyric.kernel.clock
 
-import com.hchen.superlyric.kernel.model.LyricLine
 import kotlin.math.max
-import kotlin.math.min
 
 /** 播放状态。刻意不复用 Android 的 `PlaybackState` ： 内核必须保持零 Android 依赖 */
 enum class PlaybackStatus {
@@ -144,33 +142,5 @@ class PlaybackClock(
         val upperBound = max(durationMs, lyricsEndMs)
         if (upperBound > 0L && position > upperBound) return upperBound
         return position
-    }
-
-    companion object {
-        /**
-         * 在按起始时间升序排列的歌词行中，定位给定时刻所在的行
-         *
-         * 使用二分查找；时刻早于首行时返回 -1，晚于末行时返回末行下标
-         *
-         * 行定位语义与库的 `Lyric.indexAt` 一致：首行之前没有"当前行"，调用方自行决定
-         * 是否显示首行。返回 0 会让前奏阶段的界面提前亮起第一句。
-         */
-        fun lineIndexAt(lines: List<LyricLine>, positionMs: Long): Int {
-            if (lines.isEmpty()) return -1
-
-            var low = 0
-            var high = lines.size - 1
-            var matched = -1
-            while (low <= high) {
-                val mid = (low + high) ushr 1
-                if (lines[mid].startMs <= positionMs) {
-                    matched = mid
-                    low = mid + 1
-                } else {
-                    high = mid - 1
-                }
-            }
-            return if (matched < 0) -1 else min(matched, lines.size - 1)
-        }
     }
 }

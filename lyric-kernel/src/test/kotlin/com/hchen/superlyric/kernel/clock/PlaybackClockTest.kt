@@ -18,7 +18,6 @@
  */
 package com.hchen.superlyric.kernel.clock
 
-import com.hchen.superlyric.kernel.model.LyricLine
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
@@ -141,21 +140,6 @@ class PlaybackClockTest {
     }
 
     @Test
-    fun `line index lookup covers boundaries`() {
-        val lines = listOf(
-            LyricLine(startMs = 0L, endMs = 1_000L, text = "a"),
-            LyricLine(startMs = 1_000L, endMs = 2_000L, text = "b"),
-            LyricLine(startMs = 2_000L, endMs = 3_000L, text = "c"),
-        )
-
-        assertEquals(-1, PlaybackClock.lineIndexAt(emptyList(), 0L))
-        assertEquals(-1, PlaybackClock.lineIndexAt(lines, -1L))
-        assertEquals(0, PlaybackClock.lineIndexAt(lines, 500L))
-        assertEquals(1, PlaybackClock.lineIndexAt(lines, 1_000L))
-        assertEquals(2, PlaybackClock.lineIndexAt(lines, 99_999L))
-    }
-
-    @Test
     fun `a short host duration does not clip positions inside the lyric span`() {
         val clock = clock(durationMs = 92_913L)
         clock.lyricsEndMs = 181_790L
@@ -179,14 +163,5 @@ class PlaybackClockTest {
 
         // 歌词先结束不代表曲目结束：上界仍取时长
         assertEquals(300_000L, clock.positionAt())
-    }
-
-    @Test
-    fun `no line is current before the first line starts`() {
-        val lines = listOf(LyricLine(startMs = 5_000L, endMs = 6_000L, text = "a"))
-
-        assertEquals(-1, PlaybackClock.lineIndexAt(lines, 0L))
-        assertEquals(-1, PlaybackClock.lineIndexAt(lines, 4_999L))
-        assertEquals(0, PlaybackClock.lineIndexAt(lines, 5_000L))
     }
 }
