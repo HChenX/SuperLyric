@@ -171,55 +171,55 @@ public final class SuperLyricProxy extends AbsModule {
             }
 
             hook(target, new AbsHook() {
-                    @Override
-                    public void after() {
-                        try {
-                            Object raw = getResult();
-                            if (!(raw instanceof Map)) {
-                                logE(tag, "getCommonServicesLocked returned no map; "
-                                    + "services not exposed.");
-                                return;
-                            }
-
-                            Method target = (Method) getExecutable();
-                            Map<Object, Object> filtered = newResultMap(target);
-                            for (Map.Entry<?, ?> entry : ((Map<?, ?>) raw).entrySet()) {
-                                filtered.put(entry.getKey(), entry.getValue());
-                            }
-                            filtered.remove(AccessPolicy.LEGACY_SERVICE);
-                            filtered.remove(AccessPolicy.V4_SERVICE);
-
-                            Integer uid = sBindUid.get();
-                            if (uid != null && !isIsolatedBind(target)) {
-                                AccessPolicy.Level level = AccessPolicy.levelForUid(uid);
-                                SuperLyricService legacy = sSuperLyricService;
-                                SuperLyricV4Service v4 = sSuperLyricV4Service;
-
-                                if (level.allowsLegacy() && legacy != null) {
-                                    filtered.put(AccessPolicy.LEGACY_SERVICE, legacy);
-                                }
-                                if (level.allowsV4() && v4 != null) {
-                                    filtered.put(AccessPolicy.V4_SERVICE, v4);
-                                }
-
-                                logD(tag, "Bind services for uid " + uid + ": " + level);
-                            }
-
-                            setResult(filtered);
-                        } catch (Throwable t) {
-                            logE(tag, "Failed to filter common services; services not exposed.", t);
+                @Override
+                public void after() {
+                    try {
+                        Object raw = getResult();
+                        if (!(raw instanceof Map)) {
+                            logE(tag, "getCommonServicesLocked returned no map; "
+                                + "services not exposed.");
+                            return;
                         }
-                    }
 
-                    private boolean isIsolatedBind(Method method) {
-                        if (method.getParameterTypes().length == 0) return false;
-                        try {
-                            Object value = getArg(0);
-                            return !(value instanceof Boolean) || (Boolean) value;
-                        } catch (Throwable t) {
-                            return true;
+                        Method target = (Method) getExecutable();
+                        Map<Object, Object> filtered = newResultMap(target);
+                        for (Map.Entry<?, ?> entry : ((Map<?, ?>) raw).entrySet()) {
+                            filtered.put(entry.getKey(), entry.getValue());
                         }
+                        filtered.remove(AccessPolicy.LEGACY_SERVICE);
+                        filtered.remove(AccessPolicy.V4_SERVICE);
+
+                        Integer uid = sBindUid.get();
+                        if (uid != null && !isIsolatedBind(target)) {
+                            AccessPolicy.Level level = AccessPolicy.levelForUid(uid);
+                            SuperLyricService legacy = sSuperLyricService;
+                            SuperLyricV4Service v4 = sSuperLyricV4Service;
+
+                            if (level.allowsLegacy() && legacy != null) {
+                                filtered.put(AccessPolicy.LEGACY_SERVICE, legacy);
+                            }
+                            if (level.allowsV4() && v4 != null) {
+                                filtered.put(AccessPolicy.V4_SERVICE, v4);
+                            }
+
+                            logD(tag, "Bind services for uid " + uid + ": " + level);
+                        }
+
+                        setResult(filtered);
+                    } catch (Throwable t) {
+                        logE(tag, "Failed to filter common services; services not exposed.", t);
                     }
+                }
+
+                private boolean isIsolatedBind(Method method) {
+                    if (method.getParameterTypes().length == 0) return false;
+                    try {
+                        Object value = getArg(0);
+                        return !(value instanceof Boolean) || (Boolean) value;
+                    } catch (Throwable t) {
+                        return true;
+                    }
+                }
             });
             logI(tag, "Hooked getCommonServicesLocked.");
         } catch (Throwable t) {

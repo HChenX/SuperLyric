@@ -166,7 +166,7 @@ public final class LyricRuntime {
     }
 
     private PublisherRegistry.Registration ensurePublisher(int pid, @NonNull String packageName,
-                                                            int uid) {
+                                                           int uid) {
         if (isPublisherProcess(packageName, pid)) return PublisherRegistry.Registration.OK;
         PublisherRegistry.Registration registration =
             PublisherRegistry.registerPublisher(packageName, pid, uid);
