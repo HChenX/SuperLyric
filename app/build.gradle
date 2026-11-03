@@ -137,6 +137,7 @@ dependencies {
     implementation libs.okhttp
     implementation libs.okhttp.brotli
     implementation libs.superlyricapi
+    implementation libs.xxpermissions
     implementation project(':lyric-kernel')
 
     implementation project(':processor')

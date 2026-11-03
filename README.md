@@ -30,6 +30,7 @@
 | Spotify | com.spotify.music | 网络获取 |
 | Flamingo | 无固定包名 | API 原生支持 |
 | [光锥音乐](https://coneplayer.trantor.ink) | ink.trantor.coneplayer | API 原生支持 |
+| [BreezyMusic](https://github.com/BlueEve04/BreezyMusic) | com.breezy.music | API 原生支持 |
 
 ## 获取方式
 

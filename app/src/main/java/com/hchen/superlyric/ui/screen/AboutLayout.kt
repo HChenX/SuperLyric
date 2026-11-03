@@ -104,7 +104,8 @@ fun AboutLayout(
             "ghhccghk",
             "YifePlayte",
             "YuKongA",
-            "AnserJim"
+            "AnserJim",
+            "BlueEve04"
         )
     }
     val contributorUri = remember {
@@ -112,7 +113,8 @@ fun AboutLayout(
             "https://github.com/ghhccghk",
             "https://github.com/YifePlayte",
             "https://github.com/YuKongA",
-            "https://github.com/killerprojecte"
+            "https://github.com/killerprojecte",
+            "https://github.com/BlueEve04"
         )
     }
     val contributorIcon = remember {
@@ -120,7 +122,8 @@ fun AboutLayout(
             R.drawable.ghhccghk,
             R.drawable.yifeplayte,
             R.drawable.yukonga,
-            R.drawable.anserjim
+            R.drawable.anserjim,
+            R.drawable.blueeve04
         )
     }
 

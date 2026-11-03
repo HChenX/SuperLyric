@@ -30,6 +30,7 @@ An LSPosed module that publishes lyrics from music apps to Android over Binder.
 | Spotify | com.spotify.music | Network |
 | Flamingo | No fixed package | Native API |
 | [Cone Player](https://coneplayer.trantor.ink) | ink.trantor.coneplayer | Native API |
+| [BreezyMusic](https://github.com/BlueEve04/BreezyMusic) | com.breezy.music | Native API |
 
 ## Acquisition modes
 
