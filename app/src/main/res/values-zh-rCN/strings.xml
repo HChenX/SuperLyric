@@ -96,6 +96,12 @@
     <string name="api_debug_reset_stats">重置统计与看板</string>
     <string name="api_debug_reset_stats_summary">清空包计数与当前看板数据</string>
     <string name="api_debug_reset_toast">计数与看板已重置</string>
+    <string name="api_debug_short_inject">注入全量</string>
+    <string name="api_debug_short_next_line">下一句</string>
+    <string name="api_debug_short_next_word">下一字</string>
+    <string name="api_debug_short_stop">停止</string>
+    <string name="api_debug_short_pull">拉取</string>
+    <string name="api_debug_short_reset">重置</string>
     <string name="api_not_playing">暂未开始播放</string>
     <string name="unknown_artist">未知歌手</string>
     <string name="unknown_album">未知专辑</string>
@@ -110,7 +116,9 @@
     <string name="api_status_standby">待命中</string>
     <string name="api_source_format">来源：%s</string>
     <string name="api_source_none">无活跃源</string>
-    <string name="api_packet_seq_format">包序号：#%1$d (全量: %2$d | 状态: %3$d)</string>
+    <string name="api_packet_seq_short">包序号 #%1$d</string>
+    <string name="api_full_count_short">全量 %1$d</string>
+    <string name="api_state_count_short">状态 %1$d</string>
     <string name="api_monitor_title">运行监控与统计</string>
     <string name="api_system_service_status">系统服务状态</string>
     <string name="api_latest_event_type">最近事件类型</string>

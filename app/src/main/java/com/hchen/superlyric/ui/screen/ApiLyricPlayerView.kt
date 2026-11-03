@@ -44,7 +44,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -217,40 +217,36 @@ internal fun ApiLyricPlayerView(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // 顶部曲目信息与发布者徽章
-        Row(
+        // 曲目信息与发布源纵向排列，长标题和长包名互不挤压
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(bottom = 12.dp)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = lyric?.title?.takeIf { it.isNotEmpty() } ?: stringResource(R.string.api_not_playing),
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                val album = lyric?.album
-                Text(
-                    text = "${lyric?.artist?.takeIf { it.isNotEmpty() } ?: stringResource(R.string.unknown_artist)}${
-                        if (!album.isNullOrEmpty()) " · $album" else ""
-                    }",
-                    fontSize = 14.sp,
-                    color = colorScheme.onSurfaceVariantSummary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            Text(
+                text = lyric?.title?.takeIf { it.isNotEmpty() } ?: stringResource(R.string.api_not_playing),
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            val album = lyric?.album
+            Text(
+                text = "${lyric?.artist?.takeIf { it.isNotEmpty() } ?: stringResource(R.string.unknown_artist)}${
+                    if (!album.isNullOrEmpty()) " · $album" else ""
+                }",
+                fontSize = 14.sp,
+                color = colorScheme.onSurfaceVariantSummary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.height(4.dp))
 
-            Spacer(Modifier.width(12.dp))
-
-            // 发布源标识
+            // 发布源标识独立成行，超长包名只截断自身
             Box(
                 modifier = Modifier
+                    .widthIn(max = 240.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(colorScheme.tertiaryContainer)
                     .padding(horizontal = 10.dp, vertical = 5.dp)

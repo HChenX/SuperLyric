@@ -20,19 +20,25 @@ package com.hchen.superlyric.ui.screen
 
 import android.annotation.SuppressLint
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -50,6 +56,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Alignment.Companion
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -59,12 +66,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import com.hchen.superlyric.BuildConfig
 import com.hchen.superlyric.R
 import com.hchen.superlyric.ui.data.LocalPagerState
 import com.hchen.superlyric.ui.data.UIConstants
@@ -72,27 +81,30 @@ import com.hchen.superlyric.ui.effect.BgEffectBackground
 import com.hchen.superlyric.ui.effect.BgEffectTheme
 import com.hchen.superlyric.ui.effect.BlurredBar
 import com.hchen.superlyric.ui.effect.cardBlendColors
+import com.hchen.superlyric.ui.effect.cardBlur
 import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
 import kotlinx.coroutines.launch
+import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
-import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.basic.TextButton
+import top.yukonga.miuix.kmp.blur.BlendColorEntry
+import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Close
-import top.yukonga.miuix.kmp.icon.extended.Ok
 import top.yukonga.miuix.kmp.icon.extended.Tune
-import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import top.yukonga.miuix.kmp.window.WindowBottomSheet
+import java.lang.System.exit
 
 @Composable
 @SuppressLint("LocalContextGetResourceValueCall")
@@ -138,7 +150,7 @@ fun ApiLayout(
     val state by ApiReceiverManager.receiverFlow.collectAsState()
     val paused by ApiReceiverManager.pausedFlow.collectAsState()
 
-    var isDebugSheetShowing by remember { mutableStateOf(false) }
+    var isDebugPanelVisible by remember { mutableStateOf(false) }
 
     val scrollBehavior = MiuixScrollBehavior()
     val lazyListState = rememberLazyListState()
@@ -200,20 +212,20 @@ fun ApiLayout(
                     titleColor = titleColor,
                     defaultWindowInsetsPadding = false,
                     actions = {
-                        // 调试面板可注入模拟歌词、暂停接收、清零计数，仅 DEBUG 构建可见
-                        if (BuildConfig.DEBUG) {
-                            IconButton(
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
-                                    isDebugSheetShowing = true
+                        IconButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.ContextClick)
+                                scope.launch {
+                                    lazyListState.animateScrollToItem(1)
+                                    isDebugPanelVisible = !isDebugPanelVisible
                                 }
-                            ) {
-                                Icon(
-                                    imageVector = MiuixIcons.Tune,
-                                    contentDescription = stringResource(R.string.api_debug),
-                                    tint = colorScheme.onSurface
-                                )
                             }
+                        ) {
+                            Icon(
+                                imageVector = MiuixIcons.Tune,
+                                contentDescription = stringResource(R.string.api_debug),
+                                tint = colorScheme.onSurface
+                            )
                         }
                     }
                 )
@@ -337,6 +349,25 @@ fun ApiLayout(
                                 }
                             )
 
+                            AnimatedVisibility(
+                                visible = isDebugPanelVisible,
+                                enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+                                exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top)
+                            ) {
+                                Column {
+                                    Spacer(Modifier.height(12.dp))
+                                    ApiDebugPanel(
+                                        paused = paused,
+                                        backdrop = backdrop,
+                                        cardBlend = cardBlend,
+                                        onClose = {
+                                            isDebugPanelVisible = false
+                                            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+                                        }
+                                    )
+                                }
+                            }
+
                             Spacer(Modifier.height(12.dp))
 
                             ApiMonitorSummaryCard(
@@ -376,133 +407,174 @@ fun ApiLayout(
             }
         }
 
-        // API 调试控制台；关闭默认 insets，仅保留底部系统导航栏高度与 16dp 内边距
-        WindowBottomSheet(
-            show = BuildConfig.DEBUG && isDebugSheetShowing,
-            title = stringResource(R.string.api_debug_and_test),
-            defaultWindowInsetsPadding = false,
-            startAction = {
-                IconButton(onClick = { isDebugSheetShowing = false }) {
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ApiDebugPanel(
+    paused: Boolean,
+    backdrop: LayerBackdrop?,
+    cardBlend: List<BlendColorEntry>,
+    onClose: () -> Unit
+) {
+    val context = LocalContext.current
+    val actionColors = ButtonDefaults.textButtonColors(
+        color = colorScheme.secondaryContainer,
+        textColor = colorScheme.onSecondaryContainer
+    )
+    val actionPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp)
+    val actionTextStyle = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Medium)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .cardBlur(backdrop = backdrop, cardBlend = cardBlend),
+        colors = CardDefaults.defaultColors(
+            color = if (backdrop != null) Color.Transparent else colorScheme.surfaceContainer
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = stringResource(R.string.api_debug_and_test),
+                    modifier = Modifier.weight(1f),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colorScheme.onSecondaryContainer
+                )
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.size(32.dp)
+                ) {
                     Icon(
                         imageVector = MiuixIcons.Close,
                         contentDescription = stringResource(android.R.string.cancel),
-                        tint = colorScheme.onBackground
+                        tint = colorScheme.onSecondaryContainer,
+                        modifier = Modifier.size(18.dp)
                     )
                 }
-            },
-            endAction = {
-                IconButton(onClick = { isDebugSheetShowing = false }) {
-                    Icon(
-                        imageVector = MiuixIcons.Ok,
-                        contentDescription = stringResource(android.R.string.ok),
-                        tint = colorScheme.onBackground
-                    )
-                }
-            },
-            onDismissRequest = { isDebugSheetShowing = false }
-        ) {
-            LazyColumn(
+            }
+
+            Spacer(Modifier.height(6.dp))
+
+            // 柔性换行操作条：按钮全部可见，面板高度仍受控
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                TextButton(
+                    text = stringResource(R.string.api_debug_short_inject),
+                    minWidth = 0.dp,
+                    minHeight = 32.dp,
+                    cornerRadius = 12.dp,
+                    insideMargin = actionPadding,
+                    textStyle = actionTextStyle,
+                    onClick = {
+                        ApiReceiverManager.injectMockLyric()
+                        Toast.makeText(
+                            context,
+                            R.string.api_debug_injected_full_toast,
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    },
+                    colors = actionColors
+                )
+                TextButton(
+                    text = stringResource(R.string.api_debug_short_next_line),
+                    minWidth = 0.dp,
+                    minHeight = 32.dp,
+                    cornerRadius = 12.dp,
+                    insideMargin = actionPadding,
+                    textStyle = actionTextStyle,
+                    onClick = { ApiReceiverManager.advanceMockProgress() },
+                    colors = actionColors
+                )
+                TextButton(
+                    text = stringResource(R.string.api_debug_short_next_word),
+                    minWidth = 0.dp,
+                    minHeight = 32.dp,
+                    cornerRadius = 12.dp,
+                    insideMargin = actionPadding,
+                    textStyle = actionTextStyle,
+                    onClick = { ApiReceiverManager.advanceMockWordProgress(400) },
+                    colors = actionColors
+                )
+                TextButton(
+                    text = stringResource(R.string.api_debug_short_stop),
+                    minWidth = 0.dp,
+                    minHeight = 32.dp,
+                    cornerRadius = 12.dp,
+                    insideMargin = actionPadding,
+                    textStyle = actionTextStyle,
+                    colors = actionColors,
+                    onClick = {
+                        ApiReceiverManager.injectMockStop()
+                        Toast.makeText(
+                            context,
+                            R.string.api_debug_injected_stop_toast,
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                )
+                TextButton(
+                    text = stringResource(R.string.api_debug_short_pull),
+                    minWidth = 0.dp,
+                    minHeight = 32.dp,
+                    cornerRadius = 12.dp,
+                    insideMargin = actionPadding,
+                    textStyle = actionTextStyle,
+                    colors = actionColors,
+                    onClick = {
+                        ApiReceiverManager.pullLatest { success ->
+                            Toast.makeText(
+                                context,
+                                if (success) R.string.api_debug_pull_success
+                                else R.string.api_debug_pull_no_data,
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                )
+                TextButton(
+                    text = stringResource(R.string.api_debug_short_reset),
+                    minWidth = 0.dp,
+                    minHeight = 32.dp,
+                    cornerRadius = 12.dp,
+                    insideMargin = actionPadding,
+                    textStyle = actionTextStyle,
+                    colors = actionColors,
+                    onClick = {
+                        ApiReceiverManager.reset()
+                        Toast.makeText(
+                            context,
+                            R.string.api_debug_reset_toast,
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .scrollEndHaptic()
-                    .overScrollVertical(),
-                contentPadding = PaddingValues(
-                    bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 16.dp
-                )
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(colorScheme.secondaryContainer)
             ) {
-                item {
-                    SmallTitle(text = stringResource(R.string.api_debug_listen_control), insideMargin = PaddingValues(16.dp, 8.dp))
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp),
-                        colors = CardDefaults.defaultColors(
-                            color = colorScheme.secondaryContainer
-                        )
-                    ) {
-                        SwitchPreference(
-                            checked = paused,
-                            onCheckedChange = {
-                                ApiReceiverManager.pausedFlow.value = it
-                            },
-                            title = stringResource(R.string.api_debug_pause_listen),
-                            summary = if (paused) stringResource(R.string.api_debug_pause_listen_summary_paused) else stringResource(R.string.api_debug_pause_listen_summary_running)
-                        )
+                SwitchPreference(
+                    checked = paused,
+                    onCheckedChange = { ApiReceiverManager.pausedFlow.value = it },
+                    title = stringResource(R.string.api_debug_pause_listen),
+                    summary = if (paused) {
+                        stringResource(R.string.api_debug_pause_listen_summary_paused)
+                    } else {
+                        stringResource(R.string.api_debug_pause_listen_summary_running)
                     }
-
-                    SmallTitle(text = stringResource(R.string.api_debug_mock_injection), insideMargin = PaddingValues(16.dp, 8.dp))
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp),
-                        colors = CardDefaults.defaultColors(
-                            color = colorScheme.secondaryContainer
-                        )
-                    ) {
-                        ArrowPreference(
-                            title = stringResource(R.string.api_debug_inject_full),
-                            summary = stringResource(R.string.api_debug_inject_full_summary),
-                            onClick = {
-                                ApiReceiverManager.injectMockLyric()
-                                Toast.makeText(context, R.string.api_debug_injected_full_toast, Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                        ArrowPreference(
-                            title = stringResource(R.string.api_debug_advance_line),
-                            summary = stringResource(R.string.api_debug_advance_line_summary),
-                            onClick = {
-                                ApiReceiverManager.advanceMockProgress()
-                            }
-                        )
-                        ArrowPreference(
-                            title = stringResource(R.string.api_debug_advance_word),
-                            summary = stringResource(R.string.api_debug_advance_word_summary),
-                            onClick = {
-                                ApiReceiverManager.advanceMockWordProgress(400)
-                            }
-                        )
-                        ArrowPreference(
-                            title = stringResource(R.string.api_debug_inject_stop),
-                            summary = stringResource(R.string.api_debug_inject_stop_summary),
-                            onClick = {
-                                ApiReceiverManager.injectMockStop()
-                                Toast.makeText(context, R.string.api_debug_injected_stop_toast, Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                    }
-
-                    SmallTitle(text = stringResource(R.string.api_debug_service_sync_reset), insideMargin = PaddingValues(16.dp, 8.dp))
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(bottom = 12.dp),
-                        colors = CardDefaults.defaultColors(
-                            color = colorScheme.secondaryContainer
-                        )
-                    ) {
-                        ArrowPreference(
-                            title = stringResource(R.string.api_debug_pull_latest),
-                            summary = stringResource(R.string.api_debug_pull_latest_summary),
-                            onClick = {
-                                ApiReceiverManager.pullLatest { success ->
-                                    Toast.makeText(
-                                        context,
-                                        if (success) R.string.api_debug_pull_success else R.string.api_debug_pull_no_data,
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                            }
-                        )
-                        ArrowPreference(
-                            title = stringResource(R.string.api_debug_reset_stats),
-                            summary = stringResource(R.string.api_debug_reset_stats_summary),
-                            onClick = {
-                                ApiReceiverManager.reset()
-                                Toast.makeText(context, R.string.api_debug_reset_toast, Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                    }
-                }
+                )
             }
         }
     }

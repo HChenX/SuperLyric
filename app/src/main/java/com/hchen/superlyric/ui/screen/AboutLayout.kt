@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -57,6 +58,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -423,31 +425,45 @@ fun AboutLayout(
                     isContributorsDialogShowing = false
                 }
             ) {
+                // 列表上限同时给标题与确认按钮留出空间；小窗/横屏也能完整显示
+                val listMaxHeight = (LocalWindowInfo.current.containerDpSize.height * 0.45f)
+                    .coerceIn(220.dp, 300.dp)
+
                 Card(
+                    modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.defaultColors(
                         color = MiuixTheme.colorScheme.secondaryContainer,
                     )
                 ) {
-                    contributors.forEach { contributor ->
-                        ArrowPreference(
-                            title = contributor.name,
-                            summary = "Github | Contributor",
-                            startAction = {
-                                Box(Modifier.padding(end = 8.dp)) {
-                                    Icon(
-                                        painter = painterResource(contributor.icon),
-                                        contentDescription = contributor.name,
-                                        tint = Color.Unspecified,
-                                        modifier = Modifier
-                                            .size(48.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                    )
+                    LazyColumn(
+                        state = rememberLazyListState(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = listMaxHeight)
+                            .scrollEndHaptic()
+                            .overScrollVertical()
+                    ) {
+                        items(contributors, key = { it.name }) { contributor ->
+                            ArrowPreference(
+                                title = contributor.name,
+                                summary = "Github | Contributor",
+                                startAction = {
+                                    Box(Modifier.padding(end = 8.dp)) {
+                                        Icon(
+                                            painter = painterResource(contributor.icon),
+                                            contentDescription = contributor.name,
+                                            tint = Color.Unspecified,
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(RoundedCornerShape(10.dp))
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    openUrl(context, contributor.url)
                                 }
-                            },
-                            onClick = {
-                                openUrl(context, contributor.url)
-                            }
-                        )
+                            )
+                        }
                     }
                 }
 

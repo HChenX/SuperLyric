@@ -87,10 +87,13 @@ internal fun ApiPanelPeekHeader(
             ) {
                 Text(
                     text = stringResource(R.string.api_panel_title),
+                    modifier = Modifier.weight(1f),
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = colorScheme.onSecondaryContainer
                 )
+
+                Spacer(Modifier.width(8.dp))
 
                 val (statusText, statusBg, statusFg) = when {
                     paused -> Triple(stringResource(R.string.api_status_paused), colorScheme.tertiaryContainer, colorScheme.onTertiaryContainer)
@@ -118,19 +121,35 @@ internal fun ApiPanelPeekHeader(
 
             Spacer(Modifier.height(6.dp))
 
-            Row(
+            Text(
+                text = stringResource(R.string.api_source_format, state.source ?: stringResource(R.string.api_source_none)),
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                fontSize = 12.sp,
+                color = colorScheme.onSecondaryContainer,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Spacer(Modifier.height(4.dp))
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = stringResource(R.string.api_source_format, state.source ?: stringResource(R.string.api_source_none)),
-                    fontSize = 12.sp,
-                    color = colorScheme.onSecondaryContainer,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    text = stringResource(R.string.api_packet_seq_short, state.packetSeq),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = colorScheme.onBackgroundVariant
                 )
                 Text(
-                    text = stringResource(R.string.api_packet_seq_format, state.packetSeq, state.fullCount, state.stateCount),
+                    text = stringResource(R.string.api_full_count_short, state.fullCount),
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = colorScheme.onBackgroundVariant
+                )
+                Text(
+                    text = stringResource(R.string.api_state_count_short, state.stateCount),
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     color = colorScheme.onBackgroundVariant
