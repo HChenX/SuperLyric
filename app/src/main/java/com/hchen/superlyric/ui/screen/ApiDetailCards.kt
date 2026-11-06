@@ -97,7 +97,7 @@ internal fun ApiPanelPeekHeader(
 
                 val (statusText, statusBg, statusFg) = when {
                     paused -> Triple(stringResource(R.string.api_status_paused), colorScheme.tertiaryContainer, colorScheme.onTertiaryContainer)
-                    state.eventType == "STOP" -> Triple(stringResource(R.string.api_status_stop), Color(0xFFE53935).copy(alpha = 0.2f), Color(0xFFD32F2F))
+                    state.eventType == "STOP" && state.playbackState != null -> Triple(stringResource(R.string.api_status_stop), Color(0xFFE53935).copy(alpha = 0.2f), Color(0xFFD32F2F))
                     state.eventType == "FULL" || state.eventType == "STATE" ->
                         Triple(stringResource(R.string.api_status_streaming), colorScheme.primaryContainer, colorScheme.onPrimaryContainer)
 

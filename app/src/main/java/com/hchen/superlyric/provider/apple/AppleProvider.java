@@ -18,9 +18,13 @@
  */
 package com.hchen.superlyric.provider.apple;
 
+import android.media.MediaMetadata;
+
 import androidx.annotation.NonNull;
 
 import com.hchen.processor.HookThis;
+import com.hchen.superlyric.kernel.identity.TrackIdentity;
+import com.hchen.superlyric.kernel.orchestrate.LyricOrchestrator;
 import com.hchen.superlyric.provider.base.HookLyricSource;
 import com.hchen.superlyric.provider.base.MusicProvider;
 
@@ -48,5 +52,20 @@ public class AppleProvider extends MusicProvider {
     @Override
     protected HookLyricSource createHookSource() {
         return new AppleHookSource();
+    }
+
+    @NonNull
+    @Override
+    protected LyricOrchestrator.Config orchestratorConfig() {
+        // JNI 歌词回调可能晚于 Hook 等待窗口，超时不应封死同曲目的成功结果。
+        return new LyricOrchestrator.Config(800L, 3, 500L, 3_000L, true);
+    }
+
+    @NonNull
+    @Override
+    protected TrackIdentity buildIdentity(@NonNull MediaMetadata metadata) {
+        String id = TrackIdentity.usableId(metadataString(metadata,
+            "com.apple.android.music.playback.metadata.METADATA_KEY_MEDIA_ID"));
+        return id != null ? trackIdentity(metadata, id) : super.buildIdentity(metadata);
     }
 }

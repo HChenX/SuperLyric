@@ -228,6 +228,11 @@ abstract class MusicProvider : AbsPublisher() {
      */
     private fun onPlaybackStateChanged(state: PlaybackState) {
         val signal = PlaybackStates.toSignal(state.state)
+        AndroidLog.logD(
+            providerTag,
+            "Playback state=${state.state}, signal=$signal, pendingStop=${stopGate.isPending}, " +
+                    "id=${lastSeenIdentity?.stableId}"
+        )
 
         // 非终态信号一律记一笔证据，且必须在判定之前记录：判定为 `IGNORED` 的情形
         // （令牌已被确认消费）正是需要拦截的，此时 StopGate 已放行，只有这笔账能拦住。

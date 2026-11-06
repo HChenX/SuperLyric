@@ -31,6 +31,7 @@ import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.superlyric.kernel.identity.TrackIdentity;
 import com.hchen.superlyric.publisher.AbsPublisher;
 
 import org.luckypray.dexkit.DexKitBridge;
@@ -39,7 +40,10 @@ import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.result.ClassData;
 import org.luckypray.dexkit.result.ClassDataList;
 
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -54,9 +58,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class AppleAnchors {
     private static final String TAG = "AppleAnchors";
 
-    private static final String VIEW_MODEL_CLASS = "com.apple.android.music.player.viewmodel.PlayerLyricsViewModel";
     private static final String PLAYBACK_ITEM_CLASS = "com.apple.android.music.model.PlaybackItem";
 
+    private static final String VIEW_MODEL_CACHE_KEY = "apple_lyrics_view_model_class_v1";
+    private static final String VIEW_MODEL_ANCHOR = "currentPlaybackItem";
     private static final String PM_CACHE_KEY = "apple_pm_class_v1";
 
     /**
@@ -80,7 +85,7 @@ public final class AppleAnchors {
     private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
 
     private static volatile Object sLyricViewModel;
-    private static volatile String sLastRequestedItemId;
+    private static volatile Method sLoadLyricsMethod;
     /**
      * 最近一次成功发起请求的 itemId；去重只使用它，失败后允许同一曲目重试
      */
@@ -134,13 +139,14 @@ public final class AppleAnchors {
      */
     public static final class AppleLine {
         public final String text;
+        @Nullable
         public final String translation;
         public final long startMs;
         public final long endMs;
         @NonNull
         public final List<AppleWord> words;
 
-        AppleLine(String text, String translation, long startMs, long endMs, @NonNull List<AppleWord> words) {
+        AppleLine(String text, @Nullable String translation, long startMs, long endMs, @NonNull List<AppleWord> words) {
             this.text = text;
             this.translation = translation;
             this.startMs = startMs;
@@ -206,13 +212,12 @@ public final class AppleAnchors {
     }
 
     private static synchronized void initLyricViewModel(@Nullable Application application) {
-        if (sLyricViewModel != null || application == null) return;
+        if (sLyricViewModel != null || application == null || sLoadLyricsMethod == null) return;
         try {
-            Class<?> viewModelClass = CoreTool.findClass(VIEW_MODEL_CLASS);
-            sLyricViewModel = CoreTool.newInstance(viewModelClass, application);
-            AndroidLog.logI(TAG, "Initialized PlayerLyricsViewModel");
+            sLyricViewModel = CoreTool.newInstance(sLoadLyricsMethod.getDeclaringClass(), application);
+            AndroidLog.logI(TAG, "Initialized lyric view model");
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to instantiate PlayerLyricsViewModel: " + t.getMessage());
+            AndroidLog.logW(TAG, "Failed to instantiate lyric view model: " + t.getMessage());
         }
     }
 
@@ -226,55 +231,43 @@ public final class AppleAnchors {
 
     private static void hookBuildTimeRangeToLyricsMap() {
         try {
-            CoreTool.hookMethod(VIEW_MODEL_CLASS,
-                "buildTimeRangeToLyricsMap",
-                "com.apple.android.music.ttml.javanative.model.SongInfo$SongInfoPtr",
-                new AbsHook() {
-                    @Override
-                    public void after() {
-                        try {
-                            Object songInfoPtr = getArg(0);
-                            if (songInfoPtr != null) handleSongInfo(songInfoPtr);
-                        } catch (Throwable t) {
-                            AndroidLog.logW(TAG, "Error in buildTimeRangeToLyricsMap: " + t.getMessage());
-                        }
+            Class<?> viewModelClass = locateClass(VIEW_MODEL_CACHE_KEY, VIEW_MODEL_ANCHOR);
+            if (viewModelClass == null) {
+                AndroidLog.logW(TAG, "DexKit could not locate lyric view model");
+                return;
+            }
+            Method loadLyrics = findVoidMethod(viewModelClass, CoreTool.findClass(PLAYBACK_ITEM_CLASS));
+            Method buildMap = findVoidMethod(viewModelClass,
+                CoreTool.findClass("com.apple.android.music.ttml.javanative.model.SongInfo$SongInfoPtr"));
+            CoreTool.hook(buildMap, new AbsHook() {
+                @Override
+                public void after() {
+                    try {
+                        Object songInfoPtr = getArg(0);
+                        if (songInfoPtr != null) handleSongInfo(songInfoPtr);
+                    } catch (Throwable t) {
+                        AndroidLog.logW(TAG, "Failed to extract lyric model: " + t.getMessage());
                     }
-                });
+                }
+            });
+            sLoadLyricsMethod = loadLyrics;
+            AndroidLog.logI(TAG, "Hooked lyric view model: " + viewModelClass.getName());
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to hook buildTimeRangeToLyricsMap: " + t.getMessage());
+            AndroidLog.logW(TAG, "Failed to hook lyric view model: " + t.getMessage());
         }
     }
 
     private static void hookMediaPlaybackManager() {
         try {
-            Class<?> managerClass = DexkitCache.findMember(PM_CACHE_KEY, new IDexkit<ClassData>() {
-                @Override
-                public ClassData dexkit(DexKitBridge bridge) throws ReflectiveOperationException {
-                    ClassDataList classes = bridge.findClass(FindClass.create()
-                        .matcher(ClassMatcher.create()
-                            .usingEqStrings(PM_ANCHOR)
-                        )
-                    );
-                    if (classes == null || classes.isEmpty()) return null;
-                    // 命中多个类时记录数量：另一处锚点使用 get(0)，两处取舍不一致会导致
-                    // 无法从日志判断实际挂载类；类选错会使该 Provider 全程失效
-                    if (classes.size() > 1) {
-                        AndroidLog.logW(TAG, "MediaPlaybackManager anchor matched " + classes.size()
-                            + " classes; using the first: " + classes.get(0).getName());
-                    }
-                    return classes.get(0);
-                }
-            });
+            Class<?> managerClass = locateClass(PM_CACHE_KEY, PM_ANCHOR);
             if (managerClass == null) {
                 AndroidLog.logW(TAG, "DexKit could not locate MediaPlaybackManager");
                 return;
             }
+            Class<?> controllerClass = CoreTool.findClass("com.apple.android.music.playback.controller.MediaPlayerController");
+            Class<?> queueItemClass = CoreTool.findClass("com.apple.android.music.playback.model.PlayerQueueItem");
 
-            CoreTool.hookMethod(managerClass,
-                "onCurrentItemChanged",
-                "com.apple.android.music.playback.controller.MediaPlayerController",
-                "com.apple.android.music.playback.model.PlayerQueueItem",
-                "com.apple.android.music.playback.model.PlayerQueueItem",
+            CoreTool.hook(findVoidMethod(managerClass, controllerClass, queueItemClass, queueItemClass),
                 new AbsHook() {
                     @Override
                     public void before() {
@@ -282,10 +275,7 @@ public final class AppleAnchors {
                     }
                 });
 
-            CoreTool.hookMethod(managerClass,
-                "onMetadataUpdated",
-                "com.apple.android.music.playback.controller.MediaPlayerController",
-                "com.apple.android.music.playback.model.PlayerQueueItem",
+            CoreTool.hook(findVoidMethod(managerClass, controllerClass, queueItemClass),
                 new AbsHook() {
                     @Override
                     public void before() {
@@ -297,6 +287,37 @@ public final class AppleAnchors {
         } catch (Throwable t) {
             AndroidLog.logW(TAG, "Failed to hook MediaPlaybackManager: " + t.getMessage());
         }
+    }
+
+    @Nullable
+    private static Class<?> locateClass(@NonNull String cacheKey, @NonNull String anchor) {
+        return DexkitCache.findMember(cacheKey, new IDexkit<ClassData>() {
+            @Override
+            public ClassData dexkit(DexKitBridge bridge) throws ReflectiveOperationException {
+                ClassDataList classes = bridge.findClass(FindClass.create()
+                    .matcher(ClassMatcher.create().usingEqStrings(anchor))
+                );
+                if (classes == null || classes.isEmpty()) return null;
+                if (classes.size() > 1) {
+                    AndroidLog.logW(TAG, "Anchor " + anchor + " matched " + classes.size()
+                        + " classes; using the first: " + classes.get(0).getName());
+                }
+                return classes.get(0);
+            }
+        });
+    }
+
+    @NonNull
+    private static Method findVoidMethod(@NonNull Class<?> owner, Class<?>... parameterTypes)
+        throws NoSuchMethodException {
+        for (Method method : owner.getDeclaredMethods()) {
+            if (Modifier.isStatic(method.getModifiers()) || method.isSynthetic()) continue;
+            if (method.getReturnType() == void.class && Arrays.equals(method.getParameterTypes(), parameterTypes)) {
+                method.setAccessible(true);
+                return method;
+            }
+        }
+        throw new NoSuchMethodException(owner.getName() + Arrays.toString(parameterTypes));
     }
 
     /**
@@ -394,7 +415,6 @@ public final class AppleAnchors {
         if (pending != null) MAIN_HANDLER.removeCallbacks(pending);
 
         Runnable task = () -> {
-            sLastRequestedItemId = itemId;
             if (requestLyrics(playbackItem)) {
                 sLastCompletedItemId = itemId;
             }
@@ -422,7 +442,7 @@ public final class AppleAnchors {
                 return false;
             }
             AndroidLog.logD(TAG, "Requesting lyrics for " + readItemId(playbackItem));
-            CoreTool.callMethodIfExists(viewModel, "loadLyrics", playbackItem);
+            sLoadLyricsMethod.invoke(viewModel, playbackItem);
             return true;
         } catch (Throwable t) {
             AndroidLog.logW(TAG, "Failed to call loadLyrics: " + t.getMessage());
@@ -437,7 +457,8 @@ public final class AppleAnchors {
         try {
             Object hasLyrics = CoreTool.callMethodIfExists(playbackItem, "hasLyrics");
             Object hasSynced = CoreTool.callMethodIfExists(playbackItem, "hasTimeSyncedLyrics");
-            if (Boolean.FALSE.equals(hasLyrics) && Boolean.FALSE.equals(hasSynced)) {
+            Object hasCustom = CoreTool.callMethodIfExists(playbackItem, "hasCustomLyrics");
+            if (Boolean.FALSE.equals(hasLyrics) && Boolean.FALSE.equals(hasSynced) && Boolean.FALSE.equals(hasCustom)) {
                 return false;
             }
         } catch (Throwable ignored) {
@@ -460,6 +481,9 @@ public final class AppleAnchors {
         Object songInfo = CoreTool.callMethodIfExists(songInfoPtr, "get");
         if (songInfo == null) return;
 
+        Object adamId = CoreTool.callMethodIfExists(songInfo, "getAdamId");
+        String itemId = TrackIdentity.usableId(adamId != null ? adamId.toString() : null);
+
         try {
             Object language = CoreTool.callStaticMethodIfExists(
                 "com.apple.android.music.playback.util.LocaleUtil", "getSystemLyricsLanguage");
@@ -472,65 +496,39 @@ public final class AppleAnchors {
 
         Object sections = CoreTool.callMethodIfExists(songInfo, "getSections");
         if (sections == null) {
-            // 取不到 sections 说明反射未打通（方法改名或类型不符），不是宿主声明无歌词。
-            // 此处不得调用 notifyNoLyrics：该结论允许下发纯音乐占位，会把有歌词的曲目
-            // 永久标记为纯音乐。不投递结论，交给编排器超时兜底。
             AndroidLog.logW(TAG, "Cannot read lyric sections; leaving the verdict to the orchestrator");
             return;
         }
 
         List<AppleLine> lines = new ArrayList<>();
-        long attempted = 0;
-        long sectionsRead = 0;
         long sectionCount = asLong(CoreTool.callMethodIfExists(sections, "size"));
-
-        for (int s = 0; s < sectionCount; s++) {
+        for (long s = 0; s < sectionCount; s++) {
             Object section = unwrap(CoreTool.callMethodIfExists(sections, "get", s));
             if (section == null) continue;
-            sectionsRead++;
 
             Object sectionLines = CoreTool.callMethodIfExists(section, "getLines");
             if (sectionLines == null) {
-                // 取不到 lines 与取不到 sections 相同：反射未打通（方法改名或类型不符），
-                // 不是宿主声明无歌词。跳过本段并继续处理其余段。
                 AndroidLog.logW(TAG, "Cannot read lines of lyric section; skipping it");
                 continue;
             }
 
             long lineCount = asLong(CoreTool.callMethodIfExists(sectionLines, "size"));
-            for (int l = 0; l < lineCount; l++) {
+            for (long l = 0; l < lineCount; l++) {
                 Object line = unwrap(CoreTool.callMethodIfExists(sectionLines, "get", l));
                 if (line == null) continue;
 
-                attempted++;
                 AppleLine extracted = extractLine(line);
                 if (extracted != null) lines.add(extracted);
             }
         }
 
         if (lines.isEmpty()) {
-            if (attempted > 0) {
-                // 读到行但没有任何一行可用，说明反射未打通，不是宿主无歌词
-                AndroidLog.logW(TAG, "Read " + attempted
-                    + " lyric lines but none was usable; not a no-lyrics verdict");
-                return;
-            }
-            if (sectionsRead == 0) {
-                // 一段都未读到：sections.size() 与 getLines 可能因宿主改名返回 0/null，
-                // 此时 attempted 恒为 0。该情况不代表宿主声明无歌词；不得下发纯音乐占位，
-                // 不投递结论，交给编排器超时兜底。
-                AndroidLog.logW(TAG, "No lyric section was reachable (size=" + sectionCount
-                    + "); leaving the verdict to the orchestrator");
-                return;
-            }
-            // 确实读到段且段内没有行，才是宿主给出的空歌词结构。此处没有 playbackItem，
-            // 用最后一次请求的曲目作为判定对象；为空时由上层按无法判定处理。
-            notifyNoLyrics(sLastRequestedItemId);
-        } else {
-            LyricsListener listener = sListener;
-            if (listener != null) {
-                listener.onLyrics(Collections.unmodifiableList(lines), sLastRequestedItemId);
-            }
+            AndroidLog.logW(TAG, "No usable lyric lines for " + itemId + "; not a no-lyrics verdict");
+            return;
+        }
+        LyricsListener listener = sListener;
+        if (listener != null) {
+            listener.onLyrics(Collections.unmodifiableList(lines), itemId);
         }
     }
 
@@ -552,7 +550,7 @@ public final class AppleAnchors {
         Object wordVector = CoreTool.callMethodIfExists(line, "getWords");
         if (wordVector != null) {
             long wordCount = asLong(CoreTool.callMethodIfExists(wordVector, "size"));
-            for (int w = 0; w < wordCount; w++) {
+            for (long w = 0; w < wordCount; w++) {
                 Object word = unwrap(CoreTool.callMethodIfExists(wordVector, "get", w));
                 if (word == null) continue;
 

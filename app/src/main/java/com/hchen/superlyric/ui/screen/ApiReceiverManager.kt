@@ -159,13 +159,13 @@ internal object ApiReceiverManager {
     }
 
     private fun handleIncomingStop(stop: Stop) {
-        val current = receiverFlow.value
         val time = LocalTime.now().format(TIME_FORMAT)
 
         synchronized(publishLock) {
             val seq = totalPackets.incrementAndGet()
-            receiverFlow.value = current.copy(
-                source = stop.publisher ?: current.source ?: sourceLabel,
+            receiverFlow.value = ApiReceiverState(
+                speed = 0f,
+                source = stop.publisher ?: receiverFlow.value.source ?: sourceLabel,
                 eventType = EVENT_STOP,
                 receiveTime = time,
                 packetSeq = seq,
@@ -368,7 +368,8 @@ internal object ApiReceiverManager {
         }
     }
 
-    private fun Stop.stopPlaybackState(): PlaybackState = when (reason) {
+    private fun Stop.stopPlaybackState(): PlaybackState? = when (reason) {
+        StopReason.CLEARED -> null
         StopReason.ERROR -> PlaybackState.ERROR
         else -> PlaybackState.STOPPED
     }

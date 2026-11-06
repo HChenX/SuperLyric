@@ -100,8 +100,7 @@ class LyricPublishBridge(
         // 取词失败不代表没有歌词：不下发任何内容，否则一次断网就会把曲目永久标记为纯音乐
         AndroidLog.logW(
             TAG,
-            "Lyric fetch failed and retries are exhausted for id=${identity?.stableId}; " +
-                    "keeping the current display untouched"
+            "No lyric result available for id=${identity?.stableId}; no placeholder published"
         )
     }
 

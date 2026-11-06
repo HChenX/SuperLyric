@@ -224,7 +224,10 @@ internal fun ApiLyricPlayerView(
                 .padding(bottom = 12.dp)
         ) {
             Text(
-                text = lyric?.title?.takeIf { it.isNotEmpty() } ?: stringResource(R.string.api_not_playing),
+                text = lyric?.title?.takeIf { it.isNotEmpty() } ?: stringResource(
+                    if (state.eventType == "STOP" && state.playbackState == null)
+                        R.string.unknown_title else R.string.api_not_playing
+                ),
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 color = colorScheme.onSurface,

@@ -65,7 +65,7 @@ interface LyricSource {
  * 歌词获取编排状态机。
  *
  * 状态：IDLE 无活动音轨；RESOLVING_HOOK 等 Hook；FETCHING_API 请求网络源；ACTIVE 已发布；
- * NO_LYRICS 终态可下发占位；UNAVAILABLE 终态不得下发占位。
+ * NO_LYRICS 终态可下发占位；UNAVAILABLE 尚未取得歌词，不得下发占位。
  *
  * 每次切歌与停止都自增 epoch，异步回投按 epoch 丢弃过期结果。
  * 共享状态由 lock 保护；锁内只构造 Plan，锁外执行，不在持锁时做 Binder 发布或来源启动。
@@ -128,12 +128,14 @@ class LyricOrchestrator(
      * @property maxApiAttempts      网络取词的最大尝试次数（含首次）
      * @property retryBaseDelayMs    指数退避基数
      * @property provisionalGraceMs  允许"临时身份原地升级"的时间窗口，见 [isProvisionalUpgrade]
+     * @property allowLateHookSuccess 允许 UNAVAILABLE 后接收同曲目的 Hook 成功结果
      */
-    data class Config(
+    data class Config @JvmOverloads constructor(
         val hookTimeoutMs: Long = 800L,
         val maxApiAttempts: Int = 3,
         val retryBaseDelayMs: Long = 500L,
         val provisionalGraceMs: Long = 3_000L,
+        val allowLateHookSuccess: Boolean = false,
     )
 
     private val lock = Any()
@@ -228,8 +230,8 @@ class LyricOrchestrator(
         val current = currentIdentity
         if (current != null) {
             if (current.matches(identity) || isTitleEnrichment(current, identity)) {
-                // 同一首曲目只刷新元数据，不重启取词。NO_LYRICS 与 UNAVAILABLE 是终态；
-                // 宿主高频改写标题/歌手时重启会反复取词，并重复下发占位。
+                // 同一首曲目只刷新元数据，不重启取词；宿主高频改写标题/歌手时
+                // 重启会反复取词，并重复下发占位。
                 currentIdentity = identity
                 activeIdentity = identity
                 return null
@@ -322,13 +324,11 @@ class LyricOrchestrator(
             diagnostics("dropping hook outcome ${outcome.label}: epoch $capturedEpoch != $epoch")
             return null
         }
-        // 宿主可能先交出一次失败，再交出同一首的歌词（曲目对象分步填充 songID）。
-        // 失败不是终态，网络上还没有结果时，迟到的成功必须采信；否则一次瞬时失败
-        // 会让本已取到的歌词被丢弃，最终落到 UNAVAILABLE。
+        // 超时或失败不等于已取得歌词；尚未发布结果时，仍采纳同一 epoch 的迟到成功。
         val lateSuccess = hookDelivered &&
                 outcome is LyricOutcome.Success &&
-                state == State.FETCHING_API &&
-                !apiDelivered
+                ((state == State.FETCHING_API && !apiDelivered) ||
+                        (config.allowLateHookSuccess && state == State.UNAVAILABLE))
         if (hookDelivered && !lateSuccess) {
             diagnostics("dropping hook outcome ${outcome.label}: hook already delivered")
             return null
@@ -343,6 +343,7 @@ class LyricOrchestrator(
 
         if (outcome is LyricOutcome.Success) {
             if (lateSuccess) {
+                diagnostics("accepting late hook success: epoch=$capturedEpoch, state=$state")
                 // 网络结果已无意义：标记并由 execute 取消在途请求，避免二次发布
                 apiDelivered = true
                 dispatch.actions += Action.CancelApi
