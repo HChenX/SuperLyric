@@ -116,21 +116,18 @@ object LyricDocAdapter {
     fun fromLegacy(data: SuperLyricData?): Lyric? = toLyric(fromLegacyDoc(data))
 
     /**
-     * 3.x 出站：投影全量载荷，并带上当前行、索引与位置。
+     * 3.x 出站：首句前只携带曲目信息，开始后投影全量歌词与当前行。
+     *
+     * 不能提前携带 allLyrics；旧接收端可能忽略当前行号而直接展示首句。
      */
     fun toLegacyFull(lyric: Lyric, index: Int, positionMs: Long): SuperLyricData {
-        val lines = fromLyric(lyric).lines.map(::toParcelableLine)
-        val data = SuperLyricData()
-            .setTitle(lyric.title)
-            .setArtist(lyric.artist)
-            .setAlbum(lyric.album)
-            .setLyricId(lyric.id)
-            .setDuration(lyric.duration.coerceAtLeast(0L))
-            .setAllLyrics(lines.toTypedArray())
+        val data = legacyMetadata(lyric, positionMs)
+        if (index < 0) return data
 
+        val lines = fromLyric(lyric).lines.map(::toParcelableLine)
+        data.setAllLyrics(lines.toTypedArray())
         val current = lines.getOrNull(index) ?: return data
         data.setCurrentLyricIndex(index)
-            .setPosition(positionMs.coerceAtLeast(0L))
             .setLyric(current)
         current.translation?.let { data.setTranslation(SuperLyricLine(it, current.startTime, current.endTime)) }
         current.secondary?.let { data.setSecondary(SuperLyricLine(it, current.startTime, current.endTime)) }
@@ -143,20 +140,23 @@ object LyricDocAdapter {
     fun toLegacyLine(lyric: Lyric, index: Int, positionMs: Long): SuperLyricData? {
         val line = fromLyric(lyric).lines.getOrNull(index) ?: return null
 
-        val data = SuperLyricData()
-            .setTitle(lyric.title)
-            .setArtist(lyric.artist)
-            .setAlbum(lyric.album)
-            .setLyricId(lyric.id)
-            .setDuration(lyric.duration.coerceAtLeast(0L))
+        val data = legacyMetadata(lyric, positionMs)
             .setCurrentLyricIndex(index)
-            .setPosition(positionMs.coerceAtLeast(0L))
             .setLyric(toParcelableLine(line))
 
         line.translation?.let { data.setTranslation(SuperLyricLine(it, line.startMs, line.endMs)) }
         line.phonetic?.let { data.setSecondary(SuperLyricLine(it, line.startMs, line.endMs)) }
         return data
     }
+
+    private fun legacyMetadata(lyric: Lyric, positionMs: Long): SuperLyricData = SuperLyricData()
+        .setTitle(lyric.title)
+        .setArtist(lyric.artist)
+        .setAlbum(lyric.album)
+        .setLyricId(lyric.id)
+        .setDuration(lyric.duration.coerceAtLeast(0L))
+        .setCurrentLyricIndex(-1)
+        .setPosition(positionMs.coerceAtLeast(0L))
 
     private fun fromLegacyDoc(data: SuperLyricData?): LyricDoc {
         if (data == null) return LyricDoc.EMPTY

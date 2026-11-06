@@ -74,6 +74,7 @@ failure, not a statement about the track.
   3.x Binder entry/exit and in the 3.x receiver UI. Never store or merge it in core state.
 - 3.x receivers below API 35 receive the current line only; 35 and above receive full payloads.
   The version is read from superlyricapi_version_code; a missing version means current line only.
+  Before the first line starts, both receive metadata only with index -1 and no lyric or allLyrics.
 
 ### 2.4 Stop and clock
 
