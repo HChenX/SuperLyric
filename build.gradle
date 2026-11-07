@@ -15,15 +15,14 @@ plugins {
 }
 
 subprojects {
-    // 项目代码的编译门禁：第三方 classfile 警告与必须保留的 3.x deprecation 不计入。
+    // 项目代码的编译门禁：第三方 classfile/auxiliary/processing 提示不计入；3.x deprecation
+    // 只在确切的 Binder 边界文件内局部抑制，不在这里全局关闭。
     tasks.withType(JavaCompile).configureEach {
-        options.compilerArgs += ['-Xlint:all,-deprecation,-classfile,-auxiliaryclass,-processing', '-Werror']
+        options.compilerArgs += ['-Xlint:all,-classfile,-auxiliaryclass,-processing', '-Werror']
     }
     tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
         compilerOptions {
             allWarningsAsErrors.set(true)
-            // 3.x 边界必须继续使用已 deprecated 的 SuperLyricData；与 Java 门禁保持一致。
-            freeCompilerArgs.add('-Xwarning-level=DEPRECATION:disabled')
         }
     }
 }
