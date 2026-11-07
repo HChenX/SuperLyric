@@ -34,6 +34,7 @@ import androidx.annotation.Nullable;
 import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyric.data.SupportedApps;
 
+import java.io.Serializable;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -293,8 +294,9 @@ public final class AccessPolicy {
         Bundle metadata = info.metaData;
         if (metadata == null) return Level.DENY;
 
-        // manifest 元数据类型不固定；先按字符串读，再回退到类型化 getter，避免使用
-        // 已 deprecated 的 BaseBundle.get(String)。
+        // SuperLyricApi 3.6 AAR 声明 superlyricapi="true"、version_code="36"；平台也可能
+        // 交回 typed Boolean/Integer。按原始值分派，避免 getString 的类型 W，也避免只认
+        // getInt 而读错字符串版本号。
         boolean marked = readBoolean(metadata, META_API);
         int versionCode = readInt(metadata, META_API_VERSION);
         return resolve(false, false, marked, versionCode);
@@ -306,21 +308,47 @@ public final class AccessPolicy {
     }
 
     private static boolean readBoolean(@NonNull Bundle metadata, @NonNull String key) {
-        String text = metadata.getString(key);
-        if (text != null) return Boolean.parseBoolean(text);
-        return metadata.getBoolean(key, false);
+        return toBooleanValue(rawMetadata(metadata, key));
     }
 
     private static int readInt(@NonNull Bundle metadata, @NonNull String key) {
-        String text = metadata.getString(key);
-        if (text != null) {
+        return toIntValue(rawMetadata(metadata, key));
+    }
+
+    @Nullable
+    private static Object rawMetadata(@NonNull Bundle metadata, @NonNull String key) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return metadata.getSerializable(key, Serializable.class);
+        }
+        return legacyRawMetadata(metadata, key);
+    }
+
+    /**
+     * API 33 以下没有非 deprecated 的原始值读取口；仅此兼容分支局部抑制。
+     */
+    @SuppressWarnings("deprecation")
+    @Nullable
+    private static Object legacyRawMetadata(@NonNull Bundle metadata, @NonNull String key) {
+        return metadata.get(key);
+    }
+
+    static boolean toBooleanValue(@Nullable Object value) {
+        if (value instanceof Boolean) return (Boolean) value;
+        if (value instanceof String) return Boolean.parseBoolean(((String) value).trim());
+        if (value instanceof Number) return ((Number) value).intValue() != 0;
+        return false;
+    }
+
+    static int toIntValue(@Nullable Object value) {
+        if (value instanceof Number) return ((Number) value).intValue();
+        if (value instanceof String) {
             try {
-                return Integer.parseInt(text.trim());
+                return Integer.parseInt(((String) value).trim());
             } catch (NumberFormatException ignored) {
                 return 0;
             }
         }
-        return metadata.getInt(key, 0);
+        return 0;
     }
 
     @NonNull

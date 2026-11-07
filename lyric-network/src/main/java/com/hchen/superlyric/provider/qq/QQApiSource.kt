@@ -58,16 +58,19 @@ class QQApiSource : LyricSource {
         if (directMid != null) {
             AndroidLog.logI(sourceName, "Direct fetch by mid=$directMid")
             return QQNetwork.fetchByMid(directMid, CatalogIds.qqSongId(rawId) ?: 0L, identity,
-                isCurrent = { requests.isCurrent(token) })
+                isCurrent = { requests.isCurrent(token) }, requests = requests)
         }
 
-        val candidate = QQNetwork.searchBest(identity)
+        val candidate = QQNetwork.searchBest(
+            identity, requests,
+            isCurrent = { requests.isCurrent(token) },
+        )
         // 检索落空不等于平台确定没有歌词：可能只是没有匹配上，或报文结构变化。
         // NoLyrics 允许下发纯音乐占位，误判一次就会把有歌词的曲目钉死
             ?: return LyricOutcome.TransientFailure(null)
 
         AndroidLog.logI(sourceName, "Matched candidate mid=${candidate.first}")
         return QQNetwork.fetchByMid(candidate.first, candidate.second, identity,
-            isCurrent = { requests.isCurrent(token) })
+            isCurrent = { requests.isCurrent(token) }, requests = requests)
     }
 }

@@ -58,14 +58,17 @@ class MiuiApiSource(
         if (facts != null && hostId != null && facts.matches(identity)) {
             AndroidLog.logI(sourceName, "Direct fetch by host songID=$hostId")
             return QQNetwork.fetchByMid("", hostId, identity,
-                isCurrent = { requests.isCurrent(token) })
+                isCurrent = { requests.isCurrent(token) }, requests = requests)
         }
 
-        val candidate = QQNetwork.searchBest(identity)
+        val candidate = QQNetwork.searchBest(
+            identity, requests,
+            isCurrent = { requests.isCurrent(token) },
+        )
             ?: return LyricOutcome.TransientFailure(null)
 
         AndroidLog.logI(sourceName, "Matched candidate mid=${candidate.first}")
         return QQNetwork.fetchByMid(candidate.first, candidate.second, identity,
-            isCurrent = { requests.isCurrent(token) })
+            isCurrent = { requests.isCurrent(token) }, requests = requests)
     }
 }

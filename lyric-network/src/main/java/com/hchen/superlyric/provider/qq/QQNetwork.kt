@@ -29,6 +29,7 @@ import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
 import com.hchen.superlyric.network.HttpClients
 import com.hchen.superlyric.network.readTextBounded
+import com.hchen.superlyric.provider.base.FetchSlot
 import com.hchen.superlyric.utils.LyricCacheStore
 import com.hchen.superlyric.utils.LyricDiag
 
@@ -38,6 +39,7 @@ import org.json.JSONObject
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 
+import okhttp3.Call
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -88,6 +90,7 @@ object QQNetwork {
         songId: Long,
         identity: TrackIdentity,
         isCurrent: () -> Boolean = { true },
+        requests: FetchSlot? = null,
     ): LyricOutcome {
         // 没有标识时未发出任何查询，不构成平台结论。判成 NoLyrics 会为一次查询失败
         // 下发纯音乐占位
@@ -108,7 +111,7 @@ object QQNetwork {
                 if (!isCurrent()) return LyricOutcome.TransientFailure(null)
                 try {
                     val body = buildLyricRequest(ct, cv, songMid, songId)
-                    val json = post(url, body, userAgent)
+                    val json = post(url, body, userAgent, requests)
                     reachedServer = true
 
                     val root = JSONObject(json)
@@ -198,7 +201,11 @@ object QQNetwork {
      *
      * @return 未达到 [LyricScorer.MIN_ACCEPT_SCORE] 时返回 null
      */
-    fun searchBest(identity: TrackIdentity): Pair<String, Long>? {
+    fun searchBest(
+        identity: TrackIdentity,
+        requests: FetchSlot? = null,
+        isCurrent: () -> Boolean = { true },
+    ): Pair<String, Long>? {
         if (identity.title.isBlank()) return null
 
         val keyword = if (identity.artist.isBlank()) identity.title else "${identity.title} ${identity.artist}"
@@ -226,7 +233,8 @@ object QQNetwork {
 
         var json: String? = null
         for (url in listOf(URL_PRIMARY, URL_FALLBACK)) {
-            json = runCatching { post(url, payload.toString(), ANDROID_UA) }.getOrNull()
+            if (!isCurrent()) break
+            json = runCatching { post(url, payload.toString(), ANDROID_UA, requests) }.getOrNull()
             if (json != null) break
         }
         val body = json?.let {
@@ -390,16 +398,25 @@ object QQNetwork {
      * 传输层失败必须抛出：网络异常不是"服务端没有歌词"。抛出后由调用方归类为
      * 可重试失败；只有业务响应里确实没有 lyric 字段，才由 `parsePayloads` 返回 null。
      */
-    private fun post(url: String, body: String, userAgent: String): String {
+    private fun post(
+        url: String,
+        body: String,
+        userAgent: String,
+        requests: FetchSlot?,
+    ): String {
         val request = Request.Builder()
             .url(url)
             .post(body.toRequestBody(JSON_MEDIA_TYPE))
             .header("User-Agent", userAgent)
             .build()
-        HttpClients.standard.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw IOException("HTTP ${response.code} from $url")
-            return response.body.readTextBounded()
+        val call: Call = HttpClients.standard.newCall(request)
+        val execute: () -> String = {
+            call.execute().use { response ->
+                if (!response.isSuccessful) throw IOException("HTTP " + response.code + " from " + url)
+                response.body.readTextBounded()
+            }
         }
+        return requests?.withCall(call, execute) ?: execute()
     }
 
     private const val ANDROID_UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36"

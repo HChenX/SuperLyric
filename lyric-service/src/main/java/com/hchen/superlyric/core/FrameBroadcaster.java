@@ -60,6 +60,8 @@ final class FrameBroadcaster {
     static final int REGISTER_REJECTED = 2;
     static final int REGISTER_QUOTA = 3;
 
+    /** 配额检查、uidCounts、listeners 与死亡回调共用；broadcast 只负责快照/投递。 */
+    private final Object registrationLock = new Object();
     private final ConcurrentHashMap<Integer, Integer> uidCounts = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<IBinder, Entry> listeners = new ConcurrentHashMap<>();
 
@@ -89,55 +91,61 @@ final class FrameBroadcaster {
      * @return {@link #REGISTER_OK}、{@link #REGISTER_REJECTED} 或 {@link #REGISTER_QUOTA}
      */
     int register(@NonNull ILyricFrameListener listener, int uid, int pid, @NonNull String pkg) {
-        if (listeners.size() >= MAX_LISTENERS) {
-            XposedLog.logW(TAG, "Refusing listener: over limit " + MAX_LISTENERS);
-            return REGISTER_QUOTA;
-        }
-        if (uidCounts.getOrDefault(uid, 0) >= MAX_LISTENERS_PER_UID) {
-            XposedLog.logW(TAG, "Refusing listener: uid " + uid + " over per-uid limit");
-            return REGISTER_QUOTA;
-        }
+        synchronized (registrationLock) {
+            if (listeners.size() >= MAX_LISTENERS) {
+                XposedLog.logW(TAG, "Refusing listener: over limit " + MAX_LISTENERS);
+                return REGISTER_QUOTA;
+            }
+            if (uidCounts.getOrDefault(uid, 0) >= MAX_LISTENERS_PER_UID) {
+                XposedLog.logW(TAG, "Refusing listener: uid " + uid + " over per-uid limit");
+                return REGISTER_QUOTA;
+            }
 
-        IBinder binder = listener.asBinder();
+            IBinder binder = listener.asBinder();
 
-        // 先记账再挂死亡回调：死亡回调可能在 put 与后续步骤之间抢跑，先记账才能配对
-        uidCounts.merge(uid, 1, Integer::sum);
+            // 先记账再挂死亡回调：死亡回调可能在 put 与后续步骤之间抢跑，先记账才能配对
+            uidCounts.merge(uid, 1, Integer::sum);
 
-        IBinder.DeathRecipient deathRecipient = () -> {
-            Entry removed = listeners.remove(binder);
-            if (removed != null) decrement(removed.uid);
-            XposedLog.logI(TAG, "Listener died: " + binder);
-        };
-        Entry entry = new Entry(listener, uid, deathRecipient);
-        if (listeners.putIfAbsent(binder, entry) != null) {
-            decrement(uid);
-            // 同一 binder 重复注册按成功处理：它已经在收帧
+            IBinder.DeathRecipient deathRecipient = () -> {
+                synchronized (registrationLock) {
+                    Entry removed = listeners.remove(binder);
+                    if (removed != null) decrement(removed.uid);
+                }
+                XposedLog.logI(TAG, "Listener died: " + binder);
+            };
+            Entry entry = new Entry(listener, uid, deathRecipient);
+            if (listeners.putIfAbsent(binder, entry) != null) {
+                decrement(uid);
+                // 同一 binder 重复注册按成功处理：它已经在收帧
+                return REGISTER_OK;
+            }
+            try {
+                binder.linkToDeath(deathRecipient, 0);
+            } catch (Throwable t) {
+                if (listeners.remove(binder, entry)) {
+                    decrement(uid);
+                }
+                XposedLog.logW(TAG, "Cannot link listener death: " + binder);
+                return REGISTER_REJECTED;
+            }
+            XposedLog.logI(TAG, "Register listener: " + binder
+                + ", pkg: " + pkg + ", pid: " + pid + ", uid: " + uid);
             return REGISTER_OK;
         }
-        try {
-            binder.linkToDeath(deathRecipient, 0);
-        } catch (Throwable t) {
-            if (listeners.remove(binder, entry)) {
-                decrement(uid);
-            }
-            XposedLog.logW(TAG, "Cannot link listener death: " + binder);
-            return REGISTER_REJECTED;
-        }
-        XposedLog.logI(TAG, "Register listener: " + binder
-            + ", pkg: " + pkg + ", pid: " + pid + ", uid: " + uid);
-        return REGISTER_OK;
     }
 
     void unregister(@NonNull ILyricFrameListener listener, int pid, @NonNull String pkg) {
         IBinder binder = listener.asBinder();
-        Entry entry = listeners.remove(binder);
-        if (entry == null) return;
+        synchronized (registrationLock) {
+            Entry entry = listeners.remove(binder);
+            if (entry == null) return;
 
-        try {
-            binder.unlinkToDeath(entry.deathRecipient, 0);
-        } catch (Throwable ignored) {
+            try {
+                binder.unlinkToDeath(entry.deathRecipient, 0);
+            } catch (Throwable ignored) {
+            }
+            decrement(entry.uid);
         }
-        decrement(entry.uid);
         XposedLog.logI(TAG, "Unregister listener: " + binder
             + ", pkg: " + pkg + ", pid: " + pid);
     }
@@ -158,13 +166,15 @@ final class FrameBroadcaster {
 
         if (dead != null) {
             for (IBinder binder : dead) {
-                Entry removed = listeners.remove(binder);
-                if (removed != null) {
-                    try {
-                        binder.unlinkToDeath(removed.deathRecipient, 0);
-                    } catch (Throwable ignored) {
+                synchronized (registrationLock) {
+                    Entry removed = listeners.remove(binder);
+                    if (removed != null) {
+                        try {
+                            binder.unlinkToDeath(removed.deathRecipient, 0);
+                        } catch (Throwable ignored) {
+                        }
+                        decrement(removed.uid);
                     }
-                    decrement(removed.uid);
                 }
                 XposedLog.logI(TAG, "Unregistered dead listener: " + binder);
             }
@@ -182,8 +192,10 @@ final class FrameBroadcaster {
 
         if (!call(entry, frame)) {
             // 只在实际移除成功时扣减：死亡回调或 unregister 可能已经把它摘掉了
-            if (listeners.remove(listener.asBinder(), entry)) {
-                decrement(entry.uid);
+            synchronized (registrationLock) {
+                if (listeners.remove(listener.asBinder(), entry)) {
+                    decrement(entry.uid);
+                }
             }
         }
     }

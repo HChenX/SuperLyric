@@ -64,6 +64,22 @@ class AccessPolicyTest {
     }
 
     @Test
+    fun `manifest metadata accepts string boolean and numeric values`() {
+        assertEquals(true, AccessPolicy.toBooleanValue("true"))
+        assertEquals(true, AccessPolicy.toBooleanValue(true))
+        assertEquals(false, AccessPolicy.toBooleanValue("false"))
+        assertEquals(true, AccessPolicy.toBooleanValue(1))
+        assertEquals(false, AccessPolicy.toBooleanValue(null))
+
+        assertEquals(36, AccessPolicy.toIntValue("36"))
+        assertEquals(36, AccessPolicy.toIntValue(36))
+        assertEquals(36, AccessPolicy.toIntValue(36L))
+        assertEquals(36, AccessPolicy.toIntValue(36.9f))
+        assertEquals(0, AccessPolicy.toIntValue("not-a-number"))
+        assertEquals(0, AccessPolicy.toIntValue(null))
+    }
+
+    @Test
     fun legacyFullLyricsStartAt35() {
         assertFalse(AccessPolicy.supportsFullLegacy(34))
         assertTrue(AccessPolicy.supportsFullLegacy(35))

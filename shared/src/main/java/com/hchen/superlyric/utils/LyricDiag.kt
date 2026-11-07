@@ -278,15 +278,20 @@ object LyricDiag {
      *
      * 不能直接调 `MediaMetadata.getText(key)`：它内部是 `Bundle.getCharSequence`，
      * 撞上 `DURATION`（Long）或 `USER_RATING`（Rating）会抛 `ClassCastException`；
-     * 平台虽会吞掉异常并返回 null，`BaseBundle` 仍会先打一条类型 W；诊断只在 debug
-     * 或 DEBUG 日志等级开启，非文本键的噪声可接受。
+     * 平台虽会吞掉异常并返回 null，`BaseBundle` 仍会先以
+     * "Attempt to cast generated internal exception" 打一条 W；元数据回调频率高，每次
+     * 切歌都会在宿主进程刷屏。
+     *
+     * 因此反射取内部 `Bundle` 的原始值，先判类型再转文本；反射失败时退回类型化取值器。
+     * 原始值读取没有非 deprecated 的替代口，局部抑制仅限本方法。
      */
+    @Suppress("DEPRECATION")
     private fun textOf(metadata: MediaMetadata, key: String): String? {
         val bundle = BUNDLE_FIELD
             ?.let { field -> runCatching { field.get(metadata) }.getOrNull() }
                 as? Bundle
         if (bundle == null) return runCatching { metadata.getText(key)?.toString() }.getOrNull()
-        return runCatching { bundle.getCharSequence(key)?.toString() }.getOrNull()
+        return (bundle.get(key) as? CharSequence)?.toString()
     }
 
     private fun appendLine(builder: StringBuilder, index: Int, line: LyricLine) {

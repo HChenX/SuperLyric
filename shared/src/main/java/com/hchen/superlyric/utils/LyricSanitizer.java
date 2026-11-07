@@ -287,6 +287,7 @@ public final class LyricSanitizer {
                             previous.getStart(),
                             lineEnd
                         ));
+                        previousEnd = lineEnd;
                         continue;
                     }
                 }

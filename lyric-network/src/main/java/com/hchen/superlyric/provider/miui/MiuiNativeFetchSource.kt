@@ -77,6 +77,7 @@ class MiuiNativeFetchSource(
     }
 
     override fun cancel() {
+        fetches.invalidate()
         session = null
         pendingIdentity = null
         resetDedupState()
@@ -112,7 +113,11 @@ class MiuiNativeFetchSource(
         val token = fetches.open()
 
         fetches.execute {
-            val outcome = QQNetwork.fetchByMid("", id, identity) { fetches.isCurrent(token) }
+            val outcome = QQNetwork.fetchByMid(
+                "", id, identity,
+                isCurrent = { fetches.isCurrent(token) },
+                requests = fetches,
+            )
             releaseInFlight(id)
             markAttempted(id)
 

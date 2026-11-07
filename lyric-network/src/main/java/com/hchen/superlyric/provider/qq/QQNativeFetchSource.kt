@@ -127,7 +127,11 @@ class QQNativeFetchSource(
         if (!claimed) return
 
         fetches.execute {
-            val outcome = QQNetwork.fetchByMid(mid, songId, identity) { fetches.isCurrent(token) }
+            val outcome = QQNetwork.fetchByMid(
+                mid, songId, identity,
+                isCurrent = { fetches.isCurrent(token) },
+                requests = fetches,
+            )
             synchronized(dedupLock) {
                 if (inFlightMid == mid) inFlightMid = null
             }

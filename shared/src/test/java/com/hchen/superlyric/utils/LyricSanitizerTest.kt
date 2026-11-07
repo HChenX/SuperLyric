@@ -148,6 +148,93 @@ class LyricSanitizerTest {
     }
 
     @Test
+    fun `an out-of-line word after a merge still advances the cursor`() {
+        assertOrdered(
+            sanitizeWords(
+                Line(
+                    "abc",
+                    0L,
+                    1_000L,
+                    listOf(
+                        Word("a", 0L, 500L),
+                        Word("b", 1_500L, 1_600L),
+                        Word("c", 800L, 900L),
+                    ),
+                    null,
+                    null,
+                )
+            ),
+            "abc",
+        )
+    }
+
+    @Test
+    fun `a first word beyond the line end is pulled inside`() {
+        assertOrdered(
+            sanitizeWords(
+                Line(
+                    "ab",
+                    0L,
+                    1_000L,
+                    listOf(Word("a", 1_500L, 1_600L), Word("b", 1_700L, 1_800L)),
+                    null,
+                    null,
+                )
+            ),
+            "ab",
+        )
+    }
+
+    @Test
+    fun `zero-duration and overlapping words stay ordered`() {
+        assertOrdered(
+            sanitizeWords(
+                Line(
+                    "ab",
+                    0L,
+                    1_000L,
+                    listOf(Word("a", 0L, 0L), Word("b", 500L, 600L)),
+                    null,
+                    null,
+                )
+            ),
+            "ab",
+        )
+        assertOrdered(
+            sanitizeWords(
+                Line(
+                    "ab",
+                    0L,
+                    1_000L,
+                    listOf(Word("a", 0L, 600L), Word("b", 500L, 700L)),
+                    null,
+                    null,
+                )
+            ),
+            "ab",
+        )
+    }
+
+    private fun sanitizeWords(line: Line): List<Word> {
+        val cleaned = LyricSanitizer.sanitizeLine(line)
+        assertNotNull(cleaned)
+        val words = cleaned!!.words
+        assertNotNull(words)
+        return words!!
+    }
+
+    private fun assertOrdered(words: List<Word>, text: String) {
+        var previousEnd = 0L
+        for (word in words) {
+            assertTrue(word.start >= previousEnd, "词起点不得早于前词结束")
+            assertTrue(word.end >= word.start, "词尾不得早于词头")
+            assertTrue(word.start >= 0L && word.end <= 1_000L, "词必须落在行内")
+            previousEnd = word.end
+        }
+        assertEquals(text, words.joinToString("") { it.text }, "越界词文本必须保留")
+    }
+
+    @Test
     fun `words survive when the line carries an invisible character`() {
         val line = Line(
             "a​b",
