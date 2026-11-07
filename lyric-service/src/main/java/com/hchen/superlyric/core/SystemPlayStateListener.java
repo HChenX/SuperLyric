@@ -25,7 +25,7 @@ import android.media.session.MediaSessionManager;
 import android.media.session.PlaybackState;
 import android.os.Binder;
 import android.os.Handler;
-import android.os.Looper;
+import android.os.HandlerThread;
 import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
@@ -42,8 +42,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * 系统级播放状态监听器
  *
  * <p>在 system_server 内部监听全局活动的 MediaSession，把系统级播放状态与元数据变更同步至
- * {@link LyricRuntime}。回调经 {@code mMainHandler} 派发到主线程，运行时方法因此不能
- * 在该线程上阻塞。
+ * {@link LyricRuntime}。回调经专用的 handler 线程派发，不再占用 system_server 主线程；
+ * 运行时方法仍不得在该线程上阻塞。
  *
  * @author 焕晨HChen
  */
@@ -59,7 +59,7 @@ public final class SystemPlayStateListener {
     @NonNull
     private final ConcurrentHashMap<MediaController, MediaControllerCallback> mCallbacks = new ConcurrentHashMap<>();
     @NonNull
-    private final Handler mMainHandler = new Handler(Looper.getMainLooper());
+    private final Handler mCallbackHandler;
 
     @NonNull
     private final MediaSessionManager.OnActiveSessionsChangedListener mListener = new MediaSessionManager.OnActiveSessionsChangedListener() {
@@ -95,6 +95,13 @@ public final class SystemPlayStateListener {
         mContext = context;
         mRuntime = runtime;
         mMediaSessionManager = (MediaSessionManager) mContext.getSystemService(Context.MEDIA_SESSION_SERVICE);
+
+        // 进程级单例：LyricRuntime/监听器随 system_server 存活到进程结束，没有 teardown 路径，
+        // 因此不主动 quit；HandlerThread 设为 daemon，避免异常退出时拖住进程。
+        HandlerThread callbackThread = new HandlerThread("SuperLyric-MediaSession");
+        callbackThread.setDaemon(true);
+        callbackThread.start();
+        mCallbackHandler = new Handler(callbackThread.getLooper());
     }
 
     /**
@@ -108,7 +115,7 @@ public final class SystemPlayStateListener {
             for (MediaController controller : mMediaSessionManager.getActiveSessions(null)) {
                 registerMediaControllerCallback(controller);
             }
-            mMediaSessionManager.addOnActiveSessionsChangedListener(mListener, null);
+            mMediaSessionManager.addOnActiveSessionsChangedListener(mListener, null, mCallbackHandler);
             return true;
         } catch (Throwable t) {
             XposedLog.logE(TAG, "Failed to register SystemPlayStateListener", t);
@@ -129,14 +136,22 @@ public final class SystemPlayStateListener {
         try {
             for (MediaController controller : mCallbacks.keySet()) {
                 if (TextUtils.equals(controller.getPackageName(), packageName)) {
-                    PlaybackState state = controller.getPlaybackState();
-                    if (state != null) {
-                        mRuntime.onSystemPlaybackStateChanged(packageName, state);
-                    }
-                    MediaMetadata metadata = controller.getMetadata();
-                    if (metadata != null) {
-                        mRuntime.onSystemMetadataChanged(packageName, metadata);
-                    }
+                    // 状态读取与 runtime 回调统一在回调线程执行；调用方可能来自 Binder 线程。
+                    mCallbackHandler.post(() -> {
+                        if (mRuntime.isSystemPlayStateListenerDisabled(packageName)) return;
+                        try {
+                            PlaybackState state = controller.getPlaybackState();
+                            if (state != null) {
+                                mRuntime.onSystemPlaybackStateChanged(packageName, state);
+                            }
+                            MediaMetadata metadata = controller.getMetadata();
+                            if (metadata != null) {
+                                mRuntime.onSystemMetadataChanged(packageName, metadata);
+                            }
+                        } catch (Throwable t) {
+                            XposedLog.logW(TAG, "Failed to sync state for package " + packageName, t);
+                        }
+                    });
                     return;
                 }
             }
@@ -157,28 +172,47 @@ public final class SystemPlayStateListener {
     private void registerMediaControllerCallback(@NonNull MediaController controller) {
         long token = Binder.clearCallingIdentity();
         try {
-            final MediaControllerCallback callback;
+            MediaControllerCallback callback = new MediaControllerCallback(controller);
             synchronized (mCallbacks) {
-                MediaControllerCallback existing = mCallbacks.get(controller);
-                if (existing != null) {
-                    controller.unregisterCallback(existing);
-                    mCallbacks.remove(controller);
+                if (mCallbacks.containsKey(controller)) {
+                    return;
                 }
-
-                callback = new MediaControllerCallback(controller);
-                controller.registerCallback(callback, mMainHandler);
-                mCallbacks.put(controller, callback);
             }
 
-            // 主动同步初始状态；走回调以复用按包禁用判定
-            PlaybackState state = controller.getPlaybackState();
-            if (state != null) {
-                callback.onPlaybackStateChanged(state);
+            // 注册是 Binder 调用，不得在 mCallbacks 锁内执行；并发注册由 putIfAbsent 收口。
+            controller.registerCallback(callback, mCallbackHandler);
+            MediaControllerCallback previous;
+            synchronized (mCallbacks) {
+                previous = mCallbacks.putIfAbsent(controller, callback);
             }
-            MediaMetadata metadata = controller.getMetadata();
-            if (metadata != null) {
-                callback.onMetadataChanged(metadata);
+            if (previous != null) {
+                try {
+                    controller.unregisterCallback(callback);
+                } catch (Throwable t) {
+                    XposedLog.logW(TAG, "Failed to drop duplicate callback for "
+                        + controller.getPackageName(), t);
+                }
+                return;
             }
+
+            // 首次同步也必须在回调线程执行：register() 由 AMS#systemReady 调用，
+            // 直接读状态并回调会把 runtime 逻辑放回 system_server 主线程。
+            mCallbackHandler.post(() -> {
+                if (mCallbacks.get(controller) != callback) return;
+                try {
+                    PlaybackState state = controller.getPlaybackState();
+                    if (state != null) {
+                        callback.onPlaybackStateChanged(state);
+                    }
+                    MediaMetadata metadata = controller.getMetadata();
+                    if (metadata != null) {
+                        callback.onMetadataChanged(metadata);
+                    }
+                } catch (Throwable t) {
+                    XposedLog.logW(TAG, "Failed to sync initial state for "
+                        + controller.getPackageName(), t);
+                }
+            });
         } catch (Throwable t) {
             XposedLog.logW(TAG, "Failed to register callback for controller: "
                 + controller.getPackageName(), t);

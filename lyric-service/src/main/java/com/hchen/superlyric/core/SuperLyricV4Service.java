@@ -56,8 +56,12 @@ public final class SuperLyricV4Service extends ISuperLyricService.Stub {
     @Override
     public void clear() throws RemoteException {
         if (!canUseV4Binder()) return;
-        Caller caller = caller();
-        mCore.clearFrame(caller.pid, caller.packageName);
+        try {
+            Caller caller = caller();
+            mCore.clearFrame(caller.pid, caller.packageName);
+        } catch (Throwable t) {
+            XposedLog.logE(TAG, "clear failed", t);
+        }
     }
 
     @Override
@@ -75,13 +79,23 @@ public final class SuperLyricV4Service extends ISuperLyricService.Stub {
     @Override
     public void unregisterListener(ILyricFrameListener listener) throws RemoteException {
         if (!canUseV4Binder() || listener == null) return;
-        Caller caller = caller();
-        mCore.unregisterFrameListener(listener, caller.pid, caller.packageName);
+        try {
+            Caller caller = caller();
+            mCore.unregisterFrameListener(listener, caller.pid, caller.packageName);
+        } catch (Throwable t) {
+            XposedLog.logE(TAG, "unregisterListener failed", t);
+        }
     }
 
     @Override
     public byte[] latest() throws RemoteException {
-        return canUseV4Binder() ? mCore.latestFrame() : null;
+        if (!canUseV4Binder()) return null;
+        try {
+            return mCore.latestFrame();
+        } catch (Throwable t) {
+            XposedLog.logE(TAG, "latest failed", t);
+            return null;
+        }
     }
 
     @Override

@@ -23,6 +23,7 @@ import static com.hchen.superlyric.data.SupportApps.sMediaAppPackages;
 import android.content.Context;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.os.Build;
 
 import androidx.annotation.NonNull;
 
@@ -34,7 +35,6 @@ import com.hchen.superlyric.data.apps.ApiAppData;
 
 import java.text.Collator;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Locale;
@@ -132,7 +132,13 @@ public final class PackageLoader {
         PackageManager pm = context.getPackageManager();
         List<AppData> mediaApps = new ArrayList<>();
         List<ApiAppData> mediaApiApps = new ArrayList<>();
-        List<PackageInfo> infos = pm.getInstalledPackages(PackageManager.GET_META_DATA);
+        List<PackageInfo> infos;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            infos = pm.getInstalledPackages(
+                PackageManager.PackageInfoFlags.of(PackageManager.GET_META_DATA));
+        } else {
+            infos = pm.getInstalledPackages(PackageManager.GET_META_DATA);
+        }
 
         for (PackageInfo info : infos) {
             try {
@@ -152,8 +158,6 @@ public final class PackageLoader {
                             apiAppData.packageName = info.applicationInfo.packageName;
                             apiAppData.versionName = info.versionName;
                             apiAppData.versionCode = Long.toString(info.getLongVersionCode());
-                            apiAppData.apiVersionName = String.valueOf(info.applicationInfo.metaData.getFloat("superlyricapi_version_name"));
-                            apiAppData.apiVersionCode = String.valueOf(info.applicationInfo.metaData.getInt("superlyricapi_version_code"));
                             mediaApiApps.add(apiAppData);
                         }
                     }
@@ -207,15 +211,10 @@ public final class PackageLoader {
         sPackageLoadedListeners.remove(listener);
     }
 
-    public static <T> void sortAppData(@NonNull List<T> list) {
-        list.sort(new Comparator<T>() {
-            @Override
-            public int compare(T o1, T o2) {
-                String label1 = ((AppData) o1).label.toUpperCase(Locale.ROOT);
-                String label2 = ((AppData) o2).label.toUpperCase(Locale.ROOT);
-                return COLLATOR.compare(label1, label2);
-            }
-        });
+    private static <T extends AppData> void sortAppData(@NonNull List<T> list) {
+        list.sort((o1, o2) -> COLLATOR.compare(
+            o1.label.toUpperCase(Locale.ROOT),
+            o2.label.toUpperCase(Locale.ROOT)));
     }
 
     private static boolean hasXposedModule(@NonNull String apkPath) {

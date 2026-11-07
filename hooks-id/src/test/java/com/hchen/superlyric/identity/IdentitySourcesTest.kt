@@ -65,6 +65,14 @@ class IdentitySourcesTest {
     }
 
     @Test
+    fun `qq rejects placeholder metadata ids`() {
+        val source = QQIdentitySource("QQ")
+
+        assertNull(source.current("unknown", "Song", "Artist", 0L).stableId)
+        assertNull(source.current("0", "Song", "Artist", 0L).stableId)
+    }
+
+    @Test
     fun `qq prefers metadata mid and rejects numeric fallback`() {
         val source = QQIdentitySource("QQ")
         val other = "003aAYrm3GE0Ac"

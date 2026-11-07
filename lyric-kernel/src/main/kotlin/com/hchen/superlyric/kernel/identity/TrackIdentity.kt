@@ -102,8 +102,9 @@ data class TrackIdentity @JvmOverloads constructor(
          */
         @JvmStatic
         fun stableId(namespace: String, rawId: String?): String? {
-            val trimmed = rawId?.trim().orEmpty()
-            if (trimmed.isEmpty()) return null
+            // 宿主会把 0/-1/null/unknown/none 写进 MEDIA_ID；组合成 qq:0 会被当成权威标识，
+            // 使不同曲目恒等。占位值统一走 usableId，未知即 null。
+            val trimmed = usableId(rawId) ?: return null
             return "$namespace:$trimmed"
         }
 

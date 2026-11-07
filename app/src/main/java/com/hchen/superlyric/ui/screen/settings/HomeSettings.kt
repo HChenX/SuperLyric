@@ -26,6 +26,8 @@ import com.hchen.superlyric.R
 import com.hchen.superlyric.data.PrefsKey
 import com.hchen.superlyric.ui.Application
 import com.hchen.superlyric.utils.LauncherIconController
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class HomeSettingsState(
     val logLevel: Int,
@@ -37,11 +39,17 @@ object HomeSettingsController {
     fun launcherLabelRes(hidden: Boolean): Int =
         if (hidden) R.string.show_icon else R.string.hide_icon
 
-    fun clearCache(): Boolean {
-        val remotePrefs = Application.getRemotePreferences() ?: return false
-        var version = remotePrefs.getInt("super_lyric_dexkit_cache_version", 0)
-        remotePrefs.edit { putInt("super_lyric_dexkit_cache_version", ++version) }
-        return true
+    suspend fun clearCache(): Boolean = withContext(Dispatchers.IO) {
+        val remotePrefs = Application.getRemotePreferences() ?: return@withContext false
+        val version = remotePrefs.getInt(PrefsKey.DEXKIT_CACHE_VERSION, 0) + 1
+        // 远端 prefs 的 apply 不返回结果；commit=true 的 KTX 扩展写完后回读确认。
+        // 该调用可能走 Binder/磁盘，放在 IO 上，UI 由调用方协程更新。
+        runCatching {
+            remotePrefs.edit(commit = true) {
+                putInt(PrefsKey.DEXKIT_CACHE_VERSION, version)
+            }
+            remotePrefs.getInt(PrefsKey.DEXKIT_CACHE_VERSION, 0) == version
+        }.getOrDefault(false)
     }
 
     fun setLauncherHidden(context: Context, hidden: Boolean): Boolean {

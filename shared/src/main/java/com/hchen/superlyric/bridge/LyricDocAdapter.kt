@@ -119,7 +119,7 @@ object LyricDocAdapter {
      * 3.x 出站：投影全量载荷，并带上当前行、索引与位置。
      */
     fun toLegacyFull(lyric: Lyric, index: Int, positionMs: Long): SuperLyricData {
-        val lines = fromLyric(lyric).lines.map(::toParcelableLine)
+        val lines = lyric.lines.map(::toParcelableLine)
         val data = SuperLyricData()
             .setTitle(lyric.title)
             .setArtist(lyric.artist)
@@ -141,7 +141,8 @@ object LyricDocAdapter {
      * 3.x 出站：只投影当前行，不携带 allLyrics。
      */
     fun toLegacyLine(lyric: Lyric, index: Int, positionMs: Long): SuperLyricData? {
-        val line = fromLyric(lyric).lines.getOrNull(index) ?: return null
+        val current = lyric.lines.getOrNull(index) ?: return null
+        val line = toParcelableLine(current)
 
         val data = SuperLyricData()
             .setTitle(lyric.title)
@@ -151,10 +152,10 @@ object LyricDocAdapter {
             .setDuration(lyric.duration.coerceAtLeast(0L))
             .setCurrentLyricIndex(index)
             .setPosition(positionMs.coerceAtLeast(0L))
-            .setLyric(toParcelableLine(line))
+            .setLyric(line)
 
-        line.translation?.let { data.setTranslation(SuperLyricLine(it, line.startMs, line.endMs)) }
-        line.phonetic?.let { data.setSecondary(SuperLyricLine(it, line.startMs, line.endMs)) }
+        line.translation?.let { data.setTranslation(SuperLyricLine(it, line.startTime, line.endTime)) }
+        line.secondary?.let { data.setSecondary(SuperLyricLine(it, line.startTime, line.endTime)) }
         return data
     }
 
@@ -186,19 +187,19 @@ object LyricDocAdapter {
         )
     }
 
-    private fun toParcelableLine(line: LyricLine): SuperLyricLine {
+    private fun toParcelableLine(line: Line): SuperLyricLine {
         val words = line.words
-            .map { SuperLyricWord(it.text, it.startMs, it.endMs) }
-            .toTypedArray()
-            .takeIf { it.isNotEmpty() }
+            ?.map { SuperLyricWord(it.text, it.start, it.end) }
+            ?.toTypedArray()
+            ?.takeIf { it.isNotEmpty() }
 
         return SuperLyricLine(
             line.text,
             words,
-            line.translation,
-            line.phonetic,
-            line.startMs,
-            line.endMs,
+            line.translation?.takeIf { it.isNotEmpty() },
+            line.phonetic?.takeIf { it.isNotEmpty() },
+            line.start,
+            line.end,
         )
     }
 

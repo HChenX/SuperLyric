@@ -213,14 +213,9 @@ class MainActivity : ComponentActivity() {
         }
 
         var showUnavailable by remember { mutableStateOf(false) }
-        var unavailableReason by remember { mutableStateOf("") }
         LaunchedEffect(Unit) {
-            if (!SuperLyric.isAvailable()) {
-                // 只探测服务是否存在；isAvailable() 会分别尝试两个服务名
-                unavailableReason = "SuperLyric service is not available. " +
-                        "Install/enable the module and reboot the device."
-                showUnavailable = true
-            }
+            // 只探测服务是否存在；isAvailable() 会分别尝试两个服务名
+            if (!SuperLyric.isAvailable()) showUnavailable = true
         }
 
         CompositionLocalProvider(
@@ -242,7 +237,7 @@ class MainActivity : ComponentActivity() {
             WindowDialog(
                 show = showUnavailable,
                 title = stringResource(R.string.warn),
-                summary = stringResource(R.string.service_unavailable, unavailableReason)
+                summary = stringResource(R.string.service_unavailable)
             ) {
                 Row(horizontalArrangement = Arrangement.Absolute.SpaceBetween) {
                     TextButton(
@@ -423,8 +418,8 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun UiContent(
         paddingValues: PaddingValues,
-        isWideScreen: Boolean = false,
-        modifier: Modifier = Modifier
+        modifier: Modifier = Modifier,
+        isWideScreen: Boolean = false
     ) {
         val pagerState = LocalPagerState.current
         HorizontalPager(
@@ -437,7 +432,7 @@ class MainActivity : ComponentActivity() {
         ) { page ->
             when (page) {
                 UIConstants.HOME_PAGE_INDEX -> {
-                    HomeLayout(paddingValues, isWideScreen)
+                    HomeLayout(paddingValues, isWideScreen = isWideScreen)
                 }
 
                 UIConstants.API_PAGE_INDEX -> {

@@ -37,9 +37,12 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 
 /**
@@ -101,10 +104,19 @@ public final class LyricCacheStore {
     /**
      * 存储自有的异步写线程：调用方无需自带执行器，所有落盘串行执行
      */
-    private static final Executor WRITE_EXECUTOR = Executors.newSingleThreadExecutor(runnable -> {
+    private static final AtomicLong sDroppedWrites = new AtomicLong();
+    private static final Executor WRITE_EXECUTOR = new ThreadPoolExecutor(
+        1, 1, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(32), runnable -> {
         Thread thread = new Thread(runnable, "SuperLyric-LyricCache");
         thread.setDaemon(true);
         return thread;
+    }, (task, executor) -> {
+        // 缓存是 best-effort：队列满时丢弃写，但必须留下计数，不能静默。
+        long dropped = sDroppedWrites.incrementAndGet();
+        if (dropped == 1 || dropped % 32 == 0) {
+            AndroidLog.logW(TAG, "Lyric cache write queue full; dropped " + dropped
+                + " write(s) since process start");
+        }
     });
 
     private LyricCacheStore() {
@@ -255,6 +267,10 @@ public final class LyricCacheStore {
         return null;
     }
 
+    static boolean isExpired(long lastModifiedMs, long nowMs) {
+        return nowMs - lastModifiedMs > MAX_CACHE_AGE_MS;
+    }
+
     private static boolean isReadableCacheSize(@NonNull File file) {
         long length = file.length();
         return length >= FRAME_MIN_BYTES && length <= FRAME_MAX_BYTES;
@@ -278,6 +294,13 @@ public final class LyricCacheStore {
         }
         if (!file.isFile()) {
             AndroidLog.logD(TAG, "get: Disk cache MISS (file not found): " + file.getAbsolutePath());
+            return null;
+        }
+        if (isExpired(file.lastModified(), System.currentTimeMillis())) {
+            // prune 只在写入时按次数触发，读路径若不校验年龄，很少写入的 provider
+            // 会把过期歌词无限期当成命中。
+            AndroidLog.logD(TAG, "get: Disk cache expired: " + file.getAbsolutePath());
+            deleteCachePath(file);
             return null;
         }
         // 不加写锁：写入走 tmp + 原子改名，读到的要么是既有文件、要么是新文件，不存在

@@ -146,14 +146,18 @@ class NeteaseApiSource : LyricSource {
         )
         primary?.let {
             LyricDiag.dumpNeteaseChannels("NeteaseApi/V1", URL_V1, it)
-            if (hasAnyLyricChannel(it)) return cache(songId, it)
+            // nolyric 必须原样回给 resolve 才能形成 NoLyrics；翻译通道单独存在不算
+            // 有歌词，缓存它会让该 id 在淘汰前每次都命中并失败。
+            if (it.optBoolean("nolyric", false)) return it
+            if (hasMainLyricChannel(it)) return cache(songId, it)
         }
 
         // 退回 legacy 端点
         val legacy = get("$URL_LEGACY?id=$songId&lv=1&kv=1&tv=-1&rv=1")
         legacy?.let {
             LyricDiag.dumpNeteaseChannels("NeteaseApi/Legacy", URL_LEGACY, it)
-            if (hasAnyLyricChannel(it)) return cache(songId, it)
+            if (it.optBoolean("nolyric", false)) return it
+            if (hasMainLyricChannel(it)) return cache(songId, it)
         }
         return legacy ?: primary
     }
@@ -170,7 +174,7 @@ class NeteaseApiSource : LyricSource {
         val bytes = LyricCacheStore.getBytes(null, PROVIDER_NAME, key) ?: return null
 
         val payload = runCatching { JSONObject(String(bytes, StandardCharsets.UTF_8)) }.getOrNull()
-        if (payload != null && hasAnyLyricChannel(payload)) {
+        if (payload != null && hasMainLyricChannel(payload)) {
             AndroidLog.logI(sourceName, "Lyric disk cache hit for id=$key")
             LyricDiag.dumpNeteaseChannels("NeteaseApi/Disk", key, payload)
             return payload
@@ -195,8 +199,8 @@ class NeteaseApiSource : LyricSource {
      * yrc，用 `isNotEmpty` 会把空白算作带歌词，于是不再回退 legacy 端点，
      * 最终把有歌词的曲目判成无歌词
      */
-    private fun hasAnyLyricChannel(payload: JSONObject): Boolean =
-        NET_LYRIC_KEYS.any { key -> lyricText(payload, key).isNotBlank() }
+    private fun hasMainLyricChannel(payload: JSONObject): Boolean =
+        lyricText(payload, "yrc").isNotBlank() || lyricText(payload, "lrc").isNotBlank()
 
     /** 按标题与歌手检索 songId；未命中或读取失败时返回 null，均按可重试失败处理 */
     private fun searchSongId(identity: TrackIdentity): Long? {
@@ -349,9 +353,6 @@ class NeteaseApiSource : LyricSource {
                     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
         val FORM_MEDIA_TYPE = "application/x-www-form-urlencoded; charset=utf-8".toMediaType()
-
-        /** 接口可能返回的全部歌词通道，用于判断响应是否为空壳 */
-        val NET_LYRIC_KEYS = listOf("yrc", "lrc", "ytlrc", "tlyric", "yromalrc", "romalrc")
 
         /**
          * 取词的整体时限预算

@@ -30,11 +30,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * v4 帧订阅者的注册、配额与带超时广播
@@ -48,6 +50,8 @@ final class FrameBroadcaster {
     private static final long CALL_TIMEOUT_MS = 500L;
     private static final int MAX_LISTENERS = 64;
     private static final int MAX_LISTENERS_PER_UID = 16;
+    /** 连续超时达到该次数后视为慢链并移除，避免每次广播都白付一次超时。 */
+    private static final int MAX_CONSECUTIVE_TIMEOUTS = 3;
 
     /**
      * 与 {@code Receiver.RegisterResult} 的线上取值一致
@@ -59,16 +63,18 @@ final class FrameBroadcaster {
     private final ConcurrentHashMap<Integer, Integer> uidCounts = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<IBinder, Entry> listeners = new ConcurrentHashMap<>();
 
-    private final ExecutorService callExecutor = Executors.newFixedThreadPool(4, runnable -> {
+    private final ExecutorService callExecutor = new ThreadPoolExecutor(
+        4, 4, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(32), runnable -> {
         Thread thread = new Thread(runnable, "SuperLyric-FrameCall");
         thread.setDaemon(true);
         return thread;
-    });
+    }, new ThreadPoolExecutor.CallerRunsPolicy());
 
     private static final class Entry {
         final ILyricFrameListener listener;
         final int uid;
         final IBinder.DeathRecipient deathRecipient;
+        final AtomicInteger consecutiveTimeouts = new AtomicInteger();
 
         Entry(ILyricFrameListener listener, int uid, IBinder.DeathRecipient deathRecipient) {
             this.listener = listener;
@@ -197,11 +203,14 @@ final class FrameBroadcaster {
             });
             try {
                 future.get(CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                entry.consecutiveTimeouts.set(0);
                 return true;
             } catch (TimeoutException e) {
                 future.cancel(true);
-                XposedLog.logW(TAG, "Listener call timed out: " + entry.listener.asBinder());
-                return true;
+                int timeouts = entry.consecutiveTimeouts.incrementAndGet();
+                XposedLog.logW(TAG, "Listener call timed out (" + timeouts + "/"
+                    + MAX_CONSECUTIVE_TIMEOUTS + "): " + entry.listener.asBinder());
+                return timeouts < MAX_CONSECUTIVE_TIMEOUTS;
             } catch (InterruptedException e) {
                 future.cancel(true);
                 Thread.currentThread().interrupt();

@@ -11,7 +11,7 @@
 
     <!-- Warning -->
     <string name="warn">警告</string>
-    <string name="service_unavailable">SuperLyric 服务不可用，将无法正常传递歌词数据，请重启手机后重试！\n代码：%s</string>
+    <string name="service_unavailable">SuperLyric 服务不可用，无法正常传递歌词数据。请安装或启用模块后重启设备。</string>
     <string name="no_activity">没有可用于打开此链接的应用</string>
     <string name="app_list_permission_title">应用列表权限</string>
     <string name="app_list_permission_summary">SuperLyric 需要读取已安装应用列表，才能找到受支持的音乐应用。请授予权限后继续。</string>
@@ -73,28 +73,13 @@
     <!-- API Screen -->
     <string name="api_debug">API 调试</string>
     <string name="api_debug_and_test">API 调试与测试</string>
-    <string name="api_debug_listen_control">监听控制</string>
     <string name="api_debug_pause_listen">暂停接收监听</string>
     <string name="api_debug_pause_listen_summary_paused">已暂停新包接收，保持当前画面</string>
     <string name="api_debug_pause_listen_summary_running">正常监听实时歌词推送中</string>
-    <string name="api_debug_mock_injection">模拟数据注入</string>
-    <string name="api_debug_inject_full">模拟发送全量歌词包</string>
-    <string name="api_debug_inject_full_summary">注入 6 句完整带逐字时戳、翻译与音译的示例歌曲</string>
     <string name="api_debug_injected_full_toast">已注入全量模拟歌词</string>
-    <string name="api_debug_advance_line">推进单句进度 (+1)</string>
-    <string name="api_debug_advance_line_summary">前进到下一句歌词，模拟播放进度向前推进</string>
-    <string name="api_debug_advance_word">步进逐字进度 (+400ms)</string>
-    <string name="api_debug_advance_word_summary">步进当前行内部播放毫秒数，实时测试逐字高亮动效</string>
-    <string name="api_debug_inject_stop">模拟发送停止事件 (STOP)</string>
-    <string name="api_debug_inject_stop_summary">模拟音乐播放器发送播放停止广播</string>
     <string name="api_debug_injected_stop_toast">已发送停止事件</string>
-    <string name="api_debug_service_sync_reset">远程服务同步与重置</string>
-    <string name="api_debug_pull_latest">主动拉取远程最新歌词</string>
-    <string name="api_debug_pull_latest_summary">远程调用 SuperLyric.receiver().latest()</string>
     <string name="api_debug_pull_success">已成功拉取最新歌词包</string>
     <string name="api_debug_pull_no_data">当前无活跃歌词数据</string>
-    <string name="api_debug_reset_stats">重置统计与看板</string>
-    <string name="api_debug_reset_stats_summary">清空包计数与当前看板数据</string>
     <string name="api_debug_reset_toast">计数与看板已重置</string>
     <string name="api_debug_short_inject">注入全量</string>
     <string name="api_debug_short_next_line">下一句</string>
@@ -130,11 +115,15 @@
     <string name="api_waiting_first_line">等待首句</string>
     <string name="api_tag_trans">译</string>
     <string name="api_tag_secondary">音</string>
-    <string name="api_words_breakdown">逐字拆解 (%d 词)：</string>
+    <plurals name="api_words_breakdown">
+        <item quantity="other">逐字拆解（%1$d 词）：</item>
+    </plurals>
     <string name="api_all_lyrics_context">全量歌词上下文</string>
-    <string name="api_total_lines">共 %d 行</string>
+    <plurals name="api_total_lines">
+        <item quantity="other">共 %1$d 行</item>
+    </plurals>
 
-    <!-- Music App Instructions (Active - 4.0 Unified Architecture) -->
+    <!-- Music App Instructions -->
     <string name="jiaoyan_music">无需额外设置，正常播放即可</string>
     <string name="apple_music">无需额外设置，正常播放即可</string>
     <string name="bodian_music">无需额外设置，正常播放即可</string>

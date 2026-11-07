@@ -56,7 +56,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Alignment.Companion
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -104,7 +103,6 @@ import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import java.lang.System.exit
 
 @Composable
 @SuppressLint("LocalContextGetResourceValueCall")
@@ -246,7 +244,7 @@ fun ApiLayout(
 
         Box(modifier = if (barBackdrop != null) Modifier.layerBackdrop(barBackdrop) else Modifier) {
             BgEffectBackground(
-                dynamicBackground = true,
+                dynamicBackground = pagerState.currentPage == UIConstants.API_PAGE_INDEX,
                 isOs3Effect = true,
                 effectTheme = BgEffectTheme.SUNSET,
                 isFullSize = false,

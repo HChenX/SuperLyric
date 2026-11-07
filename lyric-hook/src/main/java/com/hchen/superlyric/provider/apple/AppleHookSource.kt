@@ -154,8 +154,11 @@ class AppleHookSource : InstallableLyricSource {
         val identity = current.identity
         trackGuard(itemId, identity.stableId, "lyric payload", enforce = false)
 
-        // 宿主原始模型（含 HTML 标记）；Apple 没有协议报文，这就是未解析数据
-        LyricDiag.dumpPayload(sourceName, "RAW-HOST-MODEL", dumpHostLines(lines))
+        // 宿主原始模型（含 HTML 标记）；Apple 没有协议报文，这就是未解析数据。
+        // 诊断关闭时不得先构建整份字符串，否则 release 也付 O(payload) 的复制成本。
+        if (LyricDiag.enabled) {
+            LyricDiag.dumpPayload(sourceName, "RAW-HOST-MODEL", dumpHostLines(lines))
+        }
 
         val doc = AppleLyricParser.parse(
             lines.map { line ->

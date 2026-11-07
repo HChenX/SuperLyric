@@ -43,14 +43,14 @@ class QQApiSource : LyricSource {
     private val requests = FetchSlot()
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
-        requests.launch(sourceName, session) { resolve(identity) }
+        requests.launch(sourceName, session) { token -> resolve(identity, token) }
     }
 
     override fun cancel() {
         requests.invalidate()
     }
 
-    private fun resolve(identity: TrackIdentity): LyricOutcome {
+    private fun resolve(identity: TrackIdentity, token: Long): LyricOutcome {
         // 元数据自带 mid 时直接直查，无需检索
         val rawId = TrackIdentity.normalizeStableId(identity.stableId)
         val directMid = identity.catalogId?.takeIf { it.catalog == LyricCatalog.QQ }?.id
@@ -58,7 +58,8 @@ class QQApiSource : LyricSource {
             ?: CatalogIds.qqMid(rawId)
         if (directMid != null) {
             AndroidLog.logI(sourceName, "Direct fetch by mid=$directMid")
-            return QQNetwork.fetchByMid(directMid, CatalogIds.qqSongId(rawId) ?: 0L, identity)
+            return QQNetwork.fetchByMid(directMid, CatalogIds.qqSongId(rawId) ?: 0L, identity,
+                isCurrent = { requests.isCurrent(token) })
         }
 
         val candidate = QQNetwork.searchBest(identity)
@@ -67,6 +68,7 @@ class QQApiSource : LyricSource {
             ?: return LyricOutcome.TransientFailure(null)
 
         AndroidLog.logI(sourceName, "Matched candidate mid=${candidate.first}")
-        return QQNetwork.fetchByMid(candidate.first, candidate.second, identity)
+        return QQNetwork.fetchByMid(candidate.first, candidate.second, identity,
+            isCurrent = { requests.isCurrent(token) })
     }
 }

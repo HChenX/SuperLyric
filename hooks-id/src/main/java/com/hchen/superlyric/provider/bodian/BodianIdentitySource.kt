@@ -43,7 +43,7 @@ class BodianIdentitySource(private val providerTag: String) : BaseIdentitySource
             HostTrackFacts(
                 identity = TrackIdentity(
                     source = providerTag,
-                    stableId = TrackIdentity.stableId("kuwo", rid),
+                    stableId = TrackIdentity.stableId(NAMESPACE, rid),
                     title = title,
                     artist = artist,
                     durationMs = 0L,

@@ -50,7 +50,6 @@ import io.github.libxposed.service.XposedServiceHelper;
 public class Application extends android.app.Application implements XposedServiceHelper.OnServiceListener {
     private static final Object PREFS_LOCK = new Object();
     private static volatile Context sAppContext;
-    private static volatile boolean isXposedActive = false;
     private static volatile XposedService mXposedService;
     private static volatile SharedPreferences mRemotePreferences;
     private static final List<Consumer<SharedPreferences>> listeners = new CopyOnWriteArrayList<>();
@@ -61,10 +60,10 @@ public class Application extends android.app.Application implements XposedServic
         sAppContext = this;
 
         ModuleConfig.setLogTag("SuperLyric");
-        ModuleConfig.setPrefsName("super_lyric_prefs");
+        ModuleConfig.setPrefsName(PrefsKey.PREFS_NAME);
         ModuleConfig.setLogLevel(BuildConfig.DEBUG ? LOG_D : LocalConfig.getLogLevelForModule(this));
 
-        PrefsTool.prefs(this, "super_lyric_prefs");
+        PrefsTool.prefs(this, PrefsKey.PREFS_NAME);
         XposedServiceHelper.registerListener(this);
 
         if (!SuperLyric.isAvailable()) {
@@ -88,10 +87,6 @@ public class Application extends android.app.Application implements XposedServic
             throw new IllegalStateException("Application.onCreate has not run yet");
         }
         return context;
-    }
-
-    public static boolean isXposedActive() {
-        return isXposedActive;
     }
 
     public static SharedPreferences getRemotePreferences() {
@@ -137,7 +132,6 @@ public class Application extends android.app.Application implements XposedServic
                     Log.w("SuperLyric", "Prefs-ready listener failed", t);
                 }
             }
-            isXposedActive = true;
         } catch (Throwable t) {
             // 远程 prefs 读取失败不得抛回 XposedServiceHelper 的回调线程；
             // 界面保持可用，仅缺少远程配置
@@ -151,7 +145,6 @@ public class Application extends android.app.Application implements XposedServic
             if (mXposedService != service) {
                 return;
             }
-            isXposedActive = false;
             mXposedService = null;
             mRemotePreferences = null;
         }

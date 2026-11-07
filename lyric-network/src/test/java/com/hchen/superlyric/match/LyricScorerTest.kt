@@ -86,6 +86,12 @@ class LyricScorerTest {
     }
 
     @Test
+    fun `an English word containing live is not a variant marker`() {
+        // "Oliver" 含子串 live；没有词边界时整段会被误判为另一版本。
+        assertTrue(LyricScorer.calculateTitleSimilarity("未来へ (Oliver)", "未来へ") > 0.5)
+    }
+
+    @Test
     fun `a version marker in the trailing bracket is never stripped`() {
         // 剥离末尾括号会让同一首歌的另一版从被否决顶到满分，与原版同分后
         // 靠候选顺序胜出，出现日语歌配韩语歌词、录音室版配演唱会版

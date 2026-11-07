@@ -73,7 +73,9 @@ class LyricPublishBridge(
      */
     private fun correctedDuration(doc: LyricDoc): LyricDoc {
         val latest = currentIdentity() ?: return doc
-        if (latest.stableId == null || latest.stableId != doc.lyricId) return doc
+        // 与 TrackIdentity.matches 同一规则：允许一侧带命名空间前缀。
+        val latestId = TrackIdentity.normalizeStableId(latest.stableId)
+        if (latestId == null || latestId != TrackIdentity.normalizeStableId(doc.lyricId)) return doc
         if (latest.durationMs <= 0L || latest.durationMs == doc.durationMs) return doc
         AndroidLog.logD(TAG, "Doc duration corrected: " + doc.durationMs + " -> " + latest.durationMs)
         return doc.copy(durationMs = latest.durationMs)

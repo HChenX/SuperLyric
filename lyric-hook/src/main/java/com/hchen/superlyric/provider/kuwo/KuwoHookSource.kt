@@ -78,8 +78,9 @@ class KuwoHookSource(
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
         // 切歌时宿主已运行，dex 必然加载完毕，是首轮定位失败后的第二次机会；
-        // 内部已限流封顶，重复调用不会反复执行 DexKit 检索
-        KuwoAnchors.retryInstallIfNeeded()
+        // 内部已限流封顶，重复调用不会反复执行 DexKit 检索。DexKit 全包检索放到
+        // 来源线程，start() 本身仍快速返回。
+        executor.execute { KuwoAnchors.retryInstallIfNeeded() }
         requests.open(identity, session)
         // 补投：宿主的歌词回调可能早于元数据更新到达，成果必须还给刚建立的新会话。
         //
@@ -182,9 +183,21 @@ class KuwoHookSource(
                     return@execute
                 }
                 AndroidLog.logW(sourceName, "Parsed no lines from lyric text (len=${text.length})")
-                requests.current()?.session?.deliver(
-                    LyricOutcome.Unsupported("kuwo: parsed empty")
-                )
+                // 终态结论同样必须属于当前曲目：切歌后迟到的旧载荷不能把新曲目锁成
+                // UNAVAILABLE（Kuwo 没有网络源可回退）。
+                val unsupportedTarget = requests.current()
+                val unsupportedSame = if (stableId != null) {
+                    sameTrack(stableId, unsupportedTarget?.identity?.stableId)
+                } else {
+                    entryIdentity == unsupportedTarget?.identity
+                }
+                if (unsupportedTarget != null && unsupportedSame) {
+                    unsupportedTarget.session.deliver(
+                        LyricOutcome.Unsupported("kuwo: parsed empty")
+                    )
+                } else {
+                    AndroidLog.logD(sourceName, "Dropped empty-lyric verdict for a stale track")
+                }
                 return@execute
             }
 

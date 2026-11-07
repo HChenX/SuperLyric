@@ -109,13 +109,14 @@ class MiuiNativeFetchSource(
 
     private fun fetchAsync(id: Long, identity: TrackIdentity, session: LyricSource.Session) {
         if (!claimFetch(id)) return
+        val token = fetches.open()
 
         fetches.execute {
-            val outcome = QQNetwork.fetchByMid("", id, identity)
+            val outcome = QQNetwork.fetchByMid("", id, identity) { fetches.isCurrent(token) }
             releaseInFlight(id)
             markAttempted(id)
 
-            if (session !== this.session || pendingId != id) {
+            if (!fetches.isCurrent(token) || session !== this.session || pendingId != id) {
                 AndroidLog.logD(sourceName, "Discarding result for id=$id: no longer the current track")
                 return@execute
             }

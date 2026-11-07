@@ -34,6 +34,7 @@ import com.hchen.hooktool.utils.PrefsTool;
 import com.hchen.processor.HookMaps;
 import com.hchen.superlyric.anchors.DexKitRuntime;
 import com.hchen.superlyric.data.LocalConfig;
+import com.hchen.superlyric.data.PrefsKey;
 import com.hchen.superlyric.utils.LyricCacheStore;
 
 import java.util.ArrayList;
@@ -52,7 +53,7 @@ public final class HookEntrance extends ModuleEntrance {
     @Override
     public void initModuleConfig() {
         ModuleConfig.setLogTag(TAG);
-        ModuleConfig.setPrefsName("super_lyric_prefs");
+        ModuleConfig.setPrefsName(PrefsKey.PREFS_NAME);
         ModuleConfig.setLogLevel(BuildConfig.DEBUG ? LOG_D : LocalConfig.getLogLevelForXposed());
         ModuleConfig.setShowHookSuccessLog(BuildConfig.DEBUG || LocalConfig.getLogLevelForXposed() == LOG_D);
         ModuleConfig.setLogExpandPaths(
@@ -90,7 +91,7 @@ public final class HookEntrance extends ModuleEntrance {
 
         if (HookMaps.ON_PACKAGE_LOADED.containsKey(param.getPackageName())) {
             try {
-                int version = PrefsTool.prefs().getInt("super_lyric_dexkit_cache_version", 0);
+                int version = PrefsTool.prefs().getInt(PrefsKey.DEXKIT_CACHE_VERSION, 0);
 
                 ModuleData.setClassLoader(param.getClassLoader());
                 DexKitRuntime.initialize(param, version);
@@ -155,7 +156,7 @@ public final class HookEntrance extends ModuleEntrance {
 
     private void clearLyricCacheOnFormatUpgrade(@NonNull Context context) {
         try {
-            int lastCleared = PrefsTool.prefs(context).getInt("super_lyric_cache_format", 0);
+            int lastCleared = PrefsTool.prefs(context).getInt(PrefsKey.CACHE_FORMAT, 0);
             int current = LyricCacheStore.cacheVersion();
             if (lastCleared == current) return;
             if (!LyricCacheStore.clearOnlineProviderCaches(context)) {
@@ -164,7 +165,7 @@ public final class HookEntrance extends ModuleEntrance {
             }
             boolean committed = PrefsTool.prefs(context)
                 .edit()
-                .putInt("super_lyric_cache_format", current)
+                .putInt(PrefsKey.CACHE_FORMAT, current)
                 .commit();
             if (!committed) {
                 AndroidLog.logE(TAG, "Failed to persist lyric cache format migration; retry on next startup");

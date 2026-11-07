@@ -18,7 +18,6 @@
  */
 package com.hchen.superlyric.ui.viewmodel
 
-import android.annotation.SuppressLint
 import android.content.SharedPreferences
 import android.util.Log
 import androidx.compose.ui.util.fastFirstOrNull
@@ -148,9 +147,7 @@ class MainViewModel(
         }
     }
 
-    @SuppressLint("EmptySuperCall")
     override fun onCleared() {
-        super.onCleared()
         removePrefsReadyListener(prefsReadyListener)
         removeAppLoadedListener(appLoadedListener)
         prefs = null

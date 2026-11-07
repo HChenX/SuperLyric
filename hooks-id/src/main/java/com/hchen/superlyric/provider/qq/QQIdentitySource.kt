@@ -90,7 +90,11 @@ class QQIdentitySource(private val providerTag: String) : BaseIdentitySource() {
             }
         }
 
-        MID_PATTERN.find(raw)?.let { songMid = it.groupValues[1].trim() }
+        MID_PATTERN.find(raw)?.let { match ->
+            val candidate = match.groupValues[1].trim()
+            // 与 current()/preferredMid 同一校验：mid=null 或畸形值不能污染后续身份。
+            if (CatalogIds.qqMid(candidate) != null) songMid = candidate
+        }
         if (songId <= 0L) {
             ID_PATTERN.find(raw)?.let { songId = parseLong(it.groupValues[1]) }
         }

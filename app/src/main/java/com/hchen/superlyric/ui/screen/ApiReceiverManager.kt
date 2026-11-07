@@ -130,12 +130,13 @@ internal object ApiReceiverManager {
     }
 
     private fun handleIncomingLyric(view: LyricView) {
-        // STATE 帧复用同一个 Lyric 实例，引用变化即表示 FULL 帧
-        val previous = receiverFlow.value.lyric
-        val isFull = previous == null || view.lyric !== previous
         val time = LocalTime.now().format(TIME_FORMAT)
 
         synchronized(publishLock) {
+            // STATE 帧复用同一个 Lyric 实例，引用变化即表示 FULL 帧。
+            // 必须在锁内读取：并发 STOP 可能已经替换了 receiverFlow。
+            val previous = receiverFlow.value.lyric
+            val isFull = previous == null || view.lyric !== previous
             val seq = totalPackets.incrementAndGet()
             if (isFull) {
                 fullPackets.incrementAndGet()
@@ -159,10 +160,11 @@ internal object ApiReceiverManager {
     }
 
     private fun handleIncomingStop(stop: Stop) {
-        val current = receiverFlow.value
         val time = LocalTime.now().format(TIME_FORMAT)
 
         synchronized(publishLock) {
+            // 与 onLyric 共用同一临界区：在锁外读 current 会用旧帧覆盖并发发布的新帧。
+            val current = receiverFlow.value
             val seq = totalPackets.incrementAndGet()
             receiverFlow.value = current.copy(
                 source = stop.publisher ?: current.source ?: sourceLabel,

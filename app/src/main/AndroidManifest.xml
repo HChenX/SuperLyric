@@ -12,12 +12,15 @@
     <application
         android:name=".ui.Application"
         android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:description="@string/app_details"
         android:enableOnBackInvokedCallback="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
-        android:theme="@style/Theme.SuperLyric">
+        android:theme="@style/Theme.SuperLyric"
+        tools:targetApi="33">
 
         <activity
             android:name=".ui.MainActivity"

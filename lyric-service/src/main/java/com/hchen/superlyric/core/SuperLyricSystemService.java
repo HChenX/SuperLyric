@@ -49,6 +49,7 @@ public final class SuperLyricSystemService extends CoreTool {
     private static final ThreadLocal<Integer> sBindUid = new ThreadLocal<>();
 
     private static volatile boolean sProcLockMissingLogged;
+    private static volatile boolean sUidMissingLogged;
 
     public void install(@NonNull XposedModuleInterface.SystemServerStartingParam param) {
         hookAllMethod("com.android.server.am.ActivityManagerService",
@@ -175,6 +176,10 @@ public final class SuperLyricSystemService extends CoreTool {
                             }
 
                             logD(TAG, "Bind services for uid " + uid + ": " + level);
+                        } else if (uid == null && !sUidMissingLogged) {
+                            sUidMissingLogged = true;
+                            logW(TAG, "attachApplicationLocked uid was missing when getCommonServicesLocked ran; "
+                                + "services are not exposed. Further occurrences are not logged.");
                         }
 
                         setResult(filtered);
@@ -200,11 +205,19 @@ public final class SuperLyricSystemService extends CoreTool {
     }
 
     private void hookAppDiedLocked() {
+        // Android 11-13 为四参签名；14 起多了 reason，部分版本再加两个 int。
         Method appDiedLockedMethod = findMethodIfExists("com.android.server.am.ActivityManagerService",
             "appDiedLocked",
             "com.android.server.am.ProcessRecord" /* app */, int.class /* pid */, "android.app.IApplicationThread" /* thread */,
-            boolean.class /* fromBinderDied */, String.class /* reason */
+            boolean.class /* fromBinderDied */
         );
+        if (appDiedLockedMethod == null) {
+            appDiedLockedMethod = findMethodIfExists("com.android.server.am.ActivityManagerService",
+                "appDiedLocked",
+                "com.android.server.am.ProcessRecord" /* app */, int.class /* pid */, "android.app.IApplicationThread" /* thread */,
+                boolean.class /* fromBinderDied */, String.class /* reason */
+            );
+        }
         if (appDiedLockedMethod == null) {
             appDiedLockedMethod = findMethodIfExists(
                 "com.android.server.am.ActivityManagerService",

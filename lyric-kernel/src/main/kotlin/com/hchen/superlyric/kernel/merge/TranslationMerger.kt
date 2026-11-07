@@ -67,6 +67,12 @@ object TranslationMerger {
         val lines = doc.lines.toMutableList()
         var changed = false
 
+        // 主行按 startMs 排序后二分定位容差窗口，避免 entries × lines 的全量扫描。
+        // 同一 start 的并列行按文档顺序稳定排序，保持原有"先到者胜"的语义。
+        val ordered = lines.indices.sortedWith(
+            compareBy<Int>({ lines[it].startMs }, { it }),
+        )
+
         // 每条伴随记录只匹配一次，天然满足"一对一消费"
         for (entry in sidecar) {
             if (entry.text.isEmpty()) continue
@@ -74,8 +80,18 @@ object TranslationMerger {
             var bestLineIndex = -1
             var bestDelta = Long.MAX_VALUE
 
-            for (lineIndex in lines.indices) {
+            val lowerBound = entry.startMs - TOLERANCE_MS
+            var low = 0
+            var high = ordered.size
+            while (low < high) {
+                val mid = (low + high) ushr 1
+                if (lines[ordered[mid]].startMs < lowerBound) low = mid + 1 else high = mid
+            }
+
+            for (position in low until ordered.size) {
+                val lineIndex = ordered[position]
                 val line = lines[lineIndex]
+                if (line.startMs - entry.startMs > TOLERANCE_MS) break
                 if (!needsChannel(line, channel)) continue
 
                 val delta = abs(line.startMs - entry.startMs)

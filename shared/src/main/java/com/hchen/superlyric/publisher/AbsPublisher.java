@@ -91,10 +91,6 @@ public abstract class AbsPublisher extends AbsModule {
         return null;
     }
 
-    public static String getPackageName() {
-        return sPackageName;
-    }
-
     /**
      * 发送全量歌词数据包（歌词解析完成或确认无歌词时调用）
      *

@@ -45,6 +45,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -100,14 +101,15 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.window.WindowDialog
 
 @Composable
 @SuppressLint("LocalContextGetResourceValueCall")
 fun HomeLayout(
     paddingValues: PaddingValues,
-    isWideScreen: Boolean = false,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isWideScreen: Boolean = false
 ) {
     val context = LocalContext.current
     val viewModel = LocalViewModel.current
@@ -135,6 +137,7 @@ fun HomeLayout(
 
     var launcherHidden by remember { mutableStateOf(LauncherIconController.isHidden(context)) }
     val settingsState = HomeSettingsState(logLevel, launcherHidden)
+    val settingsScope = rememberCoroutineScope()
 
     val settingsEntries = remember(logLevel, launcherHidden) {
         listOf(
@@ -144,12 +147,16 @@ fun HomeLayout(
                         text = context.getString(R.string.clear_dexkit_cache),
                         selected = false,
                         onClick = {
-                            val ok = HomeSettingsController.clearCache()
-                            Toast.makeText(
-                                context,
-                                context.getString(if (ok) R.string.cleared else R.string.clear_failed),
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            settingsScope.launch {
+                                val ok = HomeSettingsController.clearCache()
+                                Toast.makeText(
+                                    context,
+                                    context.getString(
+                                        if (ok) R.string.cleared else R.string.clear_failed
+                                    ),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         }
                     ),
                     DropdownItem(
@@ -366,9 +373,8 @@ private fun AppTypeBadge(
 private fun AppItemComponent(
     appData: AppData,
     isApi: Boolean,
-    enabled: Boolean = true,
-    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
+    onClick: (() -> Unit)? = null,
 ) {
     Card(
         modifier = modifier
@@ -376,7 +382,6 @@ private fun AppItemComponent(
             .padding(bottom = 12.dp)
     ) {
         ArrowPreference(
-            enabled = enabled,
             title = appData.label.ifEmpty { appData.packageName.orEmpty() },
             summary = appData.packageName.orEmpty(),
             endActions = {

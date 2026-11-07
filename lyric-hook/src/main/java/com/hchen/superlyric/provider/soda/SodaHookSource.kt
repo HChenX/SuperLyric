@@ -64,8 +64,6 @@ class SodaHookSource : InstallableLyricSource {
 
     private val requests = SourceRequestGate()
 
-    /** 最近一次截获到的曲目标识；供 hooks-id 的 current 身份在元数据缺标识时兜底 */
-
     private var pendingMain: Captured? = null
     private var pendingTranslation: Captured? = null
 

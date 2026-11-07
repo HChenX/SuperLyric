@@ -21,6 +21,7 @@ package com.hchen.superlyric.anchors;
 import androidx.annotation.NonNull;
 
 import com.hchen.dexkitcache.DexkitCache;
+import com.hchen.hooktool.log.AndroidLog;
 
 import io.github.libxposed.api.XposedModuleInterface;
 
@@ -28,21 +29,31 @@ import io.github.libxposed.api.XposedModuleInterface;
  * 宿主进程的 DexKit 缓存生命周期。
  */
 public final class DexKitRuntime {
+    private static final String TAG = "DexKitRuntime";
 
     private DexKitRuntime() {
     }
 
     public static void initialize(@NonNull XposedModuleInterface.PackageReadyParam param, int version) {
-        DexkitCache.init(
-            "superlyric",
-            param.getClassLoader(),
-            param.getApplicationInfo().sourceDir,
-            param.getApplicationInfo().dataDir,
-            version
-        );
+        try {
+            DexkitCache.init(
+                "superlyric",
+                param.getClassLoader(),
+                param.getApplicationInfo().sourceDir,
+                param.getApplicationInfo().dataDir,
+                version
+            );
+        } catch (Throwable t) {
+            // 缓存初始化失败只能降级 DexKit 查找，不能中断 packageReady 里其余模块。
+            AndroidLog.logE(TAG, "Failed to initialize DexKit cache", t);
+        }
     }
 
     public static void close() {
-        DexkitCache.close();
+        try {
+            DexkitCache.close();
+        } catch (Throwable t) {
+            AndroidLog.logW(TAG, "Failed to close DexKit cache", t);
+        }
     }
 }

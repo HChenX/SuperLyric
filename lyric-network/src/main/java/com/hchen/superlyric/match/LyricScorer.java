@@ -74,9 +74,9 @@ public final class LyricScorer {
      * <p>含数字也一并视为标记：日期、{@code 1.1x版}、{@code 32秒片段} 都落在这一类。
      */
     private static final Pattern VARIANT_MARKER_PATTERN = Pattern.compile(
-        "\\d|ver\\.?|version|remaster|original|remix|live|acoustic|demo|"
+        "(?<![a-z])(?:\\d|ver\\.?|version|remaster|original|remix|live|acoustic|demo|"
             + "chin(a|ese)|japan(ese)?|korean?|english|"
-            + "版|伴奏|纯音乐|现场|巡回|演唱会|片段|试听|铃声|双语|原版|重制|翻唱",
+            + "版|伴奏|纯音乐|现场|巡回|演唱会|片段|试听|铃声|双语|原版|重制|翻唱)(?![a-z])",
         Pattern.CASE_INSENSITIVE
     );
     /**

@@ -68,6 +68,8 @@ import androidx.compose.ui.unit.sp
 import androidx.core.net.toUri
 import com.hchen.superlyric.BuildConfig
 import com.hchen.superlyric.R
+import com.hchen.superlyric.ui.data.LocalPagerState
+import com.hchen.superlyric.ui.data.UIConstants
 import com.hchen.superlyric.ui.effect.BgEffectBackground
 import com.hchen.superlyric.ui.effect.BlurredBar
 import com.hchen.superlyric.ui.effect.cardBlur
@@ -120,6 +122,7 @@ fun AboutLayout(
 
     var isContributorsDialogShowing by remember { mutableStateOf(false) }
 
+    val pagerState = LocalPagerState.current
     val scrollBehavior = MiuixScrollBehavior()
     val lazyListState = rememberLazyListState()
     val scrollProgress by remember {
@@ -213,7 +216,7 @@ fun AboutLayout(
     ) { pv ->
         Box(modifier = if (barBackdrop != null) Modifier.layerBackdrop(barBackdrop) else Modifier) {
             BgEffectBackground(
-                dynamicBackground = true,
+                dynamicBackground = pagerState.currentPage == UIConstants.ABOUT_PAGE_INDEX,
                 isOs3Effect = true,
                 isFullSize = false,
                 modifier = Modifier.fillMaxSize(),

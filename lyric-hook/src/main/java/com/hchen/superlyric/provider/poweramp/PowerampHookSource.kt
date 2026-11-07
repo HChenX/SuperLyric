@@ -38,6 +38,7 @@ import com.hchen.superlyric.provider.base.SourceRequest
 import com.hchen.superlyric.provider.base.SourceRequestGate
 import com.hchen.superlyric.provider.base.withMetadata
 import com.hchen.superlyric.publisher.AbsPublisher
+import com.hchen.superlyric.utils.LyricCacheStore
 import com.hchen.superlyric.utils.LyricDiag
 
 import java.io.ByteArrayOutputStream
@@ -62,7 +63,8 @@ class PowerampHookSource : InstallableLyricSource {
 
     override fun onApplicationCreated(context: Context) {
         // packageReady 时宿主可能还没有初始化 LrcParser engine；Application 起来后重试一次。
-        PowerampAnchors.retryAnchors()
+        // retryAnchors 会做 DexKit 全包检索，不能占住 Application 创建线程。
+        executor.execute { PowerampAnchors.retryAnchors() }
     }
 
     override fun install() {
@@ -558,6 +560,7 @@ class PowerampHookSource : InstallableLyricSource {
     }
 
     private companion object {
-        const val MAX_LYRIC_BYTES = 2L * 1024 * 1024
+        /** 与磁盘缓存共用同一条响应上限，避免两份 2 MiB 常量漂移 */
+        val MAX_LYRIC_BYTES = LyricCacheStore.MAX_PAYLOAD_BYTES.toLong()
     }
 }

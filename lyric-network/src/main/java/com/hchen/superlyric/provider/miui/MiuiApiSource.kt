@@ -41,14 +41,14 @@ class MiuiApiSource(
     private val requests = FetchSlot()
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
-        requests.launch(sourceName, session) { resolve(identity) }
+        requests.launch(sourceName, session) { token -> resolve(identity, token) }
     }
 
     override fun cancel() {
         requests.invalidate()
     }
 
-    private fun resolve(identity: TrackIdentity): LyricOutcome {
+    private fun resolve(identity: TrackIdentity, token: Long): LyricOutcome {
         identityFeed.refresh()
         val facts = identityFeed.currentFacts()
         val hostId = facts?.identity?.catalogId
@@ -57,13 +57,15 @@ class MiuiApiSource(
             ?: facts?.secondaryId?.takeIf { it > 0L }
         if (facts != null && hostId != null && facts.matches(identity)) {
             AndroidLog.logI(sourceName, "Direct fetch by host songID=$hostId")
-            return QQNetwork.fetchByMid("", hostId, identity)
+            return QQNetwork.fetchByMid("", hostId, identity,
+                isCurrent = { requests.isCurrent(token) })
         }
 
         val candidate = QQNetwork.searchBest(identity)
             ?: return LyricOutcome.TransientFailure(null)
 
         AndroidLog.logI(sourceName, "Matched candidate mid=${candidate.first}")
-        return QQNetwork.fetchByMid(candidate.first, candidate.second, identity)
+        return QQNetwork.fetchByMid(candidate.first, candidate.second, identity,
+            isCurrent = { requests.isCurrent(token) })
     }
 }

@@ -11,7 +11,7 @@
 
     <!-- Warning -->
     <string name="warn">Warning</string>
-    <string name="service_unavailable">SuperLyric service is unavailable and will not be able to transmit lyrics data properly. Please restart your phone and try again! \nCode: %s</string>
+    <string name="service_unavailable">SuperLyric service is unavailable and cannot transmit lyrics data. Install or enable the module, then reboot the device.</string>
     <string name="no_activity">No app is available to open this link</string>
     <string name="app_list_permission_title">App list permission</string>
     <string name="app_list_permission_summary">SuperLyric needs to read the list of installed apps to find supported music players. Grant the permission to continue.</string>
@@ -73,28 +73,13 @@
     <!-- API Screen -->
     <string name="api_debug">API Debug</string>
     <string name="api_debug_and_test">API Debug &amp; Test</string>
-    <string name="api_debug_listen_control">Listener Control</string>
     <string name="api_debug_pause_listen">Pause Reception</string>
     <string name="api_debug_pause_listen_summary_paused">Packet reception paused, keeping current view</string>
     <string name="api_debug_pause_listen_summary_running">Listening for real-time lyrics stream</string>
-    <string name="api_debug_mock_injection">Mock Data Injection</string>
-    <string name="api_debug_inject_full">Inject Full Lyric Packet</string>
-    <string name="api_debug_inject_full_summary">Inject 6 sample lines with per-word timestamps, translation &amp; pinyin</string>
     <string name="api_debug_injected_full_toast">Full mock lyrics injected</string>
-    <string name="api_debug_advance_line">Advance Line (+1)</string>
-    <string name="api_debug_advance_line_summary">Advance to next line, simulating forward playback progress</string>
-    <string name="api_debug_advance_word">Step Word Progress (+400ms)</string>
-    <string name="api_debug_advance_word_summary">Step forward current line progress by 400ms to test per-word animation</string>
-    <string name="api_debug_inject_stop">Inject Stop Event (STOP)</string>
-    <string name="api_debug_inject_stop_summary">Simulate player sending playback stopped broadcast</string>
     <string name="api_debug_injected_stop_toast">Stop event injected</string>
-    <string name="api_debug_service_sync_reset">Remote Service Sync &amp; Reset</string>
-    <string name="api_debug_pull_latest">Pull Latest Remote Lyrics</string>
-    <string name="api_debug_pull_latest_summary">Remote invoke SuperLyric.receiver().latest()</string>
     <string name="api_debug_pull_success">Successfully pulled latest lyric packet</string>
     <string name="api_debug_pull_no_data">No active lyric data available</string>
-    <string name="api_debug_reset_stats">Reset Stats &amp; Dashboard</string>
-    <string name="api_debug_reset_stats_summary">Clear packet counters and the current dashboard state</string>
     <string name="api_debug_reset_toast">Stats &amp; dashboard reset</string>
     <string name="api_debug_short_inject">Inject full</string>
     <string name="api_debug_short_next_line">Next line</string>
@@ -130,11 +115,17 @@
     <string name="api_waiting_first_line">Waiting for the first line</string>
     <string name="api_tag_trans">Trans</string>
     <string name="api_tag_secondary">Pinyin</string>
-    <string name="api_words_breakdown">Word Breakdown (%d words):</string>
+    <plurals name="api_words_breakdown">
+        <item quantity="one">Word Breakdown (%1$d word):</item>
+        <item quantity="other">Word Breakdown (%1$d words):</item>
+    </plurals>
     <string name="api_all_lyrics_context">Full Lyrics Context</string>
-    <string name="api_total_lines">%d lines in total</string>
+    <plurals name="api_total_lines">
+        <item quantity="one">%1$d line in total</item>
+        <item quantity="other">%1$d lines in total</item>
+    </plurals>
 
-    <!-- Music App Instructions (Active - 4.0 Unified Architecture) -->
+    <!-- Music App Instructions -->
     <string name="jiaoyan_music">No additional setup required, play normally</string>
     <string name="apple_music">No additional setup required, play normally</string>
     <string name="bodian_music">No additional setup required, play normally</string>

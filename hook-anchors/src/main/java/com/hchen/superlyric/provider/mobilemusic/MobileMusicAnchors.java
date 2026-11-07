@@ -116,6 +116,7 @@ public final class MobileMusicAnchors {
     private Field isMrc;
     private volatile OffsetSnapshot liveOffset;
     private Listener listener;
+    private boolean subscribed;
 
     private record OffsetSnapshot(Object song, Object parser, WeakReference<Object> view) {
     }
@@ -134,7 +135,10 @@ public final class MobileMusicAnchors {
     }
 
     public synchronized boolean install(@NonNull ClassLoader loader, @NonNull Listener subscriber) {
-        subscribe(subscriber);
+        if (!subscribed) {
+            subscribed = true;
+            subscribe(subscriber);
+        }
         Listener listener = BUS::emit;
         if (installed) {
             installOffsets(loader);

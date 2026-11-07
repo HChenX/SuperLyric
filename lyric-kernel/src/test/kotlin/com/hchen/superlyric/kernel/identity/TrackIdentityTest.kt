@@ -139,6 +139,15 @@ class TrackIdentityTest {
     }
 
     @Test
+    fun `stable id helper rejects placeholder input`() {
+        assertNull(TrackIdentity.stableId("qq", "0"))
+        assertNull(TrackIdentity.stableId("qq", " -1 "))
+        assertNull(TrackIdentity.stableId("qq", "unknown"))
+        assertNull(TrackIdentity.stableId("qq", "None"))
+        assertEquals("qq:abc", TrackIdentity.stableId("qq", " abc "))
+    }
+
+    @Test
     fun `placeholder ids are not usable as identity`() {
         assertNull(TrackIdentity.usableId(null))
         assertNull(TrackIdentity.usableId("  "))

@@ -30,6 +30,8 @@ import com.hchen.superlyricapi.ISuperLyricManager;
 import com.hchen.superlyricapi.ISuperLyricReceiver;
 import com.hchen.superlyricapi.SuperLyricData;
 
+import java.util.function.Supplier;
+
 /**
  * 3.x Binder 门面：只解析调用方身份、判定访问权限并转发到 {@link LyricRuntime}。
  */
@@ -46,75 +48,113 @@ public final class SuperLyricService extends ISuperLyricManager.Stub {
     @Override
     public void registerPublisher() throws RemoteException {
         if (!canUseLegacyBinder()) return;
-        Caller caller = caller();
-        mCore.registerPublisher(caller.pid, caller.packageName, caller.uid);
+        guard("registerPublisher", () -> {
+            Caller caller = caller();
+            mCore.registerPublisher(caller.pid, caller.packageName, caller.uid);
+        });
     }
 
     @Override
     public void unregisterPublisher() throws RemoteException {
         if (!canUseLegacyBinder()) return;
-        Caller caller = caller();
-        mCore.unregisterPublisher(caller.pid, caller.packageName);
+        guard("unregisterPublisher", () -> {
+            Caller caller = caller();
+            mCore.unregisterPublisher(caller.pid, caller.packageName);
+        });
     }
 
     @Override
     public boolean isPublisherRegistered() throws RemoteException {
         if (!canUseLegacyBinder()) return false;
-        Caller caller = caller();
-        return mCore.isPublisherRegistered(caller.pid, caller.packageName);
+        return guard("isPublisherRegistered", false, () -> {
+            Caller caller = caller();
+            return mCore.isPublisherRegistered(caller.pid, caller.packageName);
+        });
     }
 
     @Override
     public void sendLyric(SuperLyricData data) throws RemoteException {
         if (!canUseLegacyBinder()) return;
-        Caller caller = caller();
-        mCore.sendLyric(caller.pid, caller.packageName, caller.uid, data);
+        guard("sendLyric", () -> {
+            Caller caller = caller();
+            mCore.sendLyric(caller.pid, caller.packageName, caller.uid, data);
+        });
     }
 
     @Override
     public void sendStop(SuperLyricData data) throws RemoteException {
         if (!canUseLegacyBinder()) return;
-        Caller caller = caller();
-        mCore.sendStop(caller.pid, caller.packageName, data);
+        guard("sendStop", () -> {
+            Caller caller = caller();
+            mCore.sendStop(caller.pid, caller.packageName, data);
+        });
     }
 
     @Override
     public void setSystemPlayStateListenerEnabled(boolean enabled) throws RemoteException {
         if (!canUseLegacyBinder()) return;
-        Caller caller = caller();
-        mCore.setSystemPlayStateListenerEnabled(caller.pid, caller.packageName, enabled);
+        guard("setSystemPlayStateListenerEnabled", () -> {
+            Caller caller = caller();
+            mCore.setSystemPlayStateListenerEnabled(caller.pid, caller.packageName, enabled);
+        });
     }
 
     @Override
     public void registerReceiver(ISuperLyricReceiver receiver) throws RemoteException {
         if (!canUseLegacyBinder() || receiver == null) return;
-        Caller caller = caller();
-        mCore.registerReceiver(receiver, caller.uid, caller.pid, caller.packageName);
+        guard("registerReceiver", () -> {
+            Caller caller = caller();
+            mCore.registerReceiver(receiver, caller.uid, caller.pid, caller.packageName);
+        });
     }
 
     @Override
     public void unregisterReceiver(ISuperLyricReceiver receiver) throws RemoteException {
         if (!canUseLegacyBinder() || receiver == null) return;
-        Caller caller = caller();
-        mCore.unregisterReceiver(receiver, caller.pid, caller.packageName);
+        guard("unregisterReceiver", () -> {
+            Caller caller = caller();
+            mCore.unregisterReceiver(receiver, caller.pid, caller.packageName);
+        });
     }
 
     @Override
     public boolean isReceiverRegistered(ISuperLyricReceiver receiver) throws RemoteException {
-        return canUseLegacyBinder() && mCore.isReceiverRegistered(receiver);
+        if (!canUseLegacyBinder()) return false;
+        return guard("isReceiverRegistered", false, () -> mCore.isReceiverRegistered(receiver));
     }
 
     @Nullable
     @Override
     public SuperLyricData getLatestLyric() throws RemoteException {
         if (!canUseLegacyBinder()) return null;
-        Caller caller = caller();
-        return mCore.latestLegacy(caller.pid, caller.packageName, caller.uid);
+        return guard("getLatestLyric", null, () -> {
+            Caller caller = caller();
+            return mCore.latestLegacy(caller.pid, caller.packageName, caller.uid);
+        });
     }
 
     @Override
     public int getServerApiVersion() throws RemoteException {
         return canUseLegacyBinder() ? BuildConfig.API_VERSION : 0;
+    }
+
+    private static void guard(@NonNull String operation, @NonNull Runnable action) {
+        try {
+            action.run();
+        } catch (Throwable t) {
+            XposedLog.logE(TAG, operation + " failed", t);
+        }
+    }
+
+    @Nullable
+    private static <T> T guard(@NonNull String operation, @Nullable T fallback,
+                               @NonNull Supplier<T> action) {
+        try {
+            return action.get();
+        } catch (Throwable t) {
+            XposedLog.logE(TAG, operation + " failed", t);
+            return fallback;
+        }
     }
 
     private Caller caller() {

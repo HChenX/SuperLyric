@@ -18,41 +18,10 @@
  */
 package com.hchen.superlyric.data.apps;
 
-import androidx.annotation.NonNull;
-
 import com.hchen.hooktool.data.AppData;
 
-import java.util.Objects;
-
 /**
- * 带 API 版本信息的应用数据。
- *
- * @author 焕晨HChen
+ * 原生集成 SuperLyric API 的应用列表项；类型本身用于界面区分。
  */
 public class ApiAppData extends AppData {
-    public String apiVersionName;
-    public String apiVersionCode;
-
-    @NonNull
-    @Override
-    public String toString() {
-        return "ApiAppData{" +
-            "apiVersionName='" + apiVersionName + '\'' +
-            ", apiVersionCode='" + apiVersionCode + '\'' +
-            "} " + super.toString();
-    }
-
-    @Override
-    public boolean equals(Object object) {
-        if (!(object instanceof ApiAppData that)) return false;
-        if (!super.equals(object)) return false;
-
-        return Objects.equals(apiVersionName, that.apiVersionName) &&
-            Objects.equals(apiVersionCode, that.apiVersionCode);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(super.hashCode(), apiVersionName, apiVersionCode);
-    }
 }

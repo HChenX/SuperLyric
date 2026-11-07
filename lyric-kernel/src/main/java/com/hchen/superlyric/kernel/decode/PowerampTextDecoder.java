@@ -56,14 +56,16 @@ public final class PowerampTextDecoder {
                 .decode(ByteBuffer.wrap(bytes, offset, length - offset))
                 .toString();
         } catch (CharacterCodingException ignored) {
+            // REPLACE 配置下 GBK 解码不会抛 CharacterCodingException；保留分支只为满足
+            // 受检异常签名。不再回退到会产出 U+FFFD 的 UTF-8 宽松解码。
             try {
                 return Charset.forName("GBK").newDecoder()
                     .onMalformedInput(CodingErrorAction.REPLACE)
                     .onUnmappableCharacter(CodingErrorAction.REPLACE)
                     .decode(ByteBuffer.wrap(bytes, offset, length - offset))
                     .toString();
-            } catch (CharacterCodingException e) {
-                return new String(bytes, offset, length - offset, StandardCharsets.UTF_8);
+            } catch (CharacterCodingException impossible) {
+                throw new IllegalStateException("GBK decoder with REPLACE failed", impossible);
             }
         }
     }

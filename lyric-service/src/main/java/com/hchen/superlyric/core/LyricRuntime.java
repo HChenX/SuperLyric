@@ -43,10 +43,12 @@ import com.hchen.superlyricapi.v4.ILyricFrameListener;
 import com.hchen.superlyricapi.wire.Frame;
 import com.hchen.superlyricapi.wire.WireFormatException;
 
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -74,18 +76,18 @@ public final class LyricRuntime {
     @Nullable
     private volatile byte[] mLastStopFrame;
 
-    private final ExecutorService mBroadcastExecutor = Executors.newSingleThreadExecutor(
-        daemonFactory("SuperLyric-Broadcaster", true)
-    );
+    private final ExecutorService mBroadcastExecutor =
+        boundedSingleThread("SuperLyric-Broadcaster", 32, true);
 
-    private final ExecutorService mFrameExecutor = Executors.newSingleThreadExecutor(
-        daemonFactory("SuperLyric-FrameBroadcaster", false)
-    );
+    private final ExecutorService mFrameExecutor =
+        boundedSingleThread("SuperLyric-FrameBroadcaster", 16, false);
 
     private final ScheduledExecutorService mStopConfirmer = Executors.newSingleThreadScheduledExecutor(
         daemonFactory("SuperLyric-StopConfirm", false)
     );
 
+    // 死亡通知的数量由发布者配额决定（最多 32 包 x 8 pid），且必须在 AMS 回调线程之外
+    // 执行；保持单线程队列，不在 AMS 线程内联广播。容量上界由 PublisherRegistry 保证。
     private final ExecutorService mDeathNotifier = Executors.newSingleThreadExecutor(
         daemonFactory("SuperLyric-DeathNotice", false)
     );
@@ -809,8 +811,10 @@ public final class LyricRuntime {
     private void broadcastDeath(@NonNull String action, @NonNull String packageName,
                                 @NonNull StopReason reason) {
         SuperLyricData empty = new SuperLyricData();
-        mReceivers.broadcast(action,
-            (receiver, supportsFullLyric) -> receiver.onStop(packageName, empty));
+        // 与 notifyReceiver 共用单线程：RemoteCallbackList 同时只允许一次广播，
+        // 从死亡通知线程直接广播会与歌词广播交错并抛 IllegalStateException。
+        mBroadcastExecutor.execute(() -> mReceivers.broadcast(action,
+            (receiver, supportsFullLyric) -> receiver.onStop(packageName, empty)));
         byte[] stopFrame = encode(Frame.stop(new Stop(null, reason, packageName)));
         if (stopFrame != null) {
             mLastStopFrame = stopFrame;
@@ -825,6 +829,26 @@ public final class LyricRuntime {
         int count = lyric.getLineCount();
         if (count == 0) return 0;
         return Math.max(0, Math.min(index, count - 1));
+    }
+
+    /**
+     * 单线程有界执行器；队列满时在调用方线程执行并记录，避免静默丢弃停止/全量任务。
+     * 这是明确的背压策略，不改变任务本身的发布语义。
+     */
+    private static ExecutorService boundedSingleThread(@NonNull String name, int capacity,
+                                                       boolean guardRunnable) {
+        return new ThreadPoolExecutor(
+            1, 1, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(capacity),
+            daemonFactory(name, guardRunnable),
+            (task, executor) -> {
+                if (executor.isShutdown()) return;
+                XposedLog.logW(TAG, name + " queue full (" + capacity + "); running task inline");
+                try {
+                    task.run();
+                } catch (Throwable t) {
+                    XposedLog.logE(TAG, name + " inline task failed", t);
+                }
+            });
     }
 
     private static ThreadFactory daemonFactory(@NonNull String name, boolean guardRunnable) {
@@ -845,16 +869,22 @@ public final class LyricRuntime {
     }
 
     String packageNameForPid(int pid) {
-        Object pidMap = CoreTool.getField(mAms, "mPidsSelfLocked");
-        if (pidMap != null) {
-            Object record;
-            synchronized (pidMap) {
-                record = CoreTool.callMethod(pidMap, "get", new Class[]{int.class}, pid);
+        try {
+            Object pidMap = CoreTool.getField(mAms, "mPidsSelfLocked");
+            if (pidMap != null) {
+                Object record;
+                synchronized (pidMap) {
+                    record = CoreTool.callMethod(pidMap, "get", new Class[]{int.class}, pid);
+                }
+                if (record != null) {
+                    ApplicationInfo info = (ApplicationInfo) CoreTool.getField(record, "info");
+                    if (info != null) return info.packageName;
+                }
             }
-            if (record != null) {
-                ApplicationInfo info = (ApplicationInfo) CoreTool.getField(record, "info");
-                if (info != null) return info.packageName;
-            }
+        } catch (Throwable t) {
+            // 反射失败只丢弃本次调用；异常穿过 onTransact 会让客户端进程收到 RuntimeException。
+            XposedLog.logW(TAG, "Failed to resolve package for pid " + pid, t);
+            return "";
         }
         XposedLog.logW(TAG, "Cannot resolve package for pid " + pid
             + "; AMS#mPidsSelfLocked may have moved. Dropping this call.");

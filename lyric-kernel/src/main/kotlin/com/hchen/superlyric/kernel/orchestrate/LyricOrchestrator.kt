@@ -138,6 +138,7 @@ class LyricOrchestrator(
 
     private val lock = Any()
 
+    @Volatile
     private var epoch = 0L
     private var currentIdentity: TrackIdentity? = null
     private var currentSinceMs = 0L

@@ -33,11 +33,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -55,6 +58,9 @@ import top.yukonga.miuix.kmp.blur.BlendColorEntry
 import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 @Composable
 internal fun ApiPanelPeekHeader(
@@ -165,9 +171,15 @@ internal fun ApiMonitorSummaryCard(
     backdrop: LayerBackdrop?,
     cardBlend: List<BlendColorEntry>
 ) {
-    // 可用性每次重组都重新探测（模块可能在页面存活期间启用）；版本号按可用性缓存，
-    // 避免反复发起 Binder 调用
-    val available = SuperLyric.isAvailable()
+    // 可用性低频轮询而不是每次重组探测：模块可在页面存活期间启用，但 50Hz 的看板
+    // 重组不能每帧发起一次 Binder。首次探测只做一次。
+    val initialAvailable = remember { SuperLyric.isAvailable() }
+    val available by produceState(initialValue = initialAvailable) {
+        while (true) {
+            delay(5_000L)
+            value = withContext(Dispatchers.IO) { SuperLyric.isAvailable() }
+        }
+    }
     val apiVersion = remember(available) { if (available) SuperLyric.serverApiVersion() else 0 }
 
     Card(
@@ -443,7 +455,7 @@ internal fun ApiCurrentLineCard(
             if (!words.isNullOrEmpty()) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = stringResource(R.string.api_words_breakdown, words.size),
+                    text = pluralStringResource(R.plurals.api_words_breakdown, words.size, words.size),
                     fontSize = 11.sp,
                     color = colorScheme.onBackgroundVariant
                 )
@@ -512,7 +524,7 @@ internal fun ApiAllLyricsOverviewCard(
                     color = colorScheme.primary
                 )
                 Text(
-                    text = stringResource(R.string.api_total_lines, allLyrics.size),
+                    text = pluralStringResource(R.plurals.api_total_lines, allLyrics.size, allLyrics.size),
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     color = colorScheme.onBackgroundVariant
