@@ -33,7 +33,6 @@ import com.hchen.superlyric.provider.base.MusicProvider;
  * 在解析入口截获整首歌词文本，再交给内核解析；逐行通道只取当前渲染行，会丢整首歌词，
  * 不能作为取词入口。
  *
- * @author HChenX
  */
 @HookThis(targetPackage = "com.maxmpz.audioplayer")
 public class PowerampProvider extends MusicProvider {

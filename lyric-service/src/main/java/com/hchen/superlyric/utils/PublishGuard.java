@@ -28,7 +28,6 @@ import androidx.annotation.Nullable;
  * 时长保留 {@link #DURATION_TOLERANCE_MS} 的容差（4.0 契约为 2 秒）：元数据在播放过程中
  * 会被刷新，同一首歌的不同剪辑通常相差数秒以上。
  *
- * @author 焕晨HChen
  */
 public final class PublishGuard {
     /**

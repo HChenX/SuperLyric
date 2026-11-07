@@ -874,7 +874,7 @@ public final class LyricRuntime {
             if (pidMap != null) {
                 Object record;
                 synchronized (pidMap) {
-                    record = CoreTool.callMethod(pidMap, "get", new Class[]{int.class}, pid);
+                    record = CoreTool.callMethod(pidMap, "get", new Class<?>[]{int.class}, pid);
                 }
                 if (record != null) {
                     ApplicationInfo info = (ApplicationInfo) CoreTool.getField(record, "info");

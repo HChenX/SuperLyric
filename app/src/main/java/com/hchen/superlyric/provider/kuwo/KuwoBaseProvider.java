@@ -35,7 +35,6 @@ import com.hchen.superlyric.shared.HostIdentitySource;
  *
  * <p>只发布全量歌词，进度由系统时钟负责。身份由 hooks-id 以宿主 {@code rid} 构造。
  *
- * @author 焕晨HChen
  */
 abstract class KuwoBaseProvider extends MusicProvider {
 

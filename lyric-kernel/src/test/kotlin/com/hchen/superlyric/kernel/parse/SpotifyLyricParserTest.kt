@@ -31,7 +31,6 @@ import java.io.ByteArrayOutputStream
  * 覆盖 [SpotifyLyricParser.parseLyrics] 的 JSON 与 protobuf 字节分支；它是纯函数，
  * 不触碰任何 Android API。网络与鉴权不在本测试范围内。
  *
- * @author 焕晨HChen
  */
 class SpotifyLyricParserTest {
 

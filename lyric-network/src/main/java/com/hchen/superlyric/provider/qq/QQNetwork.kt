@@ -27,6 +27,7 @@ import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
+import com.hchen.superlyric.network.HttpClients
 import com.hchen.superlyric.network.readTextBounded
 import com.hchen.superlyric.utils.LyricCacheStore
 import com.hchen.superlyric.utils.LyricDiag
@@ -36,7 +37,6 @@ import org.json.JSONObject
 
 import java.io.IOException
 import java.nio.charset.StandardCharsets
-import java.util.concurrent.TimeUnit
 
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -73,11 +73,7 @@ object QQNetwork {
      *
      * 与 Spotify 的 15/15/30 不同：后者要跑 protobuf 分析且服务端更慢，此处三家只取 JSON
      */
-    private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(4, TimeUnit.SECONDS)
-        .readTimeout(6, TimeUnit.SECONDS)
-        .callTimeout(12, TimeUnit.SECONDS)
-        .build()
+    private val client: OkHttpClient = HttpClients.standard
 
     /** (ct, cv, User-Agent) */
     private val clientProfiles = listOf(

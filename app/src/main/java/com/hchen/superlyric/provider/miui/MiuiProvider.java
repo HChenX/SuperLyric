@@ -34,7 +34,6 @@ import com.hchen.superlyric.shared.HostIdentitySource;
  * <p>稳定标识沿用 {@code MediaSession} 的 {@code MEDIA_ID}；songID 只用于取词，避免
  * {@code SongInfo} 先于元数据更新时把身份切到下一首。
  *
- * @author 焕晨HChen
  */
 @HookThis(targetPackage = "com.miui.player")
 public final class MiuiProvider extends MusicProvider {

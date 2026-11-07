@@ -26,7 +26,6 @@ import java.util.Set;
 /**
  * 支持的音乐应用清单与应用名资源映射。
  *
- * @author 焕晨HChen
  */
 public final class SupportApps {
     public static final Set<String> sMediaAppPackages = SupportedApps.PACKAGES;

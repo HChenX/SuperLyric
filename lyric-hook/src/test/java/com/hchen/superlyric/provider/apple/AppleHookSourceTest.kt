@@ -30,7 +30,6 @@ import org.junit.jupiter.api.Test
  * [AppleHookSource.cleanHtml]；[AppleHookSource.judgeTrack] 与
  * [AppleHookSource.admits] 决定回调结论是否属于当前曲目、是否被采纳。
  *
- * @author 焕晨HChen
  */
 class AppleHookSourceTest {
 

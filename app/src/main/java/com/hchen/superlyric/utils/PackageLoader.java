@@ -52,7 +52,6 @@ import java.util.concurrent.Executors;
  * 加载期间的重复请求合并为一次重新扫描。加载失败时完成 future 的异常状态，
  * 不通知监听器。
  *
- * @author 焕晨HChen
  */
 public final class PackageLoader {
     private static final String TAG = "PackageLoader";

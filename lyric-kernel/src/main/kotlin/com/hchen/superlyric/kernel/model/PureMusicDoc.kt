@@ -28,7 +28,6 @@ package com.hchen.superlyric.kernel.model
  * 不得落到这里：前者会把一次网络抖动永久固化为纯音乐，
  * 后者等于替对方断言"这首没有歌词"
  *
- * @author 焕晨HChen
  */
 object PureMusicDoc {
 

@@ -108,6 +108,13 @@ final class PublisherRegistry {
             return Registration.REJECTED;
         }
 
+        return registerWithinQuota(packageName, pid);
+    }
+
+    /**
+     * 配额检查与登记必须原子完成；拆出包内入口供测试覆盖配额边界。
+     */
+    static synchronized Registration registerWithinQuota(@NonNull String packageName, int pid) {
         Set<Integer> registrations = pids.get(packageName);
         if (registrations != null && registrations.contains(pid)) {
             return Registration.OK;

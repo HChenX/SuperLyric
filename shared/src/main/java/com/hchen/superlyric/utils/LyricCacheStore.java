@@ -55,7 +55,6 @@ import java.util.regex.Pattern;
  * 版本不符视为未命中并删除。key 仅允许 {@code [A-Za-z0-9._-]} 与 {@code '/'} 分隔，
  * 防止路径穿越。
  *
- * @author 彼岸喵Higanoneko & 焕晨HChen
  */
 public final class LyricCacheStore {
     private static final String TAG = "LyricCacheStore";

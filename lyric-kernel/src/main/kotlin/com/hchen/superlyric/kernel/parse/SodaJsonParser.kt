@@ -28,6 +28,7 @@ import com.hchen.superlyric.kernel.merge.TranslationMerger
 import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.model.LyricLine
 import com.hchen.superlyric.kernel.model.LyricWord
+import com.hchen.superlyric.kernel.text.LrcTimestamps
 import com.hchen.superlyric.kernel.text.LyricText
 
 /**
@@ -209,16 +210,12 @@ object SodaJsonParser {
             val text = LyricText.cleanInvisibleChars(match.groupValues[4]).trim()
             if (text.isEmpty()) continue
 
-            val minutes = match.groupValues[1].toLongOrNull() ?: 0L
-            val seconds = match.groupValues[2].toLongOrNull() ?: 0L
-            val fractionRaw = match.groupValues[3]
-            val fraction = when {
-                fractionRaw.isEmpty() -> 0L
-                fractionRaw.length == 1 -> fractionRaw.toLongOrNull()?.times(100) ?: 0L
-                fractionRaw.length == 2 -> fractionRaw.toLongOrNull()?.times(10) ?: 0L
-                else -> fractionRaw.take(3).toLongOrNull() ?: 0L
-            }
-            entries += TimeText(minutes * 60_000L + seconds * 1_000L + fraction, text)
+            entries += TimeText(
+                LrcTimestamps.timestampOf(
+                    match.groupValues[1], match.groupValues[2], match.groupValues[3]
+                ),
+                text,
+            )
         }
         return entries
     }

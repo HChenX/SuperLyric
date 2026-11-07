@@ -47,6 +47,7 @@ import com.hchen.superlyric.utils.PlaybackStates
 import io.github.libxposed.api.XposedModuleInterface
 
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 
@@ -322,7 +323,7 @@ abstract class MusicProvider : AbsPublisher() {
 
     /** 仅 debug 构建：用宿主 MediaSession 模拟跳转，便于测试 seek。 */
     private fun registerSeekSimulator(context: Context) {
-        if (seekReceiverRegistered) return
+        if (!seekReceiverRegistered.compareAndSet(false, true)) return
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(receiverContext: Context?, intent: Intent?) {
                 val target = intent?.getLongExtra(EXTRA_SEEK_POSITION, -1L) ?: -1L
@@ -337,16 +338,16 @@ abstract class MusicProvider : AbsPublisher() {
                 @Suppress("UnspecifiedRegisterReceiverFlag")
                 context.registerReceiver(receiver, filter)
             }
-            seekReceiverRegistered = true
         } catch (t: Throwable) {
-            // 诊断能力失败不得影响宿主
+            // 注册失败要允许后续回调重试，不能永久占住“已注册”标志。
+            seekReceiverRegistered.set(false)
             AndroidLog.logW(providerTag, "Failed to register seek simulator", t)
         }
     }
 
     /** 多进程宿主中，首次播放状态回调所在进程才持有会话。 */
     private fun ensureSeekSimulator() {
-        if (!BuildConfig.DEBUG || seekReceiverRegistered) return
+        if (!BuildConfig.DEBUG || seekReceiverRegistered.get()) return
         val context = AbsPublisher.getAppContext() ?: return
         registerSeekSimulator(context)
     }
@@ -381,9 +382,8 @@ abstract class MusicProvider : AbsPublisher() {
         @Volatile
         var hostPlaybackState: PlaybackState? = null
 
-        /** 诊断广播接收器只在每个进程注册一次 */
-        @Volatile
-        var seekReceiverRegistered = false
+        /** 诊断广播接收器只在每个进程注册一次；CAS 避免两个回调线程同时注册 */
+        val seekReceiverRegistered = AtomicBoolean(false)
 
         /** 诊断期模拟跳转播放位置的广播 action */
         const val ACTION_DEBUG_SEEK = "com.hchen.superlyric.DEBUG.SEEK"

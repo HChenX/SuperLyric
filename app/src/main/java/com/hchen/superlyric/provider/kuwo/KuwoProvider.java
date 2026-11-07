@@ -23,7 +23,6 @@ import com.hchen.processor.HookThis;
 /**
  * 酷我音乐（手机版）歌词提供者
  *
- * @author 焕晨HChen
  * @see KuwoBaseProvider 取词与身份逻辑
  */
 @HookThis(targetPackage = "cn.kuwo.player")

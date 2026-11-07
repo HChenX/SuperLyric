@@ -33,7 +33,6 @@ import java.util.regex.Pattern;
  * <p>标题用清洗后的 Levenshtein 相似度，歌手用集合重合度，时长只作为低权重维度。
  * 缺失字段的计分方式由 {@link #scoreCandidate} 按目标侧与候选侧分别处理。
  *
- * @author 焕晨HChen
  */
 public final class LyricScorer {
     private static final Pattern CLEAN_TRACK_NO_PATTERN = Pattern.compile(

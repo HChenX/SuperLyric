@@ -26,7 +26,6 @@ import com.hchen.superlyric.kernel.catalog.CatalogIds
  * 只做正向识别：明确符合 songMID（14 位 base62）或 songID（纯数字）形态的才承认。
  * 排除式判定不成立：真实的数字 songId 会落进任何看似可排除的区间
  *
- * @author 焕晨HChen
  */
 object QQIdentity {
 

@@ -30,7 +30,6 @@ import java.nio.charset.StandardCharsets;
  *
  * <p>流程：按 8 字节块 ECB 解密，不剥离 PKCS5 填充，再经 ZLib 解压为 UTF-8。
  *
- * @author 焕晨HChen
  */
 public final class QrcCipher {
     private static final byte[] QRC_DES_KEY = "!@#)(*$%123ZXC!@!@#)(NHL".getBytes(StandardCharsets.UTF_8);

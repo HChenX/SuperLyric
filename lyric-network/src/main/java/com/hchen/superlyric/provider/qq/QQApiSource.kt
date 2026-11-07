@@ -34,7 +34,6 @@ import com.hchen.superlyric.provider.base.FetchSlot
  * 没有候选不等于平台确定没有歌词：可能是没有匹配上，也可能是报文形态变化。
  * 因此检索落空返回可重试失败，不下发纯音乐占位。
  *
- * @author 焕晨HChen
  */
 class QQApiSource : LyricSource {
 

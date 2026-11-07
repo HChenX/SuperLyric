@@ -28,7 +28,6 @@ import com.hchen.hooktool.utils.PrefsTool;
 /**
  * 本地配置读取。
  *
- * @author 焕晨HChen
  */
 public final class LocalConfig {
     private static final String TAG = "ModuleConfig";

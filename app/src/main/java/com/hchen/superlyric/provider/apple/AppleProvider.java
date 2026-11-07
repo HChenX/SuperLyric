@@ -34,7 +34,6 @@ import com.hchen.superlyric.shared.HostIdentitySource;
  * <p>没有网络兜底：宿主结构变化导致抽取失败时，该 Provider 不发布结果，而不是从其它平台
  * 拉取同名歌曲；跨语言曲库的匹配错误率高。
  *
- * @author 焕晨HChen
  */
 @HookThis(targetPackage = "com.apple.android.music")
 public class AppleProvider extends MusicProvider {

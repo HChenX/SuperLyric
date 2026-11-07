@@ -21,7 +21,6 @@ package com.hchen.superlyric.data;
 /**
  * 本地配置项键名常量。
  *
- * @author 焕晨HChen
  */
 public final class PrefsKey {
     public static final String PREFS_NAME = "super_lyric_prefs";

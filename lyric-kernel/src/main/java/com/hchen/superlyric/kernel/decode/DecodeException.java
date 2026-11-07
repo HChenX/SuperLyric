@@ -23,9 +23,10 @@ package com.hchen.superlyric.kernel.decode;
  *
  * <p>解码层无法确定明文时抛出本异常，由上层归类为可重试失败或不支持。
  *
- * @author 焕晨HChen
  */
 public final class DecodeException extends Exception {
+    private static final long serialVersionUID = 1L;
+
     public DecodeException(String message) {
         super(message);
     }

@@ -28,7 +28,6 @@ import java.nio.charset.StandardCharsets;
  * <p>格式：前 4 字节为 {@code "krc1"}；其后与 16 字节静态密钥循环异或；
  * 异或结果经 ZLib 解压为 UTF-8。
  *
- * @author 焕晨HChen
  */
 public final class KrcCipher {
     private static final byte[] KRC_KEY = new byte[]{

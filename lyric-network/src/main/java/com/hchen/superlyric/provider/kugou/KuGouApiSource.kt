@@ -30,6 +30,7 @@ import com.hchen.superlyric.kernel.pipeline.LyricRequest
 import com.hchen.superlyric.kernel.decode.DecodeException
 import com.hchen.superlyric.kernel.decode.PayloadBytes
 import com.hchen.superlyric.provider.base.FetchSlot
+import com.hchen.superlyric.network.HttpClients
 import com.hchen.superlyric.network.readTextBounded
 import com.hchen.superlyric.utils.LyricCacheStore
 import com.hchen.superlyric.utils.LyricDiag
@@ -41,7 +42,6 @@ import java.io.IOException
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.Locale
-import java.util.concurrent.TimeUnit
 
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -277,10 +277,6 @@ class KuGouApiSource : LyricSource {
          * read 超时只约束单次读取，每次读到数据都会重置，无法阻止服务端持续少量返回；
          * callTimeout 为整次调用封顶。与 QQ / 网易云的 4/6/12 一致，Spotify 使用另一套更长时限。
          */
-        val httpClient: OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(4, TimeUnit.SECONDS)
-            .readTimeout(6, TimeUnit.SECONDS)
-            .callTimeout(12, TimeUnit.SECONDS)
-            .build()
+        val httpClient: OkHttpClient = HttpClients.standard
     }
 }

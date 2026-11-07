@@ -31,6 +31,7 @@ import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
 import com.hchen.superlyric.provider.base.FetchSlot
+import com.hchen.superlyric.network.HttpClients
 import com.hchen.superlyric.network.readTextBounded
 import com.hchen.superlyric.publisher.AbsPublisher
 import com.hchen.superlyric.utils.LyricCacheStore
@@ -360,10 +361,6 @@ class NeteaseApiSource : LyricSource {
          * read 超时只约束单次读，每读到数据就重置，挡不住持续挤出少量数据的服务端；
          * callTimeout 给整次调用封顶。与 QQ / 酷狗的 4/6/12 一致，Spotify 另有一套更大的值
          */
-        val client: OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(4, TimeUnit.SECONDS)
-            .readTimeout(6, TimeUnit.SECONDS)
-            .callTimeout(12, TimeUnit.SECONDS)
-            .build()
+        val client: OkHttpClient = HttpClients.standard
     }
 }

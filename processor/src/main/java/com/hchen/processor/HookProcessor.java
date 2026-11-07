@@ -54,7 +54,6 @@ import javax.tools.Diagnostic;
  * <p>按 {@code targetPackage} 分组，生成 {@code ON_PACKAGE_LOADED} 与
  * {@code ON_SYSTEM_STARTING} 两个常量表。
  *
- * @author 焕晨HChen
  */
 @AutoService(Processor.class)
 @SupportedAnnotationTypes("com.hchen.processor.HookThis")

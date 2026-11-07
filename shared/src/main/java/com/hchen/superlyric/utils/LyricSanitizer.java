@@ -269,15 +269,25 @@ public final class LyricSanitizer {
         if (lineEnd > lineStart) {
             for (int i = 0; i < size; i++) {
                 Word word = words.get(i);
-                if (word.getStart() < lineEnd && word.getEnd() > lineEnd) {
-                    words.set(i, new Word(word.getText(), word.getStart(), lineEnd));
+                long start = Math.max(lineStart, Math.min(word.getStart(), lineEnd));
+                long end = Math.max(start, Math.min(word.getEnd(), lineEnd));
+                if (start >= lineEnd) {
+                    // 起点越界时保留 1ms 窗口，避免零时长词与后续 last 兜底再次越界。
+                    start = lineEnd - 1L;
+                    end = lineEnd;
+                }
+                if (start != word.getStart() || end != word.getEnd()) {
+                    words.set(i, new Word(word.getText(), start, end));
                 }
             }
         }
 
         Word last = words.get(size - 1);
         if (last.getEnd() <= last.getStart()) {
-            words.set(size - 1, new Word(last.getText(), last.getStart(), last.getStart() + 150L));
+            long end = last.getStart() + 150L;
+            if (lineEnd > lineStart) end = Math.min(end, lineEnd);
+            if (end <= last.getStart()) end = last.getStart() + 150L;
+            words.set(size - 1, new Word(last.getText(), last.getStart(), end));
         }
     }
 }

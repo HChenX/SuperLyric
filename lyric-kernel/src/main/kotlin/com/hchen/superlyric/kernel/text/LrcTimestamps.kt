@@ -26,7 +26,6 @@ package com.hchen.superlyric.kernel.text
  *
  * 只改行首时间戳形态，不触碰正文；不匹配的内容原样返回。
  *
- * @author 焕晨HChen
  */
 object LrcTimestamps {
 
@@ -46,15 +45,19 @@ object LrcTimestamps {
     /** 解析行首或词标签中的时间戳为毫秒 */
     internal fun timestampOf(token: String): Long {
         val match = LINE_HEAD.find(token) ?: WORD_TAG.find(token) ?: return 0L
-        val minutes = match.groupValues[1].toLongOrNull() ?: 0L
-        val seconds = match.groupValues[2].toLongOrNull() ?: 0L
-        val fraction = match.groupValues[3]
-        val millis = when {
-            fraction.isEmpty() -> 0L
-            fraction.length == 1 -> fraction.toLong() * 100L
-            fraction.length == 2 -> fraction.toLong() * 10L
-            else -> fraction.take(3).toLong()
+        return timestampOf(match.groupValues[1], match.groupValues[2], match.groupValues[3])
+    }
+
+    /** 解析 mm/ss/ff 三段；fraction 为 1/2/3 位时分别按 100/10/1 ms 解释 */
+    internal fun timestampOf(minutesText: String, secondsText: String, fractionText: String): Long {
+        val minutes = minutesText.toLongOrNull() ?: 0L
+        val seconds = secondsText.toLongOrNull() ?: 0L
+        val fraction = when {
+            fractionText.isEmpty() -> 0L
+            fractionText.length == 1 -> fractionText.toLongOrNull()?.times(100) ?: 0L
+            fractionText.length == 2 -> fractionText.toLongOrNull()?.times(10) ?: 0L
+            else -> fractionText.take(3).toLongOrNull() ?: 0L
         }
-        return minutes * 60_000L + seconds * 1_000L + millis
+        return minutes * 60_000L + seconds * 1_000L + fraction
     }
 }

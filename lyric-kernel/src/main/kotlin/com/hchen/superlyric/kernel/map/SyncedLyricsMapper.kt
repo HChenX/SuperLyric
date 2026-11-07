@@ -25,6 +25,7 @@ import com.hchen.superlyric.kernel.text.LyricText
 import com.mocharealm.accompanist.lyrics.core.model.ISyncedLine
 import com.mocharealm.accompanist.lyrics.core.model.SyncedLyrics
 import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeLine
+import com.mocharealm.accompanist.lyrics.core.model.karaoke.KaraokeSyllable
 import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
 
 /**
@@ -35,9 +36,8 @@ import com.mocharealm.accompanist.lyrics.core.model.synced.SyncedLine
  * 本模块自研的格式（QRC / LRCX / Soda）直接产出 [LyricDoc]，不经过本映射，
  * 以避免有损往返。
  *
- * @author 焕晨HChen
  */
-object SyncedLyricsMapper {
+internal object SyncedLyricsMapper {
 
     /**
      * @param lyricId 曲目唯一标识，由调用方注入
@@ -65,23 +65,18 @@ object SyncedLyricsMapper {
         }
 
     private fun plainLine(line: SyncedLine): LyricLine? {
-        val text = LyricText.cleanInvisibleChars(line.content).trim()
-        if (text.isEmpty()) return null
+        val text = cleanText(line.content) ?: return null
         return LyricLine(
             startMs = line.start.toLong(),
             endMs = line.end.toLong(),
             text = text,
-            translation = line.translation?.let { LyricText.cleanInvisibleChars(it).trim() }?.ifEmpty { null },
-            phonetic = line.phonetic?.let { LyricText.cleanInvisibleChars(it).trim() }?.ifEmpty { null },
+            translation = cleanTextOrNull(line.translation),
+            phonetic = cleanTextOrNull(line.phonetic),
         )
     }
 
     private fun karaokeLine(line: KaraokeLine.MainKaraokeLine): LyricLine? {
-        val words = line.syllables.mapNotNull { syllable ->
-            val text = LyricText.cleanInvisibleChars(syllable.content)
-            if (text.isEmpty()) null
-            else LyricWord(text, syllable.start.toLong(), syllable.end.toLong())
-        }
+        val words = wordsOf(line.syllables)
         val text = words.joinToString("") { it.text }
         if (text.isEmpty()) return null
 
@@ -89,18 +84,14 @@ object SyncedLyricsMapper {
             startMs = line.start.toLong(),
             endMs = line.end.toLong(),
             text = text,
-            translation = line.translation?.let { LyricText.cleanInvisibleChars(it).trim() }?.ifEmpty { null },
-            phonetic = line.phonetic?.let { LyricText.cleanInvisibleChars(it).trim() }?.ifEmpty { null },
+            translation = cleanTextOrNull(line.translation),
+            phonetic = cleanTextOrNull(line.phonetic),
             words = words,
         )
     }
 
     private fun accompanimentLine(line: KaraokeLine.AccompanimentKaraokeLine): LyricLine? {
-        val words = line.syllables.mapNotNull { syllable ->
-            val text = LyricText.cleanInvisibleChars(syllable.content)
-            if (text.isEmpty()) null
-            else LyricWord(text, syllable.start.toLong(), syllable.end.toLong())
-        }
+        val words = wordsOf(line.syllables)
         val text = words.joinToString("") { it.text }
         if (text.isEmpty()) return null
 
@@ -108,8 +99,22 @@ object SyncedLyricsMapper {
             startMs = line.start.toLong(),
             endMs = line.end.toLong(),
             text = text,
-            translation = line.translation?.let { LyricText.cleanInvisibleChars(it).trim() }?.ifEmpty { null },
+            translation = cleanTextOrNull(line.translation),
             words = words,
         )
     }
+
+    private fun cleanText(value: String): String? =
+        LyricText.cleanInvisibleChars(value).trim().ifEmpty { null }
+
+    private fun cleanTextOrNull(value: String?): String? =
+        value?.let(::cleanText)
+
+    private fun wordsOf(syllables: List<KaraokeSyllable>): List<LyricWord> =
+        syllables.mapNotNull { syllable ->
+            // 逐字内容保持原样（只去不可见字符），不 trim；行文本的 trim 只属于 cleanText。
+            val text = LyricText.cleanInvisibleChars(syllable.content)
+            if (text.isEmpty()) null
+            else LyricWord(text, syllable.start.toLong(), syllable.end.toLong())
+        }
 }

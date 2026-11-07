@@ -34,7 +34,6 @@ import java.io.File
  * 注解处理器生成的 [HookMaps] 与 `scope.list` 都在测试的 classpath / 工作目录里，
  * 因此该约束可在构建期检查。
  *
- * @author 焕晨HChen
  */
 class HookRegistrationTest {
 

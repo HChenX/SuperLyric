@@ -18,42 +18,36 @@
  */
 package com.hchen.superlyric.provider.spotify;
 
-import androidx.annotation.NonNull;
-
 import java.io.IOException;
 
 final class OversizeException extends IOException {
+    private static final long serialVersionUID = 1L;
+
     OversizeException(int maxBytes) {
         super("Spotify lyric response exceeds " + maxBytes + " bytes");
     }
 }
 
 final class HttpStatusException extends IOException {
-    final int code;
+    private static final long serialVersionUID = 1L;
 
     HttpStatusException(int code) {
         super("Spotify HTTP " + code);
-        this.code = code;
     }
 }
 
 final class AuthenticationException extends IOException {
-    final int code;
-    final long generation;
+    private static final long serialVersionUID = 1L;
 
-    AuthenticationException(int code, long generation) {
+    AuthenticationException(int code) {
         super("Spotify authentication failed: HTTP " + code);
-        this.code = code;
-        this.generation = generation;
     }
 }
 
 final class LyricNotFoundException extends RuntimeException {
-    @NonNull
-    final String id;
+    private static final long serialVersionUID = 1L;
 
-    LyricNotFoundException(@NonNull String id, @NonNull String message) {
+    LyricNotFoundException(String message) {
         super(message);
-        this.id = id;
     }
 }

@@ -24,6 +24,7 @@ import com.hchen.superlyric.kernel.merge.TranslationMerger
 import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.model.LyricLine
 import com.hchen.superlyric.kernel.model.LyricWord
+import com.hchen.superlyric.kernel.text.LrcTimestamps
 import com.hchen.superlyric.kernel.text.LyricText
 
 /**
@@ -366,7 +367,9 @@ object QrcParser {
             val startMs = if (qrc != null) {
                 qrc.groupValues[1].toLongOrNull() ?: continue
             } else {
-                parseLrcTime(lrc!!.groupValues[1], lrc.groupValues[2], lrc.groupValues[3])
+                LrcTimestamps.timestampOf(
+                    lrc!!.groupValues[1], lrc.groupValues[2], lrc.groupValues[3]
+                )
             }
             val body = if (qrc != null) qrc.groupValues[3] else lrc!!.groupValues[4]
             val text = LyricText.cleanInvisibleChars(
@@ -379,15 +382,4 @@ object QrcParser {
         return entries
     }
 
-    private fun parseLrcTime(minStr: String, secStr: String, fracStr: String): Long {
-        val minutes = minStr.toLongOrNull() ?: 0L
-        val seconds = secStr.toLongOrNull() ?: 0L
-        val fraction = when {
-            fracStr.isEmpty() -> 0L
-            fracStr.length == 1 -> fracStr.toLongOrNull()?.times(100) ?: 0L
-            fracStr.length == 2 -> fracStr.toLongOrNull()?.times(10) ?: 0L
-            else -> fracStr.take(3).toLongOrNull() ?: 0L
-        }
-        return minutes * 60_000L + seconds * 1_000L + fraction
-    }
 }

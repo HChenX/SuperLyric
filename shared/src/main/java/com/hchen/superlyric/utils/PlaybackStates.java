@@ -32,7 +32,6 @@ import com.hchen.superlyric.kernel.orchestrate.PlaybackSignal;
  * 是否排期停止、是否撤销。{@code STATE_NONE} 在两者中都表示"不知道"：前者返回
  * {@code null}，后者返回 {@link PlaybackSignal#UNKNOWN}。
  *
- * @author 焕晨HChen
  */
 public final class PlaybackStates {
     private PlaybackStates() {

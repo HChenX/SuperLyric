@@ -108,7 +108,7 @@ final class SystemPlaybackCoordinator {
     }
 
     void onSessionDestroyed(@NonNull String packageName) {
-        if (!registry.isPublisher(packageName)) return;
+        if (!PublisherRegistry.isPublisher(packageName)) return;
 
         XposedLog.logI(TAG, "System session destroyed: " + packageName);
         boolean armed;
@@ -125,7 +125,7 @@ final class SystemPlaybackCoordinator {
     }
 
     void onPlaybackStateChanged(@NonNull String packageName, @NonNull PlaybackState state) {
-        if (!registry.isPublisher(packageName)) return;
+        if (!PublisherRegistry.isPublisher(packageName)) return;
 
         XposedLog.logD(TAG, "onSystemPlaybackStateChanged: pkg=" + packageName
             + ", state=" + state.getState()
@@ -188,7 +188,7 @@ final class SystemPlaybackCoordinator {
     }
 
     void onMetadataChanged(@NonNull String packageName, @Nullable MediaMetadata metadata) {
-        if (!registry.isPublisher(packageName) || metadata == null) return;
+        if (!PublisherRegistry.isPublisher(packageName) || metadata == null) return;
 
         String mediaId = metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID);
         String title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE);

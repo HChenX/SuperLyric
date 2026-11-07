@@ -34,7 +34,6 @@ import com.hchen.superlyric.utils.LyricDiag
  * 宿主文本带有 HTML 标记（`<br>` / 实体转义），在此统一净化：剥离标签、还原实体、
  * 清理零宽字符。Apple 不使用协议报文，因此没有解析层，只做模型映射。
  *
- * @author 焕晨HChen
  */
 class AppleHookSource : InstallableLyricSource {
 

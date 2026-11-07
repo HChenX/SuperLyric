@@ -44,7 +44,6 @@ import io.github.libxposed.service.XposedServiceHelper;
 /**
  * 模块宿主 Application，初始化配置并绑定 Xposed 服务
  *
- * @author 焕晨HChen
  */
 // 与 android.app.Application 同名，父类保留全限定名。
 public class Application extends android.app.Application implements XposedServiceHelper.OnServiceListener {

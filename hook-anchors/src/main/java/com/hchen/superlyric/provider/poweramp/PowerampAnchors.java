@@ -31,6 +31,7 @@ import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.hooktool.log.AndroidLog;
 import com.hchen.superlyric.kernel.decode.PowerampTextDecoder;
 import com.hchen.superlyric.publisher.AbsPublisher;
+import com.hchen.superlyric.utils.LyricCacheStore;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
@@ -67,11 +68,10 @@ public final class PowerampAnchors {
     /**
      * 单份歌词的捕获上限；超过它多半不是歌词文本
      */
-    private static final int MAX_LYRIC_BYTES = 2 * 1024 * 1024;
+    private static final int MAX_LYRIC_BYTES = LyricCacheStore.MAX_PAYLOAD_BYTES;
 
     private static final Set<String> sSeen = ConcurrentHashMap.newKeySet();
 
-    private static volatile boolean sInstalled;
     private static volatile boolean sRestHookInstalled;
     private static volatile boolean sLrcHookInstalled;
     private static volatile boolean sTagSetTagsInstalled;
@@ -139,7 +139,6 @@ public final class PowerampAnchors {
      */
     public static void install(@NonNull LyricsListener listener) {
         sListener = listener;
-        sInstalled = true;
         retryAnchors();
     }
 

@@ -31,7 +31,6 @@ import org.junit.jupiter.api.Test
  * 从「采纳线的两侧」起的用例是 [LyricScorer.MIN_ACCEPT_SCORE] 的定义：
  * 改动权重或时长分档后，必须让它们重新成立。
  *
- * @author 焕晨HChen
  */
 class LyricScorerTest {
 

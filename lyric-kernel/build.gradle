@@ -7,7 +7,7 @@ kotlin {
 }
 
 dependencies {
-    api libs.lyrics.core
+    implementation libs.lyrics.core
     implementation libs.gson
 
     testImplementation platform(libs.junit.bom)

@@ -28,7 +28,6 @@ import java.lang.annotation.Target;
  *
  * <p>保留策略为 {@code SOURCE}，只在编译期由注解处理器读取，不进入运行时。
  *
- * @author 焕晨HChen
  */
 @Retention(RetentionPolicy.SOURCE)
 @Target(ElementType.TYPE)

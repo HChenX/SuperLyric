@@ -23,6 +23,7 @@ import com.hchen.superlyricapi.model.Line
 import com.hchen.superlyricapi.model.Word
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
@@ -68,6 +69,26 @@ class LyricSanitizerTest {
         assertNotNull(cleaned)
         assertNotNull(cleaned!!.words, "只差一个全角空格不该让逐字数据被判废")
         assertEquals(2, cleaned.words!!.size)
+    }
+
+    @Test
+    fun `a word starting after the line end is pulled back inside`() {
+        val line = Line(
+            "ab",
+            0L,
+            1_000L,
+            listOf(Word("a", 0L, 400L), Word("b", 1_500L, 1_600L)),
+            null,
+            null,
+        )
+
+        val cleaned = LyricSanitizer.sanitizeLine(line)
+
+        assertNotNull(cleaned)
+        val words = cleaned!!.words
+        assertNotNull(words)
+        assertTrue(words!!.all { it.start >= 0L && it.end <= 1_000L }, "逐字时序必须落在行内")
+        assertEquals("ab", words.joinToString("") { it.text })
     }
 
     @Test

@@ -32,7 +32,6 @@ import com.hchen.superlyric.shared.HostIdentitySource;
  * 没有可 Hook 的歌词载体。唯一可行路径是拉取官方 {@code color-lyrics/v2} 接口，鉴权
  * 复用宿主自己已经发出的会话头，模块不持有任何凭证。
  *
- * @author 焕晨HChen
  */
 @HookThis(targetPackage = "com.spotify.music")
 public class SpotifyProvider extends MusicProvider {

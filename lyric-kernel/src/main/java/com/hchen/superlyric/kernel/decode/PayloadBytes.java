@@ -24,7 +24,6 @@ import java.util.Base64;
 /**
  * 原始载荷的十六进制 / Base64 还原工具。
  *
- * @author 焕晨HChen
  */
 public final class PayloadBytes {
     private PayloadBytes() {

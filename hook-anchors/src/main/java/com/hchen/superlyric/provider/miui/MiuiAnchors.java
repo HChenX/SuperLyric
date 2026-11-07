@@ -39,7 +39,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>只读取 {@code SongInfo} 的 id、名称、歌手和时长；歌词由接口获取，不读取宿主内部
  * 的行/词模型。
  *
- * @author 焕晨HChen
  */
 public final class MiuiAnchors {
     private static final String TAG = "MiuiAnchors";

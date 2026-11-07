@@ -19,7 +19,6 @@
 package com.hchen.superlyric.ui.screen
 
 import android.annotation.SuppressLint
-import android.app.Activity
 import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -167,10 +166,8 @@ fun HomeLayout(
                         onClick = {
                             val next = !launcherHidden
                             if (HomeSettingsController.setLauncherHidden(context, next)) {
-                                // 图标状态已由 setLauncherHidden 写入；隐藏时结束本应用全部 task，
-                                // 避免从最近任务回到已隐藏的入口
+                                // setLauncherHidden 已在隐藏时结束全部 task，这里不再重复 finish。
                                 launcherHidden = next
-                                if (next) (context as? Activity)?.finishAndRemoveTask()
                             } else {
                                 Toast.makeText(
                                     context,

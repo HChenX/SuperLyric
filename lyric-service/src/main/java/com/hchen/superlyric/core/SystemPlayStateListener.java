@@ -45,7 +45,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * {@link LyricRuntime}。回调经专用的 handler 线程派发，不再占用 system_server 主线程；
  * 运行时方法仍不得在该线程上阻塞。
  *
- * @author 焕晨HChen
  */
 public final class SystemPlayStateListener {
     private static final String TAG = "SystemPlayStateListener";

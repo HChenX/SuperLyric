@@ -25,7 +25,6 @@ import java.util.zip.Inflater;
 /**
  * RFC 1950 ZLib 解压工具。
  *
- * @author 焕晨HChen
  */
 public final class Zlib {
     private static final int BUFFER_SIZE = 8192;

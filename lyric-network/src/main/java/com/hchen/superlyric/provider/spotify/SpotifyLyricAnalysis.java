@@ -46,7 +46,6 @@ import okhttp3.Response;
  * <p>
  * Inspired from tomakino/LyricProvider/spotify-music.
  *
- * @author 彼岸喵Higanoneko & 焕晨HChen
  */
 public final class SpotifyLyricAnalysis {
     private static final String TAG = "SpotifyLyricAnalysis";
@@ -176,10 +175,10 @@ public final class SpotifyLyricAnalysis {
             int code = response.code();
             if (code == 401 || code == 403) {
                 invalidate(headers);
-                throw new AuthenticationException(code, headers.generation);
+                throw new AuthenticationException(code);
             }
             if (code == 404) {
-                throw new LyricNotFoundException(id, "No lyric found for " + id);
+                throw new LyricNotFoundException("No lyric found for " + id);
             }
             if (!response.isSuccessful()) {
                 throw new HttpStatusException(code);

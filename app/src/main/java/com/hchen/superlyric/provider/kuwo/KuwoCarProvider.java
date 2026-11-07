@@ -27,7 +27,6 @@ import com.hchen.processor.HookThis;
  * 但混淆后的包名不同（车机版是 {@code cn.kuwo.mod.lyric} 单数），锚点按候选包名
  * 逐个尝试，见 {@link KuwoAnchors}。
  *
- * @author 焕晨HChen
  */
 @HookThis(targetPackage = "cn.kuwo.kwmusiccar")
 public final class KuwoCarProvider extends KuwoBaseProvider {

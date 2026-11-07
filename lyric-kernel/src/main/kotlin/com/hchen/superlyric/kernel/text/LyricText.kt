@@ -21,7 +21,6 @@ package com.hchen.superlyric.kernel.text
 /**
  * 歌词文本净化与共用的时序兜底工具
  *
- * @author 焕晨HChen
  */
 object LyricText {
 

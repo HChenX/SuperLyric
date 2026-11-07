@@ -39,7 +39,6 @@ import java.util.concurrent.Executors
  *
  * 只需一次解析、一个 Hook 点。宿主的行/词模型完全不需要触碰。
  *
- * @author 焕晨HChen
  */
 class SaltHookSource(
     private val meta: HostTrackMetaSource,
