@@ -35,6 +35,7 @@ import java.util.function.Supplier;
 /**
  * 3.x Binder 门面：只解析调用方身份、判定访问权限并转发到 {@link LyricRuntime}。
  */
+@SuppressWarnings("deprecation") // 3.x Binder 门面：协议模型 SuperLyricData 已标记 deprecated
 public final class SuperLyricService extends ISuperLyricManager.Stub {
     private static final String TAG = "SuperLyricService";
 

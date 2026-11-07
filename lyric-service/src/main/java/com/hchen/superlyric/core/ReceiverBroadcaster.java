@@ -220,11 +220,15 @@ final class ReceiverBroadcaster {
             }
             if (dead != null) {
                 for (ISuperLyricReceiver receiver : dead) {
-                    callbacks.unregister(receiver);
                     IBinder binder = receiver.asBinder();
-                    binders.remove(binder);
-                    Entry removed = entries.remove(binder);
-                    if (removed != null) decrement(removed.uid);
+                    // 与 register/unregister/onCallbackDied 共用 registrationLock：
+                    // unregister 与状态删除必须原子，否则并发 register 可能被误删并重复扣配额。
+                    synchronized (registrationLock) {
+                        callbacks.unregister(receiver);
+                        binders.remove(binder);
+                        Entry removed = entries.remove(binder);
+                        if (removed != null) decrement(removed.uid);
+                    }
                     XposedLog.logI(TAG, "Unregistered dead receiver: " + binder);
                 }
             }

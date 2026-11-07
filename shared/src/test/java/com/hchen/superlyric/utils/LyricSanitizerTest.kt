@@ -18,6 +18,9 @@
  */
 package com.hchen.superlyric.utils
 
+import com.hchen.superlyric.kernel.pipeline.LyricFormat
+import com.hchen.superlyric.kernel.pipeline.LyricPipeline
+import com.hchen.superlyric.kernel.pipeline.LyricRequest
 import com.hchen.superlyric.kernel.text.LyricText
 import com.hchen.superlyricapi.model.Line
 import com.hchen.superlyricapi.model.Word
@@ -89,6 +92,59 @@ class LyricSanitizerTest {
         assertNotNull(words)
         assertTrue(words!!.all { it.start >= 0L && it.end <= 1_000L }, "逐字时序必须落在行内")
         assertEquals("ab", words.joinToString("") { it.text })
+    }
+
+    @Test
+    fun `line normalizer output survives sanitizer unchanged`() {
+        val doc = LyricPipeline.parse(
+            LyricRequest(
+                format = LyricFormat.GENERAL,
+                text = "[00:01.00]<00:01.00>a<00:01.00>b",
+            )
+        )
+        val line = doc!!.lines.single()
+        val input = Line(
+            line.text,
+            line.startMs,
+            line.endMs,
+            line.words.map { Word(it.text, it.startMs, it.endMs) }.takeIf { it.isNotEmpty() },
+            null,
+            null,
+        )
+
+        val cleaned = LyricSanitizer.sanitizeLine(input)
+
+        assertNotNull(cleaned)
+        assertEquals(input.text, cleaned!!.text)
+        assertEquals(input.start, cleaned.start)
+        assertEquals(input.end, cleaned.end)
+        assertEquals(input.words, cleaned.words)
+    }
+
+    @Test
+    fun `a word after a full-line word is merged without overlap`() {
+        val line = Line(
+            "ab",
+            0L,
+            1_000L,
+            listOf(Word("a", 0L, 1_000L), Word("b", 1_500L, 1_600L)),
+            null,
+            null,
+        )
+
+        val cleaned = LyricSanitizer.sanitizeLine(line)
+
+        assertNotNull(cleaned)
+        val words = cleaned!!.words
+        assertNotNull(words)
+        var previousEnd = 0L
+        for (word in words!!) {
+            assertTrue(word.start >= previousEnd, "词起点不得早于前词结束")
+            assertTrue(word.end >= word.start, "词尾不得早于词头")
+            assertTrue(word.start >= 0L && word.end <= 1_000L, "词必须落在行内")
+            previousEnd = word.end
+        }
+        assertEquals("ab", words.joinToString("") { it.text }, "越界词文本必须保留")
     }
 
     @Test

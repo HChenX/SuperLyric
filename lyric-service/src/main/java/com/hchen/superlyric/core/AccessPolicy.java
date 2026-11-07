@@ -293,32 +293,34 @@ public final class AccessPolicy {
         Bundle metadata = info.metaData;
         if (metadata == null) return Level.DENY;
 
-        boolean marked = readBoolean(metadata.get(META_API));
-        int versionCode = readInt(metadata.get(META_API_VERSION));
+        // manifest 元数据类型不固定；先按字符串读，再回退到类型化 getter，避免使用
+        // 已 deprecated 的 BaseBundle.get(String)。
+        boolean marked = readBoolean(metadata, META_API);
+        int versionCode = readInt(metadata, META_API_VERSION);
         return resolve(false, false, marked, versionCode);
     }
 
     private static int versionOf(@Nullable ApplicationInfo info) {
         if (info == null || info.metaData == null) return 0;
-        return readInt(info.metaData.get(META_API_VERSION));
+        return readInt(info.metaData, META_API_VERSION);
     }
 
-    private static boolean readBoolean(@Nullable Object value) {
-        if (value instanceof Boolean) return (Boolean) value;
-        if (value instanceof String) return Boolean.parseBoolean((String) value);
-        return false;
+    private static boolean readBoolean(@NonNull Bundle metadata, @NonNull String key) {
+        String text = metadata.getString(key);
+        if (text != null) return Boolean.parseBoolean(text);
+        return metadata.getBoolean(key, false);
     }
 
-    private static int readInt(@Nullable Object value) {
-        if (value instanceof Number) return ((Number) value).intValue();
-        if (value instanceof String) {
+    private static int readInt(@NonNull Bundle metadata, @NonNull String key) {
+        String text = metadata.getString(key);
+        if (text != null) {
             try {
-                return Integer.parseInt(((String) value).trim());
+                return Integer.parseInt(text.trim());
             } catch (NumberFormatException ignored) {
                 return 0;
             }
         }
-        return 0;
+        return metadata.getInt(key, 0);
     }
 
     @NonNull

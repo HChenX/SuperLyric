@@ -267,27 +267,64 @@ public final class LyricSanitizer {
         }
 
         if (lineEnd > lineStart) {
-            for (int i = 0; i < size; i++) {
-                Word word = words.get(i);
-                long start = Math.max(lineStart, Math.min(word.getStart(), lineEnd));
-                long end = Math.max(start, Math.min(word.getEnd(), lineEnd));
+            List<Word> normalized = new ArrayList<>(size);
+            long previousEnd = lineStart;
+            for (Word word : words) {
+                long start = Math.max(previousEnd, word.getStart());
+                long end = Math.max(start, word.getEnd());
+
                 if (start >= lineEnd) {
-                    // 起点越界时保留 1ms 窗口，避免零时长词与后续 last 兜底再次越界。
-                    start = lineEnd - 1L;
-                    end = lineEnd;
+                    if (normalized.isEmpty()) {
+                        // 没有任何前词可合并时，让首个越界词占用整行，保留其文本。
+                        start = lineStart;
+                        end = lineEnd;
+                    } else {
+                        // 行尾已无空间：把越界词合并进前词，避免重叠/乱序，也不丢文本。
+                        int lastIndex = normalized.size() - 1;
+                        Word previous = normalized.get(lastIndex);
+                        normalized.set(lastIndex, new Word(
+                            previous.getText() + word.getText(),
+                            previous.getStart(),
+                            lineEnd
+                        ));
+                        continue;
+                    }
                 }
-                if (start != word.getStart() || end != word.getEnd()) {
-                    words.set(i, new Word(word.getText(), start, end));
+
+                if (start < lineStart) start = lineStart;
+                if (end > lineEnd) end = lineEnd;
+                if (end < start) end = start;
+                normalized.add(new Word(word.getText(), start, end));
+                previousEnd = end;
+            }
+
+            // 最后一个词仍为零时长：并入前词，保证有序且不越界。
+            if (normalized.size() > 1) {
+                Word last = normalized.get(normalized.size() - 1);
+                if (last.getEnd() <= last.getStart()) {
+                    Word previous = normalized.get(normalized.size() - 2);
+                    normalized.set(normalized.size() - 2, new Word(
+                        previous.getText() + last.getText(),
+                        previous.getStart(),
+                        lineEnd
+                    ));
+                    normalized.remove(normalized.size() - 1);
+                }
+            } else if (!normalized.isEmpty()) {
+                Word only = normalized.get(0);
+                if (only.getEnd() <= only.getStart()) {
+                    normalized.set(0, new Word(only.getText(), lineStart, lineEnd));
                 }
             }
+
+            words.clear();
+            words.addAll(normalized);
+            return;
         }
 
         Word last = words.get(size - 1);
         if (last.getEnd() <= last.getStart()) {
-            long end = last.getStart() + 150L;
-            if (lineEnd > lineStart) end = Math.min(end, lineEnd);
-            if (end <= last.getStart()) end = last.getStart() + 150L;
-            words.set(size - 1, new Word(last.getText(), last.getStart(), end));
+            words.set(size - 1, new Word(last.getText(), last.getStart(), last.getStart() + 150L));
         }
     }
 }

@@ -43,7 +43,6 @@ import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 
@@ -258,7 +257,7 @@ class KuGouApiSource : LyricSource {
      */
     private fun get(url: String): String {
         val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).build()
-        val call = httpClient.newCall(request)
+        val call = HttpClients.standard.newCall(request)
         requests.withCall(call) { call.execute() }.use { response: Response ->
             if (!response.isSuccessful) throw IOException("HTTP ${response.code} from $url")
             return response.body.readTextBounded()
@@ -271,12 +270,5 @@ class KuGouApiSource : LyricSource {
 
         const val USER_AGENT = "KuGou2012-7093-Android601"
 
-        /**
-         * 取词的整体时限预算
-         *
-         * read 超时只约束单次读取，每次读到数据都会重置，无法阻止服务端持续少量返回；
-         * callTimeout 为整次调用封顶。与 QQ / 网易云的 4/6/12 一致，Spotify 使用另一套更长时限。
-         */
-        val httpClient: OkHttpClient = HttpClients.standard
     }
 }

@@ -57,6 +57,7 @@ import java.util.concurrent.TimeUnit;
  * <p>会话只保存 4.0 Lyric。SuperLyricData 只出现在 3.x 入口与出口，由
  * LyricDocAdapter 转换；Binder 身份与权限判定留在两个 Service 门面。
  */
+@SuppressWarnings("deprecation") // 3.x 边界：Binder 入参/出参仍使用 SuperLyricData
 public final class LyricRuntime {
     private static final String TAG = "LyricRuntime";
 

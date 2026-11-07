@@ -65,11 +65,6 @@ public final class PowerampAnchors {
     private static final String LYRICS_ACTIVITY = "com.maxmpz.audioplayer.dialogs.LyricsActivity";
     private static final String REST_PROVIDER = "com.maxmpz.audioplayer.rest.RestProvider";
 
-    /**
-     * 单份歌词的捕获上限；超过它多半不是歌词文本
-     */
-    private static final int MAX_LYRIC_BYTES = LyricCacheStore.MAX_PAYLOAD_BYTES;
-
     private static final Set<String> sSeen = ConcurrentHashMap.newKeySet();
 
     private static volatile boolean sRestHookInstalled;
@@ -305,8 +300,8 @@ public final class PowerampAnchors {
             int read;
             while ((read = input.read(buffer)) != -1) {
                 total += read;
-                if (total > MAX_LYRIC_BYTES) {
-                    AndroidLog.logW(TAG, "Lyric stream exceeds " + MAX_LYRIC_BYTES + " bytes");
+                if (total > LyricCacheStore.MAX_PAYLOAD_BYTES) {
+                    AndroidLog.logW(TAG, "Lyric stream exceeds " + LyricCacheStore.MAX_PAYLOAD_BYTES + " bytes");
                     return null;
                 }
                 output.write(buffer, 0, read);

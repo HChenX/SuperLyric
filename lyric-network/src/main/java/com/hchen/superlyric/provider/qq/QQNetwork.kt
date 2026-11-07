@@ -39,7 +39,6 @@ import java.io.IOException
 import java.nio.charset.StandardCharsets
 
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
@@ -73,8 +72,6 @@ object QQNetwork {
      *
      * 与 Spotify 的 15/15/30 不同：后者要跑 protobuf 分析且服务端更慢，此处三家只取 JSON
      */
-    private val client: OkHttpClient = HttpClients.standard
-
     /** (ct, cv, User-Agent) */
     private val clientProfiles = listOf(
         Triple("19", "1873", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) QQMusic/18.73"),
@@ -399,7 +396,7 @@ object QQNetwork {
             .post(body.toRequestBody(JSON_MEDIA_TYPE))
             .header("User-Agent", userAgent)
             .build()
-        client.newCall(request).execute().use { response ->
+        HttpClients.standard.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("HTTP ${response.code} from $url")
             return response.body.readTextBounded()
         }

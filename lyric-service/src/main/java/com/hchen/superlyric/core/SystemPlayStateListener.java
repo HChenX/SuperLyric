@@ -133,10 +133,14 @@ public final class SystemPlayStateListener {
         if (mRuntime.isSystemPlayStateListenerDisabled(packageName)) return;
         long token = Binder.clearCallingIdentity();
         try {
-            for (MediaController controller : mCallbacks.keySet()) {
+            for (Map.Entry<MediaController, MediaControllerCallback> entry : mCallbacks.entrySet()) {
+                MediaController controller = entry.getKey();
                 if (TextUtils.equals(controller.getPackageName(), packageName)) {
+                    MediaControllerCallback callback = entry.getValue();
                     // 状态读取与 runtime 回调统一在回调线程执行；调用方可能来自 Binder 线程。
                     mCallbackHandler.post(() -> {
+                        // 入队后 controller 可能已注销/替换；与首次同步同一检查。
+                        if (mCallbacks.get(controller) != callback) return;
                         if (mRuntime.isSystemPlayStateListenerDisabled(packageName)) return;
                         try {
                             PlaybackState state = controller.getPlaybackState();

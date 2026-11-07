@@ -355,7 +355,9 @@ class PowerampHookSource : InstallableLyricSource {
         if (rawPath.startsWith("content://")) {
             return try {
                 AbsPublisher.getAppContext()?.contentResolver
-                    ?.openInputStream(Uri.parse(rawPath))?.use { readBounded(it, MAX_LYRIC_BYTES) }
+                    ?.openInputStream(Uri.parse(rawPath))?.use {
+                        readBounded(it, LyricCacheStore.MAX_PAYLOAD_BYTES.toLong())
+                    }
             } catch (t: Throwable) {
                 AndroidLog.logD(sourceName, "Failed to read $rawPath: ${t.message}")
                 null
@@ -364,7 +366,7 @@ class PowerampHookSource : InstallableLyricSource {
 
         val file = resolveFile(rawPath) ?: return null
         return try {
-            if (file.length() > MAX_LYRIC_BYTES) {
+            if (file.length() > LyricCacheStore.MAX_PAYLOAD_BYTES) {
                 AndroidLog.logW(sourceName, "LRC file too large: $file (${file.length()} bytes)")
                 return null
             }
@@ -524,7 +526,7 @@ class PowerampHookSource : InstallableLyricSource {
             AndroidLog.logD(sourceName, "Lyric file is missing or empty: ${file.absolutePath}")
             return null
         }
-        if (file.length() > MAX_LYRIC_BYTES) {
+        if (file.length() > LyricCacheStore.MAX_PAYLOAD_BYTES) {
             AndroidLog.logW(sourceName, "Lyric file too large: ${file.absolutePath}")
             return null
         }
@@ -557,10 +559,5 @@ class PowerampHookSource : InstallableLyricSource {
             output.write(buffer, 0, read)
         }
         return output.toByteArray()
-    }
-
-    private companion object {
-        /** 与磁盘缓存共用同一条响应上限，避免两份 2 MiB 常量漂移 */
-        val MAX_LYRIC_BYTES = LyricCacheStore.MAX_PAYLOAD_BYTES.toLong()
     }
 }

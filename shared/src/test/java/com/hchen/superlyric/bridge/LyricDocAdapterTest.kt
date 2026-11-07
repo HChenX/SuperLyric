@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 /*
  * This file is part of SuperLyric.
  *

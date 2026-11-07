@@ -34,7 +34,7 @@ public final class Zlib {
      *
      * <p>压缩流可能解出远大于输入的数据，必须设限以防宿主 OOM。超限按解码失败处理。
      */
-    private static final int MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
+    private static final int MAX_OUTPUT_BYTES = PayloadLimits.MAX_PAYLOAD_BYTES;
 
     private Zlib() {
     }

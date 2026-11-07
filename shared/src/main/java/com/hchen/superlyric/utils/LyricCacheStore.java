@@ -24,6 +24,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.superlyric.kernel.decode.PayloadLimits;
 import com.hchen.superlyric.publisher.AbsPublisher;
 
 import java.io.File;
@@ -68,7 +69,7 @@ public final class LyricCacheStore {
     /**
      * 单个歌词原始响应上限；正常歌词响应远低于此值
      */
-    public static final int MAX_PAYLOAD_BYTES = 2 * 1024 * 1024;
+    public static final int MAX_PAYLOAD_BYTES = PayloadLimits.MAX_PAYLOAD_BYTES;
     /**
      * 帧头：{@code {"v":<版本>,"n":<载荷字节数>,"d":}
      *

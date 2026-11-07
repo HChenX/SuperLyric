@@ -45,7 +45,6 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
@@ -267,7 +266,7 @@ class NeteaseApiSource : LyricSource {
             .apply { hostCookie()?.let { header("Cookie", it) } }
             .build()
 
-        val call = client.newCall(request)
+        val call = HttpClients.standard.newCall(request)
         requests.withCall(call) { call.execute() }.use { response ->
             if (!response.isSuccessful) {
                 AndroidLog.logW(sourceName, "HTTP ${response.code} from ${request.url.host}")
@@ -289,7 +288,7 @@ class NeteaseApiSource : LyricSource {
             .apply { hostCookie()?.let { header("Cookie", it) } }
             .build()
 
-        val call = client.newCall(request)
+        val call = HttpClients.standard.newCall(request)
         requests.withCall(call) { call.execute() }.use { response ->
             if (!response.isSuccessful) {
                 AndroidLog.logW(sourceName, "HTTP ${response.code} from ${request.url.host}")
@@ -355,12 +354,5 @@ class NeteaseApiSource : LyricSource {
 
         val FORM_MEDIA_TYPE = "application/x-www-form-urlencoded; charset=utf-8".toMediaType()
 
-        /**
-         * 取词的整体时限预算
-         *
-         * read 超时只约束单次读，每读到数据就重置，挡不住持续挤出少量数据的服务端；
-         * callTimeout 给整次调用封顶。与 QQ / 酷狗的 4/6/12 一致，Spotify 另有一套更大的值
-         */
-        val client: OkHttpClient = HttpClients.standard
     }
 }
