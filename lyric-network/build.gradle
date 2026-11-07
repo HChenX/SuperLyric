@@ -17,10 +17,6 @@ android {
         targetCompatibility JavaVersion.VERSION_21
     }
 
-    buildFeatures {
-        buildConfig true
-    }
-
     testOptions {
         unitTests.all {
             it.useJUnitPlatform()
@@ -33,7 +29,6 @@ dependencies {
     api project(':shared')
     api project(':lyric-kernel')
     implementation libs.okhttp
-    implementation libs.gson
     implementation libs.hooktool
     implementation libs.annotation
 

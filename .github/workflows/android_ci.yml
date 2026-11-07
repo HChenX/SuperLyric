@@ -51,7 +51,10 @@ jobs:
         run: ./gradlew assembleRelease assembleDebug --stacktrace
 
       - name: Run unit tests
-        run: ./gradlew :lyric-kernel:test :app:testDebugUnitTest --stacktrace
+        run: ./gradlew :lyric-kernel:test :shared:testDebugUnitTest :hook-anchors:testDebugUnitTest :hooks-id:testDebugUnitTest :lyric-hook:testDebugUnitTest :lyric-network:testDebugUnitTest :lyric-service:testDebugUnitTest :app:testDebugUnitTest --stacktrace
+
+      - name: Run lint
+        run: ./gradlew :app:lintDebug :app:lintRelease --stacktrace
 
       - name: Upload Release Apk
         uses: actions/upload-artifact@v4

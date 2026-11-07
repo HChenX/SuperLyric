@@ -140,7 +140,7 @@ dependencies {
     implementation project(':lyric-network')
     implementation project(':lyric-service')
 
-    implementation project(':processor')
+    compileOnly project(':processor')
     annotationProcessor project(':processor')
 
     testImplementation platform(libs.junit.bom)

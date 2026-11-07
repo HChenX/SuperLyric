@@ -1,213 +1,160 @@
 # CLAUDE.md
 
-Normative rules for AI agents on SuperLyric. Read before changing code. This file describes the
-current tree; update it in the same change when modules, registrations, commands, or conventions
-change.
+Normative rules for AI coding agents. Read before changing code. Keep this file accurate for the
+current tree. Maximum 160 lines, four top-level sections.
 
-## 1. Project
+## 1. Architecture
 
-SuperLyric is an LSPosed module. Providers run in music-app processes and publish full lyrics.
-system_server owns playback state and progress and broadcasts lyrics to SuperLyricApi clients.
+SuperLyric is an LSPosed module. Music-app processes acquire lyrics and publish full documents;
+system_server owns playback state and progress and serves SuperLyricApi clients.
 
-    host (:app): Provider -> Hook / API source -> LyricOutcome -> LyricOrchestrator
-                 LyricDocAdapter -> AbsPublisher -> Binder (full lyric | stop)
-    system_server (:app): SuperLyricService / SuperLyricV4Service -> LyricRuntime -> subscribers
+    host: anchors -> identity / lyric / network -> kernel -> orchestrator
+          -> LyricPublishBridge -> AbsPublisher -> Binder (full lyric | stop)
+    system_server: SuperLyricSystemService -> LyricRuntime -> subscribers
 
-| Module | Kind | Contains |
-| :--- | :--- | :--- |
-| :app | Android | providers, anchors, bridge, system service, Compose UI |
-| :lyric-kernel | pure JVM Kotlin | model, decode, parse, merge, pipeline, outcome, identity, clock, orchestrate, text |
-| :processor | Java annotation processor | consumes @HookThis, emits HookMaps |
+Modules:
+- :lyric-kernel: pure JVM model, decode, parse, merge, pipeline, outcome, identity, catalog,
+  clock, orchestration, text.
+- :shared: contracts, MusicProvider, provider helpers, bridge, publisher, cache, diagnostics.
+- :hook-anchors: host hooks, DexKit, raw anchor buses. :hooks-id: identity extraction.
+- :lyric-hook: host lyric extraction. :lyric-network: online fetch and matching.
+- :lyric-service: system_server runtime and Binder facades. :app: UI and Java @HookThis shells.
+- :processor: Java annotation processor; consumes @HookThis and emits HookMaps.
+
+Dependencies are fixed: kernel <- shared <- hook-anchors <- {hooks-id, lyric-hook};
+lyric-network -> shared/kernel; lyric-service -> shared/kernel; app -> all. No reverse or circular
+dependency. hooks-id and lyric-hook never depend on each other.
+
+Boundaries:
+
+- lyric-kernel must not reference android.* directly or transitively.
+- All host hooks and DexKit lookups live in hook-anchors. An anchor emits raw events through a
+  multi-listener bus; it does not build identity, parse lyrics, or touch the network.
+- identity belongs to hooks-id, lyric body extraction to lyric-hook, network retrieval and matching
+  to lyric-network. hooks-id normally only extracts identity; Netease wrapper bypass and Spotify
+  header capture are the two install exceptions.
+- shared holds contracts and reusable helpers only; it must not depend on a hook or service module.
 
 ## 2. Invariants
 
-### 2.1 Acquisition
+### Acquisition and registration
 
 - Prefer the Hook path: fewest points, each deliberate. Do not hook broadly.
-- Locate obfuscated classes with DexKit behind a cache key. Locate the class first, then the member.
-  Never hard-code obfuscated names or search for a method directly.
-- Anchor on a string constant (log line, error, resource key) or a @Keep type. If the anchor stops
-  matching, degrade to the API path. Never crash the host.
-- The API path is a complete provider on its own. Hook-first is the default; API is the fallback.
-- Publish full lyrics and stop only. Position, speed, and state belong to the framework. The host
-  has no progress channel and the module must not add one.
-
-### 2.2 Registration
-
+- Locate obfuscated classes with DexKit behind a cache key. Find the class first, then the member.
+  Anchor on a string constant or a @Keep type; if it stops matching, degrade to API. Never crash
+  the host.
+- The API path is complete on its own. Hook-first is default; API is fallback.
 - Concrete providers must be Java. @HookThis is SOURCE-retained and consumed by the Java
-  annotation processor; Kotlin providers never reach HookMaps and fail silently. Base classes may
-  be Kotlin.
-- Adding an app requires all three registrations:
+  annotation processor; Kotlin providers never reach HookMaps and fail silently.
+- Adding an app needs: @HookThis in the Java shell, the package in
+  app/src/main/resources/META-INF/xposed/scope.list, and entries in SupportApps maps plus both
+  strings.xml files. Missing scope.list is silent; check it first.
 
-| # | Where | If missing |
-| :--- | :--- | :--- |
-| 1 | @HookThis(targetPackage = "...") | nothing mounts |
-| 2 | app/src/main/resources/META-INF/xposed/scope.list | the module is never loaded |
-| 3 | SupportApps.sMediaAppPackages, SupportApps.sPackageLabelRes, app/src/main/res/values/strings.xml, app/src/main/res/values-zh-rCN/strings.xml | the app is missing from the UI |
+### Identity and outcome
 
-Missing scope.list is silent. Check it first when a provider appears dead.
-
-### 2.3 Outcome and identity
-
-- :lyric-kernel must not reference android.*, directly or transitively. Android types belong in :app.
-- LyricOutcome decides whether a placeholder may be published.
+- HostIdentitySource.current(metadata) is the identity entry. Use a platform ID when available;
+  otherwise compare title, artist, and duration. MediaMetadata is not trustworthy.
+- TrackIdentity equality is the original five fields. CatalogId is companion data excluded from
+  equals, hashCode, and matches; it travels with identity. Do not change this rule casually.
+- Filter placeholder IDs with TrackIdentity.usableId: 0, -1, null, unknown, and none are invalid.
+- LyricOutcome decides placeholders:
 
 | Outcome | Meaning | Placeholder |
 | :--- | :--- | :--- |
 | Success | parsed lyric lines | no |
-| NoLyrics | the platform or host deterministically reports no lyric | yes, only this outcome |
-| Unsupported | the source cannot serve the track | never |
-| TransientFailure | the fetch failed and nothing is known | never |
+| NoLyrics | platform or host deterministically reports no lyric | yes, only this outcome |
+| Unsupported | source cannot serve the track | never |
+| TransientFailure | fetch failed and nothing is known | never |
 
-A search miss, unreadable payload, zero parsed lines, or failed decrypt is not NoLyrics. It is our
-failure, not a statement about the track.
+A search miss, unreadable payload, zero parsed lines, or failed decrypt is not NoLyrics.
 
-- TrackIdentity compares stable IDs when both sides have one; otherwise it uses title, artist, and
-  duration. Title-only identity merges distinct tracks and breaks the second one.
-- When a host exposes a platform identifier, override buildIdentity to use it. Otherwise hook and
-  MediaMetadata report different representations and the hook result is discarded as stale.
-- MediaMetadata is not trustworthy. Hosts write lyric lines and fake artists into it. Prefer the
-  host object model or the hook-captured identity.
-- Filter placeholder IDs with TrackIdentity.usableId. Constants such as 0, -1, null, unknown, and
-  none are not identifiers.
-- The core session stores only 4.0 Lyric, State, and Stop. SuperLyricData may appear only at the
-  3.x Binder entry/exit and in the 3.x receiver UI. Never store or merge it in core state.
-- 3.x receivers below API 35 receive the current line only; 35 and above receive full payloads.
-  The version is read from superlyricapi_version_code; a missing version means current line only.
+- Core sessions store only 4.0 Lyric, State, and Stop. SuperLyricData may appear only at the 3.x
+  Binder boundary and 3.x receiver UI; never store or merge it in core state.
+- 3.x receivers below API 35 get only the current line; 35+ get full payloads. Read
+  superlyricapi_version_code; missing means current line.
 
-### 2.4 Stop and clock
+### Publishing, stop, and clock
 
-- StopGate and StopEvidence live in :lyric-kernel. Provider and system_server each hold their own
-  instance and feed their own observations. Observations are separate; the decision is shared.
-- Terminal signals arm confirmation; still-playing evidence cancels it; STATE_NONE is neutral.
-  Never re-derive the decision per side and never treat "unknown" as terminal. An unconfirmed stop
-  clears published content and cannot be reversed.
-- The framework PlaybackClock is the only progress source. The host publishes no position.
+- Publish full lyrics and stop only. Position, speed, and state belong to the framework; do not add
+  a host progress channel.
+- StopGate and StopEvidence live in lyric-kernel. Provider and system_server each own an instance
+  and feed their own observations. Terminal signals arm confirmation; still-playing evidence
+  cancels it; STATE_NONE is neutral. An unconfirmed stop never clears content.
+- PlaybackClock is the only progress source. Do not derive progress from host broadcasts.
+- LyricRuntime owns publisher lifecycle, session, clock, receivers, frames, and the 3.x/4.0
+  boundary. SuperLyricService and SuperLyricV4Service are Binder facades only.
 
-### 2.5 Anti-patterns
+### Anti-patterns
 
-| Anti-pattern | Result |
-| :--- | :--- |
-| Kotlin concrete provider | never reaches HookMaps; module silently does nothing |
-| Missing scope.list | module never loads; no log, no error |
-| Placeholder after failed fetch or search miss | track with lyrics is pinned to instrumental |
-| Title-only identity | same-named tracks merge permanently |
-| MediaMetadata as authoritative | hosts write lyric lines and fake artists into it |
-| I/O inside start() | blocks the caller and later track changes |
-| Guessed lyric file path | file is elsewhere; a track with lyrics reports none |
-| Re-implemented StopGate | sides disagree on STATE_NONE; a wrong stop clears content |
-| Getter that mutates state | equals/hashCode change; identity becomes unstable |
-| History or unenforced claims in comments | comments become false and mislead the next reader |
+- Placeholder after failed fetch or search miss: pins a track with lyrics to instrumental.
+- Title-only identity: merges distinct tracks permanently.
+- MediaMetadata as authority: hosts write lyric lines and fake artists into it.
+- I/O in start(): blocks the caller and later track changes.
+- Re-implemented StopGate: the two sides disagree on STATE_NONE.
+- History or unenforced claims in comments: comments become false.
 
-## 3. Provider workflow
+## 3. Adding an app
 
-1. Create app/src/main/java/com/hchen/superlyric/provider/<app>/.
-2. XxxAnchors.java: locate the class with DexKit behind a cache key, then pick the member by
-   signature. Use a string constant or a @Keep type as the anchor.
-3. XxxHookSource.kt extends HookLyricSource (install, currentStableId). XxxApiSource.kt implements
-   LyricSource.
-4. XxxProvider.java: @HookThis(targetPackage = "..."), override providerTag, createHookSource or
-   createApiSource, and buildIdentity when a stable ID exists.
-5. Register all three places from 2.2. Add the app to README.md and README-en.md.
-6. Add parsing, identity, and orchestration tests. Complete the device procedure in
-   docs/music-app-adaptation-and-testing.md.
-7. Reuse the base helpers instead of copying boilerplate: FetchSlot.launch for API fetches,
-   MusicProvider.metadataString and trackIdentity for identity, TrackIdentity.usableId for
-   placeholder IDs, LrcTimestamps for LRC tokens, SourceRequestGate and KeyedStash for host-callback
-   state, withMetadata to fill document metadata.
+1. Add the host hook and raw event bus in
+   hook-anchors/src/main/java/com/hchen/superlyric/provider/<app>/.
+2. Add identity extraction in hooks-id/src/main/java/com/hchen/superlyric/provider/<app>/ when the
+   host exposes a stable ID. Implement HostIdentitySource.current(metadata); do not parse lyrics.
+3. Add lyric body extraction in lyric-hook/src/main/java/com/hchen/superlyric/provider/<app>/.
+   Implement InstallableLyricSource; call kernel parsers and withMetadata; do not build identity.
+4. Add online retrieval and matching in lyric-network/src/main/java/com/hchen/superlyric/provider/<app>/.
+   Accept a shared HostIdentitySource or SessionHeadersFeed, never an anchor directly.
+5. Add the Java @HookThis shell in app/src/main/java/com/hchen/superlyric/provider/<app>/. It only
+   implements createIdentitySource and createLyricPlan. Identity belongs to hooks-id.
+6. Register all three places from section 2 and add the app to README.md and README-en.md.
+7. Add parsing, identity, and orchestration tests in the owning module. Complete the device
+   procedure in docs/music-app-adaptation-and-testing.md.
+8. Reuse: FetchSlot.launch, HostIdentitySource.current, MediaMetadata.toTrackIdentity,
+   TrackIdentity.usableId, CatalogIds, LrcTimestamps, SourceRequestGate, KeyedStash, withMetadata.
 
 Source contract:
 
-- start() runs off the orchestrator lock but on the caller thread. Return quickly. Network, file
+- start() runs off the orchestrator lock but on the caller thread. Return quickly; network, file
   I/O, and decryption go on a background thread and return through Session.deliver.
-- Delivering more than once is allowed. The orchestrator accepts the first result and drops later
+- Delivering more than once is allowed; the orchestrator accepts the first result and drops later
   ones by epoch.
 - cancel() must make late deliveries harmless. Do not deliver after it.
 
-## 4. Evidence, tests, delivery
+## 4. Verification and code
+Run every module suite:
 
-A claim is not true until observed. Separate measured facts from inferences.
+    ./gradlew :lyric-kernel:test :shared:testDebugUnitTest \
+      :hook-anchors:testDebugUnitTest :hooks-id:testDebugUnitTest \
+      :lyric-hook:testDebugUnitTest :lyric-network:testDebugUnitTest \
+      :lyric-service:testDebugUnitTest :app:testDebugUnitTest
 
-- When a guard exists, log both the block and the pass-through. Otherwise "never triggered" and
-  "triggered every time" look identical. A zero-count conclusion is valid only if the instrument
-  could have shown it.
-- LyricDiag (tag SLDiag) dumps raw payloads and parsed results; it is enabled in debug builds or at
-  DEBUG log level. Use mobile MCP logs first. ADB fallback: adb logcat -v time -s SLDiag
-- The module takes effect only after the host restarts: install -> force-stop host -> clear logcat
-  -> launch and play.
-- Test one app at a time. Mobile MCP is the primary device interface; ADB is a fallback for package
-  path lookup and APK pull. Do not switch silently.
-- Installing or uninstalling the target app, stopping or launching it, installing the module,
-  reading logs, and selecting the LSPosed scope are allowed within the task. Ask before changing
-  settings, deleting files, clearing app data, using root, rebooting, or bypassing store or account
-  restrictions.
-- Report every test matrix row with result and evidence, and an ordered remediation plan for every
-  issue.
+Also run :app:assembleDebug, :app:assembleRelease, and git diff --check. A behavior change needs
+device observation and evidence. Code reading is not device evidence. LyricDiag tag SLDiag is the
+first log source; Mobile MCP is the first device interface, ADB is fallback.
 
-JUnit 5. Run both suites:
+Code rules:
 
-    ./gradlew :lyric-kernel:test :app:testDebugUnitTest
-
-- Parser fix: a golden payload that reproduces the defect plus a pin test for the rule.
-- Translation or romanization alignment: tolerance boundaries.
-- Orchestrator: late delivery, epoch cancellation, fast switches, provisional identity upgrades.
-- Clock: drift, seek, replay, speed == 0, pause, with an injected time source.
-- Every parser or orchestrator fix gets a regression test. A test that only restates the
-  implementation is not useful.
-
-A finished change has both suites green, :app:assembleDebug and :app:assembleRelease green, device
-observation with logs, the adaptation test matrix passed, and every row reported with evidence.
-
-Commits: English, conventional with a scope, one logical change. The subject states what changed;
-the body states why and what evidence supports it. No attribution trailers. Do not mix a
-documentation sweep with a behavior change. Reasoning lives in code comments, this file, the
-adaptation guide, and git log; do not add other design documents.
-
-## 5. Code, comments, docs
-
-Implementation rules:
-
-- Reuse existing helpers and dependencies. Do not add a dependency for a small local routine.
 - Delete unused code, resources, constants, parameters, and write-only fields. Do not keep code
   "for later".
-- Do not add fallbacks or guards for states the code cannot produce. Keep fallbacks that classify
-  failure, protect the host, or prevent data corruption.
-- One rule, mapping, or parser is implemented once. Delete the second copy instead of syncing two.
-- Split a class or method only when it has an independent contract. No one-function wrappers or
-  field bags. Use Java 21 and Kotlin features already in the project; no double-brace init.
-- Public API, Binder interfaces, @Keep types, and reflection targets are exceptions to deletion.
-  Document the external consumer.
+- Keep only fallbacks that classify failure, protect the host, or prevent data corruption. Do not
+  guard states the code cannot produce.
+- One rule, mapping, parser, and conversion is implemented once. Reuse existing helpers.
+- Split a class or method only for an independent contract. No empty marker interfaces or one-call
+  wrappers; keep framework-required empty overrides. Inline one-use helpers.
+- Do not change stable ID namespaces, cache keys, Binder interfaces, AIDL, or API models during a
+  cleanup. Version and release metadata are separate changes.
+- Use Java 21 and Kotlin features already present. No new dependency for a local routine.
 
-KDoc and Javadoc:
+Comments and docs:
 
-| File | Allowed | Do not use |
-| :--- | :--- | :--- |
-| .kt | plain paragraphs, - lists, backtick code, [links] | headings, bold, italic, HTML, {@code}, {@link} |
-| .java | p, ul/ol with li, {@code}, {@link} | b, i, h1-h6, Markdown headings, backticks |
+- One summary, then only the invariant, boundary, or failure mode a reader cannot infer.
+- No history, anecdote, first person, emphasis, bold, italic, HTML, headings in comments, or
+  decorative separators. No non-license comment block over 12 lines.
+- Java uses p/ul/li/{@code}/{@link}; Kotlin uses plain text, lists, backtick code, links.
+- Delete comments that restate code. Keep one copy of a rationale.
+- Documents use plain Markdown, short tables and lists, no HTML/bold/italic/emoji/marketing.
+- Keep CLAUDE at four sections and 160 lines or fewer; update it with the same change that alters
+  modules, commands, or conventions.
 
-- One summary line, then only the invariant, boundary, or failure mode a reader cannot infer.
-- No history, changelog, anecdote, first person, emphasis, or decorative separators.
-- No comment block longer than 12 lines, excluding license headers. Delete comments that
-  restate code.
-- Keep one copy of a rationale. Link to the defining helper instead of repeating it.
-- Tests may name the regression they protect; production comments may not.
-
-Documents use plain Markdown: headings, short paragraphs, lists, tables, links. No HTML, bold,
-italic, emoji, badges, or marketing copy.
-
-Layout:
-
-- provider/<app>/: anchors, sources, provider.
-- provider/base/: MusicProvider, HookLyricSource, ExecutorScheduler, FetchSlot, SourceRequestGate,
-  KeyedStash, metadata helpers.
-- bridge/: conversion boundary between kernel models and SuperLyricApi wire models. 3.x
-  SuperLyricData conversion lives only here.
-- core/: LyricRuntime owns publisher lifecycle, session, clock, receivers, frames, and the
-  3.x/4.0 boundary. SuperLyricService and SuperLyricV4Service are Binder facades only. AccessPolicy
-  resolves caller access and 3.x full capability.
-- ui/: Compose screens and effects. BgEffectConfig owns DeviceType; BgEffectBackground owns
-  cardBlendColors.
-- utils/: PlaybackStates maps Android playback constants to the v4 state and the StopGate signal.
-- lyric-kernel/.../kernel/<area>/: ParserRegistry selects parsers; SidecarMerger and
-  LineNormalizer own sidecar and normalization; LyricOrchestrator holds per-track state and
-  Plan/Action; LrcTimestamps owns LRC line, word, and directive tokens.
+Commits: English, conventional with a scope, one logical change. Subject states what changed; body
+states why and the evidence. No attribution trailers. Do not mix a documentation sweep with a
+behavior change.

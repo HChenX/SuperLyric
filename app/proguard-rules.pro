@@ -1,6 +1,9 @@
 # 保留源文件名与行号，供日志和异常栈定位
 -keepattributes SourceFile,LineNumberTable
 
+# Gson 通过字段签名解析 List<T> 的元素类型；剥离 Signature 会把元素读成 LinkedTreeMap
+-keepattributes Signature
+
 # Xposed 模块入口；LSPosed 通过 java_init.list 反射加载
 -keep class com.hchen.superlyric.HookEntrance {
     <init>();

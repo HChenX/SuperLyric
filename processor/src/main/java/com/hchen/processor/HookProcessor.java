@@ -34,6 +34,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.Predicate;
 
 import javax.annotation.processing.AbstractProcessor;
@@ -59,7 +60,7 @@ import javax.tools.Diagnostic;
 @SupportedAnnotationTypes("com.hchen.processor.HookThis")
 @SupportedSourceVersion(SourceVersion.RELEASE_21)
 public class HookProcessor extends AbstractProcessor {
-    private final Map<String, List<HookData>> maps = new HashMap<>();
+    private final Map<String, List<HookData>> maps = new TreeMap<>();
     private final Set<String> seenTypes = new HashSet<>();
 
     /**
@@ -165,7 +166,6 @@ public class HookProcessor extends AbstractProcessor {
 
         List<String> entries = new ArrayList<>();
         dataMap.forEach((pkg, data) -> {
-            @SuppressWarnings("NewApi")
             List<String> values = data.stream()
                 .filter(filter)
                 .map(d -> d.classPath)
