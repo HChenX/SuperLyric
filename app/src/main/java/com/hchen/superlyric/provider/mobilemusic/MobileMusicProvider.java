@@ -19,16 +19,13 @@
  */
 package com.hchen.superlyric.provider.mobilemusic;
 
-import android.content.Context;
-import android.media.MediaMetadata;
-
 import androidx.annotation.NonNull;
 
 import com.hchen.processor.HookThis;
-import com.hchen.superlyric.kernel.identity.TrackIdentity;
 import com.hchen.superlyric.kernel.orchestrate.LyricOrchestrator;
-import com.hchen.superlyric.provider.base.HookLyricSource;
+import com.hchen.superlyric.provider.base.LyricPlan;
 import com.hchen.superlyric.provider.base.MusicProvider;
+import com.hchen.superlyric.shared.HostIdentitySource;
 
 /**
  * 咪咕音乐歌词提供者
@@ -40,7 +37,7 @@ import com.hchen.superlyric.provider.base.MusicProvider;
 public final class MobileMusicProvider extends MusicProvider {
     private static final String TAG = "MobileMusicProvider";
 
-    private volatile MobileMusicHookSource source;
+    private final MobileMusicIdentitySource miguIdentity = new MobileMusicIdentitySource();
 
     @NonNull
     @Override
@@ -50,9 +47,14 @@ public final class MobileMusicProvider extends MusicProvider {
 
     @NonNull
     @Override
-    protected HookLyricSource createHookSource() {
-        source = new MobileMusicHookSource();
-        return source;
+    protected HostIdentitySource createIdentitySource() {
+        return miguIdentity;
+    }
+
+    @NonNull
+    @Override
+    protected LyricPlan createLyricPlan() {
+        return new LyricPlan(new MobileMusicHookSource(), null);
     }
 
     @NonNull
@@ -62,20 +64,5 @@ public final class MobileMusicProvider extends MusicProvider {
         // 没有 API 源时 maxApiAttempts/retryBase 仍取默认值 3 与 500ms：接入 API 源后
         // 不会因“0 次尝试”在第一次失败就进入终态。
         return new LyricOrchestrator.Config(5_000L, 3, 500L, 3_000L);
-    }
-
-    @NonNull
-    @Override
-    protected TrackIdentity buildIdentity(@NonNull MediaMetadata metadata) {
-        MobileMusicHookSource current = source;
-        TrackIdentity identity = current == null ? null : current.currentTrackIdentity();
-        return identity != null ? identity : super.buildIdentity(metadata);
-    }
-
-    @Override
-    public void onApplicationCreated(@NonNull Context context) {
-        super.onApplicationCreated(context);
-        MobileMusicHookSource current = source;
-        if (current != null) current.retryInstall(context.getClassLoader());
     }
 }

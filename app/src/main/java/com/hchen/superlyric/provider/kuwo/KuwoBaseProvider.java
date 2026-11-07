@@ -18,16 +18,12 @@
  */
 package com.hchen.superlyric.provider.kuwo;
 
-import android.media.MediaMetadata;
-
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
-import com.hchen.superlyric.kernel.identity.TrackIdentity;
-import com.hchen.superlyric.kernel.orchestrate.LyricSource;
 import com.hchen.superlyric.kernel.orchestrate.LyricOrchestrator;
-import com.hchen.superlyric.provider.base.HookLyricSource;
+import com.hchen.superlyric.provider.base.LyricPlan;
 import com.hchen.superlyric.provider.base.MusicProvider;
+import com.hchen.superlyric.shared.HostIdentitySource;
 
 
 /**
@@ -37,17 +33,11 @@ import com.hchen.superlyric.provider.base.MusicProvider;
  * 明文 LRCX 交给歌词引擎的入口，逐字信息在 {@code <v1,v2>} 标签中。酷我没有可用的公开
  * 歌词接口，因此不挂跨源 API 兜底。
  *
- * <p>只发布全量歌词，进度由系统时钟负责。{@link #buildIdentity} 以宿主 {@code rid}
- * 作为稳定标识，避免 Hook 捕获与元数据身份不一致。
+ * <p>只发布全量歌词，进度由系统时钟负责。身份由 hooks-id 以宿主 {@code rid} 构造。
  *
  * @author 焕晨HChen
  */
 abstract class KuwoBaseProvider extends MusicProvider {
-
-    /**
-     * 稳定标识的命名空间；两个变体共用，rid 在平台内唯一
-     */
-    private static final String NAMESPACE = "kuwo";
 
     /**
      * Hook 取词的等待上限；见 {@link #orchestratorConfig}
@@ -68,21 +58,20 @@ abstract class KuwoBaseProvider extends MusicProvider {
     private static final long DEFAULT_PROVISIONAL_GRACE_MS = 10_000L;
 
     private final String providerTag;
+    private final KuwoIdentitySource kuwoIdentity;
 
     protected KuwoBaseProvider(@NonNull String providerTag) {
         this.providerTag = providerTag;
+        this.kuwoIdentity = new KuwoIdentitySource(providerTag);
     }
 
-    /**
-     * Hook 取词来源；同时用于读取宿主的真实曲目信息
-     *
-     * <p>{@code volatile} 必需：在 {@code onPackageReady} 线程写，在宿主
-     * {@code MediaSession} 回调线程经 {@link #buildIdentity} 读。可见性失败时读到 null，
-     * 会退化为使用宿主元数据；酷我会把当前歌词行写进 TITLE，元数据不可信。
-     */
-    @Nullable
-    private volatile KuwoHookSource kuwoHookSource;
+    @NonNull
+    @Override
+    protected HostIdentitySource createIdentitySource() {
+        return kuwoIdentity;
+    }
 
+    @NonNull
     @Override
     protected String getProviderTag() {
         return providerTag;
@@ -90,21 +79,8 @@ abstract class KuwoBaseProvider extends MusicProvider {
 
     @NonNull
     @Override
-    protected HookLyricSource createHookSource() {
-        kuwoHookSource = new KuwoHookSource();
-        return kuwoHookSource;
-    }
-
-    /**
-     * 不挂 API 兜底源
-     *
-     * <p>Hook 侧拿到宿主本地已解密的 LRCX 明文，与当前播放严格同源，不需要联网或按标题
-     * 检索，因此不存在匹配误差。
-     */
-    @Nullable
-    @Override
-    protected LyricSource createApiSource() {
-        return null;
+    protected LyricPlan createLyricPlan() {
+        return new LyricPlan(new KuwoHookSource(kuwoIdentity), null);
     }
 
     /**
@@ -131,71 +107,4 @@ abstract class KuwoBaseProvider extends MusicProvider {
         );
     }
 
-    /**
-     * 从元数据构建音轨身份
-     *
-     * <p>标识必须是 rid + 标题的组合，不能只用 rid：酷我的 {@code Music.rid} 在有声书上
-     * 是专辑级 ID，同一部书的所有集共用同一个值（{@code MEDIA_ID} 同样如此）。
-     * 只用 rid 时，从「第481集」切到「第489集」会被判成同一首，新一集歌词被当作
-     * 重复数据丢弃或错配，表现为播放几分钟后歌词与内容不符。
-     *
-     * <p>标题取宿主 {@code Music} 对象上的干净字段而非元数据：酷我会把当前歌词行写进
-     * {@code METADATA_KEY_TITLE}，元数据标题不可用于判等。
-     */
-    @NonNull
-    @Override
-    protected TrackIdentity buildIdentity(@NonNull MediaMetadata metadata) {
-        String title = metadataString(metadata, MediaMetadata.METADATA_KEY_TITLE);
-        String artist = metadataString(metadata, MediaMetadata.METADATA_KEY_ARTIST);
-        long duration = metadata.getLong(MediaMetadata.METADATA_KEY_DURATION);
-
-        // 当前曲目的 rid 只能取元数据自己的 MEDIA_ID，不能取 Hook 侧最近一次取词的 rid。
-        //
-        // 酷我会在播放列表中预取后续曲目：预取时曲目探针拿到尚未播放的 Music，而元数据回调
-        // 仍属于当前曲目。若用探针的 rid 拼身份，每次元数据回调都会得到下一首的身份，
-        // 编排器据此判定切歌，清屏、取词并把下一首歌词发布到当前曲目。例如《远山少年》播放中，
-        // 身份会被翻成 kuwo:1697454#盛夏的果实，随后整首播放《盛夏的果实》的歌词。
-        // 该问题与“元数据标题是歌词行”无关，由预取时序造成。
-        //
-        // 探针的 rid 仍用于把 Hook 歌词正文绑定到所属曲目（见 KuwoHookSource）；
-        // 预取的歌词因此可按 rid 暂存，待该曲目开始播放时补投。
-        String mediaId = TrackIdentity.usableId(metadataString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID));
-        String captured = TrackIdentity.usableId(hookStableId());
-        if (mediaId == null) mediaId = "";
-        if (captured == null) captured = "";
-        String rid = !mediaId.isEmpty() ? mediaId : captured;
-        if (!rid.isEmpty()) {
-            KuwoHookSource hook = kuwoHookSource;
-            // 组装稳定标识的标题只能取宿主 Music 对象上的干净字段，不能取元数据里的 TITLE。
-            //
-            // 酷我每唱一行都会把该行写入 METADATA_KEY_TITLE，而 Hook 侧的 stableIdOf
-            // 使用宿主标题。使用元数据标题会得到 kuwo:<rid>#<当前歌词行>，与 Hook 上报的
-            // kuwo:<rid>（或 kuwo:<rid>#<宿主题名>）不一致，已获取的歌词会被判为其它曲目而丢弃。
-            String hostTitle = hook != null ? hook.trackTitle(rid) : "";
-            String hostArtist = hook != null ? hook.trackArtist(rid) : "";
-            String mergedTitle = hostTitle.isEmpty() ? title : hostTitle;
-            String mergedArtist = hostArtist.isEmpty() ? artist : hostArtist;
-            // 标题为空时退化为只用 rid（歌曲场景仍可靠）
-            return new TrackIdentity(
-                providerTag, stableIdOf(rid, hostTitle), mergedTitle, mergedArtist, duration);
-        }
-
-        return super.buildIdentity(metadata);
-    }
-
-    /**
-     * 组装稳定标识：rid 与标题的组合
-     *
-     * <p>标题参与哈希，同一部有声书的不同集会得到不同标识；歌曲场景标题稳定，
-     * 组合标识与只用 rid 等效。
-     */
-    @NonNull
-    private static String stableIdOf(@NonNull String rid, @NonNull String title) {
-        String trimmedTitle = title.trim();
-        if (trimmedTitle.isEmpty()) {
-            return TrackIdentity.stableId(NAMESPACE, rid);
-        }
-        // 标题直接拼在 rid 后：stableId 只是 opaque 字符串，比较时整体判等
-        return TrackIdentity.stableId(NAMESPACE, rid + "#" + trimmedTitle);
-    }
 }

@@ -18,21 +18,12 @@
  */
 package com.hchen.superlyric.provider.netease;
 
-import android.content.Context;
-import android.media.MediaMetadata;
-
 import androidx.annotation.NonNull;
 
-import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.hooktool.log.AndroidLog;
 import com.hchen.processor.HookThis;
-import com.hchen.superlyric.kernel.identity.TrackIdentity;
-import com.hchen.superlyric.kernel.orchestrate.LyricSource;
+import com.hchen.superlyric.provider.base.LyricPlan;
 import com.hchen.superlyric.provider.base.MusicProvider;
-
-import java.util.Objects;
-
-import io.github.libxposed.api.XposedModuleInterface;
+import com.hchen.superlyric.shared.HostIdentitySource;
 
 /**
  * 网易云音乐歌词提供者
@@ -44,60 +35,24 @@ import io.github.libxposed.api.XposedModuleInterface;
 @HookThis(targetPackage = "com.netease.cloudmusic")
 public class NeteaseProvider extends MusicProvider {
     private static final String TAG = "NeteaseProvider";
-    private static final String NAMESPACE = "netease";
 
-    private static final String WRAPPER_APPLICATION = "com.netease.nis.wrapper.MyApplication";
-    private static final String REAL_APPLICATION = "com.netease.cloudmusic.CloudMusicApplication";
+    private final NeteaseIdentitySource neteaseIdentity = new NeteaseIdentitySource(TAG);
 
+    @NonNull
     @Override
     protected String getProviderTag() {
         return TAG;
     }
 
+    @NonNull
     @Override
-    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
-        // 加固绕过要尽早挂载，先于其余初始化
-        bypassPackProtection();
-        super.onPackageReady(param);
+    protected HostIdentitySource createIdentitySource() {
+        return neteaseIdentity;
     }
 
     @NonNull
     @Override
-    protected LyricSource createApiSource() {
-        return new NeteaseApiSource();
+    protected LyricPlan createLyricPlan() {
+        return new LyricPlan(null, new NeteaseApiSource());
     }
-
-    @NonNull
-    @Override
-    protected TrackIdentity buildIdentity(@NonNull MediaMetadata metadata) {
-        String mediaId = metadataString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID).trim();
-        return trackIdentity(metadata, TrackIdentity.stableId(NAMESPACE, mediaId));
-    }
-
-    private void bypassPackProtection() {
-        try {
-            hookMethod("android.app.Instrumentation",
-                "newApplication",
-                ClassLoader.class, String.class, Context.class,
-                new AbsHook() {
-                    @Override
-                    public void before() {
-                        Object className = getArg(1);
-                        if (Objects.equals(WRAPPER_APPLICATION, className)) {
-                            setArg(1, REAL_APPLICATION);
-                            AndroidLog.logI(TAG, "Bypassed NetEase wrapper to CloudMusicApplication");
-                            return;
-                        }
-                        // 未命中同样记录：绕过失败意味着后续 Hook 全部失配，
-                        // 日志必须能区分“宿主换了壳类名”与“钩子没有执行”。
-                        // newApplication 每个进程只走一次，不会刷屏
-                        AndroidLog.logI(TAG, "Application class is " + className + "; no wrapper to bypass");
-                    }
-                }
-            );
-        } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to bypass NetEase wrapper: " + t.getMessage());
-        }
-    }
-
 }

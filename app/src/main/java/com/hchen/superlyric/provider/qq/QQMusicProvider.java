@@ -18,15 +18,12 @@
  */
 package com.hchen.superlyric.provider.qq;
 
-import android.media.MediaMetadata;
-
 import androidx.annotation.NonNull;
 
 import com.hchen.processor.HookThis;
-import com.hchen.superlyric.kernel.identity.TrackIdentity;
-import com.hchen.superlyric.kernel.orchestrate.LyricSource;
-import com.hchen.superlyric.provider.base.HookLyricSource;
+import com.hchen.superlyric.provider.base.LyricPlan;
 import com.hchen.superlyric.provider.base.MusicProvider;
+import com.hchen.superlyric.shared.HostIdentitySource;
 
 /**
  * QQ 音乐歌词提供者
@@ -34,8 +31,10 @@ import com.hchen.superlyric.provider.base.MusicProvider;
 @HookThis(targetPackage = "com.tencent.qqmusic")
 public class QQMusicProvider extends MusicProvider {
     private static final String TAG = "QQMusicProvider";
-    private static final String NAMESPACE = "qq";
 
+    private final QQIdentitySource qqIdentity = new QQIdentitySource(TAG);
+
+    @NonNull
     @Override
     protected String getProviderTag() {
         return TAG;
@@ -43,35 +42,13 @@ public class QQMusicProvider extends MusicProvider {
 
     @NonNull
     @Override
-    protected HookLyricSource createHookSource() {
-        return new QQHookSource();
+    protected HostIdentitySource createIdentitySource() {
+        return qqIdentity;
     }
 
     @NonNull
     @Override
-    protected LyricSource createApiSource() {
-        return new QQApiSource();
-    }
-
-    @NonNull
-    @Override
-    protected TrackIdentity buildIdentity(@NonNull MediaMetadata metadata) {
-        String mediaId = metadataString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID).trim();
-
-        // 锚点捕获的 songMID 与 Hook 路径落在同一命名空间，两者才可比。锚点可能落后：
-        // 切歌时它若没有触发，capturedMid 会停在上一首，新曲目被构造成上一首的 mid，
-        // 编排器判为同一首、不触发切歌。取更可信的那个，判据见 QQIdentity#preferredMid
-        String mid = QQIdentity.preferredMid(hookStableId(), mediaId);
-        if (mid != null) {
-            return trackIdentity(metadata, TrackIdentity.stableId(NAMESPACE, mid));
-        }
-
-        // 退回 MEDIA_ID。纯数字 songID 不作为稳定标识：宿主会在同一首曲目上从 songID
-        // 切到 songMID，那会被误判为切歌（详见 QQIdentity#isNumericId）。
-        if (!mediaId.isEmpty() && !QQIdentity.isNumericId(mediaId)) {
-            return trackIdentity(metadata, TrackIdentity.stableId(NAMESPACE, mediaId));
-        }
-
-        return trackIdentity(metadata, null);
+    protected LyricPlan createLyricPlan() {
+        return new LyricPlan(new QQNativeFetchSource(qqIdentity), new QQApiSource());
     }
 }

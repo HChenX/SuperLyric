@@ -25,7 +25,6 @@ import android.content.Context;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.hooktool.AbsModule;
 import com.hchen.hooktool.ModuleConfig;
 import com.hchen.hooktool.ModuleData;
@@ -33,6 +32,7 @@ import com.hchen.hooktool.ModuleEntrance;
 import com.hchen.hooktool.log.AndroidLog;
 import com.hchen.hooktool.utils.PrefsTool;
 import com.hchen.processor.HookMaps;
+import com.hchen.superlyric.anchors.DexKitRuntime;
 import com.hchen.superlyric.data.LocalConfig;
 import com.hchen.superlyric.utils.LyricCacheStore;
 
@@ -44,15 +44,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * SuperLyric 核心 Hook 入口
- * <p>
- * 按目标包名加载 {@code HookMaps} 中登记的模块：宿主音乐应用对应各自的
- * {@link com.hchen.superlyric.provider.base.MusicProvider} 子类，
- * {@code system} 对应 {@link com.hchen.superlyric.core.SuperLyricProxy}。
- * <p>
- * 注册表由 {@code @HookThis} 在编译期生成，新增 Provider 无需改动本类。
- *
- * @author 焕晨HChen
+ * 按目标包名加载 @HookThis 登记的模块。
  */
 public final class HookEntrance extends ModuleEntrance {
     private static final String TAG = "SuperLyric";
@@ -66,6 +58,7 @@ public final class HookEntrance extends ModuleEntrance {
         ModuleConfig.setLogExpandPaths(
             "com.hchen.superlyric.publisher",
             "com.hchen.superlyric.provider",
+            "com.hchen.superlyric.anchors",
             "com.hchen.superlyric.core"
         );
         ModuleConfig.setLogExpandIgnoreClassNames(
@@ -100,13 +93,7 @@ public final class HookEntrance extends ModuleEntrance {
                 int version = PrefsTool.prefs().getInt("super_lyric_dexkit_cache_version", 0);
 
                 ModuleData.setClassLoader(param.getClassLoader());
-                DexkitCache.init(
-                    "superlyric",
-                    param.getClassLoader(),
-                    param.getApplicationInfo().sourceDir,
-                    param.getApplicationInfo().dataDir,
-                    version
-                );
+                DexKitRuntime.initialize(param, version);
 
                 ClassLoader previousLoader = moduleClassLoaders.get(param.getPackageName());
                 if (modules.containsKey(param.getPackageName()) && previousLoader == param.getClassLoader()) {
@@ -114,7 +101,7 @@ public final class HookEntrance extends ModuleEntrance {
                         try {
                             module.handlePackageReady(param);
                         } catch (Throwable t) {
-                            // 单个模块重新注册失败不得中断其余模块，也不得抛回框架
+                            // 单个模块失败不能中断其余模块。
                             AndroidLog.logE(TAG, "Module " + module.getClass().getName()
                                 + " failed during re-registration; skipping it", t);
                         }
@@ -128,35 +115,19 @@ public final class HookEntrance extends ModuleEntrance {
 
                 List<AbsModule> packageModules = new ArrayList<>();
                 for (String path : Objects.requireNonNull(HookMaps.ON_PACKAGE_LOADED.get(param.getPackageName()))) {
-                    AbsModule module;
-                    try {
-                        module = (AbsModule) HookEntrance.class.getClassLoader()
-                            .loadClass(path)
-                            .getDeclaredConstructor()
-                            .newInstance();
-                    } catch (Throwable t) {
-                        // 必须接 Throwable：newInstance() 会执行模块类的静态初始化，失败时抛
-                        // ExceptionInInitializerError（Error 而非 Exception）。只接反射异常会让它
-                        // 逃出循环，中断该包其余模块的注册并抛回 Xposed 加载路径。
-                        // 常见成因：增量构建残留的 HookMaps 引用了已删除的类
-                        AndroidLog.logE(TAG, "Failed to load module " + path + "; skipping it", t);
-                        continue;
-                    }
-
+                    AbsModule module = instantiateModule(path);
+                    if (module == null) continue;
                     try {
                         module.handlePackageReady(param);
                         packageModules.add(module);
                     } catch (Throwable t) {
-                        // 模块代码（装钩子、建编排器、DexKit 查找）抛什么都不能中断其余模块的
-                        // 注册，也不能抛回 Xposed 的加载路径。必须接 Throwable：残留的
-                        // HookMaps 会抛 NoClassDefFoundError（Error 而非 Exception）
                         AndroidLog.logE(TAG, "Module " + path + " failed during package ready; skipping it", t);
                     }
                 }
                 modules.put(param.getPackageName(), packageModules);
                 moduleClassLoaders.put(param.getPackageName(), param.getClassLoader());
             } finally {
-                DexkitCache.close();
+                DexKitRuntime.close();
             }
         }
     }
@@ -174,8 +145,6 @@ public final class HookEntrance extends ModuleEntrance {
                 try {
                     module.handleApplicationCreated(context);
                 } catch (Throwable t) {
-                    // 模块代码抛什么都不能穿透到宿主的 Application.attach，
-                    // 否则一个 Provider 的初始化异常会让宿主启动崩溃
                     AndroidLog.logE(TAG, "Module " + module.getClass().getName()
                         + " failed during application created; skipping it", t);
                 }
@@ -212,33 +181,29 @@ public final class HookEntrance extends ModuleEntrance {
         super.handleSystemServerStarting(param);
 
         ModuleData.setClassLoader(param.getClassLoader());
-        // 只接受 "system" 这个 key；@HookThis(onSystemStarting = true) 误标到音乐应用时，
-        // 不能把该 Provider 实例化进 system_server
-        for (String key : HookMaps.ON_SYSTEM_STARTING.keySet()) {
-            if (!"system".equals(key)) {
-                AndroidLog.logE(TAG, "Ignoring ON_SYSTEM_STARTING entry for non-system package: " + key);
-            }
-        }
         List<String> systemModules = HookMaps.ON_SYSTEM_STARTING.get("system");
-        if (systemModules != null) for (String path : systemModules) {
-            AbsModule module;
-            try {
-                module = (AbsModule) HookEntrance.class.getClassLoader()
-                    .loadClass(path)
-                    .getDeclaredConstructor()
-                    .newInstance();
-            } catch (Throwable t) {
-                // 静态初始化失败抛的是 Error，只接反射异常会漏掉它
-                AndroidLog.logE(TAG, "Failed to load module " + path + "; skipping it", t);
-                continue;
-            }
-
+        if (systemModules == null) return;
+        for (String path : systemModules) {
+            AbsModule module = instantiateModule(path);
+            if (module == null) continue;
             try {
                 module.handleSystemServerStarting(param);
             } catch (Throwable t) {
-                // 模块代码抛什么都不能把异常抛回框架
                 AndroidLog.logE(TAG, "Module " + path + " failed during system start; skipping it", t);
             }
+        }
+    }
+
+    @Nullable
+    private static AbsModule instantiateModule(String path) {
+        try {
+            return (AbsModule) HookEntrance.class.getClassLoader()
+                .loadClass(path)
+                .getDeclaredConstructor()
+                .newInstance();
+        } catch (Throwable t) {
+            AndroidLog.logE(TAG, "Failed to load module " + path + "; skipping it", t);
+            return null;
         }
     }
 

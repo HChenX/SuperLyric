@@ -21,7 +21,7 @@
 -keep class com.hchen.dexkitcache.DexkitCache$MemberData { *; }
 
 # Spotify 歌词 DTO 由 Gson 反射填充；保留字段防止 R8 移除
--keepclassmembers class com.hchen.superlyric.provider.spotify.SpotifyLyricAnalysis$Json* {
+-keepclassmembers class com.hchen.superlyric.kernel.parse.SpotifyLyricParser$Json* {
     <init>();
     <fields>;
 }

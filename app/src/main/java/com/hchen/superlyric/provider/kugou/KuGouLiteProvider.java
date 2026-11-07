@@ -19,11 +19,9 @@
 package com.hchen.superlyric.provider.kugou;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 import com.hchen.processor.HookThis;
-import com.hchen.superlyric.kernel.orchestrate.LyricSource;
-import com.hchen.superlyric.provider.base.HookLyricSource;
+import com.hchen.superlyric.provider.base.LyricPlan;
 import com.hchen.superlyric.provider.base.MusicProvider;
 
 /**
@@ -38,21 +36,15 @@ import com.hchen.superlyric.provider.base.MusicProvider;
 public class KuGouLiteProvider extends MusicProvider {
     private static final String TAG = "KuGouLiteProvider";
 
+    @NonNull
     @Override
     protected String getProviderTag() {
         return TAG;
     }
 
-    @Nullable
-    @Override
-    protected HookLyricSource createHookSource() {
-        // 与酷狗音乐同理：宿主不把原生报文落盘，没有可用的 Hook 取词点
-        return null;
-    }
-
     @NonNull
     @Override
-    protected LyricSource createApiSource() {
-        return new KuGouApiSource();
+    protected LyricPlan createLyricPlan() {
+        return new LyricPlan(null, new KuGouApiSource());
     }
 }

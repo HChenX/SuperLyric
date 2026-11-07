@@ -1,0 +1,41 @@
+plugins {
+    alias(libs.plugins.android.library)
+}
+
+android {
+    namespace "com.hchen.superlyric.identity"
+    compileSdk {
+        version = release(37)
+    }
+
+    defaultConfig {
+        minSdk 30
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    testOptions {
+        unitTests.all {
+            it.useJUnitPlatform()
+        }
+        unitTests.returnDefaultValues = true
+    }
+}
+
+dependencies {
+    api project(':shared')
+    implementation project(':hook-anchors')
+    implementation libs.hooktool
+    implementation libs.annotation
+
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.platform.launcher
+}

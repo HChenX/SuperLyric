@@ -18,13 +18,11 @@
  */
 package com.hchen.superlyric.provider.poweramp;
 
-import android.content.Context;
-
 import androidx.annotation.NonNull;
 
 import com.hchen.processor.HookThis;
 import com.hchen.superlyric.kernel.orchestrate.LyricOrchestrator;
-import com.hchen.superlyric.provider.base.HookLyricSource;
+import com.hchen.superlyric.provider.base.LyricPlan;
 import com.hchen.superlyric.provider.base.MusicProvider;
 
 /**
@@ -41,6 +39,7 @@ import com.hchen.superlyric.provider.base.MusicProvider;
 public class PowerampProvider extends MusicProvider {
     private static final String TAG = "PowerampProvider";
 
+    @NonNull
     @Override
     protected String getProviderTag() {
         return TAG;
@@ -48,15 +47,8 @@ public class PowerampProvider extends MusicProvider {
 
     @NonNull
     @Override
-    protected HookLyricSource createHookSource() {
-        return new PowerampHookSource();
-    }
-
-    @Override
-    public void onApplicationCreated(@NonNull Context context) {
-        super.onApplicationCreated(context);
-        // packageReady 时宿主可能还没有初始化 LrcParser engine；Application 起来后重试一次。
-        PowerampAnchors.retryAnchors();
+    protected LyricPlan createLyricPlan() {
+        return new LyricPlan(new PowerampHookSource(), null);
     }
 
     /**

@@ -18,6 +18,8 @@
  */
 package com.hchen.superlyric.kernel.identity
 
+import com.hchen.superlyric.kernel.catalog.CatalogId
+import com.hchen.superlyric.kernel.catalog.LyricCatalog
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -144,5 +146,15 @@ class TrackIdentityTest {
         assertNull(TrackIdentity.usableId(" -1 "))
         assertNull(TrackIdentity.usableId("None"))
         assertEquals("abc", TrackIdentity.usableId(" abc "))
+    }
+
+    @Test
+    fun `catalog id is excluded from identity equality`() {
+        val plain = id(source = "qq", stableId = "qq:A")
+        val catalogued = plain.copy(catalogId = CatalogId(LyricCatalog.QQ, "A"))
+
+        assertEquals(plain, catalogued)
+        assertEquals(plain.hashCode(), catalogued.hashCode())
+        assertTrue(plain.matches(catalogued))
     }
 }

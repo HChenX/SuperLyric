@@ -148,10 +148,6 @@ public final class PackageLoader {
                         if (!isXposed) {
                             ApiAppData apiAppData = new ApiAppData();
                             apiAppData.icon = BitmapTool.drawableToBitmap(info.applicationInfo.loadIcon(pm));
-                            // loadLabel 声明返回 CharSequence：标签来自 Resources.getText() 时可能是
-                            // SpannedString，强转 String 会抛 ClassCastException，而异常会被
-                            // scheduleLoad 吞成"整个包列表加载失败"，一个 App 的标签形态异常就会让
-                            // 界面里所有受支持应用消失。用 String.valueOf 无条件取文本
                             apiAppData.label = String.valueOf(info.applicationInfo.loadLabel(pm));
                             apiAppData.packageName = info.applicationInfo.packageName;
                             apiAppData.versionName = info.versionName;
@@ -233,8 +229,6 @@ public final class PackageLoader {
                 }
             }
         } catch (Exception e) {
-            // 静默返回 false 会让"APK 打不开"与"确实没有 Xposed 模块"在日志里一模一样，
-            // 而两者含义完全不同：前者是未能读取，后者是宿主确实没有模块
             AndroidLog.logW(TAG, "Cannot inspect " + apkPath + "; treating it as a non-Xposed app", e);
         }
         return false;

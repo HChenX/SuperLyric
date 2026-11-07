@@ -19,11 +19,9 @@
 package com.hchen.superlyric.provider.kugou;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
 
 import com.hchen.processor.HookThis;
-import com.hchen.superlyric.kernel.orchestrate.LyricSource;
-import com.hchen.superlyric.provider.base.HookLyricSource;
+import com.hchen.superlyric.provider.base.LyricPlan;
 import com.hchen.superlyric.provider.base.MusicProvider;
 
 /**
@@ -36,21 +34,15 @@ import com.hchen.superlyric.provider.base.MusicProvider;
 public class KuGouProvider extends MusicProvider {
     private static final String TAG = "KuGouProvider";
 
+    @NonNull
     @Override
     protected String getProviderTag() {
         return TAG;
     }
 
-    @Nullable
-    @Override
-    protected HookLyricSource createHookSource() {
-        // 宿主的原生报文不落盘，没有可用的 Hook 取词点
-        return null;
-    }
-
     @NonNull
     @Override
-    protected LyricSource createApiSource() {
-        return new KuGouApiSource();
+    protected LyricPlan createLyricPlan() {
+        return new LyricPlan(null, new KuGouApiSource());
     }
 }

@@ -21,8 +21,9 @@ package com.hchen.superlyric.provider.apple;
 import androidx.annotation.NonNull;
 
 import com.hchen.processor.HookThis;
-import com.hchen.superlyric.provider.base.HookLyricSource;
+import com.hchen.superlyric.provider.base.LyricPlan;
 import com.hchen.superlyric.provider.base.MusicProvider;
+import com.hchen.superlyric.shared.HostIdentitySource;
 
 /**
  * Apple Music 歌词提供者
@@ -39,6 +40,9 @@ import com.hchen.superlyric.provider.base.MusicProvider;
 public class AppleProvider extends MusicProvider {
     private static final String TAG = "AppleProvider";
 
+    private final AppleIdentitySource appleIdentity = new AppleIdentitySource(TAG);
+
+    @NonNull
     @Override
     protected String getProviderTag() {
         return TAG;
@@ -46,7 +50,13 @@ public class AppleProvider extends MusicProvider {
 
     @NonNull
     @Override
-    protected HookLyricSource createHookSource() {
-        return new AppleHookSource();
+    protected HostIdentitySource createIdentitySource() {
+        return appleIdentity;
+    }
+
+    @NonNull
+    @Override
+    protected LyricPlan createLyricPlan() {
+        return new LyricPlan(new AppleHookSource(), null);
     }
 }

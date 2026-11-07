@@ -130,21 +130,20 @@ dependencies {
     compileOnly libs.api
     implementation libs.service
     implementation libs.hooktool
-    implementation libs.dexkit
-    implementation libs.dexkitcache
-    implementation libs.mmkv
-    implementation libs.gson
-    implementation libs.okhttp
-    implementation libs.okhttp.brotli
     implementation libs.superlyricapi
     implementation libs.xxpermissions
     implementation project(':lyric-kernel')
+    implementation project(':shared')
+    implementation project(':hook-anchors')
+    implementation project(':hooks-id')
+    implementation project(':lyric-hook')
+    implementation project(':lyric-network')
+    implementation project(':lyric-service')
 
     implementation project(':processor')
     annotationProcessor project(':processor')
 
     testImplementation platform(libs.junit.bom)
     testImplementation libs.junit.jupiter
-    testImplementation libs.json
     testRuntimeOnly libs.junit.platform.launcher
 }

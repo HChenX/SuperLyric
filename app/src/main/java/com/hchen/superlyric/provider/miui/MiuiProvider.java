@@ -21,9 +21,9 @@ package com.hchen.superlyric.provider.miui;
 import androidx.annotation.NonNull;
 
 import com.hchen.processor.HookThis;
-import com.hchen.superlyric.kernel.orchestrate.LyricSource;
-import com.hchen.superlyric.provider.base.HookLyricSource;
+import com.hchen.superlyric.provider.base.LyricPlan;
 import com.hchen.superlyric.provider.base.MusicProvider;
+import com.hchen.superlyric.shared.HostIdentitySource;
 
 /**
  * 小米音乐歌词提供者。
@@ -40,6 +40,8 @@ import com.hchen.superlyric.provider.base.MusicProvider;
 public final class MiuiProvider extends MusicProvider {
     private static final String TAG = "MiuiProvider";
 
+    private final MiuiIdentitySource miuiIdentity = new MiuiIdentitySource(TAG);
+
     @NonNull
     @Override
     protected String getProviderTag() {
@@ -48,13 +50,16 @@ public final class MiuiProvider extends MusicProvider {
 
     @NonNull
     @Override
-    protected HookLyricSource createHookSource() {
-        return new MiuiHookSource();
+    protected HostIdentitySource createIdentitySource() {
+        return miuiIdentity;
     }
 
     @NonNull
     @Override
-    protected LyricSource createApiSource() {
-        return new MiuiApiSource();
+    protected LyricPlan createLyricPlan() {
+        return new LyricPlan(
+            new MiuiNativeFetchSource(miuiIdentity),
+            new MiuiApiSource(miuiIdentity)
+        );
     }
 }

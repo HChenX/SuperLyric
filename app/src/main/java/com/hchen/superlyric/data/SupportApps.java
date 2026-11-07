@@ -29,22 +29,7 @@ import java.util.Set;
  * @author 焕晨HChen
  */
 public final class SupportApps {
-    public static final Set<String> sMediaAppPackages = Set.of(
-        "com.apple.android.music",
-        "cn.wenyu.bodian",
-        "com.kugou.android",
-        "com.kugou.android.lite",
-        "cn.kuwo.player",
-        "cn.kuwo.kwmusiccar",
-        "com.miui.player",
-        "cmccwm.mobilemusic",
-        "com.netease.cloudmusic",
-        "com.maxmpz.audioplayer",
-        "com.luna.music",
-        "com.tencent.qqmusic",
-        "com.salt.music",
-        "com.spotify.music"
-    );
+    public static final Set<String> sMediaAppPackages = SupportedApps.PACKAGES;
 
     public static final Map<String, Integer> sPackageLabelRes = Map.ofEntries(
         Map.entry("com.apple.android.music", R.string.apple_music),

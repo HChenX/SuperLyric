@@ -1,0 +1,44 @@
+plugins {
+    alias(libs.plugins.android.library)
+}
+
+android {
+    namespace "com.hchen.superlyric.service"
+    compileSdk {
+        version = release(37)
+    }
+
+    defaultConfig {
+        minSdk 30
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    testOptions {
+        unitTests.all {
+            it.useJUnitPlatform()
+        }
+        unitTests.returnDefaultValues = true
+    }
+}
+
+dependencies {
+    api project(':shared')
+    api project(':lyric-kernel')
+    implementation libs.hooktool
+    implementation libs.service
+    implementation libs.superlyricapi
+    compileOnly libs.api
+    implementation libs.annotation
+
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.platform.launcher
+}

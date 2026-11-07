@@ -18,16 +18,12 @@
  */
 package com.hchen.superlyric.provider.spotify;
 
-import android.media.MediaMetadata;
-
 import androidx.annotation.NonNull;
 
 import com.hchen.processor.HookThis;
-import com.hchen.superlyric.kernel.identity.TrackIdentity;
-import com.hchen.superlyric.kernel.orchestrate.LyricSource;
+import com.hchen.superlyric.provider.base.LyricPlan;
 import com.hchen.superlyric.provider.base.MusicProvider;
-
-import io.github.libxposed.api.XposedModuleInterface;
+import com.hchen.superlyric.shared.HostIdentitySource;
 
 /**
  * Spotify 歌词提供者
@@ -41,30 +37,25 @@ import io.github.libxposed.api.XposedModuleInterface;
 @HookThis(targetPackage = "com.spotify.music")
 public class SpotifyProvider extends MusicProvider {
     private static final String TAG = "SpotifyProvider";
-    private static final String NAMESPACE = "spotify";
 
+    private final SpotifySessionHeaders sessionHeaders = new SpotifySessionHeaders();
+    private final SpotifyIdentitySource spotifyIdentity = new SpotifyIdentitySource(TAG, sessionHeaders);
+
+    @NonNull
     @Override
     protected String getProviderTag() {
         return TAG;
     }
 
+    @NonNull
     @Override
-    protected void onPackageReady(@NonNull XposedModuleInterface.PackageReadyParam param) {
-        // 会话头捕获要尽早挂载，否则会错过宿主启动期的请求
-        SpotifyAnchors.installHeaderCapture();
-        super.onPackageReady(param);
+    protected HostIdentitySource createIdentitySource() {
+        return spotifyIdentity;
     }
 
     @NonNull
     @Override
-    protected LyricSource createApiSource() {
-        return new SpotifyApiSource();
-    }
-
-    @NonNull
-    @Override
-    protected TrackIdentity buildIdentity(@NonNull MediaMetadata metadata) {
-        String mediaId = metadataString(metadata, MediaMetadata.METADATA_KEY_MEDIA_ID).trim();
-        return trackIdentity(metadata, TrackIdentity.stableId(NAMESPACE, mediaId));
+    protected LyricPlan createLyricPlan() {
+        return new LyricPlan(null, new SpotifyApiSource());
     }
 }

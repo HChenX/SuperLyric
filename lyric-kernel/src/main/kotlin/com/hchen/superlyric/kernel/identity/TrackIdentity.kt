@@ -18,6 +18,8 @@
  */
 package com.hchen.superlyric.kernel.identity
 
+import com.hchen.superlyric.kernel.catalog.CatalogId
+
 import kotlin.math.abs
 
 /**
@@ -28,13 +30,39 @@ import kotlin.math.abs
  * - 否则比较组合判据：归一化标题须非空且相同，歌手须相容，
  *   双方时长已知时偏差不得超过 [DURATION_TOLERANCE_MS]
  */
-data class TrackIdentity(
+data class TrackIdentity @JvmOverloads constructor(
     val source: String,
     val stableId: String?,
     val title: String = "",
     val artist: String = "",
     val durationMs: Long = 0L,
+    /**
+     * 曲库取词 ID；不参与 equals/hashCode/matches。
+     */
+    val catalogId: CatalogId? = null,
 ) {
+
+    /**
+     * 保持原五字段判等；catalogId 是伴生事实，不得改变临时身份升级或缓存键。
+     */
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is TrackIdentity) return false
+        return source == other.source &&
+                stableId == other.stableId &&
+                title == other.title &&
+                artist == other.artist &&
+                durationMs == other.durationMs
+    }
+
+    override fun hashCode(): Int {
+        var result = source.hashCode()
+        result = 31 * result + (stableId?.hashCode() ?: 0)
+        result = 31 * result + title.hashCode()
+        result = 31 * result + artist.hashCode()
+        result = 31 * result + durationMs.hashCode()
+        return result
+    }
 
     /**
      * 判断两者是否指向同一首曲目
