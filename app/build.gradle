@@ -82,6 +82,10 @@ android {
     lint {
         abortOnError true
         checkReleaseBuilds true
+        warningsAsErrors true
+        // 资源位置与 AGP 更新提示不作为项目代码门禁：头像保持 densityless 以免改变渲染，
+        // AGP 升级属于独立版本变更。
+        disable += ['IconLocation', 'AndroidGradlePluginVersion']
     }
 
     testOptions {
