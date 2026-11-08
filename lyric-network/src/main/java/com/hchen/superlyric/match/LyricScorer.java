@@ -74,6 +74,39 @@ public final class LyricScorer {
         "^\\s*[\\(（\\[【]([^\\)）\\]】]*)[\\)）\\]】]"
     );
     /**
+     * 录音版本词；版本标记与出处注解的版本守卫共用，避免新增版本词时两处分叉
+     */
+    private static final String VERSION_MARKER_TOKENS =
+        "ver\\.?|version|remaster(?:ed)?|remix|live|acoustic|demo|cover|tribute|"
+            + "nightcore|sped\\s+up|slowed|orchestral|instrumental|karaoke|"
+            + "伴奏|纯音乐|现场|巡回|演唱会|片段|试听|铃声|双语|原版|重制|翻唱|版";
+    /**
+     * 作品出处注解，例如 {@code From "Zootopia 2"}、{@code Music from Zootopia 2}
+     *
+     * <p>它说明歌曲出自哪部作品，不区分录音版本；平台曲库常省略这段，按版本标记
+     * 处理会让完全相同的曲目落选。只接受带引号的作品名或明确的影视/原声措辞，
+     * 避免把 {@code From The Vault}、{@code Nobody - from Kaiju No. 8} 这类
+     * 未加引号且可能指向另一版录音的标注一并放宽。
+     */
+    private static final Pattern SOURCE_ATTRIBUTION_PATTERN = Pattern.compile(
+        "^(?:from\\s+[\"“”'‘’].+[\"“”'‘’]"
+            + "|from\\s+the\\s+(?:(?:original|motion\\s+picture)\\s+)*"
+            + "(?:movie|film|series|show|game|soundtrack|album|anime|musical|play)\\b.*"
+            + "|(?:music|theme)\\s+from\\b.*"
+            + "|(?:original\\s+)?(?:motion\\s+picture\\s+)?soundtrack\\b.*)\\s*$",
+        Pattern.CASE_INSENSITIVE
+    );
+    /**
+     * 录音版本词；出处注解里出现它时不得按注解剥离
+     *
+     * <p>{@code Soundtrack Version}、{@code Music from "Movie" Live} 仍然指向另一版录音。
+     * 这里刻意不含 {@code original}，否则 {@code Original Soundtrack} 会被误判。
+     */
+    private static final Pattern RECORDING_VERSION_PATTERN = Pattern.compile(
+        "(?<![a-z])(?:" + VERSION_MARKER_TOKENS + ")(?![a-z])",
+        Pattern.CASE_INSENSITIVE
+    );
+    /**
      * 标题末尾的分隔后缀，例如 {@code Song - Live}、{@code Song – Remix}
      */
     private static final Pattern TRAILING_DELIMITER_PATTERN = Pattern.compile(
@@ -103,10 +136,8 @@ public final class LyricScorer {
      * fromage 被当成 from。
      */
     private static final Pattern VARIANT_MARKER_PATTERN = Pattern.compile(
-        "(?<![a-z])(?:\\d|ver\\.?|version|remaster(?:ed)?|original|remix|live|acoustic|demo|"
-            + "cover|tribute|nightcore|sped\\s+up|slowed|orchestral|"
-            + "chin(a|ese)|japan(ese)?|korean?|english|from|instrumental|karaoke|"
-            + "版|伴奏|纯音乐|现场|巡回|演唱会|片段|试听|铃声|双语|原版|重制|翻唱)(?![a-z])",
+        "(?<![a-z])(?:\\d|" + VERSION_MARKER_TOKENS + "|original|"
+            + "chin(a|ese)|japan(ese)?|korean?|english|from)(?![a-z])",
         Pattern.CASE_INSENSITIVE
     );
     /**
@@ -263,12 +294,13 @@ public final class LyricScorer {
         Matcher matcher = BRACKET_PATTERN.matcher(raw);
         while (matcher.find()) {
             String content = matcher.group(1);
-            if (isNoiseBracket(content)) continue;
+            if (isIgnorableBracket(content)) continue;
             if (!VARIANT_MARKER_PATTERN.matcher(content).find()) continue;
             addSignatureTokens(signatures, normalizeForComparison(content));
         }
         String suffix = trailingDelimiterSuffix(raw);
-        if (suffix != null && VARIANT_MARKER_PATTERN.matcher(suffix).find()) {
+        if (suffix != null && !isSourceAttribution(suffix)
+            && VARIANT_MARKER_PATTERN.matcher(suffix).find()) {
             addSignatureTokens(signatures, normalizeForComparison(suffix));
         }
         signatures.addAll(plainTrailingVariants(raw));
@@ -332,8 +364,21 @@ public final class LyricScorer {
         return trimmed;
     }
 
-    private static boolean isNoiseBracket(@NonNull String content) {
-        return NOISE_BRACKET_LABELS.contains(normalizeForComparison(content));
+    /**
+     * 出处注解不改变歌曲身份：{@code From "作品名"} 可被平台曲库省略。
+     *
+     * <p>同一个判断同时用于括号内容与分隔后缀，避免
+     * {@code Song (From "Movie")} 与 {@code Song - From "Movie"} 结论不同。
+     */
+    private static boolean isSourceAttribution(@NonNull String content) {
+        String trimmed = content.trim();
+        if (RECORDING_VERSION_PATTERN.matcher(trimmed).find()) return false;
+        return SOURCE_ATTRIBUTION_PATTERN.matcher(trimmed).matches();
+    }
+
+    private static boolean isIgnorableBracket(@NonNull String content) {
+        return NOISE_BRACKET_LABELS.contains(normalizeForComparison(content))
+            || isSourceAttribution(content);
     }
 
     /**
@@ -356,9 +401,9 @@ public final class LyricScorer {
 
         double best = similarityOf(normalizedTarget, normalizedCandidate);
         String strippedTarget = normalizeForComparison(
-            stripTrailingTranslation(stripNoiseBrackets(decoratedTarget)));
+            stripTrailingTranslation(stripIgnorableDecorations(decoratedTarget)));
         String strippedCandidate = normalizeForComparison(
-            stripTrailingTranslation(stripNoiseBrackets(decoratedCandidate)));
+            stripTrailingTranslation(stripIgnorableDecorations(decoratedCandidate)));
         best = Math.max(best, similarityOf(strippedTarget, strippedCandidate));
 
         double containment = Math.max(
@@ -418,13 +463,13 @@ public final class LyricScorer {
     }
 
     @NonNull
-    private static String stripNoiseBrackets(@NonNull String decorated) {
+    private static String stripIgnorableDecorations(@NonNull String decorated) {
         Matcher matcher = BRACKET_PATTERN.matcher(decorated);
         StringBuilder result = new StringBuilder(decorated.length());
         int last = 0;
         while (matcher.find()) {
             result.append(decorated, last, matcher.start());
-            if (isNoiseBracket(matcher.group(1))) {
+            if (isIgnorableBracket(matcher.group(1))) {
                 result.append(' ');
             } else {
                 result.append(matcher.group());
@@ -432,6 +477,12 @@ public final class LyricScorer {
             last = matcher.end();
         }
         result.append(decorated, last, decorated.length());
+
+        String trimmed = result.toString().trim();
+        Matcher suffix = TRAILING_DELIMITER_PATTERN.matcher(trimmed);
+        if (suffix.find() && isSourceAttribution(suffix.group(1))) {
+            return trimmed.substring(0, suffix.start());
+        }
         return result.toString();
     }
 
@@ -455,7 +506,7 @@ public final class LyricScorer {
         Matcher matcher = LEADING_BRACKET_PATTERN.matcher(raw);
         if (!matcher.find()) return null;
         String content = matcher.group(1);
-        if (content.trim().isEmpty() || isNoiseBracket(content)) return null;
+        if (content.trim().isEmpty() || isIgnorableBracket(content)) return null;
         return normalizeForComparison(content);
     }
 

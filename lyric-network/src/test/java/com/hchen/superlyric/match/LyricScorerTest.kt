@@ -45,6 +45,86 @@ class LyricScorerTest {
     }
 
     @Test
+    fun `source attribution must not sink an exact match`() {
+        // 酷狗音乐 20.8.8 上报 "Zoo (From \"Zootopia 2\")"，平台曲库为 "Zoo"，歌手与时长一致；
+        // 若把 "From ..." 当成版本标记，所有候选都会落选并判为无歌词
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity("Zoo (From \"Zootopia 2\")", "Zoo"),
+            0.001,
+        )
+        assertEquals(
+            100.0,
+            LyricScorer.scoreCandidate(
+                "Zoo (From \"Zootopia 2\")", "Disney、Shakira", 190_000L,
+                "Zoo", "Disney、Shakira", 190_000L,
+            ),
+            0.01,
+        )
+        assertEquals(
+            100.0,
+            LyricScorer.scoreCandidate(
+                "Zoo", "Disney、Shakira", 190_000L,
+                "Zoo (From \"Zootopia 2\")", "Disney、Shakira", 190_000L,
+            ),
+            0.01,
+        )
+    }
+
+    @Test
+    fun `explicit source attributions match in either title direction`() {
+        listOf(
+            "Song (From \"Movie\")",
+            "Song (From the movie \"Movie\")",
+            "Song (From the album \"Album\")",
+            "Song (From the original soundtrack)",
+            "Song (Original Soundtrack)",
+            "Song (Music from \"Movie\")",
+            "Song (Theme from \"Movie\")",
+            "Song (Original Motion Picture Soundtrack)",
+            "Song - From \"Movie\"",
+        ).forEach { decorated ->
+            assertEquals(
+                1.0,
+                LyricScorer.calculateTitleSimilarity(decorated, "Song"),
+                0.001,
+                decorated,
+            )
+            assertEquals(
+                1.0,
+                LyricScorer.calculateTitleSimilarity("Song", decorated),
+                0.001,
+                decorated,
+            )
+        }
+    }
+
+    @Test
+    fun `a version marker next to a source attribution is still rejected`() {
+        listOf(
+            "Song (From \"Movie\") (Live)",
+            "Song (From \"Movie\") - Remix",
+            "Song (Instrumental) (From \"Movie\")",
+            "Song (Music from \"Movie\" Live)",
+            "Song (Soundtrack Version)",
+        ).forEach { decorated ->
+            assertEquals(
+                0.0,
+                LyricScorer.calculateTitleSimilarity(decorated, "Song"),
+                0.001,
+                decorated,
+            )
+        }
+    }
+
+    @Test
+    fun `unquoted from and alternate-release wording stay version markers`() {
+        // 加引号的出处不改变录音；未加引号的 From 仍可能是另一版录音（如 From The Vault）
+        assertEquals(0.0, LyricScorer.calculateTitleSimilarity("Nobody - from Kaiju No. 8", "Nobody"), 0.001)
+        assertEquals(0.0, LyricScorer.calculateTitleSimilarity("Song (From The Vault)", "Song"), 0.001)
+    }
+
+    @Test
     fun `an identical title and artist is accepted`() {
         val score = LyricScorer.scoreCandidate(
             "未来へ", "kiroro", 333_000L,
@@ -764,8 +844,7 @@ class LyricScorerTest {
     }
 
     @Test
-    fun `from and instrumental qualifiers are version markers`() {
-        assertEquals(0.0, LyricScorer.calculateTitleSimilarity("Nobody - from Kaiju No. 8", "Nobody"), 0.001)
+    fun `instrumental and karaoke qualifiers are version markers`() {
         assertEquals(0.0, LyricScorer.calculateTitleSimilarity("Song (Instrumental)", "Song"), 0.001)
         assertEquals(0.0, LyricScorer.calculateTitleSimilarity("Song (Karaoke)", "Song"), 0.001)
     }
