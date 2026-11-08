@@ -72,6 +72,8 @@ A search miss, unreadable payload, zero parsed lines, or failed decrypt is not N
   Binder boundary and 3.x receiver UI; never store or merge it in core state.
 - 3.x receivers below API 35 get only the current line; 35+ get full payloads. Read
   superlyricapi_version_code; missing means current line.
+- Before the first line starts, both receiver types get metadata only, with index -1 and no lyric
+  or allLyrics. Do not send allLyrics before the current line has started.
 
 ### Publishing, stop, and clock
 

@@ -21,6 +21,7 @@ package com.hchen.superlyric.provider.apple;
 import androidx.annotation.NonNull;
 
 import com.hchen.processor.HookThis;
+import com.hchen.superlyric.kernel.orchestrate.LyricOrchestrator;
 import com.hchen.superlyric.provider.base.LyricPlan;
 import com.hchen.superlyric.provider.base.MusicProvider;
 import com.hchen.superlyric.shared.HostIdentitySource;
@@ -58,4 +59,12 @@ public class AppleProvider extends MusicProvider {
     protected LyricPlan createLyricPlan() {
         return new LyricPlan(new AppleHookSource(), null);
     }
+
+    @NonNull
+    @Override
+    protected LyricOrchestrator.Config orchestratorConfig() {
+        // JNI 歌词回调可能晚于 Hook 等待窗口，超时不应封死同曲目的成功结果。
+        return new LyricOrchestrator.Config(800L, 3, 500L, 3_000L, true);
+    }
+
 }

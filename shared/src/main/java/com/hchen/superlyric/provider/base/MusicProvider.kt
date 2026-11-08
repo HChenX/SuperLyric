@@ -224,6 +224,11 @@ abstract class MusicProvider : AbsPublisher() {
      */
     private fun onPlaybackStateChanged(state: PlaybackState) {
         val signal = PlaybackStates.toSignal(state.state)
+        AndroidLog.logD(
+            providerTag,
+            "Playback state=${state.state}, signal=$signal, pendingStop=${stopGate.isPending}, " +
+                    "id=${lastSeenIdentity?.stableId}"
+        )
 
         // 非终态信号先记证据，再交给 StopGate 判定。
         when (signal) {

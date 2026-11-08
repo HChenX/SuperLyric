@@ -124,7 +124,11 @@ class LyricOrchestratorTest {
     private fun track(id: String, title: String = "Song") =
         TrackIdentity("qq", "qq:$id", title, "Artist", 200_000L)
 
-    private class Fixture(hook: Boolean = true, api: Boolean = true) {
+    private class Fixture(
+        hook: Boolean = true,
+        api: Boolean = true,
+        config: LyricOrchestrator.Config = LyricOrchestrator.Config(),
+    ) {
         val scheduler = FakeScheduler()
         val listener = RecordingListener()
         val hookSource = if (hook) FakeSource("hook") else null
@@ -133,7 +137,7 @@ class LyricOrchestratorTest {
         /** 可推进的假时钟，用于验证"临时身份升级"的时间上界 */
         var now = 0L
         val orchestrator = LyricOrchestrator(
-            hookSource, apiSource, scheduler, listener, nowMs = { now },
+            hookSource, apiSource, scheduler, listener, nowMs = { now }, config = config,
         )
     }
 
@@ -377,6 +381,38 @@ class LyricOrchestratorTest {
         assertNotNull(f.listener.resolved)
         assertEquals(0, f.listener.unavailableCount, "重试成功后不得再报失败")
         assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
+    }
+
+    @Test
+    fun `late hook success after unavailable is accepted only when enabled`() {
+        val f = Fixture(
+            api = false,
+            config = LyricOrchestrator.Config(allowLateHookSuccess = true),
+        )
+
+        f.orchestrator.onTrackChanged(track("A"))
+        f.hookSource!!.deliver(LyricOutcome.TransientFailure())
+        assertEquals(LyricOrchestrator.State.UNAVAILABLE, f.orchestrator.state)
+
+        f.hookSource.deliver(success())
+
+        assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
+        assertNotNull(f.listener.resolved)
+        assertEquals(1, f.listener.resolvedCount)
+    }
+
+    @Test
+    fun `late hook success after unavailable is rejected by default`() {
+        val f = Fixture(api = false)
+
+        f.orchestrator.onTrackChanged(track("A"))
+        f.hookSource!!.deliver(LyricOutcome.TransientFailure())
+        assertEquals(LyricOrchestrator.State.UNAVAILABLE, f.orchestrator.state)
+
+        f.hookSource.deliver(success())
+
+        assertEquals(LyricOrchestrator.State.UNAVAILABLE, f.orchestrator.state)
+        assertNull(f.listener.resolved)
     }
 
     @Test

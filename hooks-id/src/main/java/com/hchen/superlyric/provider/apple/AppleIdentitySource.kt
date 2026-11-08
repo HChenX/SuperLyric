@@ -23,6 +23,8 @@ import com.hchen.superlyric.identity.BaseIdentitySource
 import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.shared.hostString
 
+private const val APPLE_MEDIA_ID = "com.apple.android.music.playback.metadata.METADATA_KEY_MEDIA_ID"
+
 /**
  * Apple 的默认身份实现：Apple 没有独立于 MEDIA_ID 的身份。
  *
@@ -34,7 +36,9 @@ class AppleIdentitySource(private val providerTag: String) : BaseIdentitySource(
     override fun install() = Unit
 
     override fun current(metadata: MediaMetadata): TrackIdentity = current(
-        metadata.hostString(MediaMetadata.METADATA_KEY_MEDIA_ID).trim(),
+        metadata.hostString(APPLE_MEDIA_ID).trim().ifEmpty {
+            metadata.hostString(MediaMetadata.METADATA_KEY_MEDIA_ID).trim()
+        },
         metadata.hostString(MediaMetadata.METADATA_KEY_TITLE),
         metadata.hostString(MediaMetadata.METADATA_KEY_ARTIST),
         metadata.getLong(MediaMetadata.METADATA_KEY_DURATION),

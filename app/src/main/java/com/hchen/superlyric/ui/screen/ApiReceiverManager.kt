@@ -166,7 +166,8 @@ internal object ApiReceiverManager {
             // 与 onLyric 共用同一临界区：在锁外读 current 会用旧帧覆盖并发发布的新帧。
             val current = receiverFlow.value
             val seq = totalPackets.incrementAndGet()
-            receiverFlow.value = current.copy(
+            receiverFlow.value = ApiReceiverState(
+                speed = 0f,
                 source = stop.publisher ?: current.source ?: sourceLabel,
                 eventType = EVENT_STOP,
                 receiveTime = time,
@@ -370,7 +371,8 @@ internal object ApiReceiverManager {
         }
     }
 
-    private fun Stop.stopPlaybackState(): PlaybackState = when (reason) {
+    private fun Stop.stopPlaybackState(): PlaybackState? = when (reason) {
+        StopReason.CLEARED -> null
         StopReason.ERROR -> PlaybackState.ERROR
         else -> PlaybackState.STOPPED
     }

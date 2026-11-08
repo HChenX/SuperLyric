@@ -170,6 +170,21 @@ class LyricDocAdapterTest {
     }
 
     @Test
+    fun `legacy full payload before the first line is metadata only`() {
+        val payload = LyricDocAdapter.toLegacyFull(lyric(), -1, 250L)
+
+        assertFalse(payload.hasAllLyrics())
+        assertEquals(-1, payload.currentLyricIndex)
+        assertNull(payload.lyric)
+        assertNull(payload.translation)
+        assertNull(payload.secondary)
+        assertEquals(250L, payload.position)
+        assertEquals("T", payload.title)
+        assertEquals("A", payload.artist)
+        assertEquals("qq:x", payload.lyricId)
+    }
+
+    @Test
     fun `out of range legacy line yields null`() {
         assertNull(LyricDocAdapter.toLegacyLine(lyric(), 5, 0L))
         assertNull(LyricDocAdapter.toLegacyLine(lyric(), -1, 0L))

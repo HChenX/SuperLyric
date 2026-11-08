@@ -555,7 +555,7 @@ public final class LyricRuntime {
             long position = session.fullLyric
                 ? Math.max(0L, playback.tracker.positionNow()) : session.positionMs;
 
-            if (session.fullLyric && supportsFull) {
+            if (index < 0 || (session.fullLyric && supportsFull)) {
                 return LyricDocAdapter.INSTANCE.toLegacyFull(lyric, index, position);
             }
             return LyricDocAdapter.INSTANCE.toLegacyLine(lyric, index, position);
@@ -647,7 +647,10 @@ public final class LyricRuntime {
         int legacyIndex = legacyIndex(lyric, index);
         SuperLyricData full = fullSource
             ? LyricDocAdapter.INSTANCE.toLegacyFull(lyric, legacyIndex, position) : null;
-        SuperLyricData line = LyricDocAdapter.INSTANCE.toLegacyLine(lyric, legacyIndex, position);
+        SuperLyricData line = legacyIndex < 0 ? full
+            : LyricDocAdapter.INSTANCE.toLegacyLine(lyric, legacyIndex, position);
+        XposedLog.logD(TAG, "Legacy " + (legacyIndex < 0 ? "metadata-only" : "lyric")
+            + " from " + packageName + ": index=" + legacyIndex + ", position=" + position + "ms");
         notifyReceiver(packageName, "onLyric", full, line,
             (receiver, publisher, payload) -> receiver.onLyric(publisher, payload));
     }
@@ -829,8 +832,8 @@ public final class LyricRuntime {
 
     private static int legacyIndex(@NonNull Lyric lyric, int index) {
         int count = lyric.getLineCount();
-        if (count == 0) return 0;
-        return Math.max(0, Math.min(index, count - 1));
+        if (count == 0) return -1;
+        return Math.max(-1, Math.min(index, count - 1));
     }
 
     /**

@@ -92,11 +92,8 @@ class AppleHookSource : InstallableLyricSource {
         val current = TrackIdentity.normalizeStableId(stableId)
 
         when (verdict) {
-            TrackVerdict.SAME -> Unit
+            TrackVerdict.SAME -> AndroidLog.logD(sourceName, "Accepting $what for $reported")
 
-            // 任一侧取不到标识即无从判定。载荷仍投递（判错可自愈），
-            // 但无词结论不能采纳：它是终态，而“无从判定”说明判据不成立。
-            // 该曲目因此拿不到纯音乐占位并显示为空，但不会把有歌词的曲目标为纯音乐
             TrackVerdict.UNVERIFIABLE -> AndroidLog.logW(
                 sourceName,
                 "$what has no comparable track id (reported=$reported, current=$current); " +
@@ -123,7 +120,7 @@ class AppleHookSource : InstallableLyricSource {
      * 仅 `SAME` 放行；`UNVERIFIABLE` 与 `DIFFERENT` 只在未启用 [enforce] 时放行。
      * 该规则覆盖六种判定组合，单测固定这些边界。
      *
-     * @param enforce 判据不成立时是否丢弃调用方（投递载荷传 false，终态结论传 true）
+     * @param enforce 判据不成立时是否拒绝投递
      */
     internal fun admits(verdict: TrackVerdict, enforce: Boolean): Boolean = when (verdict) {
         TrackVerdict.SAME -> true
@@ -151,7 +148,7 @@ class AppleHookSource : InstallableLyricSource {
     private fun onExtracted(lines: List<AppleLine>, itemId: String?) {
         val current = requests.current() ?: return
         val identity = current.identity
-        trackGuard(itemId, identity.stableId, "lyric payload", enforce = false)
+        if (!trackGuard(itemId, identity.stableId, "lyric payload", enforce = true)) return
 
         // 宿主原始模型（含 HTML 标记）；Apple 没有协议报文，这就是未解析数据。
         // 诊断关闭时不得先构建整份字符串，否则 release 也付 O(payload) 的复制成本。
@@ -163,7 +160,7 @@ class AppleHookSource : InstallableLyricSource {
             lines.map { line ->
                 AppleLyricParser.Line(
                     text = line.text,
-                    translation = line.translation,
+                    translation = line.translation.orEmpty(),
                     startMs = line.startMs,
                     endMs = line.endMs,
                     words = line.words.map {
@@ -194,7 +191,7 @@ class AppleHookSource : InstallableLyricSource {
             builder.append('[').append(index).append("] ")
                 .append(line.startMs).append('-').append(line.endMs)
                 .append(" text=\"").append(line.text).append('"')
-            if (line.translation.isNotEmpty()) {
+            if (!line.translation.isNullOrEmpty()) {
                 builder.append(" trans=\"").append(line.translation).append('"')
             }
             if (line.words.isNotEmpty()) {
