@@ -25,6 +25,7 @@ import com.hchen.superlyric.kernel.merge.SidecarChannel
 import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.parse.KuwoLrcxParser
 import com.hchen.superlyric.kernel.parse.QrcParser
+import com.hchen.superlyric.kernel.text.LrcOffset
 import java.nio.charset.StandardCharsets
 
 /**
@@ -124,18 +125,28 @@ object LyricPipeline {
 
         val format = if (request.format == LyricFormat.AUTO) sniff(content) else request.format
 
+        // 通用 LRC 的 [offset:±ms] 必须在解析前摘掉，解析完成后再统一平移。
+        // QRC 的时间轴已有自己的 offset，KRC 不使用该指令，二者都不能走这里。
+        val lrcOffset = if (format == LyricFormat.GENERAL) LrcOffset.parse(content) else null
+        val source = lrcOffset?.text ?: content
+
         // 走通用解析库的载荷，先剥掉"主行 + 同时间戳伴随行"里的伴随行。
         // 库判定哪一行是哪一行的伴随用的是时间区间重叠，相邻主行会互相误配，
         // 且配对后无法还原：必须在库拿到文本之前拆（详见 [CompanionSplitter]）。
         val split = when (format) {
-            LyricFormat.GENERAL, LyricFormat.KRC -> CompanionSplitter.split(content)
+            LyricFormat.GENERAL, LyricFormat.KRC -> CompanionSplitter.split(source)
             else -> null
         }
-        val body = split?.main ?: content
+        val body = split?.main ?: source
 
         val doc = ParserRegistry.parse(format, body, split, qrcStats) ?: return null
-
-        return finalize(doc, if (split == null) request else request.withSplitChannels(split))
+        val requestForFinalize = if (split == null) request else request.withSplitChannels(split)
+        val result = finalize(doc, requestForFinalize) ?: return null
+        return if (format == LyricFormat.GENERAL && lrcOffset != null && lrcOffset.offsetMs != 0L) {
+            LrcOffset.apply(result, lrcOffset.offsetMs)
+        } else {
+            result
+        }
     }
 
     /** 把拆分出的伴随通道并入请求，统一交给 [finalize] 对齐 */
@@ -211,9 +222,12 @@ object LyricPipeline {
     private val KRC_LINE_MARKER = Regex("""\[\d+,\d+][^\n]*<\d+,\d+,\d+>""")
 
     private fun finalize(doc: LyricDoc, request: LyricRequest): LyricDoc? {
+        // 独立歌手标签先并入下一条主行，再参与同时刻折叠与译文对齐；否则标签行会被
+        // 当成独立歌词行，或把本应属于下一行的译文截走。
+        var result = doc.copy(lines = SpeakerLabelMerger.merge(doc.lines))
         // 先折叠同一时刻的行，再挂伴随通道：反过来的话，译文可能先挂到即将被折叠丢弃的
         // 伴随行上，折叠后整段译文消失（只由行序决定）。
-        var result = doc.copy(lines = LineNormalizer.collapseSimultaneous(doc.lines))
+        result = result.copy(lines = LineNormalizer.collapseSimultaneous(result.lines))
 
         SidecarMerger.attach(result, request.translationText, SidecarChannel.TRANSLATION)?.let { result = it }
         SidecarMerger.attach(result, request.phoneticText, SidecarChannel.PHONETIC)?.let { result = it }

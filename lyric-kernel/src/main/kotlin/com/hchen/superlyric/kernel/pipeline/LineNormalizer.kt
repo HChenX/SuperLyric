@@ -30,6 +30,8 @@ internal object LineNormalizer {
     /** 行起始超出曲目时长的容差；平台会把推广行写成 99:00，但宿主时长偶尔偏短，容差取 2 分钟 */
     private const val MAX_LINE_OVER_DURATION_MS = 120_000L
 
+    private val WHITESPACE = Regex("""\s+""")
+
     fun collapseSimultaneous(lines: List<LyricLine>): List<LyricLine> {
         if (lines.size < 2) return lines
         val sorted = lines.sortedBy { it.startMs }
@@ -95,7 +97,12 @@ internal object LineNormalizer {
                 endMs = minOf(capByNext, startMs + 1)
             }
             val words = repairWords(current.words, startMs, endMs)
-            result += current.copy(startMs = startMs, endMs = endMs, words = words)
+            result += current.copy(
+                startMs = startMs,
+                endMs = endMs,
+                text = normalizeText(current.text),
+                words = words,
+            )
         }
         return result
     }
@@ -146,6 +153,8 @@ internal object LineNormalizer {
         }
         return result
     }
+
+    private fun normalizeText(text: String): String = text.trim().replace(WHITESPACE, " ")
 
     private fun boundEnd(endMs: Long, startMs: Long, capByNext: Long, durationMs: Long): Long {
         if (endMs - startMs <= MAX_LINE_SPAN_MS) return endMs

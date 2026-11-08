@@ -52,6 +52,14 @@ class TranslationMergerTest {
     }
 
     @Test
+    fun `a 100ms drift is still attached under the retained 150ms tolerance`() {
+        // Taskbar 的 60ms 严格窗口会丢弃这条译文；本项目保留 150ms，需金标准测试钉住。
+        val result = TranslationMerger.attach(doc(1000), listOf(TimeText(1100, "译文")), SidecarChannel.TRANSLATION)
+
+        assertEquals("译文", result.lines[0].translation)
+    }
+
+    @Test
     fun `drift just inside the tolerance is attached`() {
         val result = TranslationMerger.attach(
             doc(1000),

@@ -403,4 +403,108 @@ class LyricPipelineTest {
         assertNull(lines[0].translation, "空白译文不得继续下发")
         assertNull(lines[1].translation, "占位符 // 不得作为译文继续下发")
     }
+
+    @Test
+    fun `general lrc offset shifts line and word times exactly once`() {
+        val doc = LyricPipeline.parse(
+            LyricRequest(
+                format = LyricFormat.GENERAL,
+                text = "[offset:+250]\n[00:01.00]<00:01.00>Hello <00:02.00>world",
+            )
+        )
+
+        assertNotNull(doc)
+        val line = doc!!.lines.single()
+        assertEquals(1250L, line.startMs)
+        assertEquals("Hello world", line.text)
+    }
+
+    @Test
+    fun `general lrc offset keeps ti and ar metadata`() {
+        val doc = LyricPipeline.parse(
+            LyricRequest(
+                format = LyricFormat.GENERAL,
+                text = "[ti:Song]\n[ar:Artist]\n[offset:+250]\n[00:01.00]alpha",
+            )
+        )
+
+        assertNotNull(doc)
+        assertEquals(1250L, doc!!.lines.single().startMs)
+        assertEquals("Song", doc.title)
+        assertEquals("Artist", doc.artist)
+    }
+
+    @Test
+    fun `negative general lrc offset clamps to zero`() {
+        val doc = LyricPipeline.parse(
+            LyricRequest(
+                format = LyricFormat.GENERAL,
+                text = "[offset:-500]\n[00:00.20]alpha",
+            )
+        )
+
+        assertNotNull(doc)
+        assertEquals(0L, doc!!.lines.single().startMs)
+        assertEquals("alpha", doc.lines.single().text)
+    }
+
+    @Test
+    fun `auto format applies the general lrc offset`() {
+        val doc = LyricPipeline.parse(
+            LyricRequest(text = "[offset:+250]\n[00:01.00]alpha")
+        )
+
+        assertNotNull(doc)
+        assertEquals(1250L, doc!!.lines.single().startMs)
+    }
+
+    @Test
+    fun `general lrc without offset keeps its timestamps`() {
+        val doc = LyricPipeline.parse(
+            LyricRequest(format = LyricFormat.GENERAL, text = "[00:01.00]alpha")
+        )
+
+        assertNotNull(doc)
+        assertEquals(1000L, doc!!.lines.single().startMs)
+    }
+
+    @Test
+    fun `qrc offset is still applied only once by the pipeline`() {
+        val doc = LyricPipeline.parse(
+            LyricRequest(
+                format = LyricFormat.QRC,
+                text = "[offset:500]\n[1000,2000]Hello(1000,500)world(1500,500)",
+            )
+        )
+
+        assertNotNull(doc)
+        val line = doc!!.lines.single()
+        assertEquals(1500L, line.startMs)
+        assertEquals(listOf(1500L, 2000L), line.words.map { it.startMs })
+    }
+
+    @Test
+    fun `standalone speaker labels merge into the following line`() {
+        val payload = listOf(
+            "[00:01.00]男：",
+            "[00:01.20]Hello",
+            "[00:03.00]女：",
+            "[00:03.20]World",
+        ).joinToString("\n")
+
+        val doc = LyricPipeline.parse(LyricRequest(format = LyricFormat.GENERAL, text = payload))
+
+        assertNotNull(doc)
+        assertEquals(listOf("男：Hello", "女：World"), doc!!.lines.map { it.text })
+    }
+
+    @Test
+    fun `line text is whitespace-normalised at the pipeline boundary`() {
+        val doc = LyricPipeline.parse(
+            LyricRequest(format = LyricFormat.GENERAL, text = "[00:01.00]hello   world")
+        )
+
+        assertNotNull(doc)
+        assertEquals("hello world", doc!!.lines.single().text)
+    }
 }

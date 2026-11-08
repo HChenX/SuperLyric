@@ -113,6 +113,26 @@ class LineNormalizerTest {
     }
 
     @Test
+    fun `line text collapses whitespace while word slices keep their spacing`() {
+        val line = line(
+            "  hello   world  ",
+            listOf(word("hello", 0, 100), word("   ", 100, 150), word("world", 150, 300)),
+        )
+        val normalized = normalized(line)
+
+        assertEquals("hello world", normalized.text)
+        assertEquals(
+            listOf(word("hello", 0, 100), word("   ", 100, 150), word("world", 150, 300)),
+            normalized.words,
+        )
+    }
+
+    @Test
+    fun `CJK line text is unchanged by whitespace normalization`() {
+        assertEquals("未来へ", normalized(line("未来へ", emptyList())).text)
+    }
+
+    @Test
     fun `empty word list is preserved`() {
         assertTrue(normalizedWords(line("plain", emptyList())).isEmpty())
     }
