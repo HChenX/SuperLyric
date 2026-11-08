@@ -41,10 +41,9 @@ internal object SpeakerLabelMerger {
         "hook", "refrain", "interlude",
     )
 
-    private val SINGER_SLOT = Regex(
-        """^(?:歌手\s*)?[A-Za-z0-9Ａ-Ｚａ-ｚ０-９一二三四五六七八九十甲乙丙丁]+$""",
-        RegexOption.IGNORE_CASE,
-    )
+    private val SHORT_LATIN_SLOT = Regex("""^[A-Za-z0-9Ａ-Ｚａ-ｚ０-９]{1,2}$""")
+
+    private val SINGER_PREFIX = Regex("""^歌手\s*[\p{L}\p{N}]{1,16}$""", RegexOption.IGNORE_CASE)
 
     fun merge(lines: List<LyricLine>): List<LyricLine> {
         if (lines.size < 2) return lines
@@ -104,7 +103,8 @@ internal object SpeakerLabelMerger {
         if (isSectionName(name)) return null
         val isSpeaker = COMMON_LABELS.any { name.equals(it, ignoreCase = true) } ||
             (name.length <= 8 && name.any { it in "男女合唱" }) ||
-            SINGER_SLOT.matches(name)
+            SHORT_LATIN_SLOT.matches(name) ||
+            SINGER_PREFIX.matches(name)
         return if (isSpeaker) name + "：" else null
     }
 

@@ -499,6 +499,87 @@ class LyricPipelineTest {
     }
 
     @Test
+    fun `negative offset restores positive non-overlapping words`() {
+        val payload = """
+            [offset:-500]
+            [00:00.20] <00:00.20>Hello<00:00.40> <00:00.60>world
+            [00:00.20]你好
+        """.trimIndent()
+
+        val doc = LyricPipeline.parse(LyricRequest(format = LyricFormat.GENERAL, text = payload))
+
+        assertNotNull(doc)
+        val line = doc!!.lines.single()
+        assertEquals(0L, line.startMs)
+        assertEquals("你好", line.translation)
+        assertTrue(line.words.isNotEmpty())
+        var previousEnd = line.startMs
+        line.words.forEach { word ->
+            assertTrue(word.startMs >= line.startMs, "词不得早于行: " + word)
+            assertTrue(word.endMs <= line.endMs, "词不得晚于行: " + word)
+            assertTrue(word.endMs > word.startMs, "词必须有正时长: " + word)
+            assertTrue(word.startMs >= previousEnd, "词不得重叠: " + word)
+            previousEnd = word.endMs
+        }
+    }
+
+    @Test
+    fun `negative offset re-collapses simultaneous lines`() {
+        val payload = "[offset:-500]\n[00:00.20]First\n[00:00.30]Second"
+
+        val doc = LyricPipeline.parse(LyricRequest(format = LyricFormat.GENERAL, text = payload))
+
+        assertNotNull(doc)
+        assertEquals(1, doc!!.lines.size)
+        assertEquals("First", doc.lines.single().text)
+        assertEquals("Second", doc.lines.single().translation)
+    }
+
+    @Test
+    fun `positive offset drops lines outside the duration window`() {
+        val doc = LyricPipeline.parse(
+            LyricRequest(
+                format = LyricFormat.GENERAL,
+                text = "[offset:+130000]\n[00:01.00]alpha",
+                durationMs = 5_000L,
+            )
+        )
+
+        assertNull(doc)
+    }
+
+    @Test
+    fun `main offset keeps sidecar translation and phonetic aligned`() {
+        val doc = LyricPipeline.parse(
+            LyricRequest(
+                format = LyricFormat.GENERAL,
+                text = "[offset:+250]\n[00:01.00]alpha",
+                translationText = "[offset:+250]\n[00:01.00]译文",
+                phoneticText = "[offset:+250]\n[00:01.00]a-lpha",
+            )
+        )
+
+        assertNotNull(doc)
+        val line = doc!!.lines.single()
+        assertEquals(1250L, line.startMs)
+        assertEquals("译文", line.translation)
+        assertEquals("a-lpha", line.phonetic)
+    }
+
+    @Test
+    fun `qrc fallback lrc offset is applied once`() {
+        val doc = LyricPipeline.parse(
+            LyricRequest(
+                format = LyricFormat.QRC,
+                text = "[offset:+250]\n[00:01.00]alpha",
+            )
+        )
+
+        assertNotNull(doc)
+        assertEquals(1250L, doc!!.lines.single().startMs)
+    }
+
+    @Test
     fun `line text is whitespace-normalised at the pipeline boundary`() {
         val doc = LyricPipeline.parse(
             LyricRequest(format = LyricFormat.GENERAL, text = "[00:01.00]hello   world")

@@ -37,6 +37,15 @@ class SpeakerLabelMergerTest {
     }
 
     @Test
+    fun `English singer labels are restricted`() {
+        assertEquals(2, SpeakerLabelMerger.merge(listOf(line(1000, "Hello:"), line(1200, "lyric"))).size)
+        assertEquals(1, SpeakerLabelMerger.merge(listOf(line(1000, "A:"), line(1200, "lyric"))).size)
+        assertEquals(1, SpeakerLabelMerger.merge(listOf(line(1000, "歌手A："), line(1200, "lyric"))).size)
+        assertEquals(1, SpeakerLabelMerger.merge(listOf(line(1000, "男："), line(1200, "lyric"))).size)
+        assertEquals(2, SpeakerLabelMerger.merge(listOf(line(1000, "Verse:"), line(1200, "lyric"))).size)
+    }
+
+    @Test
     fun `section labels are not merged`() {
         for (label in listOf("Verse:", "Chorus:", "Intro:", "Bridge:")) {
             val merged = SpeakerLabelMerger.merge(listOf(line(1000, label), line(1200, "Hello")))

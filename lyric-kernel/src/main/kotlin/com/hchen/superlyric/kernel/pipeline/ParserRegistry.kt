@@ -25,6 +25,7 @@ import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.parse.KuwoLrcxParser
 import com.hchen.superlyric.kernel.parse.QrcParser
 import com.hchen.superlyric.kernel.parse.SodaJsonParser
+import com.hchen.superlyric.kernel.text.LrcOffset
 import com.hchen.superlyric.kernel.text.LrcTimestamps
 import com.mocharealm.accompanist.lyrics.core.parser.AutoParser
 
@@ -58,7 +59,8 @@ internal object ParserRegistry {
         QrcParser.parse(text, stats)?.let { return it }
 
         val fallback = QrcParser.fallbackContent(text, stats) ?: return null
-        var doc = parseByLibrary(LrcTimestamps.normalize(fallback.main)) ?: return null
+        val lrcOffset = LrcOffset.parse(LrcTimestamps.normalize(fallback.main))
+        var doc = parseByLibrary(lrcOffset.text) ?: return null
 
         val translation = fallback.translation
         if (!translation.isNullOrBlank()) {
@@ -67,7 +69,8 @@ internal object ParserRegistry {
                 doc = TranslationMerger.attach(doc, entries, SidecarChannel.TRANSLATION)
             }
         }
-        return doc
+        // 译文先按未平移的主行对齐，再整体平移；QRC 原生 offset 不经过这里。
+        return if (lrcOffset.offsetMs != 0L) LrcOffset.apply(doc, lrcOffset.offsetMs) else doc
     }
 
     private fun parseByLibrary(text: String): LyricDoc? {

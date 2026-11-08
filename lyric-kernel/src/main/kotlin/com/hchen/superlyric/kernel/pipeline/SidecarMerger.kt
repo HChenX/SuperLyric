@@ -64,6 +64,8 @@ internal object SidecarMerger {
      * 只按是否出现 `[n,n]` 二选一会丢掉另一种形态；这里两种都解析并按时间戳去重。
      */
     private fun parse(text: String): List<TimeText> {
+        // 侧车不应用 [offset:]：主载荷的 offset 在挂载后统一平移整行，
+        // 侧车只需与未平移主行对齐；再应用一次会双重平移。
         val normalized = LrcTimestamps.normalize(text)
         val hasQrc = millisecondLine.containsMatchIn(normalized)
         val hasLrc = lrcLine.containsMatchIn(normalized)

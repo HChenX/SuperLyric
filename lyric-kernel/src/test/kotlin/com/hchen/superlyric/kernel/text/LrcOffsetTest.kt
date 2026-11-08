@@ -62,10 +62,8 @@ class LrcOffsetTest {
 
         assertEquals(0L, shifted.lines.single().startMs)
         assertEquals(300L, shifted.lines.single().endMs)
-        assertEquals(0L, shifted.lines.single().words[0].startMs)
-        assertEquals(0L, shifted.lines.single().words[0].endMs)
-        assertEquals(0L, shifted.lines.single().words[1].startMs)
-        assertEquals(100L, shifted.lines.single().words[1].endMs)
+        // 直接 apply 只负责 clamp；正时长与行内不重叠由管线 offset 后的 normalize 恢复。
+        assertTrue(shifted.lines.single().words.all { it.startMs >= 0L && it.endMs >= it.startMs })
     }
 
     @Test

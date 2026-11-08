@@ -143,7 +143,7 @@ object LyricPipeline {
         val requestForFinalize = if (split == null) request else request.withSplitChannels(split)
         val result = finalize(doc, requestForFinalize) ?: return null
         return if (format == LyricFormat.GENERAL && lrcOffset != null && lrcOffset.offsetMs != 0L) {
-            LrcOffset.apply(result, lrcOffset.offsetMs)
+            restoreAfterOffset(LrcOffset.apply(result, lrcOffset.offsetMs))
         } else {
             result
         }
@@ -220,6 +220,19 @@ object LyricPipeline {
 
     /** KRC 明文行的结构特征：`[数字,数字]` 后跟 `<数字,数字,数字>` */
     private val KRC_LINE_MARKER = Regex("""\[\d+,\d+][^\n]*<\d+,\d+,\d+>""")
+
+    /**
+     * offset 会把行/词压到 0 或推出 duration 窗口；重新折叠并规范化，
+     * 恢复正时长、行内、不重叠和 duration 过滤。
+     */
+    private fun restoreAfterOffset(doc: LyricDoc): LyricDoc? {
+        val lines = LineNormalizer.normalize(
+            LineNormalizer.collapseSimultaneous(doc.lines),
+            doc.durationMs,
+        ).map { SidecarMerger.withoutEmptySidecars(it) }
+        if (lines.isEmpty()) return null
+        return doc.copy(lines = lines)
+    }
 
     private fun finalize(doc: LyricDoc, request: LyricRequest): LyricDoc? {
         // 独立歌手标签先并入下一条主行，再参与同时刻折叠与译文对齐；否则标签行会被
