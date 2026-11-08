@@ -30,7 +30,6 @@ import org.junit.jupiter.api.Test
  *
  * 从「采纳线的两侧」起的用例是 [LyricScorer.MIN_ACCEPT_SCORE] 的定义：
  * 改动权重或时长分档后，必须让它们重新成立。
- *
  */
 class LyricScorerTest {
 
@@ -75,7 +74,6 @@ class LyricScorerTest {
         assertTrue(LyricScorer.calculateTitleSimilarity("(Intro) Song", "Song") < 0.5)
     }
 
-
     @Test
     fun versionMarkersWithDotAreRejectedBeforeTitleCleaning() {
         // 版本标记的真实形态带点；整段括号先被删掉会使 VARIANT 守卫看不到它
@@ -88,6 +86,9 @@ class LyricScorerTest {
     fun `an English word containing live is not a variant marker`() {
         // "Oliver" 含子串 live；没有词边界时整段会被误判为另一版本。
         assertTrue(LyricScorer.calculateTitleSimilarity("未来へ (Oliver)", "未来へ") > 0.5)
+        val latinOliver = LyricScorer.calculateTitleSimilarity("NIGHT DANCER (Oliver)", "NIGHT DANCER")
+        assertTrue(latinOliver > 0.0, "Oliver 不得被判成 Live")
+        assertTrue(latinOliver < 0.5, "普通包含关系仍要压在采纳边界下")
     }
 
     @Test
@@ -127,22 +128,21 @@ class LyricScorerTest {
 
     @Test
     fun `a sloppy but genuine match still clears the line`() {
-        // 采纳线下沿：歌名相似度 0.8（一个字符之差）、歌手一致、时长差 4 秒，合计 80。
-        // 再往下压会把这类真实匹配判成没有歌词
+        // 歌名相似度 0.893（Jaro-Winkler 对一次换位的短标题），歌手一致、时长差 4 秒
         val score = LyricScorer.scoreCandidate(
             "夜に駆ける", "kiroro", 333_000L,
             "夜に驅ける", "kiroro", 329_000L,
         )
-        assertEquals(80.0, score, 0.01)
+        assertEquals(84.67, score, 0.01)
         assertTrue(score >= ACCEPT_SCORE, "score=$score")
     }
 
     @Test
     fun `the same title with a different artist is rejected`() {
-        // 采纳线上沿：歌名一致但歌手不同，合计 70。再放宽会把同名异曲的歌词配上去
+        // 采纳线上沿：歌名一致但同文字系统的歌手不同，合计 70
         val score = LyricScorer.scoreCandidate(
             "未来へ", "kiroro", 333_000L,
-            "未来へ", "高橋洋子", 333_000L,
+            "未来へ", "tove styrke", 333_000L,
         )
         assertEquals(70.0, score, 0.01)
         assertTrue(score < ACCEPT_SCORE, "score=$score")
@@ -150,8 +150,6 @@ class LyricScorerTest {
 
     @Test
     fun `a strictly better candidate outscores a slightly worse one`() {
-        // 调用方取最高分。分数在饱和区被压平后，该规则退化为取检索首位，
-        // 同名的另一版随之随机胜出，日语歌得以配上韩语歌词
         val exact = LyricScorer.scoreCandidate(
             "未来へ", "kiroro", 333_000L,
             "未来へ", "kiroro", 333_000L,
@@ -170,7 +168,6 @@ class LyricScorerTest {
 
     @Test
     fun `a candidate that shares only the title is rejected`() {
-        // 候选只有歌名，歌手与时长都缺，无法核验；两个维度各丢满分，只剩歌名的 50 分
         val score = LyricScorer.scoreCandidate(
             "晴天", "周杰伦", 269_000L,
             "晴天", "", 0L,
@@ -181,8 +178,6 @@ class LyricScorerTest {
 
     @Test
     fun `a title-only target cannot decide identity`() {
-        // 目标只报歌名。同名曲目常见（Intro / Interlude），单一维度无法确定身份；
-        // 归一后的满分被上限压到 60
         val score = LyricScorer.scoreCandidate(
             "Intro", "", 0L,
             "Intro", "Somebody", 180_000L,
@@ -193,8 +188,6 @@ class LyricScorerTest {
 
     @Test
     fun `a target with no artist still accepts an exact title and duration`() {
-        // 目标侧缺歌手，该栏从分母中去掉（50 + 20 = 70 的满分），不补常数分；
-        // 补分会把采纳线向下挪
         val score = LyricScorer.scoreCandidate(
             "未来へ", "", 333_000L,
             "未来へ", "kiroro", 333_000L,
@@ -212,11 +205,11 @@ class LyricScorerTest {
     }
 
     @Test
-    fun `without a target duration a wrong artist is no longer affordable`() {
-        // 缺时长栏时由歌手栏单独承担：歌名相同、歌手不同，得分 50 / 80 = 62.5，低于采纳线
+    fun `without a target duration a same-script wrong artist is no longer affordable`() {
+        // 缺时长栏时由歌手栏单独承担：歌名相同、同文字系统歌手不同，得分 50 / 80 = 62.5
         val score = LyricScorer.scoreCandidate(
             "未来へ", "kiroro", 0L,
-            "未来へ", "高橋洋子", 333_000L,
+            "未来へ", "tove styrke", 333_000L,
         )
         assertEquals(62.5, score, 0.01)
         assertTrue(score < ACCEPT_SCORE, "score=$score")
@@ -224,14 +217,614 @@ class LyricScorerTest {
 
     @Test
     fun `a six second duration gap no longer annihilates an otherwise exact match`() {
-        // 宿主上报的时长常是流的长度而非录音长度；6 秒差只丢时长栏的 20 分，
-        // 不将整条结果归零
         val score = LyricScorer.scoreCandidate(
             "未来へ", "kiroro", 333_000L,
             "未来へ", "kiroro", 327_000L,
         )
         assertEquals(80.0, score, 0.01)
         assertTrue(score >= ACCEPT_SCORE, "score=$score")
+    }
+
+    // Jaro-Winkler 与归一化
+
+    @Test
+    fun `Jaro-Winkler lifts a short transposition typo`() {
+        val similarity = LyricScorer.calculateTitleSimilarity("Martha", "Marhta")
+        assertEquals(0.9611, similarity, 0.001)
+        val score = LyricScorer.scoreCandidate(
+            "Martha", "artist", 100_000L,
+            "Marhta", "artist", 100_000L,
+        )
+        assertEquals(98.06, score, 0.01)
+        assertTrue(score >= ACCEPT_SCORE, "score=$score")
+    }
+
+    @Test
+    fun `plain containment is capped below the acceptance boundary`() {
+        // 缺词是普通包含关系，不是换位；比例低于 0.7 时不能靠歌手/时长抬过 75
+        assertEquals(0.45, LyricScorer.calculateTitleSimilarity("Midnight City", "Midnight"), 0.001)
+        val score = LyricScorer.scoreCandidate(
+            "Midnight City", "M83", 244_000L,
+            "Midnight", "M83", 244_000L,
+        )
+        assertEquals(72.5, score, 0.01)
+        assertTrue(score < ACCEPT_SCORE, "score=$score")
+    }
+
+    @Test
+    fun `short Latin titles need an exact token before Jaro-Winkler applies`() {
+        assertEquals(0.0, LyricScorer.calculateTitleSimilarity("Love", "Live"), 0.001)
+        val wrong = LyricScorer.scoreCandidate(
+            "Love", "artist", 200_000L,
+            "Live", "artist", 200_000L,
+        )
+        assertTrue(wrong < ACCEPT_SCORE, "score=$wrong")
+        assertEquals(0.0, LyricScorer.calculateTitleSimilarity("M83", "M38"), 0.001)
+        assertEquals(1.0, LyricScorer.calculateTitleSimilarity("M83", "M83"), 0.001)
+        assertEquals(
+            100.0,
+            LyricScorer.scoreCandidate("M83", "artist", 200_000L, "M83", "artist", 200_000L),
+            0.01,
+        )
+    }
+
+    @Test
+    fun `normalisation removes diacritics and punctuation`() {
+        assertEquals(1.0, LyricScorer.calculateTitleSimilarity("Beyoncé", "Beyonce"), 0.001)
+        assertEquals(1.0, LyricScorer.calculateTitleSimilarity("Café", "Cafe"), 0.001)
+        assertEquals(1.0, LyricScorer.calculateTitleSimilarity("Anti-Hero", "Anti Hero"), 0.001)
+    }
+
+    @Test
+    fun `NFKC normalises full-width characters`() {
+        assertEquals(1.0, LyricScorer.calculateTitleSimilarity("Ａｎｔｉ－Ｈｅｒｏ", "Anti-Hero"), 0.001)
+        assertEquals(1.0, LyricScorer.calculateTitleSimilarity("未来へ（向着未来）", "未来へ"), 0.001)
+    }
+
+    @Test
+    fun `spaced Latin artist letters collapse but CJK single characters do not`() {
+        assertEquals(
+            setOf("ritual", "tove styrke"),
+            LyricScorer.splitArtists("R I T U A L / Tove Styrke"),
+        )
+        assertEquals(1.0, LyricScorer.calculateArtistSimilarity("R I T U A L", "RITUAL"), 0.001)
+        assertEquals(setOf("周 杰 伦"), LyricScorer.splitArtists("周 杰 伦"))
+        assertTrue("周杰伦" !in LyricScorer.splitArtists("周 杰 伦"))
+        assertEquals(0.0, LyricScorer.calculateArtistSimilarity("周 杰 伦", "周杰伦"), 0.001)
+    }
+
+    @Test
+    fun `artist punctuation and diacritics are normalised`() {
+        assertEquals(1.0, LyricScorer.calculateArtistSimilarity("Tyler, The Creator", "Tyler The Creator"), 0.001)
+        assertEquals(1.0, LyricScorer.calculateArtistSimilarity("Beyoncé", "Beyonce"), 0.001)
+    }
+
+    @Test
+    fun `artist Jaro-Winkler supplements a near-identical name`() {
+        assertEquals(0.9818, LyricScorer.calculateArtistSimilarity("Tove Styrke", "Tove Stryke"), 0.001)
+    }
+
+    @Test
+    fun `artist token overlap supplements a partial credit`() {
+        assertEquals(
+            0.9143,
+            LyricScorer.calculateArtistSimilarity("Taylor Swift", "Taylor Swift / ILLENIUM"),
+            0.001,
+        )
+        val score = LyricScorer.scoreCandidate(
+            "Anti-Hero - ILLENIUM Remix", "Taylor Swift", 267_000L,
+            "Anti-Hero (Illenium Remix)", "Taylor Swift / ILLENIUM", 267_000L,
+        )
+        assertEquals(97.43, score, 0.01)
+    }
+
+    @Test
+    fun `artist version extras do not get token or Jaro-Winkler credit`() {
+        listOf(
+            "The Weeknd" to "The Weeknd Tribute",
+            "Taylor Swift" to "Taylor Swift Tribute",
+            "Adele" to "Adele Cover",
+            "Taylor Swift" to "Taylor Swift Version",
+            "The Weeknd" to "The Weeknd Original",
+            "Adele" to "Adele From Movie",
+            "The Weeknd" to "The Weeknd Ver",
+        ).forEach { (targetArtist, candidateArtist) ->
+            assertEquals(
+                0.0,
+                LyricScorer.calculateArtistSimilarity(targetArtist, candidateArtist),
+                0.001,
+                candidateArtist,
+            )
+            val score = LyricScorer.scoreCandidate(
+                "Song", targetArtist, 200_000L,
+                "Song", candidateArtist, 200_000L,
+            )
+            assertEquals(70.0, score, 0.01, candidateArtist)
+            assertTrue(score < ACCEPT_SCORE, "score=$score")
+        }
+    }
+
+    @Test
+    fun `letter overlap alone does not lift a wrong artist`() {
+        assertEquals(0.0, LyricScorer.calculateArtistSimilarity("kiroro", "tove styrke"), 0.001)
+        assertEquals(0.0, LyricScorer.calculateArtistSimilarity("M83", "Coldplay"), 0.001)
+    }
+
+    @Test
+    fun `common words do not lift a wrong artist`() {
+        assertEquals(0.0, LyricScorer.calculateArtistSimilarity("The Weeknd", "The Chainsmokers"), 0.001)
+        assertEquals(0.0, LyricScorer.calculateArtistSimilarity("John Smith", "John Doe"), 0.001)
+    }
+
+    // 跨文字系统与错误歌手
+
+    @Test
+    fun `cross-script artist aliases are capped between acceptance and exact`() {
+        val score = LyricScorer.scoreCandidate(
+            "新宝島", "魚韻", 305_000L,
+            "新宝島", "sakanaction", 306_000L,
+        )
+        assertEquals(82.0, score, 0.01)
+        assertTrue(score >= ACCEPT_SCORE, "score=$score")
+        assertTrue(score < 100.0, "score=$score")
+    }
+
+    @Test
+    fun `cross-script version words fall back to the normal artist penalty`() {
+        listOf("Tribute", "Version", "Original").forEach { extra ->
+            val score = LyricScorer.scoreCandidate(
+                "新宝島", "魚韻", 305_000L,
+                "新宝島", "sakanaction $extra", 305_000L,
+            )
+            assertEquals(70.0, score, 0.01, extra)
+            assertTrue(score < ACCEPT_SCORE, "score=$score")
+        }
+        assertEquals(
+            82.0,
+            LyricScorer.scoreCandidate(
+                "新宝島", "魚韻", 305_000L,
+                "新宝島", "sakanaction", 305_000L,
+            ),
+            0.01,
+        )
+    }
+
+    @Test
+    fun `kana and Latin artist names are not comparable`() {
+        val score = LyricScorer.scoreCandidate(
+            "新宝島", "サカナクション", 305_000L,
+            "新宝島", "sakanaction", 305_000L,
+        )
+        assertEquals(82.0, score, 0.01)
+    }
+
+    @Test
+    fun `cross-script alias with duration drift stays capped`() {
+        assertEquals(
+            82.0,
+            LyricScorer.scoreCandidate(
+                "新宝島", "魚韻", 300_000L,
+                "新宝島", "sakanaction", 305_000L,
+            ),
+            0.01,
+        )
+        val sixSecondGap = LyricScorer.scoreCandidate(
+            "新宝島", "魚韻", 305_000L,
+            "新宝島", "sakanaction", 311_000L,
+        )
+        assertEquals(71.43, sixSecondGap, 0.01)
+        assertTrue(sixSecondGap < ACCEPT_SCORE, "score=$sixSecondGap")
+        val tenSecondGap = LyricScorer.scoreCandidate(
+            "新宝島", "魚韻", 305_000L,
+            "新宝島", "sakanaction", 315_000L,
+        )
+        assertEquals(71.43, tenSecondGap, 0.01)
+        assertTrue(tenSecondGap < ACCEPT_SCORE, "score=$tenSecondGap")
+    }
+
+    @Test
+    fun `a verified same-script candidate outranks a cross-script alias`() {
+        val crossScript = LyricScorer.scoreCandidate(
+            "夜に駆ける", "kiroro", 333_000L,
+            "夜に駆ける", "高橋洋子", 333_000L,
+        )
+        val verified = LyricScorer.scoreCandidate(
+            "夜に駆ける", "kiroro", 333_000L,
+            "夜に驅ける", "kiroro", 329_000L,
+        )
+        assertEquals(82.0, crossScript, 0.01)
+        assertEquals(84.67, verified, 0.01)
+        assertTrue(verified > crossScript, "verified=$verified, cross=$crossScript")
+    }
+
+    @Test
+    fun `acceptance boundary ordering remains intact`() {
+        val leading = LyricScorer.scoreCandidate(
+            "(What's) The Story", "artist", 200_000L,
+            "The Story", "artist", 200_000L,
+        )
+        val containment = LyricScorer.scoreCandidate(
+            "Midnight City", "M83", 244_000L,
+            "Midnight", "M83", 244_000L,
+        )
+        val sameScriptWrong = LyricScorer.scoreCandidate(
+            "未来へ", "kiroro", 333_000L,
+            "未来へ", "tove styrke", 333_000L,
+        )
+        val crossScript = LyricScorer.scoreCandidate(
+            "未来へ", "kiroro", 333_000L,
+            "未来へ", "高橋洋子", 333_000L,
+        )
+        val verified = LyricScorer.scoreCandidate(
+            "夜に駆ける", "kiroro", 333_000L,
+            "夜に驅ける", "kiroro", 329_000L,
+        )
+
+        assertEquals(72.5, leading, 0.01)
+        assertEquals(72.5, containment, 0.01)
+        assertEquals(70.0, sameScriptWrong, 0.01)
+        assertEquals(82.0, crossScript, 0.01)
+        assertEquals(84.67, verified, 0.01)
+        assertTrue(leading < ACCEPT_SCORE)
+        assertTrue(containment < ACCEPT_SCORE)
+        assertTrue(sameScriptWrong < ACCEPT_SCORE)
+        assertTrue(crossScript > ACCEPT_SCORE)
+        assertTrue(verified > crossScript)
+    }
+
+    @Test
+    fun `a cross-script alias without duration is still capped`() {
+        val score = LyricScorer.scoreCandidate(
+            "未来へ", "kiroro", 0L,
+            "未来へ", "高橋洋子", 333_000L,
+        )
+        assertEquals(82.0, score, 0.01)
+    }
+
+    @Test
+    fun `mixed-script artist names are compared normally`() {
+        val score = LyricScorer.scoreCandidate(
+            "新宝島", "X玖少年团", 305_000L,
+            "新宝島", "sakanaction", 305_000L,
+        )
+        assertEquals(70.0, score, 0.01)
+        assertTrue(score < ACCEPT_SCORE, "score=$score")
+    }
+
+    @Test
+    fun `candidate artist missing remains a candidate-side penalty`() {
+        assertEquals(
+            70.0,
+            LyricScorer.scoreCandidate(
+                "晴天", "周杰伦", 269_000L,
+                "晴天", "", 269_000L,
+            ),
+            0.01,
+        )
+        assertEquals(
+            50.0,
+            LyricScorer.scoreCandidate(
+                "晴天", "周杰伦", 269_000L,
+                "晴天", "", 0L,
+            ),
+            0.01,
+        )
+    }
+
+    // 括号、版本与分隔后缀
+
+    @Test
+    fun `version marker in any bracket or delimiter suffix is rejected`() {
+        assertEquals(0.0, LyricScorer.calculateTitleSimilarity("(Live) Song", "Song"), 0.001)
+        assertEquals(0.0, LyricScorer.calculateTitleSimilarity("Song (Live) Remix", "Song Remix"), 0.001)
+        assertEquals(0.0, LyricScorer.calculateTitleSimilarity("Song - Live", "Song"), 0.001)
+        assertEquals(0.0, LyricScorer.calculateTitleSimilarity("Song (Instrumental)", "Song"), 0.001)
+    }
+
+    @Test
+    fun `plain trailing suffix version markers are rejected`() {
+        listOf(
+            "NIGHT DANCER Live",
+            "NIGHT DANCER Remastered",
+            "NIGHT DANCER (Remastered)",
+            "NIGHT DANCER (Cover)",
+            "NIGHT DANCER (Tribute)",
+            "NIGHT DANCER (Nightcore)",
+            "NIGHT DANCER (Sped Up)",
+            "NIGHT DANCER (Slowed)",
+            "NIGHT DANCER (Orchestral)",
+            "NIGHT DANCER Sped Up",
+            "NIGHT DANCER 2025",
+            "NIGHT DANCER 2",
+            "NIGHT DANCER 1.1x",
+            "NIGHT DANCER Korean",
+            "NIGHT DANCER Japanese",
+            "NIGHT DANCER Chinese",
+            "NIGHT DANCER English",
+            "NIGHT DANCER From Movie",
+            "NIGHT DANCER 版",
+            "NIGHT DANCER 伴奏",
+            "NIGHT DANCER 纯音乐",
+            "NIGHT DANCER 现场",
+            "NIGHT DANCER 巡回",
+            "NIGHT DANCER 演唱会",
+            "NIGHT DANCER 片段",
+            "NIGHT DANCER 试听",
+            "NIGHT DANCER 铃声",
+            "NIGHT DANCER 双语",
+            "NIGHT DANCER 原版",
+            "NIGHT DANCER 重制",
+            "NIGHT DANCER 翻唱",
+        ).forEach { title ->
+            assertEquals(
+                0.0,
+                LyricScorer.calculateTitleSimilarity(title, "NIGHT DANCER"),
+                0.001,
+                title,
+            )
+        }
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity("NIGHT DANCER Live", "NIGHT DANCER (Live)"),
+            0.001,
+        )
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity("NIGHT DANCER Remastered", "NIGHT DANCER (Remastered)"),
+            0.001,
+        )
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity("NIGHT DANCER 2025", "NIGHT DANCER (2025)"),
+            0.001,
+        )
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity("NIGHT DANCER 1.1x", "NIGHT DANCER (1.1x)"),
+            0.001,
+        )
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity("NIGHT DANCER Korean", "NIGHT DANCER (Korean)"),
+            0.001,
+        )
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity("NIGHT DANCER From Movie", "NIGHT DANCER (From Movie)"),
+            0.001,
+        )
+        assertEquals(0.0, LyricScorer.calculateTitleSimilarity("NIGHT DANCER版", "NIGHT DANCER"), 0.001)
+        assertEquals(0.0, LyricScorer.calculateTitleSimilarity("未来へ版", "未来へ"), 0.001)
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity("NIGHT DANCER 版", "NIGHT DANCER (版)"),
+            0.001,
+        )
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity("NIGHT DANCER 伴奏", "NIGHT DANCER (伴奏)"),
+            0.001,
+        )
+    }
+
+    @Test
+    fun `feat and VIP decorations do not hide a plain version suffix`() {
+        listOf(
+            "NIGHT DANCER Live feat. X",
+            "NIGHT DANCER Live VIP",
+            "NIGHT DANCER Live ft. X",
+            "NIGHT DANCER Live featuring X",
+            "NIGHT DANCER Live 试听",
+        ).forEach { title ->
+            assertEquals(
+                0.0,
+                LyricScorer.calculateTitleSimilarity(title, "NIGHT DANCER"),
+                0.001,
+                title,
+            )
+        }
+    }
+
+    @Test
+    fun `CJK combined plain suffixes tokenize into markers`() {
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity("NIGHT DANCER 重制版", "NIGHT DANCER (重制版)"),
+            0.001,
+        )
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity("NIGHT DANCER 伴奏版", "NIGHT DANCER (伴奏版)"),
+            0.001,
+        )
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity("NIGHT DANCER 演唱会版", "NIGHT DANCER (演唱会版)"),
+            0.001,
+        )
+        assertEquals(
+            0.0,
+            LyricScorer.calculateTitleSimilarity("NIGHT DANCER 重制版", "NIGHT DANCER"),
+            0.001,
+        )
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity("NIGHT DANCER 重制", "NIGHT DANCER (重制)"),
+            0.001,
+        )
+    }
+
+    @Test
+    fun `multiple plain trailing markers are all collected`() {
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity("NIGHT DANCER Live Remix", "NIGHT DANCER (Live) (Remix)"),
+            0.001,
+        )
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity(
+                "NIGHT DANCER Live Remix 2025",
+                "NIGHT DANCER (Live) (Remix) (2025)",
+            ),
+            0.001,
+        )
+        assertEquals(
+            0.0,
+            LyricScorer.calculateTitleSimilarity("NIGHT DANCER Live Remix", "NIGHT DANCER"),
+            0.001,
+        )
+    }
+
+    @Test
+    fun `version signatures tokenize suffix and bracket contents`() {
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity(
+                "NIGHT DANCER - Live Remix",
+                "NIGHT DANCER (Live) (Remix)",
+            ),
+            0.001,
+        )
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity(
+                "NIGHT DANCER (Live Remix)",
+                "NIGHT DANCER (Live) (Remix)",
+            ),
+            0.001,
+        )
+        assertEquals(
+            0.0,
+            LyricScorer.calculateTitleSimilarity(
+                "NIGHT DANCER - Live at Wembley",
+                "NIGHT DANCER (Live)",
+            ),
+            0.001,
+        )
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity(
+                "NIGHT DANCER - Live at Wembley",
+                "NIGHT DANCER (Live at Wembley)",
+            ),
+            0.001,
+        )
+    }
+
+    @Test
+    fun `delimiter suffix and bracket with the same marker are equivalent`() {
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity(
+                "Anti-Hero - ILLENIUM Remix",
+                "Anti-Hero (Illenium Remix)",
+            ),
+            0.001,
+        )
+        assertEquals(
+            1.0,
+            LyricScorer.calculateTitleSimilarity(
+                "Nobody - from Kaiju No. 8",
+                "Nobody (from Kaiju No. 8)",
+            ),
+            0.001,
+        )
+    }
+
+    @Test
+    fun `non-version brackets are noise`() {
+        assertEquals(1.0, LyricScorer.calculateTitleSimilarity("Midnight City (Radio Edit)", "Midnight City"), 0.001)
+        assertEquals(1.0, LyricScorer.calculateTitleSimilarity("(Explicit) Midnight City", "Midnight City"), 0.001)
+        assertEquals(1.0, LyricScorer.calculateTitleSimilarity("Song (Deluxe Edition)", "Song"), 0.001)
+        assertEquals(1.0, LyricScorer.calculateTitleSimilarity("Song (Digital)", "Song"), 0.001)
+        assertEquals(1.0, LyricScorer.calculateTitleSimilarity("Song (Album Edit)", "Song"), 0.001)
+        assertEquals(1.0, LyricScorer.calculateTitleSimilarity("Song (Explicit Version)", "Song"), 0.001)
+        // 单独的 Version / Album Version 仍是版本标记，不得当噪声剥掉
+        assertEquals(0.0, LyricScorer.calculateTitleSimilarity("Song (Version)", "Song"), 0.001)
+        assertEquals(0.0, LyricScorer.calculateTitleSimilarity("Song (Album Version)", "Song"), 0.001)
+    }
+
+    @Test
+    fun `leading meaningful bracket is not stripped`() {
+        assertEquals(0.4, LyricScorer.calculateTitleSimilarity("(Intro) Song", "Song"), 0.001)
+        assertEquals(0.45, LyricScorer.calculateTitleSimilarity("(What's) The Story", "The Story"), 0.001)
+        val score = LyricScorer.scoreCandidate(
+            "(What's) The Story", "artist", 200_000L,
+            "The Story", "artist", 200_000L,
+        )
+        assertEquals(72.5, score, 0.01)
+        assertTrue(score <= ACCEPT_SCORE - 2.0, "score=$score")
+    }
+
+    @Test
+    fun `leading bracket text outside brackets still matches`() {
+        assertEquals(1.0, LyricScorer.calculateTitleSimilarity("(What's) The Story", "What's The Story"), 0.001)
+        assertEquals(1.0, LyricScorer.calculateTitleSimilarity("(Intro) Song", "Intro Song"), 0.001)
+    }
+
+    @Test
+    fun `from and instrumental qualifiers are version markers`() {
+        assertEquals(0.0, LyricScorer.calculateTitleSimilarity("Nobody - from Kaiju No. 8", "Nobody"), 0.001)
+        assertEquals(0.0, LyricScorer.calculateTitleSimilarity("Song (Instrumental)", "Song"), 0.001)
+        assertEquals(0.0, LyricScorer.calculateTitleSimilarity("Song (Karaoke)", "Song"), 0.001)
+    }
+
+    @Test
+    fun `translation brackets do not lower the title`() {
+        assertEquals(1.0, LyricScorer.calculateTitleSimilarity("未来へ (向着未来)", "未来へ"), 0.001)
+        assertEquals(1.0, LyricScorer.calculateTitleSimilarity("未来へ（向着未来）", "未来へ"), 0.001)
+        assertEquals(1.0, LyricScorer.calculateTitleSimilarity("未来へ [向着未来]", "未来へ"), 0.001)
+        assertTrue(LyricScorer.calculateTitleSimilarity("未来へ (Oliver)", "未来へ") > 0.5)
+    }
+
+    @Test
+    fun `duration tiers remain strict`() {
+        assertEquals(100.0, LyricScorer.calculateDurationScore(333_000L, 333_000L), 0.001)
+        assertEquals(100.0, LyricScorer.calculateDurationScore(333_000L, 332_000L), 0.001)
+        assertEquals(80.0, LyricScorer.calculateDurationScore(333_000L, 330_000L), 0.001)
+        assertEquals(50.0, LyricScorer.calculateDurationScore(333_000L, 328_000L), 0.001)
+        assertEquals(0.0, LyricScorer.calculateDurationScore(333_000L, 327_000L), 0.001)
+        assertEquals(80.0, LyricScorer.calculateDurationScore(30_000L, 300_000L), 0.001)
+
+        assertEquals(
+            100.0,
+            LyricScorer.scoreCandidate("未来へ", "kiroro", 333_000L, "未来へ", "kiroro", 332_000L),
+            0.01,
+        )
+        assertEquals(
+            96.0,
+            LyricScorer.scoreCandidate("未来へ", "kiroro", 333_000L, "未来へ", "kiroro", 330_000L),
+            0.01,
+        )
+        assertEquals(
+            90.0,
+            LyricScorer.scoreCandidate("未来へ", "kiroro", 333_000L, "未来へ", "kiroro", 328_000L),
+            0.01,
+        )
+        assertEquals(
+            80.0,
+            LyricScorer.scoreCandidate("未来へ", "kiroro", 333_000L, "未来へ", "kiroro", 327_000L),
+            0.01,
+        )
+        assertEquals(
+            96.0,
+            LyricScorer.scoreCandidate("未来へ", "kiroro", 30_000L, "未来へ", "kiroro", 300_000L),
+            0.01,
+        )
+    }
+
+    @Test
+    fun `existing title decoration cleanup still applies`() {
+        assertEquals("song", LyricScorer.cleanTitle("01 - Song.mp3"))
+        assertEquals("song", LyricScorer.cleanTitle("Song.flac"))
+        assertEquals("song", LyricScorer.cleanTitle("Song VIP"))
+        assertEquals("song", LyricScorer.cleanTitle("Song feat. Artist"))
+    }
+
+    @Test
+    fun `the acceptance line remains 75`() {
+        assertEquals(75.0, LyricScorer.MIN_ACCEPT_SCORE, 0.0)
     }
 
     private companion object {
