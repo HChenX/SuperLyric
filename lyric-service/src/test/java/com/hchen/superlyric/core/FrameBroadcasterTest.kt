@@ -61,6 +61,33 @@ class FrameBroadcasterTest {
     }
 
     @Test
+    fun `unregister releases the quota slot`() {
+        val broadcaster = FrameBroadcaster()
+        val first = FakeListener()
+        assertEquals(
+            FrameBroadcaster.REGISTER_OK,
+            broadcaster.register(first, 9, 1, "first"),
+        )
+        repeat(63) { index ->
+            assertEquals(
+                FrameBroadcaster.REGISTER_OK,
+                broadcaster.register(FakeListener(), index + 1, index + 1, "p$index"),
+            )
+        }
+        assertEquals(
+            FrameBroadcaster.REGISTER_QUOTA,
+            broadcaster.register(FakeListener(), 100, 100, "overflow"),
+        )
+
+        broadcaster.unregister(first, 1, "first")
+        broadcaster.unregister(first, 1, "first")
+        assertEquals(
+            FrameBroadcaster.REGISTER_OK,
+            broadcaster.register(FakeListener(), 101, 101, "after-unregister"),
+        )
+    }
+
+    @Test
     fun `concurrent registration cannot exceed the global quota`() {
         val broadcaster = FrameBroadcaster()
         val pool = Executors.newFixedThreadPool(16)

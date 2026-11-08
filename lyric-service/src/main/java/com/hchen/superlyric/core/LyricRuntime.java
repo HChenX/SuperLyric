@@ -88,7 +88,8 @@ public final class LyricRuntime {
     );
 
     // 死亡通知的数量由发布者配额决定（最多 32 包 x 8 pid），且必须在 AMS 回调线程之外
-    // 执行；保持单线程队列，不在 AMS 线程内联广播。容量上界由 PublisherRegistry 保证。
+    // 执行；保持单线程无界队列，不在 AMS 线程内联广播。上界由 PublisherRegistry 的
+    // 32 包 x 8 pid 保证，超过配额的通知到不了这里，因此不丢弃死亡通知。
     private final ExecutorService mDeathNotifier = Executors.newSingleThreadExecutor(
         daemonFactory("SuperLyric-DeathNotice", false)
     );

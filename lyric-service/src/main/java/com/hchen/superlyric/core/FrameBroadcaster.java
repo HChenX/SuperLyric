@@ -43,7 +43,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <p>与 {@link ReceiverBroadcaster} 分开维护：两代订阅者使用不同的回调接口与线上格式
  * （v4 帧 / 3.x Parcelable），一边的死链或慢链不得影响另一边。全局上限 64 个，
- * 每 uid 上限 16 个，单次回调超时 500ms。
+ * 每 uid 上限 16 个，单次回调超时 500ms。与 ReceiverBroadcaster 的配额/驱逐逻辑
+ * 平行维护；回调类型与线上格式不同，暂不抽公共类，修改配额或驱逐时两边同步。
  */
 final class FrameBroadcaster {
     private static final String TAG = "SuperLyric-Frames";
@@ -91,6 +92,8 @@ final class FrameBroadcaster {
      * @return {@link #REGISTER_OK}、{@link #REGISTER_REJECTED} 或 {@link #REGISTER_QUOTA}
      */
     int register(@NonNull ILyricFrameListener listener, int uid, int pid, @NonNull String pkg) {
+        IBinder binder = listener.asBinder();
+        Entry entry;
         synchronized (registrationLock) {
             if (listeners.size() >= MAX_LISTENERS) {
                 XposedLog.logW(TAG, "Refusing listener: over limit " + MAX_LISTENERS);
@@ -100,8 +103,6 @@ final class FrameBroadcaster {
                 XposedLog.logW(TAG, "Refusing listener: uid " + uid + " over per-uid limit");
                 return REGISTER_QUOTA;
             }
-
-            IBinder binder = listener.asBinder();
 
             // 先记账再挂死亡回调：死亡回调可能在 put 与后续步骤之间抢跑，先记账才能配对
             uidCounts.merge(uid, 1, Integer::sum);
@@ -113,38 +114,56 @@ final class FrameBroadcaster {
                 }
                 XposedLog.logI(TAG, "Listener died: " + binder);
             };
-            Entry entry = new Entry(listener, uid, deathRecipient);
+            entry = new Entry(listener, uid, deathRecipient);
             if (listeners.putIfAbsent(binder, entry) != null) {
                 decrement(uid);
                 // 同一 binder 重复注册按成功处理：它已经在收帧
                 return REGISTER_OK;
             }
-            try {
-                binder.linkToDeath(deathRecipient, 0);
-            } catch (Throwable t) {
+        }
+
+        // entry 已在 listeners 中，配额把它算作已登记；linkToDeath 不持锁，避免卡住
+        // 其它注册/广播。死亡、注销或广播若抢先移除，最终检查会返回 REJECTED。
+        try {
+            binder.linkToDeath(entry.deathRecipient, 0);
+        } catch (Throwable t) {
+            synchronized (registrationLock) {
                 if (listeners.remove(binder, entry)) {
                     decrement(uid);
                 }
-                XposedLog.logW(TAG, "Cannot link listener death: " + binder);
-                return REGISTER_REJECTED;
             }
-            XposedLog.logI(TAG, "Register listener: " + binder
-                + ", pkg: " + pkg + ", pid: " + pid + ", uid: " + uid);
-            return REGISTER_OK;
+            XposedLog.logW(TAG, "Cannot link listener death: " + binder);
+            return REGISTER_REJECTED;
         }
-    }
 
-    void unregister(@NonNull ILyricFrameListener listener, int pid, @NonNull String pkg) {
-        IBinder binder = listener.asBinder();
+        boolean registered;
         synchronized (registrationLock) {
-            Entry entry = listeners.remove(binder);
-            if (entry == null) return;
-
+            registered = listeners.get(binder) == entry;
+        }
+        if (!registered) {
+            // 链接成功但条目已被注销/死亡/广播移除；撤销刚建立的 death 链接。
             try {
                 binder.unlinkToDeath(entry.deathRecipient, 0);
             } catch (Throwable ignored) {
             }
+            return REGISTER_REJECTED;
+        }
+        XposedLog.logI(TAG, "Register listener: " + binder
+            + ", pkg: " + pkg + ", pid: " + pid + ", uid: " + uid);
+        return REGISTER_OK;
+    }
+
+    void unregister(@NonNull ILyricFrameListener listener, int pid, @NonNull String pkg) {
+        IBinder binder = listener.asBinder();
+        Entry entry;
+        synchronized (registrationLock) {
+            entry = listeners.remove(binder);
+            if (entry == null) return;
             decrement(entry.uid);
+        }
+        try {
+            binder.unlinkToDeath(entry.deathRecipient, 0);
+        } catch (Throwable ignored) {
         }
         XposedLog.logI(TAG, "Unregister listener: " + binder
             + ", pkg: " + pkg + ", pid: " + pid);
@@ -166,14 +185,15 @@ final class FrameBroadcaster {
 
         if (dead != null) {
             for (IBinder binder : dead) {
+                Entry removed;
                 synchronized (registrationLock) {
-                    Entry removed = listeners.remove(binder);
-                    if (removed != null) {
-                        try {
-                            binder.unlinkToDeath(removed.deathRecipient, 0);
-                        } catch (Throwable ignored) {
-                        }
-                        decrement(removed.uid);
+                    removed = listeners.remove(binder);
+                    if (removed != null) decrement(removed.uid);
+                }
+                if (removed != null) {
+                    try {
+                        binder.unlinkToDeath(removed.deathRecipient, 0);
+                    } catch (Throwable ignored) {
                     }
                 }
                 XposedLog.logI(TAG, "Unregistered dead listener: " + binder);
@@ -192,9 +212,15 @@ final class FrameBroadcaster {
 
         if (!call(entry, frame)) {
             // 只在实际移除成功时扣减：死亡回调或 unregister 可能已经把它摘掉了
+            boolean removed;
             synchronized (registrationLock) {
-                if (listeners.remove(listener.asBinder(), entry)) {
-                    decrement(entry.uid);
+                removed = listeners.remove(listener.asBinder(), entry);
+                if (removed) decrement(entry.uid);
+            }
+            if (removed) {
+                try {
+                    listener.asBinder().unlinkToDeath(entry.deathRecipient, 0);
+                } catch (Throwable ignored) {
                 }
             }
         }

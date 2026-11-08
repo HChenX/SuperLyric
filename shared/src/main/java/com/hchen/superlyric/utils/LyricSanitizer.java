@@ -35,6 +35,8 @@ import java.util.List;
  *
  * <p>拦下损坏的逐字切片、倒错的字符索引、零宽不可见字符与累积字长越界，避免下游
  * 接收端调用 {@code Canvas.drawTextRun} 时抛出 {@link IndexOutOfBoundsException}。
+ *
+ * <p>这是 3.x/发布边界的防御层；kernel 的 LineNormalizer 负责规范化，两者不合并。
  */
 public final class LyricSanitizer {
     private static final String TAG = "LyricSanitizer";

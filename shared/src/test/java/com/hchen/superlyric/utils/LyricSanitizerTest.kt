@@ -223,12 +223,87 @@ class LyricSanitizerTest {
         return words!!
     }
 
-    private fun assertOrdered(words: List<Word>, text: String) {
-        var previousEnd = 0L
+    @Test
+    fun `last word beyond the line end and last zero word are contained`() {
+        assertOrdered(
+            sanitizeWords(
+                Line(
+                    "ab",
+                    0L,
+                    1_000L,
+                    listOf(Word("a", 0L, 500L), Word("b", 1_500L, 1_600L)),
+                    null,
+                    null,
+                )
+            ),
+            "ab",
+        )
+        assertOrdered(
+            sanitizeWords(
+                Line(
+                    "ab",
+                    0L,
+                    1_000L,
+                    listOf(Word("a", 0L, 500L), Word("b", 1_000L, 1_000L)),
+                    null,
+                    null,
+                )
+            ),
+            "ab",
+        )
+    }
+
+    @Test
+    fun `middle word beyond the line end does not overlap the next`() {
+        assertOrdered(
+            sanitizeWords(
+                Line(
+                    "abc",
+                    0L,
+                    1_000L,
+                    listOf(
+                        Word("a", 0L, 300L),
+                        Word("b", 1_500L, 1_600L),
+                        Word("c", 800L, 900L),
+                    ),
+                    null,
+                    null,
+                )
+            ),
+            "abc",
+        )
+    }
+
+    @Test
+    fun `non-zero line start is preserved as the lower bound`() {
+        assertOrdered(
+            sanitizeWords(
+                Line(
+                    "ab",
+                    100L,
+                    1_100L,
+                    listOf(Word("a", 100L, 600L), Word("b", 1_500L, 1_600L)),
+                    null,
+                    null,
+                )
+            ),
+            "ab",
+            100L,
+            1_100L,
+        )
+    }
+
+    private fun assertOrdered(
+        words: List<Word>,
+        text: String,
+        lineStart: Long = 0L,
+        lineEnd: Long = 1_000L,
+    ) {
+        var previousEnd = lineStart
         for (word in words) {
             assertTrue(word.start >= previousEnd, "词起点不得早于前词结束")
             assertTrue(word.end >= word.start, "词尾不得早于词头")
-            assertTrue(word.start >= 0L && word.end <= 1_000L, "词必须落在行内")
+            assertTrue(word.start >= lineStart && word.end <= lineEnd, "词必须落在行内")
             previousEnd = word.end
         }
         assertEquals(text, words.joinToString("") { it.text }, "越界词文本必须保留")

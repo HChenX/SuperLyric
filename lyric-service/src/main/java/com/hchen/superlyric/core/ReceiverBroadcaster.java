@@ -45,6 +45,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <p>每个接收者记录其 3.x API 版本能力：低于 3.5 的客户端只接收当前句，较新的客户端
  * 接收全量载荷。全局上限 64 个、每 uid 上限 16 个，单次回调超时 500ms。
+ * 与 FrameBroadcaster 的配额/驱逐逻辑平行维护；模型与线上格式不同，暂不抽公共类。
  */
 final class ReceiverBroadcaster {
 
@@ -74,19 +75,32 @@ final class ReceiverBroadcaster {
     private final ConcurrentHashMap<IBinder, Entry> entries = new ConcurrentHashMap<>();
     private final Set<IBinder> binders = ConcurrentHashMap.newKeySet();
 
-    private final RemoteCallbackList<ISuperLyricReceiver> callbacks = new RemoteCallbackList<>() {
-        @Override
-        public void onCallbackDied(ISuperLyricReceiver callback) {
-            super.onCallbackDied(callback);
-            IBinder binder = callback.asBinder();
-            synchronized (registrationLock) {
-                binders.remove(binder);
-                Entry removed = entries.remove(binder);
-                if (removed != null) decrement(removed.uid);
+    private final RemoteCallbackList<ISuperLyricReceiver> callbacks;
+
+    ReceiverBroadcaster() {
+        this.callbacks = new RemoteCallbackList<>() {
+            @Override
+            public void onCallbackDied(ISuperLyricReceiver callback) {
+                super.onCallbackDied(callback);
+                handleCallbackDied(callback);
             }
-            XposedLog.logI(TAG, "Receiver died: " + callback + ", binder: " + binder);
+        };
+    }
+
+    /** 测试可注入 callback 列表；生产默认构造器保留真实的死亡回调。 */
+    ReceiverBroadcaster(@NonNull RemoteCallbackList<ISuperLyricReceiver> callbacks) {
+        this.callbacks = callbacks;
+    }
+
+    private void handleCallbackDied(@NonNull ISuperLyricReceiver callback) {
+        IBinder binder = callback.asBinder();
+        synchronized (registrationLock) {
+            binders.remove(binder);
+            Entry removed = entries.remove(binder);
+            if (removed != null) decrement(removed.uid);
         }
-    };
+        XposedLog.logI(TAG, "Receiver died: " + callback + ", binder: " + binder);
+    }
 
     private final ExecutorService callExecutor = new ThreadPoolExecutor(
         4, 4, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(32), runnable -> {

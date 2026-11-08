@@ -19,9 +19,17 @@
 package com.hchen.superlyric.provider.base
 
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.EventListener
+import okhttp3.Request
+import okhttp3.Response
+import okio.Timeout
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.io.IOException
 
 /**
  * 取词令牌的语义
@@ -104,6 +112,61 @@ class FetchSlotTest {
         }
 
         assertFalse(delivered)
+    }
+
+    @Test
+    fun `withCall cancels and cleans up when the block throws`() {
+        val call = FakeCall()
+
+        assertThrows(IOException::class.java) {
+            slot.withCall(call) {
+                slot.invalidate()
+                call.execute()
+            }
+        }
+        assertTrue(call.cancelled, "invalidate 必须取消已登记 Call")
+
+        call.cancelled = false
+        slot.invalidate()
+        assertFalse(call.cancelled, "withCall finally 必须移除已完成的 Call")
+    }
+
+    private class FakeCall : Call {
+        var cancelled = false
+
+        override fun request(): Request = Request.Builder().url("https://example.invalid").build()
+
+        override fun execute(): Response {
+            if (cancelled) throw IOException("canceled")
+            error("unexpected execute")
+        }
+
+        override fun enqueue(responseCallback: Callback) = Unit
+
+        override fun addEventListener(eventListener: EventListener) = Unit
+
+        override fun <T : Any> tag(type: kotlin.reflect.KClass<T>): T? = null
+
+        override fun <T> tag(type: Class<out T>): T? = null
+
+        override fun <T : Any> tag(
+            type: kotlin.reflect.KClass<T>,
+            computeIfAbsent: () -> T,
+        ): T = computeIfAbsent()
+
+        override fun <T : Any> tag(type: Class<T>, computeIfAbsent: () -> T): T = computeIfAbsent()
+
+        override fun cancel() {
+            cancelled = true
+        }
+
+        override fun isExecuted(): Boolean = false
+
+        override fun isCanceled(): Boolean = cancelled
+
+        override fun timeout(): Timeout = Timeout()
+
+        override fun clone(): Call = this
     }
 
     @Test
