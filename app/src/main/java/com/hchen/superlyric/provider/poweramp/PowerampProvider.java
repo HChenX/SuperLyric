@@ -24,6 +24,7 @@ import com.hchen.processor.HookThis;
 import com.hchen.superlyric.kernel.orchestrate.LyricOrchestrator;
 import com.hchen.superlyric.provider.base.LyricPlan;
 import com.hchen.superlyric.provider.base.MusicProvider;
+import com.hchen.superlyric.provider.kugou.KuGouApiSource;
 
 /**
  * Poweramp 歌词来源
@@ -31,7 +32,7 @@ import com.hchen.superlyric.provider.base.MusicProvider;
  * <p>宿主把歌词解析链路全部放在 Java/Kotlin 层：内嵌标签（USLT/SYLT）、同名 LRC 文件、
  * 插件写入的缓存都汇总到 {@code TagAndMeta} 与 {@code cached_lyrics.content}。该 Provider
  * 在解析入口截获整首歌词文本，再交给内核解析；逐行通道只取当前渲染行，会丢整首歌词，
- * 不能作为取词入口。
+ * 不能作为取词入口。本地链路拿不到歌词时，由酷狗检索兜底。
  *
  */
 @HookThis(targetPackage = "com.maxmpz.audioplayer")
@@ -47,13 +48,13 @@ public class PowerampProvider extends MusicProvider {
     @NonNull
     @Override
     protected LyricPlan createLyricPlan() {
-        return new LyricPlan(new PowerampHookSource(), null);
+        return new LyricPlan(new PowerampHookSource(), new KuGouApiSource());
     }
 
     /**
      * 切歌时的取词要先查宿主数据库、再读 LRC 文件，默认 800ms 的 Hook 窗口
-     * 在首次查询（JIT 未热）时可能不够。该 Provider 没有网络兜底，
-     * 超时后编排器直接进入 UNAVAILABLE，因此窗口放宽到 3 秒。
+     * 在首次查询（JIT 未热）时可能不够。窗口到点后由酷狗检索兜底，因此放宽到
+     * 3 秒仍能让多数曲目一次等到本地结果。
      */
     @NonNull
     @Override

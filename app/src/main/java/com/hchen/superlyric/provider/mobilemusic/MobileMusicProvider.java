@@ -25,6 +25,7 @@ import com.hchen.processor.HookThis;
 import com.hchen.superlyric.kernel.orchestrate.LyricOrchestrator;
 import com.hchen.superlyric.provider.base.LyricPlan;
 import com.hchen.superlyric.provider.base.MusicProvider;
+import com.hchen.superlyric.provider.kugou.KuGouApiSource;
 import com.hchen.superlyric.shared.HostIdentitySource;
 
 /**
@@ -32,6 +33,7 @@ import com.hchen.superlyric.shared.HostIdentitySource;
  *
  * <p>只读取宿主自己的完整歌词，原生 MRC 保留逐字时序及 TRC 翻译。
  * 宿主媒体元数据可能写入当前歌词行，曲目身份优先取播放器自己的 Song 模型。
+ * Hook 拿不到时按曲名、歌手与时长检索酷狗曲库兜底。
  */
 @HookThis(targetPackage = "cmccwm.mobilemusic")
 public final class MobileMusicProvider extends MusicProvider {
@@ -54,15 +56,14 @@ public final class MobileMusicProvider extends MusicProvider {
     @NonNull
     @Override
     protected LyricPlan createLyricPlan() {
-        return new LyricPlan(new MobileMusicHookSource(), null);
+        return new LyricPlan(new MobileMusicHookSource(), new KuGouApiSource());
     }
 
     @NonNull
     @Override
     protected LyricOrchestrator.Config orchestratorConfig() {
         // 加固 SDK 挂载与首次歌词下载都可能晚于 MediaSession，留出原生取词窗口。
-        // 没有 API 源时 maxApiAttempts/retryBase 仍取默认值 3 与 500ms：接入 API 源后
-        // 不会因“0 次尝试”在第一次失败就进入终态。
+        // 窗口到点后由酷狗检索兜底；maxApiAttempts/retryBase 取 3 与 500ms。
         return new LyricOrchestrator.Config(5_000L, 3, 500L, 3_000L);
     }
 }

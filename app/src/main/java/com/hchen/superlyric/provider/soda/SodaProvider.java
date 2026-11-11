@@ -23,6 +23,7 @@ import androidx.annotation.NonNull;
 import com.hchen.processor.HookThis;
 import com.hchen.superlyric.provider.base.LyricPlan;
 import com.hchen.superlyric.provider.base.MusicProvider;
+import com.hchen.superlyric.provider.kugou.KuGouApiSource;
 import com.hchen.superlyric.shared.HostIdentitySource;
 
 @HookThis(targetPackage = "com.luna.music")
@@ -46,6 +47,6 @@ public class SodaProvider extends MusicProvider {
     @NonNull
     @Override
     protected LyricPlan createLyricPlan() {
-        return new LyricPlan(new SodaHookSource(), null);
+        return new LyricPlan(new SodaHookSource(), new KuGouApiSource());
     }
 }
