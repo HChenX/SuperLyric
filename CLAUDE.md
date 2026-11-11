@@ -1,7 +1,7 @@
 # CLAUDE.md
 
-Normative rules for AI coding agents. Read before changing code. Keep this file accurate for the
-current tree. Maximum 160 lines, four top-level sections.
+Normative rules for AI coding agents; docs/anti-patterns.md also binds. Read both before changing
+code. Keep this file accurate for the current tree. Maximum 160 lines, four top-level sections.
 
 ## 1. Architecture
 
