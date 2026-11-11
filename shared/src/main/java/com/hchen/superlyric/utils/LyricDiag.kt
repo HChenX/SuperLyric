@@ -92,7 +92,14 @@ object LyricDiag {
 
         val qrcStats = QrcParser.ParseStats()
         val doc = try {
-            LyricPipeline.parse(request, qrcStats)
+            LyricPipeline.parseDetailed(request, qrcStats) { trace ->
+                val reason = trace.reason?.let { " reason=$it" }.orEmpty()
+                log(
+                    source,
+                    "PARSE parser=${trace.parserId} accepted=${trace.accepted} " +
+                            "lines=${trace.lineCount}$reason",
+                )
+            }
         } catch (t: Throwable) {
             log(source, "PARSE THREW ${t.javaClass.simpleName}: ${t.message}")
             throw t

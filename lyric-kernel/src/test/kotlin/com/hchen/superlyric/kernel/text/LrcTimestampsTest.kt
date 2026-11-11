@@ -43,4 +43,30 @@ class LrcTimestampsTest {
     fun `three part timestamps are rewritten without touching the body`() {
         assertEquals("[00:01.02]body", LrcTimestamps.normalize("[00:01:02]body"))
     }
+
+    @Test
+    fun `canonicalize adds a fraction to plain and segmented timestamps`() {
+        assertEquals("[00:01.000]Hello", LrcTimestamps.canonicalize("[00:01]Hello"))
+        assertEquals("[00:01.020]Hello", LrcTimestamps.canonicalize("[00:01:02]Hello"))
+        assertEquals("[00:01.200]Hello", LrcTimestamps.canonicalize("[00:01.2]Hello"))
+        assertEquals("[00:01.020]Hello", LrcTimestamps.canonicalize("[00:01.02]Hello"))
+        assertEquals("[00:01.002]Hello", LrcTimestamps.canonicalize("[00:01.002]Hello"))
+    }
+
+    @Test
+    fun `canonicalize leaves metadata and non time brackets alone`() {
+        val text = """
+            [ti:Song]
+            [ar:Artist]
+            [offset:+250]
+            [00:01]Hello
+        """.trimIndent()
+        val expected = """
+            [ti:Song]
+            [ar:Artist]
+            [offset:+250]
+            [00:01.000]Hello
+        """.trimIndent()
+        assertEquals(expected, LrcTimestamps.canonicalize(text))
+    }
 }

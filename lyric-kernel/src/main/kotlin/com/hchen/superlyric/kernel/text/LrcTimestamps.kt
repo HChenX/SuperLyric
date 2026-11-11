@@ -35,10 +35,38 @@ object LrcTimestamps {
 
     private val THREE_PART = Regex("""\[(\d{1,3}):(\d{1,2}):(\d{1,3})]""")
 
+    /**
+     * 所有 LRC 形态的时间戳，包括无小数秒和冒号分隔的三段式。
+     *
+     * 只匹配方括号内的时间结构，不触碰 [ti:] / [ar:] / [offset:] 等元数据。
+     */
+    private val ANY_LRC_TIME = Regex("""\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?]""")
+
     fun normalize(text: String): String {
         if (!THREE_PART.containsMatchIn(text)) return text
         return THREE_PART.replace(text) { match ->
             "[" + match.groupValues[1] + ":" + match.groupValues[2] + "." + match.groupValues[3] + "]"
+        }
+    }
+
+    /**
+     * 把普通 LRC 时间戳规范化为通用解析库能识别的三位小数形态。
+     *
+     * 只改变时间戳本身，不改变正文和元数据：
+     * - `[mm:ss]` -> `[mm:ss.000]`
+     * - `[mm:ss:x]` / `[mm:ss:xx]` / `[mm:ss:xxx]` -> 对应三位小数
+     * - `[mm:ss.x]` / `[mm:ss.xx]` / `[mm:ss.xxx]` -> 统一为三位小数
+     *
+     * 通用库的 LRC 检测只接受两位或三位小数；这里补齐后再交给库，
+     * 避免无小数秒的标准 LRC 因检测失败而整首丢失。
+     */
+    fun canonicalize(text: String): String {
+        if (!ANY_LRC_TIME.containsMatchIn(text)) return text
+        return ANY_LRC_TIME.replace(text) { match ->
+            val minutes = match.groupValues[1].padStart(2, '0')
+            val seconds = match.groupValues[2].padStart(2, '0')
+            val fraction = match.groupValues[3].ifEmpty { "0" }.padEnd(3, '0')
+            "[" + minutes + ":" + seconds + "." + fraction + "]"
         }
     }
 

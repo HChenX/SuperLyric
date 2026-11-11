@@ -18,6 +18,7 @@
  */
 package com.hchen.superlyric.kernel.pipeline
 
+import com.google.gson.Gson
 import com.hchen.superlyric.kernel.decode.DecodeException
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -28,6 +29,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
+import java.util.Base64
 import java.util.zip.Deflater
 
 /**
@@ -99,6 +101,134 @@ class LyricPipelineTest {
         assertEquals(1000L, doc.lines[0].words[0].startMs)
         assertEquals(1500L, doc.lines[0].words[1].startMs)
         assertEquals("Second", doc.lines[1].text)
+    }
+
+    @Test
+    fun `trailing syllable timestamps keep every line first character`() {
+        // 椒盐的 sourceText 形态：行首时间戳之后，每个文字片段后面跟一个时间标签。
+        // 通用解析库会把每个标签当成新行，导致每行首个字符被前一个标签吞掉。
+        val payload = """
+            [ti:温柔 #MaydayBlue20th]
+            [00:00.000]温[00:00.033]柔[00:00.066] [00:00.099]Mayday[00:00.165]
+            [00:29.280]孤[00:29.665]单[00:30.040]的[00:30.433]今[00:30.737]后[00:31.457]
+        """.trimIndent()
+
+        val doc = LyricPipeline.parse(LyricRequest(format = LyricFormat.AUTO, text = payload))
+
+        assertNotNull(doc)
+        assertEquals(listOf("温柔 Mayday", "孤单的今后"), doc!!.lines.map { it.text })
+        val second = doc.lines[1]
+        assertEquals(29_280L, second.startMs)
+        assertEquals(31_457L, second.endMs)
+        assertEquals(5, second.words.size)
+        assertEquals(listOf(29_280L, 29_665L, 30_040L, 30_433L, 30_737L), second.words.map { it.startMs })
+        assertEquals(listOf(29_665L, 30_040L, 30_433L, 30_737L, 31_457L), second.words.map { it.endMs })
+        assertEquals("孤单的今后", second.words.joinToString("") { it.text })
+    }
+
+    @Test
+    fun `trailing timestamp parser ignores plain and multi timestamp lrc`() {
+        assertNull(TrailingTimestampLrcParser.parse("[00:01.00]Hello"))
+        // 行首后直接跟第二个标签是同一行的多个时间戳，不是逐字格式
+        assertNull(TrailingTimestampLrcParser.parse("[00:01.00][00:05.00]Hello"))
+    }
+
+    @Test
+    fun `krc language block supplies translation and phonetic by line index`() {
+        val tag = krcLanguageTag(
+            translation = listOf("你好", "再见"),
+            phonetic = listOf("konnichiwa", "sayounara"),
+        )
+        val plain = """
+            [ti:Test]
+            $tag
+            [1000,1000]<0,100,0>こんにちは
+            [3000,1000]<0,100,0>さようなら
+        """.trimIndent()
+
+        val doc = LyricPipeline.parse(
+            LyricRequest(format = LyricFormat.KRC, text = plain, durationMs = 5000)
+        )
+
+        assertNotNull(doc)
+        assertEquals(2, doc!!.lines.size)
+        assertEquals("你好", doc.lines[0].translation)
+        assertEquals("konnichiwa", doc.lines[0].phonetic)
+        assertEquals("再见", doc.lines[1].translation)
+        assertEquals("sayounara", doc.lines[1].phonetic)
+        assertFalse(doc.lines.any { it.text.contains("[language:") })
+    }
+
+    @Test
+    fun `krc language channels are selected by type not array order`() {
+        val tag = krcLanguageTag(
+            translation = listOf("你好", "再见"),
+            phonetic = listOf("konnichiwa", "sayounara"),
+            phoneticFirst = true,
+        )
+        val plain = """
+            $tag
+            [1000,1000]<0,100,0>こんにちは
+            [3000,1000]<0,100,0>さようなら
+        """.trimIndent()
+
+        val doc = LyricPipeline.parse(LyricRequest(format = LyricFormat.KRC, text = plain))
+
+        assertNotNull(doc)
+        assertEquals("你好", doc!!.lines[0].translation)
+        assertEquals("konnichiwa", doc.lines[0].phonetic)
+    }
+
+    @Test
+    fun `malformed krc language block leaves the main lyric readable`() {
+        val plain = """
+            [language:!!!not-base64!!!]
+            [1000,1000]<0,100,0>こんにちは
+            [3000,1000]<0,100,0>さようなら
+        """.trimIndent()
+
+        val doc = LyricPipeline.parse(LyricRequest(format = LyricFormat.KRC, text = plain))
+
+        assertNotNull(doc)
+        assertEquals(2, doc!!.lines.size)
+        assertNull(doc.lines[0].translation)
+        assertNull(doc.lines[0].phonetic)
+    }
+
+    @Test
+    fun `krc language block with non-array content leaves the main lyric readable`() {
+        // {"content":1} 是合法 JSON 但结构错误；不能让整份 KRC 退化为无歌词
+        val plain = """
+            [language:eyJjb250ZW50IjoxfQ==]
+            [1000,1000]<0,100,0>こんにちは
+            [3000,1000]<0,100,0>さようなら
+        """.trimIndent()
+
+        val doc = LyricPipeline.parse(LyricRequest(format = LyricFormat.KRC, text = plain))
+
+        assertNotNull(doc)
+        assertEquals(2, doc!!.lines.size)
+        assertNull(doc.lines[0].translation)
+    }
+
+    @Test
+    fun `mismatched krc language array length is discarded`() {
+        val tag = krcLanguageTag(
+            translation = listOf("只有一行"),
+            phonetic = listOf("only one"),
+        )
+        val plain = """
+            $tag
+            [1000,1000]<0,100,0>こんにちは
+            [3000,1000]<0,100,0>さようなら
+        """.trimIndent()
+
+        val doc = LyricPipeline.parse(LyricRequest(format = LyricFormat.KRC, text = plain))
+
+        assertNotNull(doc)
+        assertEquals(2, doc!!.lines.size)
+        assertNull(doc.lines[0].translation)
+        assertNull(doc.lines[1].translation)
     }
 
     @Test
@@ -587,5 +717,122 @@ class LyricPipelineTest {
 
         assertNotNull(doc)
         assertEquals("hello world", doc!!.lines.single().text)
+    }
+
+    @Test
+    fun `plain lrc without a fraction is parsed after canonicalisation`() {
+        val doc = LyricPipeline.parse(
+            LyricRequest(
+                format = LyricFormat.GENERAL,
+                text = """
+                    [ti:Song]
+                    [00:01]Hello
+                    [00:05]World
+                """.trimIndent(),
+            )
+        )
+
+        assertNotNull(doc)
+        assertEquals(listOf("Hello", "World"), doc!!.lines.map { it.text })
+        assertEquals(1_000L, doc.lines[0].startMs)
+        assertEquals(5_000L, doc.lines[1].startMs)
+    }
+
+    @Test
+    fun `three part lrc timestamps are parsed after canonicalisation`() {
+        val doc = LyricPipeline.parse(
+            LyricRequest(
+                format = LyricFormat.GENERAL,
+                text = """
+                    [00:01:02]Hello
+                    [00:05:10]World
+                """.trimIndent(),
+            )
+        )
+
+        assertNotNull(doc)
+        assertEquals(listOf("Hello", "World"), doc!!.lines.map { it.text })
+        assertEquals(1_020L, doc.lines[0].startMs)
+        assertEquals(5_100L, doc.lines[1].startMs)
+    }
+
+    @Test
+    fun `cjk lyricify syllable is detected and parsed`() {
+        val doc = LyricPipeline.parse(
+            LyricRequest(format = LyricFormat.AUTO, text = "[0]你(0,100)好(100,100)")
+        )
+
+        assertNotNull(doc)
+        val line = doc!!.lines.single()
+        assertEquals("你好", line.text)
+        assertEquals(2, line.words.size)
+        assertEquals("你", line.words[0].text)
+        assertEquals("好", line.words[1].text)
+
+        val latin = LyricPipeline.parse(
+            LyricRequest(format = LyricFormat.AUTO, text = "[0]Hel(0,100)lo(100,100)")
+        )
+        assertNotNull(latin)
+        assertEquals("Hello", latin!!.lines.single().text)
+    }
+
+    @Test
+    fun `ttml without a namespace is parsed`() {
+        val ttml = """
+            <tt><body><div>
+            <p begin="00:00:01.000" end="00:00:02.000">
+            <span begin="00:00:01.000" end="00:00:02.000">Hello</span>
+            </p></div></body></tt>
+        """.trimIndent()
+
+        val doc = LyricPipeline.parse(LyricRequest(format = LyricFormat.AUTO, text = ttml))
+
+        assertNotNull(doc)
+        assertEquals("Hello", doc!!.lines.single().text)
+        assertEquals(1_000L, doc.lines.single().startMs)
+    }
+
+    @Test
+    fun `parse trace reports the accepted parser`() {
+        val traces = ArrayList<LyricParseTrace>()
+        val doc = LyricPipeline.parseDetailed(
+            LyricRequest(
+                format = LyricFormat.GENERAL,
+                text = """
+                    [00:01.00]Hello
+                    [00:05.00]World
+                """.trimIndent(),
+            ),
+            null,
+        ) { traces += it }
+
+        assertNotNull(doc)
+        assertEquals("library", traces.last { it.accepted }.parserId)
+        assertEquals(2, traces.last { it.accepted }.lineCount)
+    }
+
+    private fun krcLanguageTag(
+        translation: List<String>,
+        phonetic: List<String>,
+        phoneticFirst: Boolean = false,
+    ): String {
+        val translationEntry = mapOf(
+            "type" to 1,
+            "language" to 0,
+            "lyricContent" to translation.map { listOf(it) },
+        )
+        val phoneticEntry = mapOf(
+            "type" to 0,
+            "language" to 0,
+            "lyricContent" to phonetic.map { listOf(it) },
+        )
+        val content = if (phoneticFirst) {
+            listOf(phoneticEntry, translationEntry)
+        } else {
+            listOf(translationEntry, phoneticEntry)
+        }
+        val json = Gson().toJson(mapOf("content" to content, "version" to 1))
+        val encoded = Base64.getEncoder().encodeToString(json.toByteArray(StandardCharsets.UTF_8))
+        return "[language:$encoded]"
     }
 }

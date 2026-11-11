@@ -22,10 +22,12 @@ import com.hchen.superlyric.kernel.decode.DecodeException
 import com.hchen.superlyric.kernel.decode.KrcCipher
 import com.hchen.superlyric.kernel.decode.QrcCipher
 import com.hchen.superlyric.kernel.merge.SidecarChannel
+import com.hchen.superlyric.kernel.merge.TranslationMerger
 import com.hchen.superlyric.kernel.model.LyricDoc
-import com.hchen.superlyric.kernel.parse.KuwoLrcxParser
+import com.hchen.superlyric.kernel.parse.KrcLanguage
 import com.hchen.superlyric.kernel.parse.QrcParser
 import com.hchen.superlyric.kernel.text.LrcOffset
+import com.hchen.superlyric.kernel.text.LrcTimestamps
 import java.nio.charset.StandardCharsets
 
 /**
@@ -47,7 +49,7 @@ enum class LyricFormat {
     /** 汽水 / 波点 JSON */
     SODA_JSON,
 
-    /** 通用文本格式：LRC / 增强 LRC / TTML / YRC / Lyricify Syllable，交由库自动识别 */
+    /** 通用文本格式：LRC / 增强 LRC / TTML / YRC / Lyricify Syllable，由检测器细分 */
     GENERAL,
 
     /** 由载荷自身特征推断 */
@@ -104,12 +106,14 @@ data class LyricRequest @JvmOverloads constructor(
  *
  * 职责边界
  * - 解密（[KrcCipher] / [QrcCipher]）：本模块自研，稳定且需字节级精确
- * - 解析：库覆盖的格式走 [AutoParser]；库不覆盖的（QRC / LRCX / Soda JSON）
- *   走本模块自研解析器，直接产出 [LyricDoc]
+ * - 检测：[LyricFormatDetector] 按结构签名区分平台格式与普通文本
+ * - 解析：[ParserRegistry] 候选链逐个尝试，专用解析器失败后回退通用库
  * - 对齐：所有译文 / 罗马音统一走 [TranslationMerger]
- * - 规范化：排序、时序单调、丢弃空行，产出的 [LyricDoc] 保证可用
+ * - 规范化：[LineNormalizer] 负责空行、顺序、时长和逐字边界
  */
 object LyricPipeline {
+
+    private const val MAX_TEXT_CHARS = 2_000_000
 
     /**
      * 解析一次请求
@@ -119,34 +123,132 @@ object LyricPipeline {
     fun parse(
         request: LyricRequest,
         qrcStats: QrcParser.ParseStats? = null,
+    ): LyricDoc? = parseDetailed(request, qrcStats, null)
+
+    /**
+     * 解析一次请求，并输出每个候选的接受/拒绝原因
+     *
+     * 不改变 [parse] 的返回契约；诊断回调异常不影响解析结果。
+     */
+    fun parseDetailed(
+        request: LyricRequest,
+        qrcStats: QrcParser.ParseStats? = null,
+        onTrace: ((LyricParseTrace) -> Unit)? = null,
     ): LyricDoc? {
+        fun trace(trace: LyricParseTrace) {
+            if (onTrace != null) runCatching { onTrace(trace) }
+        }
+
         val content = resolveContent(request) ?: return null
         if (content.isBlank()) return null
+        if (content.length > MAX_TEXT_CHARS) {
+            trace(LyricParseTrace("input", false, "text exceeds $MAX_TEXT_CHARS chars"))
+            return null
+        }
 
-        val format = if (request.format == LyricFormat.AUTO) sniff(content) else request.format
+        val kind = runCatching {
+            when (request.format) {
+                LyricFormat.AUTO, LyricFormat.GENERAL -> LyricFormatDetector.detect(content)
+                LyricFormat.QRC -> LyricTextKind.QRC
+                LyricFormat.KRC -> LyricTextKind.KRC
+                LyricFormat.LRCX -> LyricTextKind.LRCX
+                LyricFormat.SODA_JSON -> LyricTextKind.SODA_JSON
+            }
+        }.getOrDefault(LyricTextKind.UNKNOWN)
+
+        // KRC 把译文与罗马音放在头部 [language:...] 的 base64 JSON 中；先拆出并
+        // 从主载荷移除，避免未知指令被通用解析器忽略、伴随通道整段丢失。
+        val krcLanguage = if (kind == LyricTextKind.KRC) {
+            runCatching { KrcLanguage.extract(content) }.getOrNull()
+        } else {
+            null
+        }
+        val base = krcLanguage?.main ?: content
+
+        // 普通 LRC 的 [mm:ss]、[mm:ss:ff] 和 [mm:ss.xx] 统一成通用库可检测的
+        // 三位小数；QRC/KRC/LRCX/Soda 使用各自的时间轴，不能改写。
+        val canonical = if (kind.usesPlainTextTimeline()) {
+            LrcTimestamps.canonicalize(base)
+        } else {
+            base
+        }
 
         // 通用 LRC 的 [offset:±ms] 必须在解析前摘掉，解析完成后再统一平移。
         // QRC 的时间轴已有自己的 offset，KRC 不使用该指令，二者都不能走这里。
-        val lrcOffset = if (format == LyricFormat.GENERAL) LrcOffset.parse(content) else null
-        val source = lrcOffset?.text ?: content
+        val lrcOffset = if (kind.usesPlainTextTimeline()) LrcOffset.parse(canonical) else null
+        val source = lrcOffset?.text ?: canonical
 
         // 走通用解析库的载荷，先剥掉"主行 + 同时间戳伴随行"里的伴随行。
         // 库判定哪一行是哪一行的伴随用的是时间区间重叠，相邻主行会互相误配，
         // 且配对后无法还原：必须在库拿到文本之前拆（详见 [CompanionSplitter]）。
-        val split = when (format) {
-            LyricFormat.GENERAL, LyricFormat.KRC -> CompanionSplitter.split(source)
-            else -> null
-        }
-        val body = split?.main ?: source
+        val split = runCatching {
+            when (kind) {
+                LyricTextKind.KRC,
+                LyricTextKind.SALT,
+                LyricTextKind.LRC,
+                LyricTextKind.UNKNOWN,
+                -> CompanionSplitter.split(source)
 
-        val doc = ParserRegistry.parse(format, body, split, qrcStats) ?: return null
+                else -> null
+            }
+        }.getOrNull()
+        val body = split?.main ?: source
         val requestForFinalize = if (split == null) request else request.withSplitChannels(split)
-        val result = finalize(doc, requestForFinalize) ?: return null
-        return if (format == LyricFormat.GENERAL && lrcOffset != null && lrcOffset.offsetMs != 0L) {
-            restoreAfterOffset(LrcOffset.apply(result, lrcOffset.offsetMs))
-        } else {
-            result
+        val candidates = runCatching {
+            ParserRegistry.candidates(kind, body, split, qrcStats)
+        }.getOrDefault(emptyList())
+
+        for (candidate in candidates) {
+            val canParse = runCatching(candidate.canParse).getOrDefault(false)
+            if (!canParse) {
+                trace(LyricParseTrace(candidate.id, false, "not matched"))
+                continue
+            }
+
+            val raw = runCatching(candidate.parse).getOrNull()
+            if (raw == null) {
+                trace(LyricParseTrace(candidate.id, false, "no document"))
+                continue
+            }
+
+            var result = runCatching { finalize(raw, requestForFinalize) }.getOrNull()
+            if (result == null) {
+                trace(LyricParseTrace(candidate.id, false, "no usable lines"))
+                continue
+            }
+
+            if (krcLanguage != null) {
+                if (krcLanguage.translation.isNotEmpty()) {
+                    result = TranslationMerger.attach(result, krcLanguage.translation, SidecarChannel.TRANSLATION)
+                }
+                if (krcLanguage.phonetic.isNotEmpty()) {
+                    result = TranslationMerger.attach(result, krcLanguage.phonetic, SidecarChannel.PHONETIC)
+                }
+            }
+
+            trace(LyricParseTrace(candidate.id, true, null, result.lines.size))
+            return if (kind.usesPlainTextTimeline() &&
+                lrcOffset != null && lrcOffset.offsetMs != 0L
+            ) {
+                restoreAfterOffset(LrcOffset.apply(result, lrcOffset.offsetMs))
+            } else {
+                result
+            }
         }
+        return null
+    }
+
+    /** 文本格式使用普通 LRC 时间轴，需要 canonicalize 和 [offset:] 处理 */
+    private fun LyricTextKind.usesPlainTextTimeline(): Boolean = when (this) {
+        LyricTextKind.TTML,
+        LyricTextKind.LYRICIFY,
+        LyricTextKind.YRC,
+        LyricTextKind.SALT,
+        LyricTextKind.LRC,
+        LyricTextKind.UNKNOWN,
+        -> true
+
+        else -> false
     }
 
     /** 把拆分出的伴随通道并入请求，统一交给 [finalize] 对齐 */
@@ -181,45 +283,6 @@ object LyricPipeline {
         else -> request.text
             ?: request.bytes?.takeIf { it.isNotEmpty() }?.toString(StandardCharsets.UTF_8)
     }
-
-    /**
-     * 仅在格式未知时使用的特征嗅探
-     *
-     * 判据全部是结构性强特征（头部标签 / 根 JSON 键 / XML 根元素），
-     * 不做"看起来像"的模糊判断。
-     */
-    private fun sniff(content: String): LyricFormat {
-        val head = content.trimStart()
-        return when {
-            head.startsWith("{") && head.contains("\"sentences\"") -> LyricFormat.SODA_JSON
-            KuwoLrcxParser.canParse(content) -> LyricFormat.LRCX
-            QrcCipher.isPlainQrc(content) -> LyricFormat.QRC
-            KRC_LINE_MARKER.containsMatchIn(content) -> LyricFormat.KRC
-            // 网易云 YRC 必须排在 QRC 之前判定
-            YRC_LINE_MARKER.containsMatchIn(content) -> LyricFormat.GENERAL
-            QRC_LINE_MARKER.containsMatchIn(content) -> LyricFormat.QRC
-            else -> LyricFormat.GENERAL
-        }
-    }
-
-    /**
-     * 网易云 YRC 行的结构特征：`[数字,数字]` 后跟三元组 `(数字,数字,数字)` 词标签
-     *
-     * 必须与 QRC 分开识别
-     * QRC 与 YRC 的词标签形态接近，分量个数是二者唯一可靠的区分点：
-     * YRC 恒为 `(a,b,flag)` 三元组，QRC 为 `(a,b)` 二元组。
-     * 识别错误会让整段报文进入错误的解析器。
-     */
-    private val YRC_LINE_MARKER = Regex("""\[\d+,\d+][^\n]*\(\d+,\d+,\d+\)""")
-
-    /**
-     * 裸 QRC 行的结构特征：`[数字,数字]` 后跟二元组 `(数字,数字)` 词标签
-     * 要求闭合括号，因此三元组不会误入此分支。
-     */
-    private val QRC_LINE_MARKER = Regex("""\[\d+,\d+][^\n]*\(\d+,\d+\)""")
-
-    /** KRC 明文行的结构特征：`[数字,数字]` 后跟 `<数字,数字,数字>` */
-    private val KRC_LINE_MARKER = Regex("""\[\d+,\d+][^\n]*<\d+,\d+,\d+>""")
 
     /**
      * offset 会把行/词压到 0 或推出 duration 窗口；重新折叠并规范化，
