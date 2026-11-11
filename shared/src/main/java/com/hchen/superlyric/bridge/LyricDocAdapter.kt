@@ -1,4 +1,4 @@
-@file:Suppress("DEPRECATION")
+@file:Suppress("DEPRECATION") // 3.x 协议模型已标记 deprecated；本类是唯一转换边界
 
 /*
  * This file is part of SuperLyric.

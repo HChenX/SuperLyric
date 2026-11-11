@@ -88,15 +88,13 @@ internal class BgEffectPainter(
         if (cachedPointsAnimTime == time && cachedPointsAnimPreset === preset) return
 
         val offset = preset.pointOffset
-        var i = 0
-        while (i < 4) {
+        for (i in 0 until 4) {
             val srcX = preset.points[i * 3]
             val srcY = preset.points[i * 3 + 1]
             val animX = srcX + sin(time + srcY) * offset
             val animY = srcY + cos(time + animX) * offset
             pointsAnimBuffer[i * 2] = animX
             pointsAnimBuffer[i * 2 + 1] = animY
-            i++
         }
         runtimeShader.setFloatUniform("uPointsAnim", pointsAnimBuffer)
 

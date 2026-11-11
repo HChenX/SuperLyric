@@ -37,6 +37,10 @@ import org.luckypray.dexkit.result.ClassData;
 import org.luckypray.dexkit.result.ClassDataList;
 
 import java.lang.reflect.Constructor;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * QQ 音乐 Hook 锚点：从歌词加载请求的载体上取回当前曲目的官方标识
@@ -97,34 +101,34 @@ public final class QQAnchors {
                 return;
             }
 
-            dumpConstructors(beanClass);
+            String ctors = Arrays.stream(beanClass.getDeclaredConstructors())
+                .map(Constructor::toGenericString)
+                .collect(Collectors.joining("\n  ", "\n  ", ""));
+            LyricDiag.dumpPayload(TAG, "CTORS", beanClass.getName() + " ctors:" + ctors);
 
-            int hooked = 0;
+            List<Constructor<?>> targets = new ArrayList<>();
             for (Constructor<?> constructor : beanClass.getDeclaredConstructors()) {
                 // Kotlin 会为一个 8 参主构造器额外合成一个 (…, int, DefaultConstructorMarker) 桥接。
                 // 按参数个数筛选是不可靠的：一旦选中桥接，而宿主实际走 8 参路径，
                 // Hook 就永远不会触发。此处按首参类型精确筛选。
                 Class<?>[] parameterTypes = constructor.getParameterTypes();
-                if (parameterTypes.length == 0) continue;
-                if (!isSongInfo(parameterTypes[0])) continue;
-
+                if (parameterTypes.length == 0 || !isSongInfo(parameterTypes[0])) continue;
                 constructor.setAccessible(true);
-                CoreTool.hook(constructor, new AbsHook() {
-                    @Override
-                    public void after() {
-                        try {
-                            dispatch(getArg(0) != null ? getArg(0) : getThisObject(), listener);
-                        } catch (Throwable t) {
-                            AndroidLog.logW(TAG, "Error in LyricLoadBean hook: " + t.getMessage());
-                        }
-                    }
-                });
-                hooked++;
-                AndroidLog.logD(TAG, "Hooked LyricLoadBean ctor: " + constructor.toGenericString());
+                targets.add(constructor);
+            }
+            if (targets.isEmpty()) {
+                AndroidLog.logW(TAG, "No SongInfo-typed LyricLoadBean constructor found");
+                return;
             }
 
-            if (hooked == 0) {
-                AndroidLog.logW(TAG, "No SongInfo-typed LyricLoadBean constructor found");
+            CoreTool.hookAll(targets.toArray(new Constructor<?>[0]), new AbsHook() {
+                @Override
+                public void after() {
+                    dispatch(getArg(0) != null ? getArg(0) : getThisObject(), listener);
+                }
+            });
+            for (Constructor<?> constructor : targets) {
+                AndroidLog.logD(TAG, "Hooked LyricLoadBean ctor: " + constructor.toGenericString());
             }
         } catch (Throwable t) {
             AndroidLog.logE(TAG, "Failed to install QQ anchors", t);
@@ -143,14 +147,6 @@ public final class QQAnchors {
         return "SongInfo".equals(name) || name.endsWith(".SongInfo");
     }
 
-    private static void dumpConstructors(@NonNull Class<?> beanClass) {
-        StringBuilder builder = new StringBuilder();
-        for (Constructor<?> constructor : beanClass.getDeclaredConstructors()) {
-            builder.append("\n  ").append(constructor.toGenericString());
-        }
-        LyricDiag.dumpPayload(TAG, "CTORS", beanClass.getName() + " ctors:" + builder);
-    }
-
     private static Class<?> locateBeanClass() {
         return DexkitCache.findMember(CACHE_KEY, new IDexkit<ClassData>() {
             @Override
@@ -160,7 +156,7 @@ public final class QQAnchors {
                         .usingEqStrings(ANCHOR)
                     )
                 );
-                return (classes == null || classes.isEmpty()) ? null : classes.get(0);
+                return classes.firstOrNull();
             }
         });
     }
@@ -168,9 +164,7 @@ public final class QQAnchors {
     /**
      * 把宿主 {@code SongInfo} 的原始字符串交给 hooks-id。
      */
-    private static void dispatch(@Nullable Object songInfo, @NonNull SongInfoListener listener) {
-        if (songInfo == null) return;
-
+    private static void dispatch(@NonNull Object songInfo, @NonNull SongInfoListener listener) {
         // 未解析的原始数据：这两个串正是 hooks-id 正则的输入，必须原样可见。
         // 宿主会反复重建同一份 SongInfo，因此只在内容变化时输出。
         String raw = String.valueOf(songInfo);

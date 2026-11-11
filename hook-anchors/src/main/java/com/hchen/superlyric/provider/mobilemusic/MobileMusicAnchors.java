@@ -82,6 +82,7 @@ public final class MobileMusicAnchors {
      *
      * <p>使用自建映射而不是 {@link ClassValue}：后者在 Android 上是 API 34 才有的类，
      * 而本模块 {@code minSdk 30}，类初始化时就会在 Android 11–13 上失败。
+     * 读取路径由 JVM 单元测试直接驱动，CoreTool 的调用需要 Xposed 环境，故保留纯 JDK 反射。
      */
     private static final ConcurrentHashMap<Class<?>, Map<String, Method>> GETTERS =
         new ConcurrentHashMap<>();
@@ -161,21 +162,25 @@ public final class MobileMusicAnchors {
             Method translated = manager.getDeclaredMethod("parseTrc", File.class);
             this.listener = listener;
 
-            for (Method method : List.of(parsed, translated)) {
-                // 部分挂载成功后继续重试时，不能重复安装已经生效的回调。
-                if (lyricHooks.contains(method)) continue;
-                CoreTool.hook(method, new AbsHook() {
-                    @Override
-                    public void after() {
-                        captureCurrent();
-                    }
-                });
-                lyricHooks.add(method);
+            AbsHook capture = new AbsHook() {
+                @Override
+                public void after() {
+                    refreshCurrent();
+                }
+            };
+            // 部分挂载成功后继续重试时，不能重复安装已经生效的回调。
+            if (!lyricHooks.contains(parsed)) {
+                CoreTool.hook(parsed, capture);
+                lyricHooks.add(parsed);
+            }
+            if (!lyricHooks.contains(translated)) {
+                CoreTool.hook(translated, capture);
+                lyricHooks.add(translated);
             }
             installed = true;
             installOffsets(loader);
             diagnose("Installed native full-song lyric hooks");
-            captureCurrent();
+            refreshCurrent();
             return offsetHooks.size() == 2;
         } catch (Throwable error) {
             AndroidLog.logW(TAG, "Native lyric anchors not ready: " + error.getMessage());
@@ -187,70 +192,76 @@ public final class MobileMusicAnchors {
      * 取词会话可能晚于歌词回调建立，故还要允许主动读取当前完整快照
      */
     @Nullable
-    public Capture readCurrent() throws ReflectiveOperationException {
+    public Capture readCurrent() {
         if (!installed) return null;
-        Object song = getSong.invoke(null);
-        Object manager = getManager.invoke(null);
+        Object song;
+        Object manager;
+        try {
+            song = getSong.invoke(null);
+            manager = getManager.invoke(null);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException(error);
+        }
         if (song == null || manager == null) return null;
         synchronized (manager) {
-            if (!sameSong(song, parsedSong.get(manager))) {
+            if (!sameSong(song, CoreTool.getField(parsedSong, manager))) {
                 AndroidLog.logD(TAG, "Waiting for a lyric parser belonging to the current song");
                 return null;
             }
             String songId = rawSongIdOf(song);
-            String title = string(invoke(song, "getSongName"));
-            String artist = string(invoke(song, "getSingerName"));
-            long durationMs = durationMs(number(invoke(song, "getMicroSecondsDuration")));
-            String album = string(invoke(song, "getAlbum"));
+            String title = invoke(song, "getSongName") instanceof String text ? text : "";
+            String artist = invoke(song, "getSingerName") instanceof String text ? text : "";
+            long durationMs = durationMs(((Number) invoke(song, "getMicroSecondsDuration")).longValue());
+            String album = invoke(song, "getAlbum") instanceof String text ? text : "";
             if (Boolean.TRUE.equals(invoke(song, "isVideoResource")) ||
                 Boolean.TRUE.equals(invoke(manager, "isStaticLrc"))) {
                 return new Capture(songId, title, artist, durationMs, album, List.of(), List.of(), 0L, "static lyrics or video");
             }
-            Object parser = lyricParser.get(manager);
+            Object parser = CoreTool.getField(lyricParser, manager);
             long offset = 0L;
             OffsetSnapshot live = liveOffset;
             Object offsetView = live == null ? null : live.view.get();
             // 普通 LRC 没有 MRC 解析器，歌词视图里调整的偏移仍须保留。
             // 视图重置会直接清零字段，因此快照读取当前值，且不延长已销毁界面的生命周期。
             if (offsetView != null && live.parser == parser && sameSong(song, live.song)) {
-                offset = number(invoke(offsetView, "getOffset"));
-            } else if (Boolean.TRUE.equals(isMrc.get(manager)) && parser != null) {
-                offset = number(invoke(parser, "getPlayOffset"));
+                offset = ((Number) invoke(offsetView, "getOffset")).longValue();
+            } else if (Boolean.TRUE.equals(CoreTool.getField(isMrc, manager)) && parser != null) {
+                offset = ((Number) invoke(parser, "getPlayOffset")).longValue();
             }
             List<NativeLine> lines = new ArrayList<>();
-            Object nativeLines = lyricLines.get(manager);
+            Object nativeLines = CoreTool.getField(lyricLines, manager);
             if (nativeLines instanceof List<?> list) {
                 for (Object line : list) {
                     String[] words = (String[]) invoke(line, "getLyricsWords");
                     int[] intervals = (int[]) invoke(line, "getWordsDisInterval");
                     List<Long> durations = durationsOf(intervals);
                     lines.add(new NativeLine(
-                        number(invoke(line, "getStartTime")), number(invoke(line, "getEndTime")),
-                        string(invoke(line, "getLineLyrics")), string(invoke(line, "getTrcLrc")),
+                        ((Number) invoke(line, "getStartTime")).longValue(),
+                        ((Number) invoke(line, "getEndTime")).longValue(),
+                        invoke(line, "getLineLyrics") instanceof String text ? text : "",
+                        invoke(line, "getTrcLrc") instanceof String trc ? trc : "",
                         words == null ? null : new ArrayList<>(Arrays.asList(words)), durations
                     ));
                 }
             }
             List<TimeText> translations = new ArrayList<>();
-            Object nativeTranslations = translationLines.get(manager);
+            Object nativeTranslations = CoreTool.getField(translationLines, manager);
             if (nativeTranslations instanceof List<?> list) {
                 for (Object line : list) {
-                    translations.add(new TimeText(number(invoke(line, "getStartTime")),
-                        string(invoke(line, "getLineLyrics"))));
+                    translations.add(new TimeText(((Number) invoke(line, "getStartTime")).longValue(),
+                        invoke(line, "getLineLyrics") instanceof String text ? text : ""));
                 }
             }
-            if (!sameSong(song, getSong.invoke(null))) return null;
+            boolean sameAtEnd;
+            try {
+                sameAtEnd = sameSong(song, getSong.invoke(null));
+            } catch (ReflectiveOperationException error) {
+                throw new IllegalStateException(error);
+            }
+            if (!sameAtEnd) return null;
             String unavailable = lines.isEmpty() || (lines.size() == 1 && lines.get(0).getStartMs() == 0L
                 && "暂无歌词".equals(lines.get(0).getText())) ? "host lyric unavailable" : null;
             return new Capture(songId, title, artist, durationMs, album, lines, translations, offset, unavailable);
-        }
-    }
-
-    private void captureCurrent() {
-        try {
-            refreshCurrent();
-        } catch (Throwable error) {
-            AndroidLog.logE(TAG, "Cannot copy native lyric snapshot", error);
         }
     }
 
@@ -258,7 +269,7 @@ public final class MobileMusicAnchors {
      * 读取当前快照并发布给所有监听者；调用方可在返回后立即读取身份 feed。
      */
     @Nullable
-    public Capture refreshCurrent() throws ReflectiveOperationException {
+    public Capture refreshCurrent() {
         Capture capture = readCurrent();
         if (capture != null) listener.onCaptured(capture);
         return capture;
@@ -275,35 +286,36 @@ public final class MobileMusicAnchors {
             }
             Method relative = view.getDeclaredMethod("setProgressOffset", int.class);
             Method absolute = view.getDeclaredMethod("setCurrentOffset", int.class);
-            for (Method method : List.of(relative, absolute)) {
-                if (offsetHooks.contains(method.getName())) continue;
-                CoreTool.hook(method, new AbsHook() {
-                    @Override
-                    public void after() {
-                        try {
-                            Object lyricsView = getThisObject();
-                            if (!Boolean.TRUE.equals(invoke(lyricsView, "isPlayerLyricsMode")) &&
-                                !Boolean.TRUE.equals(invoke(lyricsView, "isTreasureLyricsMode"))) {
-                                diagnose("Discarding offset from a non-player lyric view");
-                                return;
-                            }
-                            Object song = getSong.invoke(null);
-                            Object manager = getManager.invoke(null);
-                            if (song == null || manager == null || !sameSong(song, parsedSong.get(manager))) {
-                                diagnose("Discarding offset without a matching current lyric parser");
-                                return;
-                            }
-                            liveOffset = new OffsetSnapshot(song, lyricParser.get(manager),
-                                new WeakReference<>(lyricsView));
-                            diagnose("Captured view offset: offset="
-                                + number(invoke(lyricsView, "getOffset")) + "ms");
-                            captureCurrent();
-                        } catch (Throwable error) {
-                            AndroidLog.logE(TAG, "Cannot capture lyric offset", error);
-                        }
+            AbsHook capture = new AbsHook() {
+                @Override
+                public void after() {
+                    Object lyricsView = getThisObject();
+                    if (!Boolean.TRUE.equals(invoke(lyricsView, "isPlayerLyricsMode")) &&
+                        !Boolean.TRUE.equals(invoke(lyricsView, "isTreasureLyricsMode"))) {
+                        diagnose("Discarding offset from a non-player lyric view");
+                        return;
                     }
-                });
-                offsetHooks.add(method.getName());
+                    Object song = CoreTool.callStaticMethod(getSong);
+                    Object manager = CoreTool.callStaticMethod(getManager);
+                    if (song == null || manager == null
+                        || !sameSong(song, CoreTool.getField(parsedSong, manager))) {
+                        diagnose("Discarding offset without a matching current lyric parser");
+                        return;
+                    }
+                    liveOffset = new OffsetSnapshot(song, CoreTool.getField(lyricParser, manager),
+                        new WeakReference<>(lyricsView));
+                    diagnose("Captured view offset: offset="
+                        + ((Number) invoke(lyricsView, "getOffset")).longValue() + "ms");
+                    refreshCurrent();
+                }
+            };
+            if (!offsetHooks.contains(relative.getName())) {
+                CoreTool.hook(relative, capture);
+                offsetHooks.add(relative.getName());
+            }
+            if (!offsetHooks.contains(absolute.getName())) {
+                CoreTool.hook(absolute, capture);
+                offsetHooks.add(absolute.getName());
             }
             diagnose("Installed lyric view offset hooks");
         } catch (Throwable error) {
@@ -331,10 +343,8 @@ public final class MobileMusicAnchors {
                         runtime[0] = DexKitBridge.create(loader, true);
                         classes = runtime[0].findClass(query);
                     }
-                    for (ClassData data : classes) {
-                        if (!data.getName().contains("$")) return data;
-                    }
-                    return null;
+                    ClassData nonInner = classes.firstOrNull(data -> !data.getName().contains("$"));
+                    return nonInner != null ? nonInner : classes.firstOrNull();
                 }
             });
         } finally {
@@ -359,18 +369,19 @@ public final class MobileMusicAnchors {
         return durations;
     }
 
-    private static boolean sameSong(Object song, Object other) throws ReflectiveOperationException {
+    private static boolean sameSong(Object song, Object other) {
         if (song == null || other == null) return false;
         if (song == other) return true;
         for (String getter : List.of("getSongId", "getContentId", "getLocalPathMd5")) {
-            String value = string(invoke(song, getter));
-            if (!value.trim().isEmpty() && Objects.equals(value, invoke(other, getter)))
+            Object value = invoke(song, getter);
+            String text = value instanceof String string ? string : "";
+            if (!text.trim().isEmpty() && Objects.equals(value, invoke(other, getter)))
                 return true;
         }
         return false;
     }
 
-    private static Object invoke(Object target, String getter) throws ReflectiveOperationException {
+    private static Object invoke(Object target, String getter) {
         Map<String, Method> methods = GETTERS.computeIfAbsent(target.getClass(), type -> {
             Map<String, Method> found = new HashMap<>();
             for (Method method : type.getMethods()) {
@@ -380,12 +391,31 @@ public final class MobileMusicAnchors {
         });
         Method method = methods.get(getter);
         if (method == null)
-            throw new NoSuchMethodException(target.getClass().getName() + "." + getter);
-        return method.invoke(target);
+            throw new IllegalStateException(new NoSuchMethodException(target.getClass().getName() + "." + getter));
+        try {
+            return method.invoke(target);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException(error);
+        }
     }
 
-    private static long number(Object value) {
-        return ((Number) value).longValue();
+    /**
+     * 按 Song 实例缓存首次选中的原始 ID，避免宿主分步填充字段时 ID 来源抖动。
+     */
+    private static final Map<Object, String> RAW_IDS =
+        Collections.synchronizedMap(new WeakHashMap<>());
+
+    private static String rawSongIdOf(Object song) {
+        String cached = RAW_IDS.get(song);
+        if (cached != null) return cached;
+        for (String getter : List.of("getSongId", "getContentId", "getLocalPathMd5")) {
+            String raw = invoke(song, getter) instanceof String text ? text.trim() : "";
+            if (!raw.isEmpty()) {
+                RAW_IDS.put(song, raw);
+                return raw;
+            }
+        }
+        return "";
     }
 
     /**
@@ -395,31 +425,8 @@ public final class MobileMusicAnchors {
      * 而微秒表示 3 分钟就是 1.8e8，必然超过。这样既兼容两种单位，又不会把
      * 正常时长误除。
      */
-    /**
-     * 按 Song 实例缓存首次选中的原始 ID，避免宿主分步填充字段时 ID 来源抖动。
-     */
-    private static final Map<Object, String> RAW_IDS =
-        Collections.synchronizedMap(new WeakHashMap<>());
-
-    private static String rawSongIdOf(Object song) throws ReflectiveOperationException {
-        String cached = RAW_IDS.get(song);
-        if (cached != null) return cached;
-        for (String getter : List.of("getSongId", "getContentId", "getLocalPathMd5")) {
-            String raw = string(invoke(song, getter)).trim();
-            if (!raw.isEmpty()) {
-                RAW_IDS.put(song, raw);
-                return raw;
-            }
-        }
-        return "";
-    }
-
     private static long durationMs(long raw) {
         if (raw <= 0L) return 0L;
         return raw > 86_400_000L ? raw / 1_000L : raw;
-    }
-
-    private static String string(Object value) {
-        return value instanceof String text ? text : "";
     }
 }

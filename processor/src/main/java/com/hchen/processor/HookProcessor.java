@@ -28,8 +28,8 @@ import com.squareup.javapoet.TypeName;
 import com.squareup.javapoet.TypeSpec;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -76,10 +76,7 @@ public class HookProcessor extends AbstractProcessor {
 
         Set<? extends Element> annotated = env.getElementsAnnotatedWith(HookThis.class);
         for (Element element : annotated) {
-            if (!(element instanceof TypeElement typeElement)) {
-                throw new RuntimeException("Element can't cast to TypeElement.");
-            }
-
+            TypeElement typeElement = (TypeElement) element;
             String typeName = typeElement.getQualifiedName().toString();
             boolean newType = seenTypes.add(typeName);
             if (generated && newType) {
@@ -90,18 +87,10 @@ public class HookProcessor extends AbstractProcessor {
                     "@HookThis element appeared after HookMaps was generated: " + typeName
                 );
             }
-            HookThis hook = element.getAnnotation(HookThis.class);
-            if (hook != null) {
-                maps
-                    .computeIfAbsent(hook.targetPackage(), k -> new ArrayList<>())
-                    .add(
-                        new HookData(
-                            typeName,
-                            hook.onPackageLoaded(),
-                            hook.onSystemStarting()
-                        )
-                    );
-            }
+            HookThis hook = typeElement.getAnnotation(HookThis.class);
+            maps
+                .computeIfAbsent(hook.targetPackage(), k -> new ArrayList<>())
+                .add(new HookData(typeName, hook.onPackageLoaded(), hook.onSystemStarting()));
         }
 
         if (!generated && !annotated.isEmpty()) {
@@ -109,7 +98,7 @@ public class HookProcessor extends AbstractProcessor {
                 generateHookData();
                 generated = true;
             } catch (IOException e) {
-                throw new RuntimeException(e);
+                throw new UncheckedIOException(e);
             }
         }
 
@@ -160,44 +149,22 @@ public class HookProcessor extends AbstractProcessor {
         Predicate<HookData> filter,
         TypeName mapType
     ) {
-        CodeBlock.Builder mapInit = CodeBlock.builder();
-        mapInit.add("$T.ofEntries(\n", Map.class);
-
-        List<String> entries = new ArrayList<>();
+        List<CodeBlock> entries = new ArrayList<>();
         dataMap.forEach((pkg, data) -> {
-            List<String> values = data.stream()
-                .filter(filter)
-                .map(d -> d.classPath)
-                .toList();
-
+            CodeBlock values = CodeBlock.join(
+                data.stream()
+                    .filter(filter)
+                    .map(d -> CodeBlock.of("$S", d.classPath))
+                    .toList(),
+                ", "
+            );
             if (values.isEmpty()) return;
 
-            CodeBlock.Builder entry = CodeBlock.builder();
-            entry.add("$T.entry($S, $T.of(", Map.class, pkg, List.class);
-
-            for (int i = 0; i < values.size(); i++) {
-                entry.add("$S", values.get(i));
-                if (i != values.size() - 1) {
-                    entry.add(", ");
-                }
-            }
-
-            entry.add("))");
-
-            entries.add(entry.build().toString());
+            entries.add(CodeBlock.of("$T.entry($S, $T.of($L))", Map.class, pkg, List.class, values));
         });
 
-        for (int i = 0; i < entries.size(); i++) {
-            mapInit.add(entries.get(i));
-            if (i != entries.size() - 1) {
-                mapInit.add(",\n");
-            }
-        }
-
-        mapInit.add("\n)");
-
         return FieldSpec.builder(mapType, fieldName, Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-            .initializer(mapInit.build())
+            .initializer(CodeBlock.of("$T.ofEntries(\n$L\n)", Map.class, CodeBlock.join(entries, ",\n")))
             .build();
     }
 

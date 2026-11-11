@@ -96,8 +96,8 @@ abstract class KuwoBaseProvider extends MusicProvider {
     @NonNull
     @Override
     protected LyricOrchestrator.Config orchestratorConfig() {
-        // 必须传全四个参数：Kotlin 默认参数不会为 Java 生成重载，只有全参构造可用。
-        // 第二、三项保持基类默认值，标题宽限使用本类常量
+        // Java 只能按位置传参：要覆盖第四项，前三项必须一并给出。
+        // 第二、三项取 LyricOrchestrator.Config 的默认值，标题宽限使用本类常量
         return new LyricOrchestrator.Config(
             HOOK_TIMEOUT_MS,
             DEFAULT_MAX_API_ATTEMPTS,

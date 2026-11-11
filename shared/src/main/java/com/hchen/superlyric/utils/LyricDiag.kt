@@ -265,8 +265,7 @@ object LyricDiag {
     @JvmStatic
     fun dumpMetadata(source: String, metadata: MediaMetadata) {
         if (!enabled) return
-        // 诊断输出不得改变控制流：QQ 的 Bundle 可能带 null 键，排序会抛 NPE 并中断
-        // 后续的取消停止与切歌处理
+        // 诊断是独立步骤：输出失败只记录，不影响后续的取消停止与切歌处理。
         runCatching { dumpMetadataUnchecked(source, metadata) }
             .onFailure { log(source, "META dump failed: " + it.javaClass.simpleName) }
     }
@@ -297,7 +296,7 @@ object LyricDiag {
         val bundle = BUNDLE_FIELD
             ?.let { field -> runCatching { field.get(metadata) }.getOrNull() }
                 as? Bundle
-        if (bundle == null) return runCatching { metadata.getText(key)?.toString() }.getOrNull()
+        if (bundle == null) return metadata.getText(key)?.toString()
         return (bundle.get(key) as? CharSequence)?.toString()
     }
 

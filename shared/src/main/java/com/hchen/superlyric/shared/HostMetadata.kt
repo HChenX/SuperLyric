@@ -22,8 +22,7 @@ import android.media.MediaMetadata
 import com.hchen.superlyric.kernel.catalog.CatalogId
 import com.hchen.superlyric.kernel.identity.TrackIdentity
 
-fun MediaMetadata.hostString(key: String): String =
-    runCatching { getString(key) }.getOrNull().orEmpty()
+fun MediaMetadata.hostString(key: String): String = getString(key).orEmpty()
 
 fun MediaMetadata.toTrackIdentity(
     source: String,
@@ -34,6 +33,6 @@ fun MediaMetadata.toTrackIdentity(
     stableId = stableId,
     title = hostString(MediaMetadata.METADATA_KEY_TITLE),
     artist = hostString(MediaMetadata.METADATA_KEY_ARTIST),
-    durationMs = runCatching { getLong(MediaMetadata.METADATA_KEY_DURATION) }.getOrDefault(0L),
+    durationMs = getLong(MediaMetadata.METADATA_KEY_DURATION),
     catalogId = catalogId,
 )

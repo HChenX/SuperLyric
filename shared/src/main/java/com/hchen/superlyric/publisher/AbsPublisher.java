@@ -75,9 +75,8 @@ public abstract class AbsPublisher extends AbsModule {
             return sAppContext;
         }
         try {
-            Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
-            Object app = activityThreadClass.getMethod("currentApplication").invoke(null);
-            if (app instanceof Context ctx) {
+            if (callStaticMethodIfExists("android.app.ActivityThread", "currentApplication")
+                instanceof Context ctx) {
                 sAppContext = ctx.getApplicationContext();
                 return sAppContext;
             }
@@ -117,16 +116,12 @@ public abstract class AbsPublisher extends AbsModule {
         }
 
         synchronized (sPublishLock) {
-            try {
-                Publisher.PublishResult result = SuperLyric.publisher().publish(lyric);
-                if (result != Publisher.PublishResult.OK) {
-                    // REJECTED 表示服务端拒收，多为切歌竞态导致的内容与当前曲目不一致；
-                    // 留痕用于区分"服务端未安装"与"服务端拒收"
-                    AndroidLog.logW(TAG,
-                        "Publish result: " + result + " (lyricId=" + lyric.getId() + ")");
-                }
-            } catch (Throwable t) {
-                AndroidLog.logE(TAG, "Failed to publish full lyric", t);
+            Publisher.PublishResult result = SuperLyric.publisher().publish(lyric);
+            if (result != Publisher.PublishResult.OK) {
+                // REJECTED 表示服务端拒收，多为切歌竞态导致的内容与当前曲目不一致；
+                // 留痕用于区分"服务端未安装"与"服务端拒收"
+                AndroidLog.logW(TAG,
+                    "Publish result: " + result + " (lyricId=" + lyric.getId() + ")");
             }
         }
     }
@@ -136,11 +131,7 @@ public abstract class AbsPublisher extends AbsModule {
      */
     public static void publishStop() {
         synchronized (sPublishLock) {
-            try {
-                SuperLyric.publisher().clear();
-            } catch (Throwable t) {
-                AndroidLog.logE(TAG, "Failed to clear lyric", t);
-            }
+            SuperLyric.publisher().clear();
         }
     }
 }

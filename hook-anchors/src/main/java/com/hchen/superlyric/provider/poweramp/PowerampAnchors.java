@@ -42,7 +42,6 @@ import org.luckypray.dexkit.result.ClassDataList;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Locale;
 import java.util.Set;
@@ -162,11 +161,9 @@ public final class PowerampAnchors {
             CoreTool.hook(method, new AbsHook() {
                 @Override
                 public void after() {
-                    safe(() -> {
-                        if (getResult() instanceof SQLiteDatabase database) {
-                            sDatabase = database;
-                        }
-                    });
+                    if (getResult() instanceof SQLiteDatabase database) {
+                        sDatabase = database;
+                    }
                 }
             });
             sRestHookInstalled = true;
@@ -205,17 +202,17 @@ public final class PowerampAnchors {
         }
 
         try {
-            Object parser = engine.parserClass.getDeclaredConstructor().newInstance();
+            Object parser = engine.parserClass().getDeclaredConstructor().newInstance();
             Object storage = sStorage;
             if (storage == null) {
-                storage = engine.storageClass.getDeclaredConstructor().newInstance();
+                storage = engine.storageClass().getDeclaredConstructor().newInstance();
                 sStorage = storage;
             }
             sHostParse.set(Boolean.TRUE);
             sCaptureDelivered.set(Boolean.FALSE);
             // 字符集由本模块在流上按原始字节判断；宿主自己的解析结果不使用，
             // 传 true 只为让它的解析路径正常走完
-            engine.fileMethod.invoke(parser, context, storage, path, true, false, false);
+            engine.fileMethod().invoke(parser, context, storage, path, true, false, false);
             // 成功调用进宿主解析器不等于真的拿到了文本：engine 未就绪、open 钩子
             // 安装失败、宿主换线程读取都会让回调永不发生，调用方必须能区分。
             return Boolean.TRUE.equals(sCaptureDelivered.get());
@@ -245,40 +242,38 @@ public final class PowerampAnchors {
         }
 
         try {
-            engine.openMethod.setAccessible(true);
-            CoreTool.hook(engine.openMethod, new AbsHook() {
+            engine.openMethod().setAccessible(true);
+            CoreTool.hook(engine.openMethod(), new AbsHook() {
                 @Override
                 public void after() {
-                    safe(() -> {
-                        // 只处理本模块为当前曲目主动发起的解析；宿主歌词界面的
-                        // 预加载可能属于下一首，不能算到当前曲目头上
-                        if (!Boolean.TRUE.equals(sHostParse.get())) return;
-                        String path = asString(getArg(1));
-                        if (!path.toLowerCase(Locale.US).endsWith(".lrc")) return;
+                    // 只处理本模块为当前曲目主动发起的解析；宿主歌词界面的
+                    // 预加载可能属于下一首，不能算到当前曲目头上
+                    if (!Boolean.TRUE.equals(sHostParse.get())) return;
+                    String path = getArg(1) instanceof String value ? value.trim() : "";
+                    if (!path.toLowerCase(Locale.US).endsWith(".lrc")) return;
 
-                        Object value = getResult();
-                        if (!(value instanceof InputStream stream)) return;
+                    Object result = getResult();
+                    if (!(result instanceof InputStream stream)) return;
 
-                        byte[] bytes = readAll(stream);
-                        if (bytes == null) {
-                            // 读取失败时原流已被消费了一部分；给宿主一个空流，避免它读到半截。
-                            setResult(new ByteArrayInputStream(new byte[0]));
-                            return;
-                        }
-                        if (bytes.length == 0) {
-                            setResult(new ByteArrayInputStream(bytes));
-                            return;
-                        }
-
-                        // 宿主接下来还要读这个流：用同一份字节重建
+                    byte[] bytes = readAll(stream);
+                    if (bytes == null) {
+                        // 读取失败时原流已被消费了一部分；给宿主一个空流，避免它读到半截。
+                        setResult(new ByteArrayInputStream(new byte[0]));
+                        return;
+                    }
+                    if (bytes.length == 0) {
                         setResult(new ByteArrayInputStream(bytes));
+                        return;
+                    }
 
-                        String text = decodeLyric(bytes);
-                        if (!text.isEmpty()) {
-                            sCaptureDelivered.set(Boolean.TRUE);
-                            listener.onLyricText("lrc.own", text, "", "", "", 0, "");
-                        }
-                    });
+                    // 宿主接下来还要读这个流：用同一份字节重建
+                    setResult(new ByteArrayInputStream(bytes));
+
+                    String text = decodeLyric(bytes);
+                    if (!text.isEmpty()) {
+                        sCaptureDelivered.set(Boolean.TRUE);
+                        listener.onLyricText("lrc.own", text, "", "", "", 0, "");
+                    }
                 }
             });
             sLrcHookInstalled = true;
@@ -334,7 +329,7 @@ public final class PowerampAnchors {
                         public ClassData dexkit(DexKitBridge bridge) {
                             ClassDataList classes = bridge.findClass(FindClass.create()
                                 .matcher(ClassMatcher.create().usingEqStrings(ENGINE_ANCHOR)));
-                            return classes == null || classes.isEmpty() ? null : classes.get(0);
+                            return classes.firstOrNull();
                         }
                     }
                 );
@@ -398,44 +393,46 @@ public final class PowerampAnchors {
         }
 
         // 扫描/读取标签时宿主会给出整首内嵌歌词（USLT/SYLT）
-        if (!sTagSetTagsInstalled) try {
-            Method setTags = tagClass.getDeclaredMethod("setTags",
-                String.class, String.class, String.class, String.class, String.class,
-                String.class, String.class, String.class, String.class,
-                int.class, int.class, int[].class, String[].class);
-            setTags.setAccessible(true);
-            CoreTool.hook(setTags, new AbsHook() {
-                @Override
-                public void after() {
-                    safe(() -> emitTagLyrics("tag", getThisObject(), listener));
-                }
-            });
-            sTagSetTagsInstalled = true;
-            AndroidLog.logI(TAG, "Hooked TagAndMeta.setTags");
-        } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Hook setTags failed: " + t);
+        if (!sTagSetTagsInstalled) {
+            try {
+                Method setTags = tagClass.getDeclaredMethod("setTags",
+                    String.class, String.class, String.class, String.class, String.class,
+                    String.class, String.class, String.class, String.class,
+                    int.class, int.class, int[].class, String[].class);
+                setTags.setAccessible(true);
+                CoreTool.hook(setTags, new AbsHook() {
+                    @Override
+                    public void after() {
+                        emitTagLyrics("tag", getThisObject(), listener);
+                    }
+                });
+                sTagSetTagsInstalled = true;
+                AndroidLog.logI(TAG, "Hooked TagAndMeta.setTags");
+            } catch (Throwable t) {
+                AndroidLog.logW(TAG, "Hook setTags failed: " + t);
+            }
         }
 
         // 歌词界面打开时，宿主的内部解析结果也从这里经过
-        if (!sTagUnsyncInstalled) try {
-            Method unsync = tagClass.getDeclaredMethod("getUnsyncLyrics");
-            unsync.setAccessible(true);
-            CoreTool.hook(unsync, new AbsHook() {
-                @Override
-                public void after() {
-                    safe(() -> {
+        if (!sTagUnsyncInstalled) {
+            try {
+                Method unsync = tagClass.getDeclaredMethod("getUnsyncLyrics");
+                unsync.setAccessible(true);
+                CoreTool.hook(unsync, new AbsHook() {
+                    @Override
+                    public void after() {
                         Object tag = getThisObject();
-                        String text = asString(getResult());
+                        String text = getResult() instanceof String value ? value.trim() : "";
                         if (!text.isEmpty()) {
                             emitText("unsync", text, tag, listener);
                         }
-                    });
-                }
-            });
-            sTagUnsyncInstalled = true;
-            AndroidLog.logI(TAG, "Hooked TagAndMeta.getUnsyncLyrics");
-        } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Hook getUnsyncLyrics failed: " + t);
+                    }
+                });
+                sTagUnsyncInstalled = true;
+                AndroidLog.logI(TAG, "Hooked TagAndMeta.getUnsyncLyrics");
+            } catch (Throwable t) {
+                AndroidLog.logW(TAG, "Hook getUnsyncLyrics failed: " + t);
+            }
         }
     }
 
@@ -445,64 +442,72 @@ public final class PowerampAnchors {
         Class<?> tagClass = CoreTool.findClassIfExists(TAG_AND_META);
         if (activity == null || tagClass == null) return;
 
+        Method target = null;
         for (Method method : activity.getDeclaredMethods()) {
             Class<?>[] params = method.getParameterTypes();
             // y(TagAndMeta, long, ..., String, ..., ...)
-            if (params.length != 6
-                || params[0] != tagClass
-                || params[1] != long.class
-                || params[3] != String.class) {
-                continue;
+            if (params.length == 6
+                && params[0] == tagClass
+                && params[1] == long.class
+                && params[3] == String.class) {
+                target = method;
+                break;
             }
-            try {
-                method.setAccessible(true);
-                CoreTool.hook(method, new AbsHook() {
-                    @Override
-                    public void before() {
-                        safe(() -> {
-                            Object tag = getArg(0);
-                            emitTagLyrics("activity", tag, listener);
-                            String extra = asString(getArg(3));
-                            if (!extra.isEmpty()) {
-                                listener.onLyricText("activity.extra", extra,
-                                    fieldString(tag, "title"), fieldString(tag, "artist"),
-                                    fieldString(tag, "album"), fieldLong(tag, "durationMS"), extra);
-                            }
-                        });
+        }
+        if (target == null) return;
+
+        try {
+            target.setAccessible(true);
+            CoreTool.hook(target, new AbsHook() {
+                @Override
+                public void before() {
+                    Object tag = getArg(0);
+                    if (tag != null) emitTagLyrics("activity", tag, listener);
+                    String extra = getArg(3) instanceof String value ? value.trim() : "";
+                    if (extra.isEmpty()) return;
+                    if (tag == null) {
+                        listener.onLyricText("activity.extra", extra, "", "", "", 0L, extra);
+                        return;
                     }
-                });
-                sActivityHookInstalled = true;
-                AndroidLog.logI(TAG, "Hooked LyricsActivity lyric entry");
-                return;
-            } catch (Throwable t) {
-                AndroidLog.logW(TAG, "Hook LyricsActivity failed: " + t);
-            }
+                    listener.onLyricText("activity.extra", extra,
+                        CoreTool.getFieldIfExists(tag, "title") instanceof String text ? text : "",
+                        CoreTool.getFieldIfExists(tag, "artist") instanceof String text ? text : "",
+                        CoreTool.getFieldIfExists(tag, "album") instanceof String text ? text : "",
+                        CoreTool.getFieldIfExists(tag, "durationMS") instanceof Number number
+                            ? number.longValue() : 0L,
+                        extra);
+                }
+            });
+            sActivityHookInstalled = true;
+            AndroidLog.logI(TAG, "Hooked LyricsActivity lyric entry");
+        } catch (Throwable t) {
+            AndroidLog.logW(TAG, "Hook LyricsActivity failed: " + t);
         }
     }
 
-    private static void emitTagLyrics(@NonNull String source, @Nullable Object tag,
+    private static void emitTagLyrics(@NonNull String source, @NonNull Object tag,
                                       @NonNull LyricsListener listener) {
-        if (tag == null) return;
-        String text = fieldString(tag, "lyrics");
+        String text = CoreTool.getFieldIfExists(tag, "lyrics") instanceof String value ? value : "";
         if (text.isEmpty()) text = buildLrcFromSync(tag);
         if (!text.isEmpty()) emitText(source, text, tag, listener);
     }
 
     private static void emitText(@NonNull String source, @NonNull String text,
                                  @NonNull Object tag, @NonNull LyricsListener listener) {
-        String title = fieldString(tag, "title");
-        String artist = fieldString(tag, "artist");
+        String title = CoreTool.getFieldIfExists(tag, "title") instanceof String value ? value : "";
+        String artist = CoreTool.getFieldIfExists(tag, "artist") instanceof String value ? value : "";
         // 全库扫描时这个集合会覆盖所有带标签歌词的曲目；设上限避免无界增长
         if (sSeen.size() > 512) sSeen.clear();
         if (!sSeen.add(source + "|" + title + "|" + text.hashCode())) return;
         listener.onLyricText(source, text, title, artist,
-            fieldString(tag, "album"), fieldLong(tag, "durationMS"), "");
+            CoreTool.getFieldIfExists(tag, "album") instanceof String value ? value : "",
+            CoreTool.getFieldIfExists(tag, "durationMS") instanceof Number value ? value.longValue() : 0L, "");
     }
 
     @NonNull
-    private static String buildLrcFromSync(@Nullable Object tag) {
-        Object linesValue = field(tag, "syncLyricsLines");
-        Object timesValue = field(tag, "syncLyricsTimestamps");
+    private static String buildLrcFromSync(@NonNull Object tag) {
+        Object linesValue = CoreTool.getFieldIfExists(tag, "syncLyricsLines");
+        Object timesValue = CoreTool.getFieldIfExists(tag, "syncLyricsTimestamps");
         if (!(linesValue instanceof String[] lines) || !(timesValue instanceof int[] times)) {
             return "";
         }
@@ -522,54 +527,7 @@ public final class PowerampAnchors {
         return builder.toString();
     }
 
-    private static void safe(@NonNull Runnable action) {
-        try {
-            action.run();
-        } catch (Throwable t) {
-            AndroidLog.logW(TAG, "probe failure: " + t);
-        }
-    }
-
-    @Nullable
-    private static Object field(@Nullable Object target, @NonNull String name) {
-        if (target == null) return null;
-        try {
-            Field field = target.getClass().getField(name);
-            return field.get(target);
-        } catch (Throwable ignored) {
-            return null;
-        }
-    }
-
-    @NonNull
-    private static String fieldString(@Nullable Object target, @NonNull String name) {
-        Object value = field(target, name);
-        return value instanceof String text ? text : "";
-    }
-
-    private static long fieldLong(@Nullable Object target, @NonNull String name) {
-        Object value = field(target, name);
-        return value instanceof Number number ? number.longValue() : 0L;
-    }
-
-    @NonNull
-    private static String asString(@Nullable Object value) {
-        return value instanceof String text ? text.trim() : "";
-    }
-
-
-    private static final class Engine {
-        final Class<?> parserClass;
-        final Class<?> storageClass;
-        final Method fileMethod;
-        final Method openMethod;
-
-        Engine(Class<?> parserClass, Class<?> storageClass,
-               Method fileMethod, Method openMethod) {
-            this.parserClass = parserClass;
-            this.storageClass = storageClass;
-            this.fileMethod = fileMethod;
-            this.openMethod = openMethod;
-        }
+    private record Engine(Class<?> parserClass, Class<?> storageClass,
+                          Method fileMethod, Method openMethod) {
     }
 }

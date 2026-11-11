@@ -319,9 +319,9 @@ internal object ApiReceiverManager {
     }
 
     fun injectMockStop() {
-        val current = receiverFlow.value
         val time = LocalTime.now().format(TIME_FORMAT)
         synchronized(publishLock) {
+            val current = receiverFlow.value
             val seq = totalPackets.incrementAndGet()
             receiverFlow.value = current.copy(
                 eventType = EVENT_STOP,
@@ -334,10 +334,12 @@ internal object ApiReceiverManager {
     }
 
     fun reset() {
-        totalPackets.set(0)
-        fullPackets.set(0)
-        statePackets.set(0)
-        receiverFlow.value = ApiReceiverState()
+        synchronized(publishLock) {
+            totalPackets.set(0)
+            fullPackets.set(0)
+            statePackets.set(0)
+            receiverFlow.value = ApiReceiverState()
+        }
     }
 
     private fun publishMock(

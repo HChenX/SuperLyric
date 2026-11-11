@@ -65,15 +65,6 @@ object QQNetwork {
 
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
-    /**
-     * 取词的整体时限预算
-     *
-     * connect/read 都只约束单次操作：read 超时在每次读到数据后都会重置，持续挤出少量
-     * 数据的服务端能把请求拖到无限久。callTimeout 给整次调用封顶，取词跑在来源自己的
-     * 线程上，拖住它就是拖住后续每一次切歌
-     *
-     * 与 Spotify 的 15/15/30 不同：后者要跑 protobuf 分析且服务端更慢，此处三家只取 JSON
-     */
     /** (ct, cv, User-Agent) */
     private val clientProfiles = listOf(
         Triple("19", "1873", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) QQMusic/18.73"),
@@ -412,7 +403,7 @@ object QQNetwork {
         val call: Call = HttpClients.standard.newCall(request)
         val execute: () -> String = {
             call.execute().use { response ->
-                if (!response.isSuccessful) throw IOException("HTTP " + response.code + " from " + url)
+                if (!response.isSuccessful) throw IOException("HTTP ${response.code} from $url")
                 response.body.readTextBounded()
             }
         }

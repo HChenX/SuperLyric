@@ -42,31 +42,26 @@ public final class PlaybackStates {
      */
     @Nullable
     public static com.hchen.superlyricapi.model.PlaybackState toV4(int state) {
-        switch (state) {
-            case PlaybackState.STATE_PLAYING:
-            case PlaybackState.STATE_FAST_FORWARDING:
-            case PlaybackState.STATE_REWINDING:
-            case PlaybackState.STATE_SKIPPING_TO_NEXT:
-            case PlaybackState.STATE_SKIPPING_TO_PREVIOUS:
-                return com.hchen.superlyricapi.model.PlaybackState.PLAYING;
+        return switch (state) {
+            case PlaybackState.STATE_PLAYING,
+                 PlaybackState.STATE_FAST_FORWARDING,
+                 PlaybackState.STATE_REWINDING,
+                 PlaybackState.STATE_SKIPPING_TO_NEXT,
+                 PlaybackState.STATE_SKIPPING_TO_PREVIOUS ->
+                com.hchen.superlyricapi.model.PlaybackState.PLAYING;
 
-            case PlaybackState.STATE_PAUSED:
-                return com.hchen.superlyricapi.model.PlaybackState.PAUSED;
+            case PlaybackState.STATE_PAUSED -> com.hchen.superlyricapi.model.PlaybackState.PAUSED;
 
-            case PlaybackState.STATE_BUFFERING:
-            case PlaybackState.STATE_CONNECTING:
-                return com.hchen.superlyricapi.model.PlaybackState.BUFFERING;
+            case PlaybackState.STATE_BUFFERING, PlaybackState.STATE_CONNECTING ->
+                com.hchen.superlyricapi.model.PlaybackState.BUFFERING;
 
-            case PlaybackState.STATE_STOPPED:
-                return com.hchen.superlyricapi.model.PlaybackState.STOPPED;
+            case PlaybackState.STATE_STOPPED -> com.hchen.superlyricapi.model.PlaybackState.STOPPED;
 
-            case PlaybackState.STATE_ERROR:
-                return com.hchen.superlyricapi.model.PlaybackState.ERROR;
+            case PlaybackState.STATE_ERROR -> com.hchen.superlyricapi.model.PlaybackState.ERROR;
 
-            default:
-                // STATE_NONE 是"尚未设置过"，不是"已停止"
-                return null;
-        }
+            // STATE_NONE 是"尚未设置过"，不是"已停止"
+            default -> null;
+        };
     }
 
     /**
@@ -76,19 +71,13 @@ public final class PlaybackStates {
      */
     @NonNull
     public static PlaybackSignal toSignal(int state) {
-        switch (state) {
-            case PlaybackState.STATE_PLAYING:
-                return PlaybackSignal.PLAYING;
-            case PlaybackState.STATE_PAUSED:
-                return PlaybackSignal.PAUSED;
-            case PlaybackState.STATE_STOPPED:
-                return PlaybackSignal.STOPPED;
-            case PlaybackState.STATE_ERROR:
-                return PlaybackSignal.ERROR;
-            case PlaybackState.STATE_NONE:
-                return PlaybackSignal.UNKNOWN;
-            default:
-                return PlaybackSignal.ACTIVE;
-        }
+        return switch (state) {
+            case PlaybackState.STATE_PLAYING -> PlaybackSignal.PLAYING;
+            case PlaybackState.STATE_PAUSED -> PlaybackSignal.PAUSED;
+            case PlaybackState.STATE_STOPPED -> PlaybackSignal.STOPPED;
+            case PlaybackState.STATE_ERROR -> PlaybackSignal.ERROR;
+            case PlaybackState.STATE_NONE -> PlaybackSignal.UNKNOWN;
+            default -> PlaybackSignal.ACTIVE;
+        };
     }
 }

@@ -71,7 +71,6 @@ import com.hchen.superlyric.ui.data.LocalViewModel
 import com.hchen.superlyric.ui.effect.BlurredBar
 import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
 import com.hchen.superlyric.ui.screen.settings.HomeSettingsController
-import com.hchen.superlyric.ui.screen.settings.HomeSettingsState
 import com.hchen.superlyric.ui.viewmodel.MainUiAction
 import com.hchen.superlyric.utils.LauncherIconController
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -135,7 +134,6 @@ fun HomeLayout(
     }
 
     var launcherHidden by remember { mutableStateOf(LauncherIconController.isHidden(context)) }
-    val settingsState = HomeSettingsState(logLevel, launcherHidden)
     val settingsScope = rememberCoroutineScope()
 
     val settingsEntries = remember(logLevel, launcherHidden) {
@@ -160,7 +158,7 @@ fun HomeLayout(
                     ),
                     DropdownItem(
                         text = context.getString(
-                            HomeSettingsController.launcherLabelRes(settingsState.launcherHidden)
+                            HomeSettingsController.launcherLabelRes(launcherHidden)
                         ),
                         selected = false,
                         onClick = {
@@ -370,8 +368,8 @@ private fun AppTypeBadge(
 private fun AppItemComponent(
     appData: AppData,
     isApi: Boolean,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    onClick: (() -> Unit)? = null,
 ) {
     Card(
         modifier = modifier
@@ -419,9 +417,7 @@ private fun AppItemComponent(
                     }
                 }
             },
-            onClick = {
-                onClick?.invoke()
-            }
+            onClick = onClick,
         )
     }
 }

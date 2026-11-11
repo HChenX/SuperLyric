@@ -36,7 +36,7 @@ class QQIdentitySource(private val providerTag: String) : BaseIdentitySource() {
     private val latestMid = AtomicReference<String>()
 
     override fun install() {
-        QQAnchors.install { event -> onSongInfo(event) }
+        QQAnchors.install(::onSongInfo)
     }
 
     override fun currentStableId(): String? = latestMid.get()
@@ -56,7 +56,7 @@ class QQIdentitySource(private val providerTag: String) : BaseIdentitySource() {
         if (mid != null) {
             return TrackIdentity(
                 providerTag,
-                TrackIdentity.stableId("qq", mid),
+                TrackIdentity.stableId(NAMESPACE, mid),
                 title,
                 artist,
                 durationMs,
@@ -80,7 +80,7 @@ class QQIdentitySource(private val providerTag: String) : BaseIdentitySource() {
 
         if (shortMessage.isNotEmpty()) {
             SHORT_MESSAGE_PATTERN.find(shortMessage)?.let { match ->
-                songId = parseLong(match.groupValues[1])
+                songId = match.groupValues[1].toLongOrNull() ?: 0L
                 val candidateTitle = match.groupValues[2]
                 title = if (isPlausible(candidateTitle)) candidateTitle.trim() else ""
                 val singer = match.groupValues[3].trim()
@@ -96,7 +96,7 @@ class QQIdentitySource(private val providerTag: String) : BaseIdentitySource() {
             if (CatalogIds.qqMid(candidate) != null) songMid = candidate
         }
         if (songId <= 0L) {
-            ID_PATTERN.find(raw)?.let { songId = parseLong(it.groupValues[1]) }
+            ID_PATTERN.find(raw)?.let { songId = it.groupValues[1].toLongOrNull() ?: 0L }
         }
         if (title.isEmpty()) {
             NAME_PATTERN.find(raw)?.let {
@@ -128,9 +128,6 @@ class QQIdentitySource(private val providerTag: String) : BaseIdentitySource() {
             )
         )
     }
-
-    private fun parseLong(value: String?): Long =
-        runCatching { value?.trim()?.toLong() }.getOrNull() ?: 0L
 
     private fun isPlausible(value: String?): Boolean {
         if (value == null) return false

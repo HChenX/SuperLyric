@@ -343,7 +343,7 @@ public final class SpotifyLyricParser {
                                                       long lineStart, long lineEnd) {
         if (syllables == null || syllables.isEmpty()) return null;
 
-        List<LyricWord> result = new ArrayList<LyricWord>(syllables.size());
+        List<LyricWord> result = new ArrayList<>(syllables.size());
         int cursor = 0;
         long previousEnd = lineStart;
         for (int i = 0; i < syllables.size(); i++) {

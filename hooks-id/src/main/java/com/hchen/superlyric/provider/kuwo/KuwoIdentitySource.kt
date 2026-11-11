@@ -33,7 +33,7 @@ class KuwoIdentitySource(
     private val providerTag: String,
 ) : BaseIdentitySource(), HostTrackMetaSource {
 
-    private data class Track(val rid: String, val title: String, val artist: String)
+    private data class Track(val title: String, val artist: String)
 
     private val latestRid = AtomicReference<String>()
     private val tracks = object : LinkedHashMap<String, Track>(16, 0.75f, true) {
@@ -42,17 +42,13 @@ class KuwoIdentitySource(
     }
 
     override fun install() {
-        KuwoAnchors.installTrackProbe(object : KuwoAnchors.TrackListener {
-            override fun onTrack(rid: String, title: String, artist: String) {
-                this@KuwoIdentitySource.onTrack(rid, title, artist)
-            }
-        })
+        KuwoAnchors.installTrackProbe(::onTrack)
     }
 
     internal fun onTrack(rid: String, title: String, artist: String) {
         if (rid.isEmpty()) return
         latestRid.set(rid)
-        synchronized(tracks) { tracks[rid] = Track(rid, title, artist) }
+        synchronized(tracks) { tracks[rid] = Track(title, artist) }
         update(
             HostTrackFacts(
                 identity = TrackIdentity(

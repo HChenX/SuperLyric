@@ -65,9 +65,7 @@ class BodianHookSource : InstallableLyricSource {
     private var lastProcessedPath: String? = null
 
     override fun install() {
-        BodianAnchors.install { filePath, title, artist, album, rid ->
-            onLyricFile(filePath, title, artist, album, rid)
-        }
+        BodianAnchors.install(::onLyricFile)
     }
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {

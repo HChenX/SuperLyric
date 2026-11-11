@@ -99,7 +99,7 @@ public final class PackageLoader {
             boolean runAgain;
             synchronized (LOAD_LOCK) {
                 completedFuture = sCurrentLoad;
-                listenersSnapshot = List.of(sPackageLoadedListeners.toArray(new Runnable[0]));
+                listenersSnapshot = List.copyOf(sPackageLoadedListeners);
                 runAgain = rescanRequested;
                 if (runAgain) {
                     rescanRequested = false;
@@ -168,8 +168,8 @@ public final class PackageLoader {
 
         sortAppData(mediaApps);
         sortAppData(mediaApiApps);
-        sMediaApps = List.of(mediaApps.toArray(new AppData[0]));
-        sMediaApiApps = List.of(mediaApiApps.toArray(new ApiAppData[0]));
+        sMediaApps = List.copyOf(mediaApps);
+        sMediaApiApps = List.copyOf(mediaApiApps);
         AndroidLog.logD(TAG, "Successfully loaded package list: media=" + sMediaApps.size() + ", api=" + sMediaApiApps.size());
     }
 

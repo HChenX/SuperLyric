@@ -63,8 +63,7 @@ class BodianIdentitySource(private val providerTag: String) : BaseIdentitySource
     )
 
     internal fun current(mediaId: String, title: String, artist: String, durationMs: Long): TrackIdentity {
-        var id = mediaId
-        if (id.isEmpty()) id = currentStableId().orEmpty()
+        val id = mediaId.ifEmpty { currentStableId().orEmpty() }
         return TrackIdentity(providerTag, TrackIdentity.stableId(NAMESPACE, id), title, artist, durationMs)
     }
 

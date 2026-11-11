@@ -53,9 +53,7 @@ class SaltHookSource(
     private val requests = SourceRequestGate()
     private val docStash = KeyedStash<LyricDoc>()
 
-
     private var lastSourceText: String? = null
-
 
     override fun install() {
         SaltAnchors.install(object : SaltAnchors.LyricsListener {
@@ -64,7 +62,6 @@ class SaltHookSource(
             }
         })
     }
-
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
         requests.open(identity, session)

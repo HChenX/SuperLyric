@@ -25,8 +25,6 @@ import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.hooktool.log.AndroidLog;
 
-import java.util.Objects;
-
 /**
  * 网易云壳类绕过：在 Instrumentation 创建 Application 时替换为真实类。
  */
@@ -47,7 +45,7 @@ public final class NeteaseAnchors {
                     @Override
                     public void before() {
                         Object className = getArg(1);
-                        if (Objects.equals(WRAPPER_APPLICATION, className)) {
+                        if (WRAPPER_APPLICATION.equals(className)) {
                             setArg(1, REAL_APPLICATION);
                             AndroidLog.logI(TAG, "Bypassed NetEase wrapper to CloudMusicApplication");
                             return;

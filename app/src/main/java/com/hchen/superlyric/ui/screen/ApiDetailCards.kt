@@ -580,7 +580,6 @@ internal fun ApiAllLyricsOverviewCard(
     }
 }
 
-
 internal fun formatTimeMs(ms: Long): String {
     if (ms < 0) return "00:00.000"
     val minutes = (ms / 1000) / 60

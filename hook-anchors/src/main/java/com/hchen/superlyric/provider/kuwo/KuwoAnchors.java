@@ -43,7 +43,6 @@ import org.luckypray.dexkit.query.matchers.ParametersMatcher;
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 
-import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Method;
 import java.lang.reflect.Constructor;
@@ -189,8 +188,7 @@ public final class KuwoAnchors {
         sLastInstallAttemptAt = now;
         AndroidLog.logI(TAG, "Install attempt #" + sInstallAttempts + "/" + MAX_INSTALL_ATTEMPTS);
 
-        // retryInstallIfNeeded 会被 Hook 回调线程调用，异常不得向上抛：
-        // 定位链路上的 locateLyricPackage DexKit 调用没有内部 try/catch。
+        // 失败保留后续重试机会：本次尝试已计数，异常不越过 retryInstallIfNeeded。
         try {
             if (!installParsers(listener)) {
                 AndroidLog.logW(TAG, "Parser entry not hooked yet (attempt #"
@@ -211,15 +209,14 @@ public final class KuwoAnchors {
      * 检索歌词解析入口：单 String 入参、返回歌词包内类型。
      * <p>
      * DexKit 覆盖不在歌词包内的手机版入口；反射扫描覆盖包内的车机版入口，两路都必须执行。
-     * 方法名只用于缩小 DexKit 范围，不是判据。空结果必须返回 null，否则会被 DexkitCache
-     * 当成有效结果缓存。
+     * 方法名只用于缩小 DexKit 范围，不是判据。
      */
     @NonNull
     private static List<Method> locateParserMethods() {
         String lyricPackage = locateLyricPackage();
         if (lyricPackage == null) {
             AndroidLog.logW(TAG, "Lyric module not located; parser hook unavailable");
-            return new ArrayList<>();
+            return List.of();
         }
         // LinkedHashSet：两条路径会命中同一批方法，去重必须按方法身份而不是名字
         Set<Method> found = new LinkedHashSet<>();
@@ -255,7 +252,7 @@ public final class KuwoAnchors {
                                 )
                             )
                         );
-                        if (implementers == null || implementers.isEmpty()) {
+                        if (implementers.isEmpty()) {
                             AndroidLog.logW(TAG, "No lyric interface implementer in " + lyricPackage);
                             return null;
                         }
@@ -268,7 +265,7 @@ public final class KuwoAnchors {
                                     .superClass(implementer.getName(), StringMatchType.Equals, true)
                                 )
                             );
-                            if (subclasses != null && !subclasses.isEmpty()) {
+                            if (!subclasses.isEmpty()) {
                                 domain.addAll(subclasses);
                             }
                         }
@@ -284,7 +281,7 @@ public final class KuwoAnchors {
                                 .name(ANCHOR_PARSER_NAME, StringMatchType.Equals, true)
                             )
                         );
-                        return (result == null || result.isEmpty()) ? null : result;
+                        return result.isEmpty() ? null : result;
                     }
                 });
             if (located == null) return;
@@ -365,7 +362,7 @@ public final class KuwoAnchors {
                         .usingEqStrings(ANCHOR_LRCX_PARAM)
                     )
                 );
-                return (classes == null || classes.isEmpty()) ? null : classes.get(0);
+                return classes.firstOrNull();
             }
         });
 
@@ -434,7 +431,7 @@ public final class KuwoAnchors {
                                     .type("LyricsType", StringMatchType.Contains, true))))
                         )
                     );
-                    return (result == null || result.isEmpty()) ? null : result;
+                    return result.isEmpty() ? null : result;
                 }
             });
             if (located != null) Collections.addAll(found, located);
@@ -456,31 +453,17 @@ public final class KuwoAnchors {
             AndroidLog.logD(TAG, "DexKit located no decrypt method; skipped");
             return;
         }
-        int hooked = 0;
-        for (Method method : located) {
-            try {
-                method.setAccessible(true);
-                CoreTool.hook(method, new AbsHook() {
-                    @Override
-                    public void after() {
-                        try {
-                            Object raw = getResult();
-                            if (raw instanceof String text && !text.isEmpty()) {
-                                listener.onLyricText(text, sCurrentRid);
-                            }
-                        } catch (Throwable t) {
-                            AndroidLog.logW(TAG, "Error in decrypt hook: " + t.getMessage());
-                        }
-                    }
-                });
-                hooked++;
-                AndroidLog.logI(TAG, "Hooked decrypt: " + method.getDeclaringClass().getName()
-                    + "." + method.getName());
-            } catch (Throwable t) {
-                AndroidLog.logW(TAG, "Failed to hook decrypt " + method + ": " + t.getMessage());
+        located.forEach(method -> method.setAccessible(true));
+        CoreTool.hookAll(located.toArray(new Method[0]), new AbsHook() {
+            @Override
+            public void after() {
+                Object raw = getResult();
+                if (raw instanceof String text && !text.isEmpty()) {
+                    listener.onLyricText(text, sCurrentRid);
+                }
             }
-        }
-        AndroidLog.logI(TAG, "Hooked " + hooked + " decrypt entry(ies) via DexKit");
+        });
+        AndroidLog.logI(TAG, "Hooked " + located.size() + " decrypt entry(ies) via DexKit");
     }
 
     private static boolean installParsers(@NonNull LyricTextListener listener) {
@@ -490,34 +473,24 @@ public final class KuwoAnchors {
             return false;
         }
 
-        int hooked = 0;
-        for (Method method : located) {
-            try {
-                method.setAccessible(true);
-                CoreTool.hook(method, new AbsHook() {
-                    @Override
-                    public void after() {
-                        try {
-                            handleParse(getArg(0), listener);
-                        } catch (Throwable t) {
-                            AndroidLog.logW(TAG, "Error in lyric parser hook: " + t.getMessage());
-                        }
-                    }
-                });
-                hooked++;
-                AndroidLog.logI(TAG, "Hooked parser: " + method.getDeclaringClass().getName()
-                    + "." + method.getName());
-            } catch (Throwable t) {
-                AndroidLog.logW(TAG, "Failed to hook parser " + method + ": " + t.getMessage());
-            }
-        }
-        AndroidLog.logI(TAG, "Hooked " + hooked + " lyric parser entry(ies)");
-        if (hooked > 0) {
-            // 只有真正挂上才置位：部分成功时若允许重试，会对同一个 Method 二次 hook，
-            // 回调叠加比"少挂一个入口"更难排查。
+        located.forEach(method -> method.setAccessible(true));
+        try {
+            CoreTool.hookAll(located.toArray(new Method[0]), new AbsHook() {
+                @Override
+                public void after() {
+                    handleParse(getArg(0), listener);
+                }
+            });
+        } catch (Throwable t) {
+            // hookAll stops at the first failure; retrying would re-hook the entries already
+            // installed and stack callbacks, so this attempt is final.
             sParserInstalled = true;
+            AndroidLog.logW(TAG, "Parser hook install failed; not retrying", t);
+            return true;
         }
-        return hooked > 0;
+        AndroidLog.logI(TAG, "Hooked " + located.size() + " lyric parser entry(ies)");
+        sParserInstalled = true;
+        return true;
     }
 
     /**
@@ -550,34 +523,25 @@ public final class KuwoAnchors {
             return;
         }
 
-        int hooked = 0;
-        for (Executable member : members) {
-            try {
-                member.setAccessible(true);
-                CoreTool.hook(member, new AbsHook() {
-                    @Override
-                    public void before() {
-                        try {
-                            Object hostMusic = getArg(0) != null ? getArg(0) : getArg(2);
-                            if (hostMusic == null) return;
-                            // 先记下本次取词的 rid：解析入口随后就会被调用，它拿不到 rid
-                            sCurrentRid = readStringField(hostMusic, "rid");
-                            listener.onTrack(
-                                sCurrentRid,
-                                readStringField(hostMusic, "name"),
-                                readStringField(hostMusic, "artist"));
-                        } catch (Throwable t) {
-                            AndroidLog.logW(TAG, "Error in track probe: " + t.getMessage());
-                        }
-                    }
-                });
-                hooked++;
-                AndroidLog.logI(TAG, "Hooked track entry: " + member);
-            } catch (Throwable t) {
-                AndroidLog.logW(TAG, "Failed to hook track entry " + member + ": " + t.getMessage());
+        members.forEach(member -> member.setAccessible(true));
+        CoreTool.hookAll(members.toArray(new Executable[0]), new AbsHook() {
+            @Override
+            public void before() {
+                Object hostMusic = getArg(0) != null ? getArg(0) : getArg(2);
+                if (hostMusic == null) return;
+                // 先记下本次取词的 rid：解析入口随后就会被调用，它拿不到 rid
+                Object rid = CoreTool.getFieldIfExists(hostMusic, "rid");
+                Object name = CoreTool.getFieldIfExists(hostMusic, "name");
+                Object artist = CoreTool.getFieldIfExists(hostMusic, "artist");
+                // host fields are not guaranteed to be String; keep the previous value conversion
+                sCurrentRid = rid == null ? "" : String.valueOf(rid).trim();
+                listener.onTrack(
+                    sCurrentRid,
+                    name == null ? "" : String.valueOf(name).trim(),
+                    artist == null ? "" : String.valueOf(artist).trim());
             }
-        }
-        AndroidLog.logI(TAG, "Hooked " + hooked + " track entry(ies)");
+        });
+        AndroidLog.logI(TAG, "Hooked " + members.size() + " track entry(ies)");
     }
 
     /**
@@ -636,7 +600,7 @@ public final class KuwoAnchors {
                         );
                         // 必须归一：DexkitCache 只对 null 跳过缓存写入，
                         // 空列表会被当成有效结果落盘，此后命中缓存只会反序列化出空数据
-                        return (classes == null || classes.isEmpty()) ? null : classes;
+                        return classes.isEmpty() ? null : classes;
                     }
                 });
             if (classes != null) Collections.addAll(result, classes);
@@ -654,17 +618,4 @@ public final class KuwoAnchors {
     public static void installTrackProbe(@NonNull TrackListener listener) {
         installTrackProbes(listener);
     }
-
-    @NonNull
-    private static String readStringField(@NonNull Object target, @NonNull String name) {
-        try {
-            Field field = target.getClass().getDeclaredField(name);
-            field.setAccessible(true);
-            Object value = field.get(target);
-            return value == null ? "" : String.valueOf(value).trim();
-        } catch (Throwable t) {
-            return "";
-        }
-    }
-
 }

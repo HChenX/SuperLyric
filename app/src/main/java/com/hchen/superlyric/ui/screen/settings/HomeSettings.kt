@@ -29,11 +29,6 @@ import com.hchen.superlyric.utils.LauncherIconController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-data class HomeSettingsState(
-    val logLevel: Int,
-    val launcherHidden: Boolean,
-)
-
 object HomeSettingsController {
 
     fun launcherLabelRes(hidden: Boolean): Int =

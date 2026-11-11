@@ -38,6 +38,9 @@ import org.luckypray.dexkit.result.ClassDataList;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * 椒盐音乐 Hook 锚点：从 {@code MusicController} 的歌词设置入口取回原始歌词文本
@@ -91,9 +94,6 @@ public final class SaltAnchors {
         }
     }
 
-    /**
-     * 定位并挂载 Hook。幂等；失败只记录日志
-     */
     public record LyricEvent(@NonNull String sourceText, @NonNull String songId) {
     }
 
@@ -112,6 +112,9 @@ public final class SaltAnchors {
         };
     }
 
+    /**
+     * 定位并挂载 Hook。幂等；失败只记录日志
+     */
     public static void install(@NonNull LyricsListener subscriber) {
         subscribe(subscriber);
         if (sInstalled) return;
@@ -150,33 +153,36 @@ public final class SaltAnchors {
             // 探针：独立挂载，失败不影响主取词路径
             installSongProbe(controllerClass, listener);
 
+            Method target = null;
             for (Method method : controllerClass.getDeclaredMethods()) {
                 Class<?>[] params = method.getParameterTypes();
                 // 歌词设置入口：(LyricsDocument, String)V
                 if (params.length != 2
-                    || !params[0].equals(documentClass)
-                    || !params[1].equals(String.class)
+                    || params[0] != documentClass
+                    || params[1] != String.class
                     || method.getReturnType() != void.class) {
                     continue;
                 }
-
-                method.setAccessible(true);
-                CoreTool.hook(method, new AbsHook() {
-                    @Override
-                    public void after() {
-                        try {
-                            String source = readField(getArg(0), sourceField);
-                            if (source.isEmpty()) return;
-                            listener.onLyrics(source, asString(getArg(1)));
-                        } catch (Throwable t) {
-                            AndroidLog.logW(TAG, "Error in MusicController hook: " + t.getMessage());
-                        }
-                    }
-                });
-                AndroidLog.logI(TAG, "Hooked MusicController lyric entry");
+                target = method;
+                break;
+            }
+            if (target == null) {
+                AndroidLog.logW(TAG, "No matching lyric entry method on MusicController");
                 return;
             }
-            AndroidLog.logW(TAG, "No matching lyric entry method on MusicController");
+
+            target.setAccessible(true);
+            CoreTool.hook(target, new AbsHook() {
+                @Override
+                public void after() {
+                    Object document = getArg(0);
+                    Object source = document == null ? null : CoreTool.getField(sourceField, document);
+                    String sourceText = source instanceof String text ? text.trim() : "";
+                    if (sourceText.isEmpty()) return;
+                    listener.onLyrics(sourceText, getArg(1) instanceof String songId ? songId.trim() : "");
+                }
+            });
+            AndroidLog.logI(TAG, "Hooked MusicController lyric entry");
         } catch (Throwable t) {
             AndroidLog.logE(TAG, "Failed to install Salt anchors", t);
         }
@@ -192,7 +198,7 @@ public final class SaltAnchors {
                         .usingEqStrings(DOCUMENT_ANCHOR)
                     )
                 );
-                return (classes == null || classes.isEmpty()) ? null : classes.get(0);
+                return classes.singleOrNull();
             }
         });
     }
@@ -236,45 +242,23 @@ public final class SaltAnchors {
         @NonNull LyricsListener listener,
         @NonNull Class<?>[] expected
     ) {
-        int hooked = 0;
+        List<Method> targets = new ArrayList<>();
         for (Method method : controllerClass.getDeclaredMethods()) {
             if (!Modifier.isStatic(method.getModifiers())) continue;
             if (method.getReturnType() != void.class) continue;
-
-            Class<?>[] params = method.getParameterTypes();
-            if (params.length != expected.length || !params[0].equals(expected[0])) continue;
-
-            boolean same = true;
-            for (int i = 1; i < params.length; i++) {
-                if (!params[i].equals(expected[i])) {
-                    same = false;
-                    break;
-                }
-            }
-            if (!same) continue;
-
-            hookOnSong(method, 0, listener);
-            hooked++;
+            if (!Arrays.equals(method.getParameterTypes(), expected)) continue;
+            method.setAccessible(true);
+            targets.add(method);
         }
-        return hooked;
-    }
+        if (targets.isEmpty()) return 0;
 
-    private static void hookOnSong(
-        @NonNull Method method,
-        int songArgIndex,
-        @NonNull LyricsListener listener
-    ) {
-        method.setAccessible(true);
-        CoreTool.hook(method, new AbsHook() {
+        CoreTool.hookAll(targets.toArray(new Method[0]), new AbsHook() {
             @Override
             public void after() {
-                try {
-                    reportSong(getArg(songArgIndex), listener);
-                } catch (Throwable ignored) {
-                    // 探测异常不传到宿主
-                }
+                reportSong(getArg(0), listener);
             }
         });
+        return targets.size();
     }
 
     /**
@@ -285,7 +269,8 @@ public final class SaltAnchors {
     private static void reportSong(@Nullable Object song, @NonNull LyricsListener listener) {
         if (song == null) return;
 
-        String songId = invokeOrNull(song, "getId");
+        Object rawSongId = CoreTool.callMethodIfExists(song, "getId");
+        String songId = rawSongId == null ? null : String.valueOf(rawSongId);
         if (songId == null || songId.isEmpty()) {
             // 取不到宿主标识就无法把歌词与曲目关联。不得把异常类型标记串当作真实值传下去：
             // songStore 以标记为键永远查不中，真曲名丢失后只能退回被歌词污染的 MediaMetadata。
@@ -293,10 +278,21 @@ public final class SaltAnchors {
             return;
         }
 
-        String title = orEmpty(invokeOrNull(song, "getTitle"));
-        String artist = orEmpty(invokeOrNull(song, "getArtist"));
+        Object rawTitle = CoreTool.callMethodIfExists(song, "getTitle");
+        Object rawArtist = CoreTool.callMethodIfExists(song, "getArtist");
+        String title = rawTitle == null ? "" : String.valueOf(rawTitle);
+        String artist = rawArtist == null ? "" : String.valueOf(rawArtist);
 
-        listener.onSong(songId, title, artist, parseLong(invokeOrNull(song, "getDuration")));
+        long durationMs = 0L;
+        Object rawDuration = CoreTool.callMethodIfExists(song, "getDuration");
+        if (rawDuration != null) {
+            try {
+                durationMs = Long.parseLong(String.valueOf(rawDuration).trim());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+
+        listener.onSong(songId, title, artist, durationMs);
 
         if (songId.equals(sLastDumpedSongId)) return;
         sLastDumpedSongId = songId;
@@ -305,54 +301,11 @@ public final class SaltAnchors {
         builder.append("id=").append(songId);
         builder.append(" title=\"").append(title).append('"');
         builder.append(" artist=\"").append(artist).append('"');
-        builder.append(" album=\"").append(invoke(song, "getAlbum")).append('"');
-        builder.append(" duration=").append(invoke(song, "getDuration"));
-        builder.append(" path=").append(invoke(song, "getPath"));
+        builder.append(" album=\"").append(CoreTool.callMethodIfExists(song, "getAlbum")).append('"');
+        builder.append(" duration=").append(CoreTool.callMethodIfExists(song, "getDuration"));
+        builder.append(" path=").append(CoreTool.callMethodIfExists(song, "getPath"));
 
         LyricDiag.dumpPayload(TAG, "SONG", builder.toString());
-    }
-
-    private static long parseLong(@Nullable String value) {
-        if (value == null) return 0L;
-        try {
-            return Long.parseLong(value.trim());
-        } catch (Throwable ignored) {
-            return 0L;
-        }
-    }
-
-    @NonNull
-    private static String orEmpty(@Nullable String value) {
-        return value == null ? "" : value;
-    }
-
-    /**
-     * 反射调用无参 getter；失败或返回 {@code null} 时返回 {@code null}
-     *
-     * <p>给语义路径用：取不到就得是"取不到"，不能用一个字符串冒充真实值。
-     * 诊断转储请用 {@link #invoke}。
-     */
-    @Nullable
-    private static String invokeOrNull(@NonNull Object target, @NonNull String method) {
-        try {
-            Object value = target.getClass().getMethod(method).invoke(target);
-            return value == null ? null : String.valueOf(value);
-        } catch (Throwable t) {
-            return null;
-        }
-    }
-
-    /**
-     * 反射调用无参 getter；失败时返回标记串（含异常类型）而不是抛出。仅供诊断转储
-     */
-    @NonNull
-    private static String invoke(@NonNull Object target, @NonNull String method) {
-        try {
-            Object value = target.getClass().getMethod(method).invoke(target);
-            return value == null ? "null" : String.valueOf(value);
-        } catch (Throwable t) {
-            return "<" + t.getClass().getSimpleName() + ">";
-        }
     }
 
     /**
@@ -373,20 +326,5 @@ public final class SaltAnchors {
             candidate = field;
         }
         return candidate;
-    }
-
-    @NonNull
-    private static String readField(@Nullable Object target, @NonNull Field field) {
-        if (target == null) return "";
-        try {
-            return asString(field.get(target));
-        } catch (Throwable ignored) {
-            return "";
-        }
-    }
-
-    @NonNull
-    private static String asString(@Nullable Object value) {
-        return value instanceof String s ? s.trim() : "";
     }
 }

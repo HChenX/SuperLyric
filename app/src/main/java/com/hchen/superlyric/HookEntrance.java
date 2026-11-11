@@ -39,7 +39,6 @@ import com.hchen.superlyric.utils.LyricCacheStore;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -89,16 +88,19 @@ public final class HookEntrance extends ModuleEntrance {
         AndroidLog.logD(TAG, "handlePackageReady: " + param.getPackageName() + " with loader: " + param.getClassLoader());
         super.handlePackageReady(param);
 
-        if (HookMaps.ON_PACKAGE_LOADED.containsKey(param.getPackageName())) {
+        String packageName = param.getPackageName();
+        List<String> packagePaths = HookMaps.ON_PACKAGE_LOADED.get(packageName);
+        if (packagePaths != null) {
             try {
                 int version = PrefsTool.prefs().getInt(PrefsKey.DEXKIT_CACHE_VERSION, 0);
 
                 ModuleData.setClassLoader(param.getClassLoader());
                 DexKitRuntime.initialize(param, version);
 
-                ClassLoader previousLoader = moduleClassLoaders.get(param.getPackageName());
-                if (modules.containsKey(param.getPackageName()) && previousLoader == param.getClassLoader()) {
-                    for (AbsModule module : Objects.requireNonNull(modules.get(param.getPackageName()))) {
+                ClassLoader previousLoader = moduleClassLoaders.get(packageName);
+                List<AbsModule> previousModules = modules.get(packageName);
+                if (previousModules != null && previousLoader == param.getClassLoader()) {
+                    for (AbsModule module : previousModules) {
                         try {
                             module.handlePackageReady(param);
                         } catch (Throwable t) {
@@ -110,12 +112,12 @@ public final class HookEntrance extends ModuleEntrance {
                     return;
                 }
                 if (previousLoader != null && previousLoader != param.getClassLoader()) {
-                    AndroidLog.logE(TAG, "Ignore package reload with different ClassLoader: " + param.getPackageName());
+                    AndroidLog.logE(TAG, "Ignore package reload with different ClassLoader: " + packageName);
                     return;
                 }
 
                 List<AbsModule> packageModules = new ArrayList<>();
-                for (String path : Objects.requireNonNull(HookMaps.ON_PACKAGE_LOADED.get(param.getPackageName()))) {
+                for (String path : packagePaths) {
                     AbsModule module = instantiateModule(path);
                     if (module == null) continue;
                     try {
@@ -125,8 +127,8 @@ public final class HookEntrance extends ModuleEntrance {
                         AndroidLog.logE(TAG, "Module " + path + " failed during package ready; skipping it", t);
                     }
                 }
-                modules.put(param.getPackageName(), packageModules);
-                moduleClassLoaders.put(param.getPackageName(), param.getClassLoader());
+                modules.put(packageName, packageModules);
+                moduleClassLoaders.put(packageName, param.getClassLoader());
             } finally {
                 DexKitRuntime.close();
             }

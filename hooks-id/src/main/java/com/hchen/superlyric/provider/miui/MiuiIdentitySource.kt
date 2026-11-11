@@ -32,7 +32,7 @@ import com.hchen.superlyric.shared.hostString
 class MiuiIdentitySource(private val providerTag: String) : BaseIdentitySource() {
 
     override fun install() {
-        MiuiAnchors.install { snapshot -> onSnapshot(snapshot) }
+        MiuiAnchors.install(::onSnapshot)
     }
 
     override fun refresh() {

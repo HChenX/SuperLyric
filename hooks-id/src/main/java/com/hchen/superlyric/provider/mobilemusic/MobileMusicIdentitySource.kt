@@ -29,7 +29,7 @@ import com.hchen.superlyric.shared.HostTrackFacts
 class MobileMusicIdentitySource : BaseIdentitySource() {
 
     override fun install() {
-        MobileMusicAnchors.subscribe { capture -> onCapture(capture) }
+        MobileMusicAnchors.subscribe(::onCapture)
     }
 
     fun currentTrackIdentity(): TrackIdentity? = currentFacts()?.identity

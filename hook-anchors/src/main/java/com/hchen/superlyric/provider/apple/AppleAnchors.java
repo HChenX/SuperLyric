@@ -47,6 +47,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -55,7 +56,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Apple Music Hook 锚点：遍历 JNI 歌词向量取出文本、译文与逐字时戳。
  * <p>
  * buildTimeRangeToLyricsMap 只在宿主构建歌词时调用，因此还要主动触发 loadLyrics。
- * 所有调用捕获异常，失败只影响本 Provider。
  */
 public final class AppleAnchors {
     private static final String TAG = "AppleAnchors";
@@ -192,11 +192,7 @@ public final class AppleAnchors {
                 new AbsHook() {
                     @Override
                     public void after() {
-                        try {
-                            initLyricViewModel((Application) getThisObject());
-                        } catch (Throwable t) {
-                            AndroidLog.logW(TAG, "Failed to init lyric view model: " + t.getMessage());
-                        }
+                        initLyricViewModel((Application) getThisObject());
                     }
                 });
         } catch (Throwable t) {
@@ -204,8 +200,8 @@ public final class AppleAnchors {
         }
     }
 
-    private static synchronized void initLyricViewModel(@Nullable Application application) {
-        if (sLyricViewModel != null || application == null || sLoadLyricsMethod == null) return;
+    private static synchronized void initLyricViewModel(@NonNull Application application) {
+        if (sLyricViewModel != null || sLoadLyricsMethod == null) return;
         try {
             sLyricViewModel = CoreTool.newInstance(sLoadLyricsMethod.getDeclaringClass(), application);
             AndroidLog.logI(TAG, "Initialized lyric view model");
@@ -235,12 +231,8 @@ public final class AppleAnchors {
             CoreTool.hook(buildMap, new AbsHook() {
                 @Override
                 public void after() {
-                    try {
-                        Object songInfoPtr = getArg(0);
-                        if (songInfoPtr != null) handleSongInfo(songInfoPtr);
-                    } catch (Throwable t) {
-                        AndroidLog.logW(TAG, "Failed to extract lyric model: " + t.getMessage());
-                    }
+                    Object songInfoPtr = getArg(0);
+                    if (songInfoPtr != null) handleSongInfo(songInfoPtr);
                 }
             });
             sLoadLyricsMethod = loadLyrics;
@@ -290,12 +282,12 @@ public final class AppleAnchors {
                 ClassDataList classes = bridge.findClass(FindClass.create()
                     .matcher(ClassMatcher.create().usingEqStrings(anchor))
                 );
-                if (classes == null || classes.isEmpty()) return null;
-                if (classes.size() > 1) {
+                ClassData first = classes.firstOrNull();
+                if (first != null && classes.size() > 1) {
                     AndroidLog.logW(TAG, "Anchor " + anchor + " matched " + classes.size()
-                        + " classes; using the first: " + classes.get(0).getName());
+                        + " classes; using the first: " + first.getName());
                 }
-                return classes.get(0);
+                return first;
             }
         });
     }
@@ -325,40 +317,36 @@ public final class AppleAnchors {
                 new AbsHook() {
                     @Override
                     public void before() {
-                        try {
-                            if (!playbackItemClass.isInstance(getThisObject())) return;
-                            Object id = getArg(0);
-                            if (!(id instanceof String trackId) || trackId.isEmpty()) return;
+                        if (!playbackItemClass.isInstance(getThisObject())) return;
+                        Object id = getArg(0);
+                        if (!(id instanceof String trackId) || trackId.isEmpty()) return;
 
-                            // 只接受来自队列逐项构建路径的赋值，避免误捕其它 setId
-                            sSetIdProbes.incrementAndGet();
-                            boolean fromQueueBuild = false;
-                            boolean fromCallback = false;
-                            for (StackTraceElement element : Thread.currentThread().getStackTrace()) {
-                                String frame = element.toString();
-                                if (!fromQueueBuild && frame.contains("getItemAtIndex"))
-                                    fromQueueBuild = true;
-                                if (!fromCallback && frame.contains(".accept")) fromCallback = true;
-                                if (fromQueueBuild && fromCallback) break;
-                            }
-                            if (fromQueueBuild && fromCallback) {
-                                sSetIdCaptures.incrementAndGet();
-                                Object item = getThisObject();
-                                scheduleRequestLyrics(item);
-                                return;
-                            }
+                        // 只接受来自队列逐项构建路径的赋值，避免误捕其它 setId
+                        sSetIdProbes.incrementAndGet();
+                        boolean fromQueueBuild = false;
+                        boolean fromCallback = false;
+                        for (StackTraceElement element : Thread.currentThread().getStackTrace()) {
+                            String frame = element.toString();
+                            if (!fromQueueBuild && frame.contains("getItemAtIndex"))
+                                fromQueueBuild = true;
+                            if (!fromCallback && frame.contains(".accept")) fromCallback = true;
+                            if (fromQueueBuild && fromCallback) break;
+                        }
+                        if (fromQueueBuild && fromCallback) {
+                            sSetIdCaptures.incrementAndGet();
+                            Object item = getThisObject();
+                            scheduleRequestLyrics(item);
+                            return;
+                        }
 
-                            // 跨过阈值说明该回退已失效；取词只剩 MediaPlaybackManager，
-                            // 若它同时失效，该 Provider 不会执行任何操作。使用 >= 而非 ==：
-                            // 并发自增可能跳过阈值；compareAndSet 保证只输出一次
-                            if (sSetIdProbes.get() >= SET_ID_REPORT_AFTER && sSetIdCaptures.get() == 0
-                                && sSetIdDeadReported.compareAndSet(false, true)) {
-                                AndroidLog.logW(TAG, "PlaybackItem.setId fallback anchor matched nothing in "
-                                    + sSetIdProbes.get() + " invocations; the getItemAtIndex/.accept frames "
-                                    + "were probably renamed. Lyric requests rely on MediaPlaybackManager alone.");
-                            }
-                        } catch (Throwable t) {
-                            AndroidLog.logW(TAG, "Error in PlaybackItem.setId hook: " + t.getMessage());
+                        // 跨过阈值说明该回退已失效；取词只剩 MediaPlaybackManager，
+                        // 若它同时失效，该 Provider 不会执行任何操作。使用 >= 而非 ==：
+                        // 并发自增可能跳过阈值；compareAndSet 保证只输出一次
+                        if (sSetIdProbes.get() >= SET_ID_REPORT_AFTER && sSetIdCaptures.get() == 0
+                            && sSetIdDeadReported.compareAndSet(false, true)) {
+                            AndroidLog.logW(TAG, "PlaybackItem.setId fallback anchor matched nothing in "
+                                + sSetIdProbes.get() + " invocations; the getItemAtIndex/.accept frames "
+                                + "were probably renamed. Lyric requests rely on MediaPlaybackManager alone.");
                         }
                     }
                 });
@@ -372,25 +360,21 @@ public final class AppleAnchors {
             reportDeadQueueTrigger("queueItem=null");
             return;
         }
-        try {
-            Object mediaItem = CoreTool.callMethodIfExists(queueItem, "getItem");
-            if (mediaItem == null) {
-                reportDeadQueueTrigger("queueItem.getItem() returned null; method renamed?");
-                return;
-            }
+        Object mediaItem = CoreTool.callMethodIfExists(queueItem, "getItem");
+        if (mediaItem == null) {
+            reportDeadQueueTrigger("queueItem.getItem() returned null; method renamed?");
+            return;
+        }
 
-            Object candidate = CoreTool.getFieldIfExists(mediaItem, "playbackItem");
-            if (candidate == null) candidate = mediaItem;
+        Object candidate = CoreTool.getFieldIfExists(mediaItem, "playbackItem");
+        if (candidate == null) candidate = mediaItem;
 
-            Class<?> playbackItemClass = CoreTool.findClass(PLAYBACK_ITEM_CLASS);
-            if (playbackItemClass.isInstance(candidate)) {
-                scheduleRequestLyrics(candidate);
-            } else {
-                reportDeadQueueTrigger("candidate is " + candidate.getClass().getName()
-                    + ", expected " + PLAYBACK_ITEM_CLASS);
-            }
-        } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to handle PlayerQueueItem: " + t.getMessage());
+        Class<?> playbackItemClass = CoreTool.findClass(PLAYBACK_ITEM_CLASS);
+        if (playbackItemClass.isInstance(candidate)) {
+            scheduleRequestLyrics(candidate);
+        } else {
+            reportDeadQueueTrigger("candidate is " + candidate.getClass().getName()
+                + ", expected " + PLAYBACK_ITEM_CLASS);
         }
     }
 
@@ -494,21 +478,27 @@ public final class AppleAnchors {
         }
 
         List<AppleLine> lines = new ArrayList<>();
-        long sectionCount = asLong(CoreTool.callMethodIfExists(sections, "size"));
+        long sectionCount = CoreTool.callMethodIfExists(sections, "size") instanceof Number number
+            ? number.longValue() : 0L;
         for (long s = 0; s < sectionCount; s++) {
-            Object section = unwrap(CoreTool.callMethodIfExists(sections, "get", s));
-            if (section == null) continue;
+            Object pointer = CoreTool.callMethodIfExists(sections, "get", s);
+            if (pointer == null) continue;
 
+            Object section = Objects.requireNonNullElse(CoreTool.callMethodIfExists(pointer, "get"), pointer);
             Object sectionLines = CoreTool.callMethodIfExists(section, "getLines");
             if (sectionLines == null) {
                 AndroidLog.logW(TAG, "Cannot read lines of lyric section; skipping it");
                 continue;
             }
 
-            long lineCount = asLong(CoreTool.callMethodIfExists(sectionLines, "size"));
+            long lineCount = CoreTool.callMethodIfExists(sectionLines, "size") instanceof Number number
+                ? number.longValue() : 0L;
             for (long l = 0; l < lineCount; l++) {
-                Object line = unwrap(CoreTool.callMethodIfExists(sectionLines, "get", l));
-                if (line == null) continue;
+                Object linePointer = CoreTool.callMethodIfExists(sectionLines, "get", l);
+                if (linePointer == null) continue;
+
+                Object line = Objects.requireNonNullElse(
+                    CoreTool.callMethodIfExists(linePointer, "get"), linePointer);
 
                 AppleLine extracted = extractLine(line);
                 if (extracted != null) lines.add(extracted);
@@ -532,40 +522,32 @@ public final class AppleAnchors {
         if (!(rawText instanceof String text)) {
             return null;
         }
-        // asLong 对任意 Number 容错（宿主可能给 Integer 或 Long）
-        long start = asLong(begin);
-        long stop = asLong(end);
+        long start = begin instanceof Number number ? number.longValue() : 0L;
+        long stop = end instanceof Number number ? number.longValue() : 0L;
 
         List<AppleWord> words = new ArrayList<>();
         Object wordVector = CoreTool.callMethodIfExists(line, "getWords");
         if (wordVector != null) {
-            long wordCount = asLong(CoreTool.callMethodIfExists(wordVector, "size"));
+            long wordCount = CoreTool.callMethodIfExists(wordVector, "size") instanceof Number number
+                ? number.longValue() : 0L;
             for (long w = 0; w < wordCount; w++) {
-                Object word = unwrap(CoreTool.callMethodIfExists(wordVector, "get", w));
-                if (word == null) continue;
+                Object pointer = CoreTool.callMethodIfExists(wordVector, "get", w);
+                if (pointer == null) continue;
 
+                Object word = Objects.requireNonNullElse(CoreTool.callMethodIfExists(pointer, "get"), pointer);
                 Object wordText = CoreTool.callMethodIfExists(word, "getHtmlLineText");
                 Object wordBegin = CoreTool.callMethodIfExists(word, "getBegin");
                 Object wordEnd = CoreTool.callMethodIfExists(word, "getEnd");
-                if (wordText instanceof String wt && wordBegin instanceof Number && wordEnd instanceof Number) {
-                    words.add(new AppleWord(wt, asLong(wordBegin), asLong(wordEnd)));
+                if (wordText instanceof String wt
+                    && wordBegin instanceof Number startFrame
+                    && wordEnd instanceof Number endFrame) {
+                    words.add(new AppleWord(wt, startFrame.longValue(), endFrame.longValue()));
                 }
             }
         }
 
         String translation = rawTranslation instanceof String t ? t : null;
         return new AppleLine(text, translation, start, stop, words);
-    }
-
-    @Nullable
-    private static Object unwrap(@Nullable Object pointer) {
-        if (pointer == null) return null;
-        Object value = CoreTool.callMethodIfExists(pointer, "get");
-        return value != null ? value : pointer;
-    }
-
-    private static long asLong(@Nullable Object value) {
-        return value instanceof Number number ? number.longValue() : 0L;
     }
 
     private static void notifyNoLyrics(@Nullable String itemId) {

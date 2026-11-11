@@ -22,6 +22,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import java.text.Normalizer;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
@@ -454,12 +455,7 @@ public final class LyricScorer {
     private static boolean isShortLatinWithoutSharedToken(@NonNull String t1, @NonNull String t2) {
         if (Math.max(t1.length(), t2.length()) > SHORT_LATIN_TITLE_MAX_LENGTH) return false;
         if (pureScript(t1) != TextScript.LATIN || pureScript(t2) != TextScript.LATIN) return false;
-        Set<String> tokens1 = meaningfulTokens(t1);
-        Set<String> tokens2 = meaningfulTokens(t2);
-        for (String token : tokens1) {
-            if (tokens2.contains(token)) return false;
-        }
-        return true;
+        return Collections.disjoint(meaningfulTokens(t1), meaningfulTokens(t2));
     }
 
     @NonNull
@@ -555,10 +551,8 @@ public final class LyricScorer {
     }
 
     private static boolean hasVersionToken(@NonNull Set<String> tokens) {
-        for (String token : tokens) {
-            if (ARTIST_VERSION_TOKENS.contains(token)) return true;
-        }
-        return tokens.contains("sped") && tokens.contains("up");
+        return !Collections.disjoint(tokens, ARTIST_VERSION_TOKENS)
+            || (tokens.contains("sped") && tokens.contains("up"));
     }
 
     private static boolean artistHasVersionWord(@Nullable String raw) {
@@ -620,10 +614,7 @@ public final class LyricScorer {
 
     @Nullable
     private static TextScript scriptOf(int codePoint) {
-        if ((codePoint >= 'A' && codePoint <= 'Z')
-            || (codePoint >= 'a' && codePoint <= 'z')
-            || (codePoint >= 0x00C0 && codePoint <= 0x024F)
-            || (codePoint >= 0x1E00 && codePoint <= 0x1EFF)) {
+        if (isLatinLetter(codePoint)) {
             return TextScript.LATIN;
         }
         if ((codePoint >= 0x3040 && codePoint <= 0x30FF)
@@ -832,7 +823,6 @@ public final class LyricScorer {
                 continue;
             }
             appendRun(result, run);
-            if (token.isEmpty()) continue;
             if (result.length() > 0) {
                 result.append(' ');
             }

@@ -133,7 +133,7 @@ fun AboutLayout(
                 else -> {
                     val spacer = lazyListState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "logoSpacer" }
                     if (spacer != null && spacer.size > 0) {
-                        (lazyListState.firstVisibleItemScrollOffset.toFloat() / (spacer.size)).coerceIn(0f, 1f)
+                        (lazyListState.firstVisibleItemScrollOffset.toFloat() / spacer.size).coerceIn(0f, 1f)
                     } else {
                         0f
                     }
@@ -299,14 +299,10 @@ fun AboutLayout(
                     overscrollEffect = null
                 ) {
                     item(key = "logoSpacer") {
-                        Box(
-                            Modifier
+                        Spacer(
+                            modifier = Modifier
                                 .fillMaxWidth()
-                                .height(
-                                    logoHeightDp + 200.dp,
-                                ),
-                            contentAlignment = Alignment.TopCenter,
-                            content = { },
+                                .height(logoHeightDp + 200.dp)
                         )
                     }
 

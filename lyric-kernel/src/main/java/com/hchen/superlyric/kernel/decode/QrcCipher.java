@@ -91,15 +91,12 @@ public final class QrcCipher {
         return decrypted;
     }
 
-    // 腾讯改造版 Triple-DES；与标准 DES 不兼容，不能替换为 JCE。
-
     private static final class ScheduleHolder {
         static final byte[][][] QRC_SCHEDULE = initSchedule();
 
         private static byte[][][] initSchedule() {
             byte[][][] schedule = new byte[3][16][6];
-            // 0 = DECRYPT
-            tripleDesKeySetup(QRC_DES_KEY, schedule, 0);
+            tripleDesKeySetup(QRC_DES_KEY, schedule);
             return schedule;
         }
     }
@@ -228,16 +225,11 @@ public final class QrcCipher {
         }
     }
 
-    private static void tripleDesKeySetup(byte[] key, byte[][][] schedule, int mode) {
-        if (mode == 1) { // ENCRYPT
-            keySchedule(key, 0, schedule[0], 1);
-            keySchedule(key, 8, schedule[1], 0);
-            keySchedule(key, 16, schedule[2], 1);
-        } else { // DECRYPT
-            keySchedule(key, 0, schedule[2], 0);
-            keySchedule(key, 8, schedule[1], 1);
-            keySchedule(key, 16, schedule[0], 0);
-        }
+    private static void tripleDesKeySetup(byte[] key, byte[][][] schedule) {
+        // 3DES 解密：外层与内层用解密调度，中层用加密调度。
+        keySchedule(key, 0, schedule[2], 0);
+        keySchedule(key, 8, schedule[1], 1);
+        keySchedule(key, 16, schedule[0], 0);
     }
 
     private static void tripleDesCrypt(byte[] input, byte[] output, byte[][][] key) {

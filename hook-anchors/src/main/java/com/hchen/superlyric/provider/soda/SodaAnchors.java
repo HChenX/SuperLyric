@@ -29,6 +29,9 @@ import com.hchen.superlyric.utils.LyricDiag;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * 汽水音乐 Hook 锚点：截获宿主的原始歌词正文与它的格式声明
@@ -79,9 +82,6 @@ public final class SodaAnchors {
                        @Nullable String trackId);
     }
 
-    /**
-     * 定位并挂载 Hook。幂等；失败只记录日志
-     */
     public record PayloadEvent(@NonNull String type, @NonNull String language,
                                @NonNull String payload, @Nullable String trackId) {
     }
@@ -91,6 +91,9 @@ public final class SodaAnchors {
             event.type(), event.language(), event.payload(), event.trackId()));
     }
 
+    /**
+     * 定位并挂载 Hook。幂等；失败只记录日志
+     */
     public static void install(@NonNull PayloadListener subscriber) {
         subscribe(subscriber);
         if (sInstalled) return;
@@ -106,7 +109,7 @@ public final class SodaAnchors {
                 return;
             }
 
-            int hooked = 0;
+            List<Constructor<?>> targets = new ArrayList<>();
             for (Constructor<?> constructor : lyricClass.getDeclaredConstructors()) {
                 Class<?>[] parameterTypes = constructor.getParameterTypes();
                 // 判据是前两个参数的类型而不是参数个数：Kotlin 的默认参数会额外合成
@@ -119,35 +122,35 @@ public final class SodaAnchors {
                 if (isSyntheticBridge(parameterTypes)) continue;
 
                 constructor.setAccessible(true);
-                CoreTool.hook(constructor, new AbsHook() {
-                    @Override
-                    public void after() {
-                        try {
-                            dispatch(
-                                enumName(getArg(0)),
-                                enumName(getArg(2)),
-                                asString(getArg(1)),
-                                trackIdOf(getArg(3)),
-                                listener
-                            );
-                        } catch (Throwable t) {
-                            AndroidLog.logW(TAG, "Error in lyric constructor hook: " + t.getMessage());
-                        }
-                    }
-                });
-                hooked++;
-                AndroidLog.logI(TAG, "Hooked lyric ctor: " + constructor.toGenericString());
+                targets.add(constructor);
             }
-
-            if (hooked == 0) {
+            if (targets.isEmpty()) {
                 AndroidLog.logW(TAG, "No (NetLyricType, String, …) constructor found on "
                     + LYRIC_CLASS);
+            } else {
+                CoreTool.hookAll(targets.toArray(new Constructor<?>[0]), new AbsHook() {
+                    @Override
+                    public void after() {
+                        dispatch(
+                            enumName(getArg(0)),
+                            enumName(getArg(2)),
+                            getArg(1) instanceof String payload ? payload.trim() : "",
+                            trackIdOf(getArg(3)),
+                            listener
+                        );
+                    }
+                });
+                AndroidLog.logI(TAG, "Hooked " + targets.size() + " lyric ctor(s)");
             }
         } catch (Throwable t) {
             AndroidLog.logE(TAG, "Failed to install soda anchors", t);
         }
 
-        installTrackLyricHooks(listener);
+        try {
+            installTrackLyricHooks(listener);
+        } catch (Throwable t) {
+            AndroidLog.logW(TAG, "TrackLyric hooks unavailable: " + t.getMessage());
+        }
     }
 
     /**
@@ -168,22 +171,21 @@ public final class SodaAnchors {
             return;
         }
 
-        int hooked = 0;
+        List<Constructor<?>> targets = new ArrayList<>();
         for (Constructor<?> constructor : entityClass.getDeclaredConstructors()) {
             // 空构造器拿不到内容；带参构造器才是"把字段装进去"的那次
             if (constructor.getParameterCount() == 0) continue;
-            try {
-                constructor.setAccessible(true);
-                CoreTool.hook(constructor, new AbsHook() {
-                    @Override
-                    public void after() {
-                        dispatchEntity(getThisObject(), listener);
-                    }
-                });
-                hooked++;
-            } catch (Throwable t) {
-                AndroidLog.logW(TAG, "Failed to hook TrackLyric ctor: " + t.getMessage());
-            }
+            constructor.setAccessible(true);
+            targets.add(constructor);
+        }
+        int hooked = targets.size();
+        if (!targets.isEmpty()) {
+            CoreTool.hookAll(targets.toArray(new Constructor<?>[0]), new AbsHook() {
+                @Override
+                public void after() {
+                    dispatchEntity(getThisObject(), listener);
+                }
+            });
         }
 
         try {
@@ -207,7 +209,11 @@ public final class SodaAnchors {
                 @Override
                 public void after() {
                     // getter 里不能再调 getLyric（自递归），内容直接取返回值
-                    dispatchContent(asString(getResult()), getThisObject(), listener);
+                    dispatchContent(
+                        getResult() instanceof String text ? text.trim() : "",
+                        getThisObject(),
+                        listener
+                    );
                 }
             });
             hooked++;
@@ -225,21 +231,21 @@ public final class SodaAnchors {
     /**
      * 从实体上读出正文与标识
      */
-    private static void dispatchEntity(@Nullable Object entity, @NonNull PayloadListener listener) {
-        if (entity == null) return;
-        try {
-            dispatchContent(asString(call(entity, "getLyric")), entity, listener);
-        } catch (Throwable t) {
-            AndroidLog.logD(TAG, "TrackLyric read failed: " + t.getMessage());
-        }
+    private static void dispatchEntity(@NonNull Object entity, @NonNull PayloadListener listener) {
+        dispatchContent(
+            CoreTool.callMethodIfExists(entity, "getLyric") instanceof String text ? text.trim() : "",
+            entity,
+            listener
+        );
     }
 
     private static void dispatchContent(@NonNull String content,
-                                        @Nullable Object entity,
+                                        @NonNull Object entity,
                                         @NonNull PayloadListener listener) {
         if (content.isEmpty()) return;
-        String trackId = asString(call(entity, "getTrackId"));
-        String type = enumName(call(entity, "getType"));
+        String trackId = CoreTool.callMethodIfExists(entity, "getTrackId") instanceof String text
+            ? text.trim() : "";
+        String type = enumName(CoreTool.callMethodIfExists(entity, "getType"));
 
         // 同一份内容会被构造 / setter / getter 反复带出来，按内容指纹压掉
         String key = trackId + "|" + type + "|" + content.hashCode();
@@ -248,18 +254,6 @@ public final class SodaAnchors {
 
         // 主歌词语言：TrackLyric 只把译文放进 langTranslations，正文恒为主歌词
         dispatch(type, "CHINESE", content, trackId.isEmpty() ? null : trackId, listener);
-    }
-
-    @Nullable
-    private static Object call(@Nullable Object target, @NonNull String methodName) {
-        if (target == null) return null;
-        try {
-            Method method = target.getClass().getMethod(methodName);
-            method.setAccessible(true);
-            return method.invoke(target);
-        } catch (Throwable ignored) {
-            return null;
-        }
     }
 
     private static void dispatch(@NonNull String type,
@@ -289,10 +283,8 @@ public final class SodaAnchors {
      * 把同一份载荷截获两次
      */
     private static boolean isSyntheticBridge(@NonNull Class<?>[] parameterTypes) {
-        for (Class<?> type : parameterTypes) {
-            if ("kotlin.jvm.internal.DefaultConstructorMarker".equals(type.getName())) return true;
-        }
-        return false;
+        return Arrays.stream(parameterTypes)
+            .anyMatch(type -> "kotlin.jvm.internal.DefaultConstructorMarker".equals(type.getName()));
     }
 
     /**
@@ -320,10 +312,8 @@ public final class SodaAnchors {
             Object trackLyric = getter.invoke(queueItem);
             if (trackLyric == null) return null;
 
-            Method getTrackId = trackLyric.getClass().getMethod("getTrackId");
-            getTrackId.setAccessible(true);
-            Object id = getTrackId.invoke(trackLyric);
-            String trimmed = asString(id);
+            String trimmed = CoreTool.callMethodIfExists(trackLyric, "getTrackId") instanceof String text
+                ? text.trim() : "";
             return trimmed.isEmpty() ? null : trimmed;
         } catch (Throwable t) {
             // 队列项实现类可能不可访问；标识拿不到只是失去一次校验，不影响取词
@@ -335,11 +325,6 @@ public final class SodaAnchors {
     @NonNull
     private static String enumName(@Nullable Object value) {
         if (value instanceof Enum<?> e) return e.name();
-        return asString(value);
-    }
-
-    @NonNull
-    private static String asString(@Nullable Object value) {
-        return value instanceof String s ? s : "";
+        return value instanceof String text ? text.trim() : "";
     }
 }

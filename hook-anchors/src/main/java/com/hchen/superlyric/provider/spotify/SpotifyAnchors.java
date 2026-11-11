@@ -33,6 +33,7 @@ import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.result.ClassDataList;
 
+import java.lang.reflect.Executable;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -62,9 +63,8 @@ public final class SpotifyAnchors {
             @Override
             public void after() {
                 Object[] args = getArgs();
-                if (args != null && args.length > 0 && args[0] instanceof String[] values) {
-                    SessionHeadersFeed feed = sFeed;
-                    if (feed != null) feed.update(values);
+                if (args.length > 0 && args[0] instanceof String[] values) {
+                    sFeed.update(values);
                 }
             }
         };
@@ -81,20 +81,20 @@ public final class SpotifyAnchors {
 
         // 结构指纹兜底
         List<Class<?>> candidates = findHeaderCandidateClasses();
-        int hooked = 0;
-        for (Class<?> candidate : candidates) {
-            try {
-                CoreTool.hookAllConstructor(candidate, capture);
-                hooked++;
-            } catch (Throwable t) {
-                AndroidLog.logW(TAG, "Failed to hook candidate " + candidate.getName(), t);
-            }
-        }
-
-        if (hooked == 0) {
+        if (candidates.isEmpty()) {
             AndroidLog.logW(TAG, "No headers candidate hooked; color-lyrics requests will stay unauthorized");
-        } else {
-            AndroidLog.logI(TAG, "Hooked " + hooked + " DexKit candidate class(es) by <init>(String[]) fingerprint");
+            return;
+        }
+        List<Executable> constructors = new ArrayList<>();
+        for (Class<?> candidate : candidates) {
+            Collections.addAll(constructors, candidate.getDeclaredConstructors());
+        }
+        try {
+            CoreTool.hookAll(constructors.toArray(new Executable[0]), capture);
+            AndroidLog.logI(TAG, "Hooked " + constructors.size() + " constructor(s) in "
+                + candidates.size() + " DexKit candidate class(es) by <init>(String[]) fingerprint");
+        } catch (Throwable t) {
+            AndroidLog.logW(TAG, "Failed to hook headers candidates", t);
         }
     }
 
@@ -117,7 +117,7 @@ public final class SpotifyAnchors {
                     );
                 }
             });
-        if (precise != null && precise.length > 0) {
+        if (precise.length > 0) {
             return new ArrayList<>(List.of(precise));
         }
 
@@ -142,8 +142,6 @@ public final class SpotifyAnchors {
                     );
                 }
             });
-        if (loose == null) return Collections.emptyList();
-
         List<Class<?>> filtered = new ArrayList<>(loose.length);
         for (Class<?> candidate : loose) {
             int modifiers = candidate.getModifiers();

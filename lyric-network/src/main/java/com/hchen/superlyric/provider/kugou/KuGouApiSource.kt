@@ -35,7 +35,6 @@ import com.hchen.superlyric.network.readTextBounded
 import com.hchen.superlyric.utils.LyricCacheStore
 import com.hchen.superlyric.utils.LyricDiag
 
-import org.json.JSONArray
 import org.json.JSONObject
 
 import java.io.IOException
@@ -163,7 +162,7 @@ class KuGouApiSource : LyricSource {
     private fun searchBestHashes(identity: TrackIdentity): List<String> {
         if (identity.title.isBlank()) return emptyList()
 
-        val keyword = if (identity.artist.isBlank()) identity.title else identity.title + " " + identity.artist
+        val keyword = if (identity.artist.isBlank()) identity.title else "${identity.title} ${identity.artist}"
         val url = "http://mobilecdn.kugou.com/api/v3/search/song?format=json&page=1&pagesize=5&keyword=" +
                 URLEncoder.encode(keyword, StandardCharsets.UTF_8.name())
 
@@ -191,8 +190,8 @@ class KuGouApiSource : LyricSource {
                 candidateArtist,
                 candidateDurationMs,
             )
-            candidates += "\"" + candidateTitle + "\"/\"" + candidateArtist + "\"/" + (candidateDurationMs / 1000) + "s" +
-                    "=" + score.roundTo1() + " hash=" + hash
+            candidates += "\"$candidateTitle\"/\"$candidateArtist\"/${candidateDurationMs / 1000}s=" +
+                    "${score.roundTo1()} hash=$hash"
             if (score > LyricScorer.MIN_ACCEPT_SCORE) accepted += hash to score
         }
 
@@ -200,12 +199,12 @@ class KuGouApiSource : LyricSource {
         // 正确版本不在候选内，还是打分将其淘汰；这三种情况的处理不同。
         AndroidLog.logD(
             sourceName,
-            "Candidates for \"" + keyword + "\" (target \"" + identity.title + "\"/\"" + identity.artist + "\"/" +
-                    (identity.durationMs / 1000) + "s): " + candidates.joinToString(" | ").ifEmpty { "none" },
+            "Candidates for \"$keyword\" (target \"${identity.title}\"/\"${identity.artist}\"/" +
+                    "${identity.durationMs / 1000}s): ${candidates.joinToString(" | ").ifEmpty { "none" }}",
         )
 
         if (accepted.isEmpty()) {
-            AndroidLog.logD(sourceName, "No KuGou candidate reached the acceptance threshold for \"" + keyword + "\"")
+            AndroidLog.logD(sourceName, "No KuGou candidate reached the acceptance threshold for \"$keyword\"")
         }
         // 稳定排序：同分候选保持检索顺序，首位优先
         return accepted.sortedByDescending { it.second }.map { it.first }
@@ -217,7 +216,7 @@ class KuGouApiSource : LyricSource {
         val searchUrl = "http://krcs.kugou.com/search?ver=1&man=yes&client=mobi&keyword=&duration=$durationMs&hash=$hash"
         val searchJson = get(searchUrl)
         val candidates = JSONObject(searchJson).optJSONArray("candidates")
-        val first = firstObject(candidates) ?: return null
+        val first = candidates?.takeIf { it.length() > 0 }?.optJSONObject(0) ?: return null
 
         val id = first.optString("id", "")
         val accessKey = first.optString("accesskey", "")
@@ -244,15 +243,12 @@ class KuGouApiSource : LyricSource {
         return String(bytes, StandardCharsets.UTF_8)
     }
 
-    private fun firstObject(array: JSONArray?): JSONObject? =
-        if (array == null || array.length() == 0) null else array.optJSONObject(0)
-
     /**
      * 发起一次 GET
      *
      * 传输层失败必须抛出，不能返回 null：调用方用 null 表示平台没有该歌词；
      * 若把网络异常压成 null，断网会被判为确定性无歌词并下发纯音乐占位。
-     * 抛出后由 [start] 的 `runCatching` 归类为 [LyricOutcome.TransientFailure]，
+     * 抛出后由 FetchSlot 归类为 [LyricOutcome.TransientFailure]，
      * 只重试、不下发占位。
      */
     private fun get(url: String): String {
@@ -269,6 +265,5 @@ class KuGouApiSource : LyricSource {
         const val PROVIDER_NAME = "Kugou"
 
         const val USER_AGENT = "KuGou2012-7093-Android601"
-
     }
 }

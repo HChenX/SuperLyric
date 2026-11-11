@@ -547,11 +547,7 @@ public final class LyricCacheStore {
         Context direct = applicationOf(context);
         if (direct != null) return direct;
 
-        try {
-            return applicationOf(AbsPublisher.getAppContext());
-        } catch (Throwable ignored) {
-            return null;
-        }
+        return applicationOf(AbsPublisher.getAppContext());
     }
 
     /**

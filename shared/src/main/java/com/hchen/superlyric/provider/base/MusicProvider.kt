@@ -182,14 +182,8 @@ abstract class MusicProvider : AbsPublisher() {
             "android.media.MediaMetadata",
             object : AbsHook() {
                 override fun after() {
-                    // 宿主元数据可含任意类型；异常从 hook 调用帧抛出会打断宿主自己的
-                    // setMetadata 更新，因此边界统一接 Throwable。
-                    runCatching {
-                        val metadata = getArg(0) as? MediaMetadata ?: return@runCatching
-                        onMetadataChanged(metadata)
-                    }.onFailure {
-                        AndroidLog.logE(providerTag, "MediaSession metadata hook failed", it)
-                    }
+                    val metadata = getArg(0) as? MediaMetadata ?: return
+                    onMetadataChanged(metadata)
                 }
             },
         )
@@ -199,18 +193,14 @@ abstract class MusicProvider : AbsPublisher() {
             "android.media.session.PlaybackState",
             object : AbsHook() {
                 override fun after() {
-                    runCatching {
-                        val state = getArg(0) as? PlaybackState ?: return@runCatching
-                        // 保留宿主 MediaSession 及其最近一次状态，诊断期用于模拟跳转播放位置
-                        // （MediaSession 没有 getPlaybackState()，只能自行记录）
-                        hostSession = getThisObject() as? MediaSession
-                        hostPlaybackState = state
-                        // 播放进程才有会话；onApplicationCreated 只在主进程触发，这里补注册
-                        ensureSeekSimulator()
-                        onPlaybackStateChanged(state)
-                    }.onFailure {
-                        AndroidLog.logE(providerTag, "MediaSession playback hook failed", it)
-                    }
+                    val state = getArg(0) as? PlaybackState ?: return
+                    // 保留宿主 MediaSession 及其最近一次状态，诊断期用于模拟跳转播放位置
+                    // （MediaSession 没有 getPlaybackState()，只能自行记录）
+                    hostSession = getThisObject() as? MediaSession
+                    hostPlaybackState = state
+                    // 播放进程才有会话；onApplicationCreated 只在主进程触发，这里补注册
+                    ensureSeekSimulator()
+                    onPlaybackStateChanged(state)
                 }
             },
         )

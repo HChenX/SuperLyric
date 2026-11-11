@@ -74,9 +74,6 @@ public final class BodianAnchors {
                          @NonNull String rid);
     }
 
-    /**
-     * 定位并挂载 Hook；幂等，失败只记录日志
-     */
     public record LyricFileEvent(@NonNull String filePath, @NonNull String title,
                                  @NonNull String artist, @NonNull String album, @NonNull String rid) {
     }
@@ -86,6 +83,9 @@ public final class BodianAnchors {
             event.filePath(), event.title(), event.artist(), event.album(), event.rid()));
     }
 
+    /**
+     * 定位并挂载 Hook；幂等，失败只记录日志
+     */
     public static void install(@NonNull LyricFileListener listener) {
         subscribe(listener);
         if (sInstalled) return;
@@ -98,39 +98,39 @@ public final class BodianAnchors {
                 return;
             }
 
+            Constructor<?> target = null;
             for (Constructor<?> constructor : runnerClass.getDeclaredConstructors()) {
                 // 按签名选择，不能只数参数个数：该类可能另有 3 参合成或重载构造器，
-                // 先命中时第三个参数不是文件路径（asString 返回 ""），上层会把空路径
+                // 先命中时第三个参数不是文件路径（转换后为空串），上层会把空路径
                 // 当成宿主无歌词并下发纯音乐占位。判据：第 1 参是曲目对象
                 // （非基本类型、非 String），第 3 参是 String 文件路径
                 Class<?>[] parameterTypes = constructor.getParameterTypes();
                 if (parameterTypes.length != 3) continue;
                 if (parameterTypes[0].isPrimitive() || parameterTypes[0] == String.class) continue;
                 if (parameterTypes[2] != String.class) continue;
-
-                constructor.setAccessible(true);
-                CoreTool.hook(constructor, new AbsHook() {
-                    @Override
-                    public void after() {
-                        try {
-                            Object music = getArg(0);
-                            String filePath = asString(getArg(2));
-                            BUS.emit(new LyricFileEvent(
-                                filePath,
-                                readString(music, "getName"),
-                                readString(music, "getArtist"),
-                                readString(music, "getAlbum"),
-                                readField(music, "rid")
-                            ));
-                        } catch (Throwable t) {
-                            AndroidLog.logW(TAG, "Error in LyricsRunner4Flutter hook: " + t.getMessage());
-                        }
-                    }
-                });
-                AndroidLog.logI(TAG, "Hooked LyricsRunner4Flutter constructor");
+                target = constructor;
+                break;
+            }
+            if (target == null) {
+                AndroidLog.logW(TAG, "No matching (Object, *, String) constructor found on LyricsRunner4Flutter");
                 return;
             }
-            AndroidLog.logW(TAG, "No matching (Object, *, String) constructor found on LyricsRunner4Flutter");
+
+            target.setAccessible(true);
+            CoreTool.hook(target, new AbsHook() {
+                @Override
+                public void after() {
+                    Object music = getArg(0);
+                    BUS.emit(new LyricFileEvent(
+                        getArg(2) instanceof String path ? path.trim() : "",
+                        CoreTool.callMethodIfExists(music, "getName") instanceof String name ? name.trim() : "",
+                        CoreTool.callMethodIfExists(music, "getArtist") instanceof String artist ? artist.trim() : "",
+                        CoreTool.callMethodIfExists(music, "getAlbum") instanceof String album ? album.trim() : "",
+                        CoreTool.getFieldIfExists(music, "rid") instanceof String rid ? rid.trim() : ""
+                    ));
+                }
+            });
+            AndroidLog.logI(TAG, "Hooked LyricsRunner4Flutter constructor");
         } catch (Throwable t) {
             AndroidLog.logE(TAG, "Failed to install Bodian anchors", t);
         }
@@ -146,37 +146,9 @@ public final class BodianAnchors {
                         .usingEqStrings(ANCHOR)
                     )
                 );
-                if (classes == null || classes.isEmpty()) return null;
-                for (ClassData data : classes) {
-                    if (!data.getName().contains("$")) return data;
-                }
-                return classes.get(0);
+                ClassData nonInner = classes.firstOrNull(data -> !data.getName().contains("$"));
+                return nonInner != null ? nonInner : classes.firstOrNull();
             }
         });
-    }
-
-    @NonNull
-    private static String readString(@Nullable Object target, @NonNull String getter) {
-        if (target == null) return "";
-        try {
-            return asString(CoreTool.callMethodIfExists(target, getter));
-        } catch (Throwable ignored) {
-            return "";
-        }
-    }
-
-    @NonNull
-    private static String readField(@Nullable Object target, @NonNull String field) {
-        if (target == null) return "";
-        try {
-            return asString(CoreTool.getFieldIfExists(target, field));
-        } catch (Throwable ignored) {
-            return "";
-        }
-    }
-
-    @NonNull
-    private static String asString(@Nullable Object value) {
-        return value instanceof String s ? s.trim() : "";
     }
 }

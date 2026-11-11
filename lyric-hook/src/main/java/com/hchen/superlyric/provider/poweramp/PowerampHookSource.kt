@@ -68,21 +68,10 @@ class PowerampHookSource : InstallableLyricSource {
     }
 
     override fun install() {
-        PowerampAnchors.install(object : PowerampAnchors.LyricsListener {
-            override fun onLyricText(
-                source: String,
-                text: String,
-                title: String,
-                artist: String,
-                album: String,
-                durationMs: Long,
-                extra: String,
-            ) {
-                handleText(source, text, title, artist, durationMs)
-            }
-        })
+        PowerampAnchors.install { source, text, title, artist, _, durationMs, _ ->
+            handleText(source, text, title, artist, durationMs)
+        }
     }
-
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
         val request = requests.open(identity, session)
@@ -541,12 +530,11 @@ class PowerampHookSource : InstallableLyricSource {
     /** 优先稳定标识，否则标题 + 歌手；不能比内核判据更松。 */
     private fun identityToken(identity: TrackIdentity): String =
         identity.stableId?.takeIf { it.isNotBlank() }
-            ?: ("title:" + TrackIdentity.normalizeTitle(identity.title) + "|" +
-                    TrackIdentity.normalizeTitle(identity.artist))
+            ?: "title:${TrackIdentity.normalizeTitle(identity.title)}|${TrackIdentity.normalizeTitle(identity.artist)}"
 
     private fun readBounded(input: InputStream, limit: Long): ByteArray? {
-        val output = ByteArrayOutputStream(8192)
-        val buffer = ByteArray(8192)
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        val output = ByteArrayOutputStream(buffer.size)
         var total = 0L
         while (true) {
             val read = input.read(buffer)

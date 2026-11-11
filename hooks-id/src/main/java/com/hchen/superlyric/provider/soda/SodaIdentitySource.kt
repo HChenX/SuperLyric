@@ -29,11 +29,7 @@ class SodaIdentitySource(private val providerTag: String) : BaseIdentitySource()
     private val latestTrackId = AtomicReference<String>()
 
     override fun install() {
-        SodaAnchors.install(object : SodaAnchors.PayloadListener {
-            override fun onPayload(type: String, language: String, payload: String, trackId: String?) {
-                this@SodaIdentitySource.onPayload(type, language, payload, trackId)
-            }
-        })
+        SodaAnchors.install(::onPayload)
     }
 
     override fun currentStableId(): String? = latestTrackId.get()

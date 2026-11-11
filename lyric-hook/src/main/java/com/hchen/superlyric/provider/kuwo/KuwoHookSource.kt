@@ -56,7 +56,10 @@ class KuwoHookSource(
      * 三个字段作为不可变快照一起读写；按 rid 多槽保存，避免预取的后续曲目顶掉当前曲目。
      * 访问一律在 stashByRid 上同步。
      */
-    private val stashByRid = LinkedHashMap<String, Stashed>(8, 0.75f, true)
+    private val stashByRid = object : LinkedHashMap<String, Stashed>(MAX_STASHED_TRACKS, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Stashed>): Boolean =
+            size > MAX_STASHED_TRACKS
+    }
 
     /**
      * 最近一次成功交付的（标识, 正文），用于跳过宿主重复回调的同一份歌词。
@@ -71,9 +74,7 @@ class KuwoHookSource(
     private var lastAttempted: Pair<String?, String>? = null
 
     override fun install() {
-        KuwoAnchors.install { text, rid ->
-            handleLyricText(text, rid)
-        }
+        KuwoAnchors.install(::handleLyricText)
     }
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
@@ -113,8 +114,7 @@ class KuwoHookSource(
     }
 
     /**
-     *            切歌时宿主先翻 rid 再送歌词，使用回调自带的 rid 才不会把上一首正文
-     *            配上新标识
+     * 切歌时宿主先翻 rid 再送歌词，使用回调自带的 rid 才不会把上一首正文配上新标识。
      */
     private fun handleLyricText(text: String, rid: String) {
         // 与 Provider 侧同一套组合规则：rid + 标题。酷我的 rid 在有声书上是专辑级 ID，
@@ -201,7 +201,9 @@ class KuwoHookSource(
                 return@execute
             }
 
-            stashPut(stashKey(stableId), Stashed(parsed, stableId, requests.current() == null))
+            synchronized(stashByRid) {
+                stashByRid[stashKey(stableId)] = Stashed(parsed, stableId, requests.current() == null)
+            }
             // 解析成功才写 lastDelivered：这份正文确实能出歌词，才值得挡重复回调。
             // 若在解析前写，一次失败（线程池被占、宿主给的是残包）会让同一份正文持续
             // 命中去重分支，而宿主随后可能不再回调。
@@ -258,19 +260,6 @@ class KuwoHookSource(
     }
 
     /**
-     * 写入暂存槽；超出上限时淘汰最久未访问的一份。
-     */
-    private fun stashPut(key: String, value: Stashed) {
-        synchronized(stashByRid) {
-            stashByRid[key] = value
-            while (stashByRid.size > MAX_STASHED_TRACKS) {
-                val eldest = stashByRid.entries.iterator().next().key
-                stashByRid.remove(eldest)
-            }
-        }
-    }
-
-    /**
      * 暂存槽的键：稳定标识去掉命名空间后的全文。
      *
      * 必须保留标题段：有声书的 rid 是专辑级，只按 rid 归槽会让换集时补投上一集。
@@ -321,13 +310,10 @@ class KuwoHookSource(
         val withoutSession: Boolean,
     )
 
-
     private companion object {
         const val NAMESPACE = "kuwo"
 
-
         /** 预取歌词的暂存槽上限：覆盖队列预取的几首即可，超出按访问顺序淘汰最旧 */
         const val MAX_STASHED_TRACKS = 8
-
     }
 }

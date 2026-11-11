@@ -93,24 +93,16 @@ public final class SuperLyricSystemService extends CoreTool {
 
     private void attachApplicationLocked() {
         try {
-            Class<?> amsClass = findAmsClass();
-            if (amsClass == null) return;
-
-            hookAllMethod(amsClass,
+            hookAllMethod("com.android.server.am.ActivityManagerService",
                 "attachApplicationLocked",
                 new AbsHook() {
                     @Override
                     public void before() {
-                        try {
-                            // 这是 AMS 内部方法，Binder.getCallingUid() 永远是 system_server(1000)；
-                            // 目标进程 UID 必须取参数表里的 uid（thread, pid, uid, ...）。
-                            int uid = ((Number) getArg(2)).intValue();
-                            sBindUid.set(uid);
-                            AccessPolicy.invalidateUid(uid);
-                        } catch (Throwable t) {
-                            logE(TAG, "Failed to record bind UID for "
-                                + getExecutable().getName() + ".", t);
-                        }
+                        // 这是 AMS 内部方法，Binder.getCallingUid() 永远是 system_server(1000)；
+                        // 目标进程 UID 必须取参数表里的 uid（thread, pid, uid, ...）。
+                        int uid = ((Number) getArg(2)).intValue();
+                        sBindUid.set(uid);
+                        AccessPolicy.invalidateUid(uid);
                     }
 
                     @Override
@@ -126,13 +118,10 @@ public final class SuperLyricSystemService extends CoreTool {
 
     private void hookCommonServices() {
         try {
-            Class<?> amsClass = findAmsClass();
-            if (amsClass == null) return;
-
             Method target = null;
-            for (Method method : amsClass.getDeclaredMethods()) {
-                if ("getCommonServicesLocked".equals(method.getName()) &&
-                    Map.class.isAssignableFrom(method.getReturnType())) {
+            for (Method method : findAllMethod("com.android.server.am.ActivityManagerService",
+                "getCommonServicesLocked")) {
+                if (Map.class.isAssignableFrom(method.getReturnType())) {
                     target = method;
                     break;
                 }
@@ -146,56 +135,48 @@ public final class SuperLyricSystemService extends CoreTool {
             hook(target, new AbsHook() {
                 @Override
                 public void after() {
-                    try {
-                        Object raw = getResult();
-                        if (!(raw instanceof Map)) {
-                            logE(TAG, "getCommonServicesLocked returned no map; "
-                                + "services not exposed.");
-                            return;
-                        }
-
-                        Method target = (Method) getExecutable();
-                        Map<Object, Object> filtered = newResultMap(target);
-                        for (Map.Entry<?, ?> entry : ((Map<?, ?>) raw).entrySet()) {
-                            filtered.put(entry.getKey(), entry.getValue());
-                        }
-                        filtered.remove(AccessPolicy.LEGACY_SERVICE);
-                        filtered.remove(AccessPolicy.V4_SERVICE);
-
-                        Integer uid = sBindUid.get();
-                        if (uid != null && !isIsolatedBind(target)) {
-                            AccessPolicy.Level level = AccessPolicy.levelForUid(uid);
-                            SuperLyricService legacy = sSuperLyricService;
-                            SuperLyricV4Service v4 = sSuperLyricV4Service;
-
-                            if (level.allowsLegacy() && legacy != null) {
-                                filtered.put(AccessPolicy.LEGACY_SERVICE, legacy);
-                            }
-                            if (level.allowsV4() && v4 != null) {
-                                filtered.put(AccessPolicy.V4_SERVICE, v4);
-                            }
-
-                            logD(TAG, "Bind services for uid " + uid + ": " + level);
-                        } else if (uid == null && !sUidMissingLogged) {
-                            sUidMissingLogged = true;
-                            logW(TAG, "attachApplicationLocked uid was missing when getCommonServicesLocked ran; "
-                                + "services are not exposed. Further occurrences are not logged.");
-                        }
-
-                        setResult(filtered);
-                    } catch (Throwable t) {
-                        logE(TAG, "Failed to filter common services; services not exposed.", t);
+                    Object raw = getResult();
+                    if (!(raw instanceof Map)) {
+                        logE(TAG, "getCommonServicesLocked returned no map; "
+                            + "services not exposed.");
+                        return;
                     }
+
+                    Method target = (Method) getExecutable();
+                    Map<Object, Object> filtered = newResultMap(target);
+                    for (Map.Entry<?, ?> entry : ((Map<?, ?>) raw).entrySet()) {
+                        filtered.put(entry.getKey(), entry.getValue());
+                    }
+                    filtered.remove(AccessPolicy.LEGACY_SERVICE);
+                    filtered.remove(AccessPolicy.V4_SERVICE);
+
+                    Integer uid = sBindUid.get();
+                    if (uid != null && !isIsolatedBind(target)) {
+                        AccessPolicy.Level level = AccessPolicy.levelForUid(uid);
+                        SuperLyricService legacy = sSuperLyricService;
+                        SuperLyricV4Service v4 = sSuperLyricV4Service;
+
+                        if (level.allowsLegacy() && legacy != null) {
+                            filtered.put(AccessPolicy.LEGACY_SERVICE, legacy);
+                        }
+                        if (level.allowsV4() && v4 != null) {
+                            filtered.put(AccessPolicy.V4_SERVICE, v4);
+                        }
+
+                        logD(TAG, "Bind services for uid " + uid + ": " + level);
+                    } else if (uid == null && !sUidMissingLogged) {
+                        sUidMissingLogged = true;
+                        logW(TAG, "attachApplicationLocked uid was missing when getCommonServicesLocked ran; "
+                            + "services are not exposed. Further occurrences are not logged.");
+                    }
+
+                    setResult(filtered);
                 }
 
                 private boolean isIsolatedBind(Method method) {
                     if (method.getParameterTypes().length == 0) return false;
-                    try {
-                        Object value = getArg(0);
-                        return !(value instanceof Boolean) || (Boolean) value;
-                    } catch (Throwable t) {
-                        return true;
-                    }
+                    Object value = getArg(0);
+                    return !(value instanceof Boolean) || (Boolean) value;
                 }
             });
             logI(TAG, "Hooked getCommonServicesLocked.");
@@ -236,34 +217,29 @@ public final class SuperLyricSystemService extends CoreTool {
             new AbsHook() {
                 @Override
                 public void after() {
-                    try {
-                        if (sRuntime == null) return;
+                    if (sRuntime == null) return;
 
-                        Object app = getArg(0);
-                        ApplicationInfo info = (ApplicationInfo) getField(app, "info");
-                        if (info == null) return;
+                    Object app = getArg(0);
+                    ApplicationInfo info = (ApplicationInfo) getField(app, "info");
+                    if (info == null) return;
 
-                        int pid = (int) getArg(1);
+                    int pid = (int) getArg(1);
 
-                        // 不按 ProcessRecord#mKilled 过滤：LMK 不经过 AMS 写该字段。
-                        // 是否属于当前播放进程由 LyricRuntime#onProcessDied 的两级守卫判断。
-                        Object procLock = getField(getThisObject(), "mProcLock");
-                        if (procLock == null) {
-                            if (!sProcLockMissingLogged) {
-                                sProcLockMissingLogged = true;
-                                logW(TAG, "AMS#mProcLock not found; ProcessRecord fields are read "
-                                    + "unsynchronized. Process-death reclaim still works.");
-                            }
-                            sRuntime.onProcessDied(info.packageName, pid);
-                            return;
+                    // 不按 ProcessRecord#mKilled 过滤：LMK 不经过 AMS 写该字段。
+                    // 是否属于当前播放进程由 LyricRuntime#onProcessDied 的两级守卫判断。
+                    Object procLock = getField(getThisObject(), "mProcLock");
+                    if (procLock == null) {
+                        if (!sProcLockMissingLogged) {
+                            sProcLockMissingLogged = true;
+                            logW(TAG, "AMS#mProcLock not found; ProcessRecord fields are read "
+                                + "unsynchronized. Process-death reclaim still works.");
                         }
+                        sRuntime.onProcessDied(info.packageName, pid);
+                        return;
+                    }
 
-                        synchronized (procLock) {
-                            sRuntime.onProcessDied(info.packageName, pid);
-                        }
-                    } catch (Throwable t) {
-                        // 进程死亡回调同样不能把异常抛回 AMS；一次失败最多漏掉一次回收。
-                        logE(TAG, "Failed to handle appDiedLocked for super lyric.", t);
+                    synchronized (procLock) {
+                        sRuntime.onProcessDied(info.packageName, pid);
                     }
                 }
             }
@@ -282,18 +258,6 @@ public final class SuperLyricSystemService extends CoreTool {
             throw new IllegalStateException("Unsupported services map type: "
                 + returnType.getName());
         }
-        if (!returnType.isInstance(result)) {
-            throw new IllegalStateException("Cannot create services map for "
-                + returnType.getName());
-        }
         return result;
-    }
-
-    private Class<?> findAmsClass() {
-        Class<?> amsClass = CoreTool.findClass("com.android.server.am.ActivityManagerService");
-        if (amsClass == null) {
-            logE(TAG, "ActivityManagerService class not found; access control disabled.");
-        }
-        return amsClass;
     }
 }

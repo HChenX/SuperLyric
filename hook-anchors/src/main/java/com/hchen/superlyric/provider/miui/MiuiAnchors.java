@@ -26,6 +26,8 @@ import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.hooktool.log.AndroidLog;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -38,7 +40,6 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>只读取 {@code SongInfo} 的 id、名称、歌手和时长；歌词由接口获取，不读取宿主内部
  * 的行/词模型。
- *
  */
 public final class MiuiAnchors {
     private static final String TAG = "MiuiAnchors";
@@ -49,8 +50,7 @@ public final class MiuiAnchors {
         "com.tencent.qqmusiccommon.util.music.RemoteControlManager";
 
     /**
-     * {@code MusicPlayerHelper} 的包名随宿主版本变化（4.42 → {@code util.dialog}，
-     * 4.46 → {@code util.music}），全部尝试。
+     * {@code MusicPlayerHelper} 的包名随宿主版本变化，两个位置都尝试。
      */
     private static final String[] HELPER_CLASSES = {
         "com.tencent.qqmusiccommon.util.music.MusicPlayerHelper",
@@ -160,37 +160,30 @@ public final class MiuiAnchors {
             return 0;
         }
 
-        int hooked = 0;
+        List<Method> targets = new ArrayList<>();
         for (Method method : clazz.getDeclaredMethods()) {
             if (!"updataMetaData".equals(method.getName())) continue;
 
             Class<?>[] parameterTypes = method.getParameterTypes();
             if (parameterTypes.length != 2 || !isSongInfo(parameterTypes[0])) continue;
 
-            try {
-                method.setAccessible(true);
-                CoreTool.hook(method, new AbsHook() {
-                    @Override
-                    public void after() {
-                        try {
-                            SongSnapshot snapshot = snapshotOf(getArg(0));
-                            if (snapshot != null) listener.onSongInfo(snapshot);
-                        } catch (Throwable t) {
-                            AndroidLog.logW(TAG, "Error in updataMetaData hook: " + t.getMessage());
-                        }
-                    }
-                });
-                hooked++;
-                AndroidLog.logD(TAG, "Hooked " + method.toGenericString());
-            } catch (Throwable t) {
-                AndroidLog.logW(TAG, "Failed to hook updataMetaData: " + t.getMessage());
-            }
+            method.setAccessible(true);
+            targets.add(method);
         }
-        return hooked;
+        if (targets.isEmpty()) return 0;
+
+        CoreTool.hookAll(targets.toArray(new Method[0]), new AbsHook() {
+            @Override
+            public void after() {
+                SongSnapshot snapshot = snapshotOf(getArg(0));
+                if (snapshot != null) listener.onSongInfo(snapshot);
+            }
+        });
+        return targets.size();
     }
 
     private static int hookMusicPlayerHelper(@NonNull SongInfoListener listener) {
-        int hooked = 0;
+        List<Method> targets = new ArrayList<>();
         for (String className : HELPER_CLASSES) {
             Class<?> clazz = CoreTool.findClassIfExists(className);
             if (clazz == null) continue;
@@ -198,25 +191,18 @@ public final class MiuiAnchors {
             Method getPlaySong = findNoArgMethod(clazz, "getPlaySong");
             if (getPlaySong == null) continue;
 
-            try {
-                CoreTool.hook(getPlaySong, new AbsHook() {
-                    @Override
-                    public void after() {
-                        try {
-                            SongSnapshot snapshot = snapshotOf(getResult());
-                            if (snapshot != null) listener.onSongInfo(snapshot);
-                        } catch (Throwable t) {
-                            AndroidLog.logW(TAG, "Error in getPlaySong hook: " + t.getMessage());
-                        }
-                    }
-                });
-                hooked++;
-                AndroidLog.logD(TAG, "Hooked " + getPlaySong.toGenericString());
-            } catch (Throwable t) {
-                AndroidLog.logW(TAG, "Failed to hook getPlaySong: " + t.getMessage());
-            }
+            targets.add(getPlaySong);
         }
-        return hooked;
+        if (targets.isEmpty()) return 0;
+
+        CoreTool.hookAll(targets.toArray(new Method[0]), new AbsHook() {
+            @Override
+            public void after() {
+                SongSnapshot snapshot = snapshotOf(getResult());
+                if (snapshot != null) listener.onSongInfo(snapshot);
+            }
+        });
+        return targets.size();
     }
 
     /**
@@ -259,23 +245,13 @@ public final class MiuiAnchors {
 
     @Nullable
     private static Method findNoArgMethod(@NonNull Class<?> clazz, @NonNull String name) {
-        try {
-            Method method = clazz.getDeclaredMethod(name);
-            method.setAccessible(true);
-            return method;
-        } catch (NoSuchMethodException ignored) {
-            // 混淆或签名变化时按名字再找一遍无参版本
-        }
-        for (Method method : clazz.getDeclaredMethods()) {
-            if (!name.equals(method.getName()) || method.getParameterCount() != 0) continue;
-            method.setAccessible(true);
-            return method;
-        }
-        return null;
+        Method method = CoreTool.findMethodIfExists(clazz, name);
+        if (method == null) return null;
+        method.setAccessible(true);
+        return method;
     }
 
-    private static boolean isSongInfo(@Nullable Class<?> type) {
-        if (type == null) return false;
+    private static boolean isSongInfo(@NonNull Class<?> type) {
         String name = type.getName();
         return SONG_INFO_CLASS.equals(name) || name.endsWith(".SongInfo");
     }
@@ -283,8 +259,7 @@ public final class MiuiAnchors {
     private static long invokeLong(@Nullable Method method, @NonNull Object target) {
         if (method == null) return 0L;
         try {
-            Object value = method.invoke(target);
-            return value instanceof Number ? ((Number) value).longValue() : 0L;
+            return CoreTool.callMethod(method, target) instanceof Number number ? number.longValue() : 0L;
         } catch (Throwable t) {
             return 0L;
         }
@@ -294,8 +269,7 @@ public final class MiuiAnchors {
     private static String invokeString(@Nullable Method method, @NonNull Object target) {
         if (method == null) return "";
         try {
-            Object value = method.invoke(target);
-            return value instanceof String ? ((String) value).trim() : "";
+            return CoreTool.callMethod(method, target) instanceof String text ? text.trim() : "";
         } catch (Throwable t) {
             return "";
         }
