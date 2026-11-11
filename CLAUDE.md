@@ -20,7 +20,6 @@ Modules:
 - :lyric-hook: host lyric extraction. :lyric-network: online fetch and matching.
 - :lyric-service: system_server runtime and Binder facades. :app: UI and Java @HookThis shells.
 - :processor: Java annotation processor; consumes @HookThis and emits HookMaps.
-
 Dependencies are fixed: kernel <- shared <- hook-anchors <- {hooks-id, lyric-hook};
 lyric-network -> shared/kernel; lyric-service -> shared/kernel; app -> all. No reverse or circular
 dependency. hooks-id and lyric-hook never depend on each other.
@@ -36,7 +35,6 @@ Boundaries:
 - shared holds contracts and reusable helpers only; it must not depend on a hook or service module.
 
 ## 2. Invariants
-
 ### Acquisition and registration
 
 - Prefer the Hook path: fewest points, each deliberate. Do not hook broadly.
