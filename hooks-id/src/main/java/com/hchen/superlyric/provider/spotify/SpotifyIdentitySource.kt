@@ -42,15 +42,21 @@ class SpotifyIdentitySource(
         metadata.getLong(MediaMetadata.METADATA_KEY_DURATION),
     )
 
-    internal fun current(mediaId: String, title: String, artist: String, durationMs: Long): TrackIdentity =
-        TrackIdentity(
+    internal fun current(mediaId: String, title: String, artist: String, durationMs: Long): TrackIdentity {
+        // 新版宿主把 MEDIA_ID 从裸 base62 改成 spotify:track:<id>；取词与稳定标识都用裸 id，
+        // 否则 catalogId 校验不过，请求永不发出
+        val trackId = CatalogIds.spotifyTrackId(mediaId.removePrefix(TRACK_URI_PREFIX))
+        return TrackIdentity(
             source = providerTag,
-            stableId = TrackIdentity.stableId("spotify", mediaId),
+            stableId = TrackIdentity.stableId("spotify", trackId ?: mediaId),
             title = title,
             artist = artist,
             durationMs = durationMs,
-            catalogId = CatalogIds.spotifyTrackId(mediaId)?.let {
-                CatalogId(LyricCatalog.SPOTIFY, it)
-            },
+            catalogId = trackId?.let { CatalogId(LyricCatalog.SPOTIFY, it) },
         )
+    }
+
+    private companion object {
+        const val TRACK_URI_PREFIX = "spotify:track:"
+    }
 }

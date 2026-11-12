@@ -222,6 +222,16 @@ class IdentitySourcesTest {
         assertEquals("spotify:4uLU6hMCjMI75M1A2tKUQC", spotifyIdentity.stableId)
         assertEquals(CatalogId(LyricCatalog.SPOTIFY, "4uLU6hMCjMI75M1A2tKUQC"), spotifyIdentity.catalogId)
 
+        // 新版宿主上报 spotify:track:<id> URI，稳定标识与曲库 ID 都必须归一为裸 id
+        val spotifyUriIdentity = spotify.current(
+            "spotify:track:4uLU6hMCjMI75M1A2tKUQC",
+            "Song",
+            "Artist",
+            1_000L,
+        )
+        assertEquals("spotify:4uLU6hMCjMI75M1A2tKUQC", spotifyUriIdentity.stableId)
+        assertEquals(CatalogId(LyricCatalog.SPOTIFY, "4uLU6hMCjMI75M1A2tKUQC"), spotifyUriIdentity.catalogId)
+
         val apple = AppleIdentitySource("Apple")
         val appleIdentity = apple.current("abc", "Song", "Artist", 1_000L)
         assertEquals("abc", appleIdentity.stableId)
