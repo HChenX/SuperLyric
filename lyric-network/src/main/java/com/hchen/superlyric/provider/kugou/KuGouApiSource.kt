@@ -163,7 +163,8 @@ class KuGouApiSource : LyricSource {
         if (identity.title.isBlank()) return emptyList()
 
         val keyword = if (identity.artist.isBlank()) identity.title else "${identity.title} ${identity.artist}"
-        val url = "http://mobilecdn.kugou.com/api/v3/search/song?format=json&page=1&pagesize=5&keyword=" +
+        // 宿主可能按 targetSdk 禁用明文 HTTP，检索与取词都必须走 HTTPS
+        val url = "https://mobileservice.kugou.com/api/v3/search/song?format=json&page=1&pagesize=5&keyword=" +
                 URLEncoder.encode(keyword, StandardCharsets.UTF_8.name())
 
         val json = get(url)
@@ -213,7 +214,7 @@ class KuGouApiSource : LyricSource {
     private fun Double.roundTo1(): String = String.format(Locale.US, "%.1f", this)
 
     private fun downloadKrc(hash: String, durationMs: Long): String? {
-        val searchUrl = "http://krcs.kugou.com/search?ver=1&man=yes&client=mobi&keyword=&duration=$durationMs&hash=$hash"
+        val searchUrl = "https://krcs.kugou.com/search?ver=1&man=yes&client=mobi&keyword=&duration=$durationMs&hash=$hash"
         val searchJson = get(searchUrl)
         val candidates = JSONObject(searchJson).optJSONArray("candidates")
         val first = candidates?.takeIf { it.length() > 0 }?.optJSONObject(0) ?: return null
@@ -222,7 +223,7 @@ class KuGouApiSource : LyricSource {
         val accessKey = first.optString("accesskey", "")
         if (id.isEmpty() || accessKey.isEmpty()) return null
 
-        val downloadUrl = "http://krcs.kugou.com/download?ver=1&client=mobi" +
+        val downloadUrl = "https://krcs.kugou.com/download?ver=1&client=mobi" +
                 "&id=${URLEncoder.encode(id, StandardCharsets.UTF_8.name())}" +
                 "&accesskey=${URLEncoder.encode(accessKey, StandardCharsets.UTF_8.name())}" +
                 "&fmt=krc&charset=utf8"
