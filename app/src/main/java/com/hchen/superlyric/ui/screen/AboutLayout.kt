@@ -112,11 +112,12 @@ fun AboutLayout(
     val haptic = LocalHapticFeedback.current
     val contributors = remember {
         listOf(
-            Contributor("ghhccghk", "https://github.com/ghhccghk", R.drawable.ghhccghk),
-            Contributor("YifePlayte", "https://github.com/YifePlayte", R.drawable.yifeplayte),
-            Contributor("YuKongA", "https://github.com/YuKongA", R.drawable.yukonga),
             Contributor("AnserJim", "https://github.com/killerprojecte", R.drawable.anserjim),
             Contributor("BlueEve04", "https://github.com/BlueEve04", R.drawable.blueeve04),
+            Contributor("Higanoneko", "https://github.com/Higanoneko", R.drawable.higanoneko),
+            Contributor("ghhccghk", "https://github.com/ghhccghk", R.drawable.ghhccghk),
+            Contributor("YuKongA", "https://github.com/YuKongA", R.drawable.yukonga),
+            Contributor("YifePlayte", "https://github.com/YifePlayte", R.drawable.yifeplayte),
         )
     }
 
