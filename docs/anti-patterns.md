@@ -94,3 +94,24 @@ stale or wrong-dialect comment costs more than none.
 
 Exceptions: the license header; one short note for an invariant, boundary, or failure mode the
 reader cannot infer; framework-mandated annotations and tags.
+
+## 7. Fix the cause, not the reported symptom
+
+Ban:
+
+- a fix that starts at the reported call site instead of tracing to the layer that owns the
+  failed invariant;
+- making the reported case pass while the failed parser, state machine, or contract stays unchanged;
+- guards, special cases, or retries that hide the failure instead of removing the path that
+  produces it;
+- a feature or optimization bolted onto the outer layer when the core model, flow, or data
+  structure is what must change;
+- optimizing with caches, threads, or layers before the bottleneck is measured.
+
+Why: a symptom patch leaves the cause reachable and adds code that hides the next failure; each
+round of patching makes the tree larger and the real defect harder to see. Removing the cause
+eliminates the failure class and keeps the code smaller.
+
+Exceptions: immediate containment while the root fix is unsafe to ship, with the root cause recorded
+and the stopgap removed in the same effort; a host or third-party boundary that cannot change,
+worked around once in a stated place instead of scattered.
