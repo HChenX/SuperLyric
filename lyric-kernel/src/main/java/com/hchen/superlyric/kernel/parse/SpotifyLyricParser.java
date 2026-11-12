@@ -66,6 +66,20 @@ public final class SpotifyLyricParser {
         return parseProtobufLyrics(data);
     }
 
+    /**
+     * 判断解析结果是否有可用时间轴。
+     *
+     * 全部行共用 0 起点时是平台返回的未同步歌词：行序与索引都无法随播放推进，
+     * 按定时文档发布会让客户端永远高亮首行。单行 0 起点仍是合法歌词。
+     */
+    public static boolean hasUsableTimeline(List<Line> lines) {
+        if (lines.size() < 2) return true;
+        for (Line line : lines) {
+            if (line.startTimeMs > 0L) return true;
+        }
+        return false;
+    }
+
     private static List<RawLine> mapJsonLines(List<JsonLyricLine> jsonLines) {
         List<RawLine> lines = new ArrayList<>(jsonLines.size());
         for (JsonLyricLine jsonLine : jsonLines) {

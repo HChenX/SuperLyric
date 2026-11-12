@@ -87,6 +87,12 @@ class SpotifyApiSource : LyricSource {
             try {
                 val data = SpotifyLyricAnalysis.fetchLyric(trackId, headers)
                 val lines = SpotifyLyricParser.parseLyrics(data).orEmpty()
+                if (!SpotifyLyricParser.hasUsableTimeline(lines)) {
+                    // 未同步歌词：所有行都是 0 起点，发布后索引无法随播放推进。
+                    // 这是来源服务不了定时歌词，不是读取失败，也不能下发占位
+                    AndroidLog.logW(sourceName, "Rejecting unsynced lyric for $trackId")
+                    return LyricOutcome.Unsupported("spotify: lyric has no timeline")
+                }
                 if (lines.isEmpty()) {
                     // 404 已按无歌词处理（LyricNotFoundException）；此处是拿到了响应体却
                     // 读不出行，属读取失败，不得当作确定无歌词
@@ -139,7 +145,7 @@ class SpotifyApiSource : LyricSource {
         val bytes = LyricCacheStore.getBytes(null, PROVIDER_NAME, key) ?: return null
 
         val lines = runCatching { SpotifyLyricParser.parseLyrics(bytes) }.getOrNull().orEmpty()
-        if (lines.isNotEmpty()) {
+        if (lines.isNotEmpty() && SpotifyLyricParser.hasUsableTimeline(lines)) {
             AndroidLog.logI(sourceName, "Lyric disk cache hit for $key")
             val doc = toDoc(lines, identity)
             LyricDiag.dumpDoc(sourceName, doc)

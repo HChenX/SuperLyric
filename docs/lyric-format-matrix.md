@@ -69,6 +69,8 @@ A parse failure returns null and is not converted to NoLyrics.
 - Unknown types inside KRC `[language:]` are ignored rather than attached to a
   guessed channel.
 - Video subtitle formats SRT, WebVTT, ASS and SSA are not supported.
+- Spotify payloads whose lines all start at 0 are unsynced; they are classified Unsupported
+  instead of being published with a degenerate timeline.
 
 ## 7. Verification
 

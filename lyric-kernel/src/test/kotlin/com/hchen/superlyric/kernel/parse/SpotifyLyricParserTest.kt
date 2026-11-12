@@ -19,6 +19,7 @@
 package com.hchen.superlyric.kernel.parse
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -195,6 +196,39 @@ class SpotifyLyricParserTest {
         assertNull(SpotifyLyricParser.parseLyrics(byteArrayOf(0x08, 0x01)))
         // 空 lyrics 容器：结构合法但没有行，返回空列表而不是崩溃
         assertTrue(SpotifyLyricParser.parseLyrics(byteArrayOf(0x0A, 0x00)).isNullOrEmpty())
+    }
+
+    @Test
+    fun `an unsynced payload has no usable timeline`() {
+        val json = """
+            {"lyrics":{"sync":false,"lines":[
+              {"startTimeMs":"0","words":"first line"},
+              {"startTimeMs":"0","words":"second line"},
+              {"startTimeMs":"0","words":"third line"}
+            ]}}
+        """.trimIndent()
+
+        val lines = SpotifyLyricParser.parseLyrics(json)
+
+        assertNotNull(lines)
+        assertEquals(3, lines!!.size)
+        assertFalse(SpotifyLyricParser.hasUsableTimeline(lines))
+    }
+
+    @Test
+    fun `a normal or single zero-start lyric keeps a usable timeline`() {
+        val synced = SpotifyLyricParser.parseLyrics(
+            """{"lyrics":{"lines":[
+              {"startTimeMs":"0","words":"first"},
+              {"startTimeMs":"1000","words":"second"}
+            ]}}""",
+        )!!
+        assertTrue(SpotifyLyricParser.hasUsableTimeline(synced))
+
+        val single = SpotifyLyricParser.parseLyrics(
+            """{"lyrics":{"lines":[{"startTimeMs":"0","words":"纯音乐，请欣赏"}]}}""",
+        )!!
+        assertTrue(SpotifyLyricParser.hasUsableTimeline(single))
     }
 
     @Test
