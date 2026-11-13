@@ -16,6 +16,12 @@ android {
         logger.warn('Release signing credentials are incomplete or local.properties is missing; release APKs will be built unsigned. ' +
                 'Define keyStoreFile, keyStorePassword, keyAlias, and keyAliasPassword to sign release builds.')
     }
+    if (project.hasProperty('requireReleaseSigning') && !hasReleaseSigning) {
+        // 发布流水线显式要求签名：缺凭据时构建失败，避免把未签名 APK 当发布产物上传
+        throw new org.gradle.api.GradleException(
+                'Release signing credentials are required but missing: ' +
+                        'keyStoreFile, keyStorePassword, keyAlias and keyAliasPassword must be set.')
+    }
 
     signingConfigs {
         if (hasReleaseSigning) {
@@ -42,7 +48,7 @@ android {
         minSdk 30
         targetSdk 37
         // noinspection HighAppVersionCode
-        versionCode 2026111101
+        versionCode 2026111400
         versionName "4.2"
 
         ndk {

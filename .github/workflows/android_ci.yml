@@ -48,7 +48,12 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build with Gradle
-        run: ./gradlew assembleRelease assembleDebug --stacktrace
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/master" ]; then
+            ./gradlew assembleRelease assembleDebug --stacktrace -PrequireReleaseSigning=true
+          else
+            ./gradlew assembleRelease assembleDebug --stacktrace
+          fi
 
       - name: Run unit tests
         run: ./gradlew :lyric-kernel:test :shared:testDebugUnitTest :hook-anchors:testDebugUnitTest :hooks-id:testDebugUnitTest :lyric-hook:testDebugUnitTest :lyric-network:testDebugUnitTest :lyric-service:testDebugUnitTest :app:testDebugUnitTest --stacktrace
@@ -56,6 +61,16 @@ jobs:
       - name: Run lint
         run: ./gradlew :app:lintDebug :app:lintRelease --stacktrace
 
+      - name: Verify Release Apk Signature
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        run: |
+          if [ -z "${{ secrets.SIGNING_KEY }}" ]; then
+            echo "Release signing secret is missing; refusing to publish an unsigned APK."
+            exit 1
+          fi
+          APK=$(find app/build/outputs/apk/release -name "*.apk" -type f | head -n 1)
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)
+          "$BUILD_TOOLS/apksigner" verify --verbose "$APK"
       - name: Upload Release Apk
         uses: actions/upload-artifact@v4
         with:
