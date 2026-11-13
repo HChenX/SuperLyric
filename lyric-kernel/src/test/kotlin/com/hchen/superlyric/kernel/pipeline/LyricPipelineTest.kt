@@ -515,6 +515,26 @@ class LyricPipelineTest {
     }
 
     @Test
+    fun `trailing tags on the main line keep its same timestamp translation`() {
+        // 椒盐内嵌日文歌词：主行用方括号逐字标签，译文行只有行首标签且与主行同始。
+        // 伴随行识别只认尖括号标签时，译文会被当成普通行，主行标签也被漏掉。
+        val payload = """
+            [00:55.823]弄[00:56.415]ら[00:56.720]れ[00:57.023]て[00:57.183]垂[00:57.320]れ[00:57.463]流[00:57.728]す[00:58.192] [00:58.192]音[00:58.552]の[00:58.797]な[00:59.117]い[00:59.469]音[00:59.710]
+            [00:55.823]在命运玩弄下发出无声之音
+            [00:59.710]遍[01:00.150]く[01:00.590] [01:00.590]名[01:00.758]前[01:00.968]を[01:01.112]捨[01:01.264]て[01:01.408]た[01:01.568]の[01:01.816]ね[01:01.906]
+            [00:59.710]将名字尽数舍弃
+        """.trimIndent()
+
+        val doc = LyricPipeline.parse(LyricRequest(text = payload))
+
+        assertNotNull(doc)
+        val lines = doc!!.lines
+        assertEquals(listOf("弄られて垂れ流す 音のない音", "遍く 名前を捨てたのね"), lines.map { it.text })
+        assertEquals("在命运玩弄下发出无声之音", lines[0].translation)
+        assertEquals("将名字尽数舍弃", lines[1].translation)
+    }
+
+    @Test
     fun `blank and placeholder sidecars are dropped`() {
         // 波点会下发只有空格的伴随行；TME（QQ）用 "//" 表示"此行无译文"。
         // 两者都不该作为译文继续下发。

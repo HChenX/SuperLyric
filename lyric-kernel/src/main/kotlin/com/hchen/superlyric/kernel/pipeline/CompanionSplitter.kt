@@ -101,7 +101,10 @@ internal object CompanionSplitter {
                 raw = line,
                 startMs = LrcTimestamps.timestampOf(head.value),
                 body = body,
-                tagged = LrcTimestamps.WORD_TAG.containsMatchIn(body),
+                // 翻译/音译行只有行首标签；主行由尖括号词标签或方括号逐字标签标识。
+                // 只认尖括号时，椒盐的方括号主行会被当成裸行，整份载荷无法拆分。
+                tagged = LrcTimestamps.WORD_TAG.containsMatchIn(body) ||
+                        TrailingTimestampLrcParser.hasTrailingTags(body),
             )
         }
         return rows

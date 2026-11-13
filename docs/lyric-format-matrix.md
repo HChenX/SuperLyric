@@ -32,7 +32,7 @@ stops the chain.
 | QRC | QRC XML, or `[start,dur]` plus `(start,dur)` | QrcParser | yes | XML block | request channel | QRC-to-LRC, library |
 | LRCX | `[kuwo:...]` | KuwoLrcxParser | yes | inline | no | library |
 | Soda JSON | root JSON with `sentences` | SodaJsonParser | yes | `translations.cn` | no | none |
-| Salt trailing | LRC line head, text, then square timestamp | TrailingTimestampLrcParser | yes | no | no | library |
+| Salt trailing | LRC line head, text, then square timestamp | TrailingTimestampLrcParser, CompanionSplitter | yes | sidecar | sidecar | library |
 
 ## 3. Host model formats
 

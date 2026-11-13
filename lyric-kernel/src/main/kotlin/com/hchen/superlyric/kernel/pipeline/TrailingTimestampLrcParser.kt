@@ -52,11 +52,19 @@ internal object TrailingTimestampLrcParser {
             if (line.isEmpty() || LrcTimestamps.DIRECTIVE.matches(line)) continue
             val head = LrcTimestamps.LINE_HEAD.find(line) ?: continue
             val body = line.substring(head.range.last + 1)
-            val first = INLINE_TAG.find(body) ?: continue
-            if (first.range.first > 0) return true
+            if (hasTrailingTags(body)) return true
         }
         return false
     }
+
+    /**
+     * 行内时间标签之前是否已有文字
+     *
+     * 普通 LRC 的同一行多时间戳（`[00:01.00][00:05.00]正文`）第一个标签紧贴行首，
+     * 不属于本形态
+     */
+    internal fun hasTrailingTags(body: String): Boolean =
+        INLINE_TAG.find(body)?.range?.first?.let { it > 0 } == true
 
     /**
      * @return 解析结果；不是本形态时返回 null，调用方应回退到通用解析库
@@ -71,11 +79,10 @@ internal object TrailingTimestampLrcParser {
             val head = LrcTimestamps.LINE_HEAD.find(line) ?: continue
             val startMs = LrcTimestamps.timestampOf(head.value)
             val body = line.substring(head.range.last + 1)
-            val tags = INLINE_TAG.findAll(body).toList()
-            if (tags.isEmpty()) continue
             // 行首后没有文字、直接跟第二个标签，是同一行多时间戳的普通 LRC 形态，
             // 不能按逐字格式解析。
-            if (tags.first().range.first == 0) continue
+            if (!hasTrailingTags(body)) continue
+            val tags = INLINE_TAG.findAll(body).toList()
 
             val words = ArrayList<LyricWord>(tags.size)
             val builder = StringBuilder()
