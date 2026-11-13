@@ -99,13 +99,28 @@ class MobileMusicHookSource internal constructor(
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
         val target = Request(identity, session)
         request = target
+        refresh(target, 0)
+    }
+
+    /**
+     * 回到已缓存过的曲目时宿主不再触发解析回调，快照可能晚于会话建立；
+     * 在兜底窗口内做有限次重读，避免必须等用户操作才出词。
+     */
+    private fun refresh(target: Request, attempt: Int) {
         executor.execute {
             if (request !== target) return@execute
             try {
                 val snapshot = anchors.refreshCurrent() ?: captured
-                if (snapshot != null) deliver(target, snapshot)
+                if (snapshot != null) {
+                    deliver(target, snapshot)
+                    return@execute
+                }
             } catch (error: Throwable) {
                 AndroidLog.logE(sourceName, "Cannot read native lyric snapshot", error)
+            }
+            if (attempt + 1 < MAX_REFRESH_ATTEMPTS && executor is ScheduledExecutorService) {
+                executor.schedule({ refresh(target, attempt + 1) },
+                    REFRESH_RETRY_DELAY_MS, TimeUnit.MILLISECONDS)
             }
         }
     }
@@ -145,6 +160,19 @@ class MobileMusicHookSource internal constructor(
             )
             return
         }
+        // 稳定标识相同也不能掩盖时长冲突：宿主搜索页会把上一首时长写进当前曲目，
+        // 这种快照发布后会被系统按曲目不一致拒收，不能当作当前曲目的歌词。
+        if (target.identity.durationMs > 0L && current.durationMs > 0L &&
+            kotlin.math.abs(target.identity.durationMs - current.durationMs) >
+            TrackIdentity.DURATION_TOLERANCE_MS
+        ) {
+            AndroidLog.logW(
+                sourceName,
+                "Discarding snapshot with conflicting duration for ${current.stableId}: " +
+                        "${current.durationMs}ms vs ${target.identity.durationMs}ms",
+            )
+            return
+        }
         AndroidLog.logD(sourceName, "Accepting native snapshot for ${current.stableId}")
         if (snapshot.unavailableReason() != null) {
             // 下载中的占位数据不能抢占首次结果，后续原生回调仍可在等待窗口内完成取词。
@@ -176,5 +204,7 @@ class MobileMusicHookSource internal constructor(
     private companion object {
         const val MAX_INSTALL_ATTEMPTS = 10
         const val INSTALL_RETRY_DELAY_MS = 500L
+        const val MAX_REFRESH_ATTEMPTS = 10
+        const val REFRESH_RETRY_DELAY_MS = 300L
     }
 }

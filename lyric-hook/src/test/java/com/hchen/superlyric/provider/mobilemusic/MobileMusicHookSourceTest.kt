@@ -120,6 +120,17 @@ class MobileMusicHookSourceTest {
     }
 
     @Test
+    fun `a snapshot whose duration conflicts with the media session is not published`() {
+        val executor = QueueExecutor()
+        val source = MobileMusicHookSource(MobileMusicAnchors(), executor)
+        val session = Session()
+        source.start(identity("A").copy(durationMs = 9_000L), session)
+        source.onCaptured(snapshot("A"))
+        executor.drain()
+        assertTrue(session.delivered.isEmpty())
+    }
+
+    @Test
     fun `lyrics captured before the media session are replayed for the same stable id`() {
         val executor = QueueExecutor()
         val source = MobileMusicHookSource(MobileMusicAnchors(), executor)
