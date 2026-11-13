@@ -98,10 +98,11 @@ abstract class MusicProvider : AbsPublisher() {
             }, delayMs, TimeUnit.MILLISECONDS)
         },
         onConfirmed = Runnable {
-            // 与证据记账互斥地判定：StopGate 的令牌只能证明排期，无法证明确认之后没有新发布
-            if (!stopEvidence.isStillValid()) return@Runnable
-            AndroidLog.logD(providerTag, "Playback stopped (confirmed)")
-            orchestrator.onPlaybackStopped()
+            // 判定与停止动作在同一临界区：只读判定会让窗口内到达的证据丢失，清掉刚发布的内容
+            stopEvidence.confirmIfStillValid {
+                AndroidLog.logD(providerTag, "Playback stopped (confirmed)")
+                orchestrator.onPlaybackStopped()
+            }
         },
     )
 
@@ -270,9 +271,7 @@ abstract class MusicProvider : AbsPublisher() {
     private fun onMetadataChanged(metadata: MediaMetadata) {
         val identity = identitySource?.current(metadata) ?: metadata.toTrackIdentity(
             providerTag,
-            metadata.hostString(MediaMetadata.METADATA_KEY_MEDIA_ID)
-                .trim()
-                .takeIf { it.isNotEmpty() },
+            TrackIdentity.usableId(metadata.hostString(MediaMetadata.METADATA_KEY_MEDIA_ID)),
         )
 
         // 过渡期空元数据既不是切歌也不是停止。

@@ -158,8 +158,10 @@ public final class MobileMusicAnchors {
                 translationLines = CoreTool.findField(manager, "mLrcTrcsLineList");
                 lyricParser = CoreTool.findField(manager, "lyricsParser");
                 isMrc = CoreTool.findField(manager, "isMrc");
-                hookMethod(CoreTool.findMethod(manager, "parseLyricsFile", String.class, songClass), capture);
-                hookMethod(CoreTool.findMethod(manager, "parseTrc", File.class), capture);
+                hookMethods(List.of(
+                    CoreTool.findMethod(manager, "parseLyricsFile", String.class, songClass),
+                    CoreTool.findMethod(manager, "parseTrc", File.class)
+                ), capture);
             } else {
                 legacyModel = false;
                 Class<?> dataClass = CoreTool.findClassIfExists(DATA_CLASS, loader);
@@ -172,18 +174,21 @@ public final class MobileMusicAnchors {
 
                 Class<?> parserClass = CoreTool.findClassIfExists(PARSER_CLASS, loader);
                 if (parserClass != null) {
+                    List<Method> parseEntries = new ArrayList<>();
                     for (Method method : parserClass.getDeclaredMethods()) {
-                        if (!isParseEntry(method)) continue;
-                        hookMethod(method, capture);
+                        if (isParseEntry(method)) parseEntries.add(method);
                     }
+                    hookMethods(parseEntries, capture);
                 }
                 // 原生解析完成后由管理器回调通知整首歌词；回调参数即当前数据对象
+                List<Method> finishCallbacks = new ArrayList<>();
                 for (Method method : manager.getDeclaredMethods()) {
                     String name = method.getName();
                     if (name.startsWith("callBackLrcFinish") || name.startsWith("callBackTrcFinish")) {
-                        hookMethod(method, capture);
+                        finishCallbacks.add(method);
                     }
                 }
+                hookMethods(finishCallbacks, capture);
             }
 
             this.listener = listener;
@@ -351,9 +356,17 @@ public final class MobileMusicAnchors {
         }
     }
 
-    private void hookMethod(@NonNull Method method, @NonNull AbsHook hook) {
-        method.setAccessible(true);
-        if (lyricHooks.add(method)) CoreTool.hook(method, hook);
+    /**
+     * 循环只负责选择目标方法，安装由这里一次 hookAll 完成
+     */
+    private void hookMethods(@NonNull List<Method> methods, @NonNull AbsHook hook) {
+        List<Method> targets = new ArrayList<>(methods.size());
+        for (Method method : methods) {
+            method.setAccessible(true);
+            if (lyricHooks.add(method)) targets.add(method);
+        }
+        if (targets.isEmpty()) return;
+        CoreTool.hookAll(targets.toArray(new Method[0]), hook);
     }
 
     private void hookOffset(@NonNull Method method, @NonNull AbsHook hook) {

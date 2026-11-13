@@ -84,23 +84,10 @@ class LyricDocAdapterTest {
     }
 
     @Test
-    fun `v4 projection round trips through the kernel model`() {
-        val restored = LyricDocAdapter.fromLyric(lyric())
-
-        assertEquals(doc.lines, restored.lines)
-        assertEquals(doc.title, restored.title)
-        assertEquals(doc.artist, restored.artist)
-        assertEquals(doc.album, restored.album)
-        assertEquals(doc.durationMs, restored.durationMs)
-        assertEquals(doc.lyricId, restored.lyricId)
-    }
-
-    @Test
     fun `a blank title stays an empty string in the v4 model`() {
         val lyric = LyricDocAdapter.toLyric(doc.copy(title = ""))!!
 
         assertEquals("", lyric.title)
-        assertEquals("", LyricDocAdapter.fromLyric(lyric).title)
     }
 
     @Test
@@ -117,11 +104,6 @@ class LyricDocAdapterTest {
     @Test
     fun `empty document has no v4 projection`() {
         assertNull(LyricDocAdapter.toLyric(LyricDoc.EMPTY))
-    }
-
-    @Test
-    fun `null v4 document yields an empty kernel document`() {
-        assertTrue(LyricDocAdapter.fromLyric(null).isEmpty)
     }
 
     @Test

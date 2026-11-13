@@ -84,9 +84,7 @@ class MiuiNativeFetchSource(
     }
 
     private fun onSongInfo(facts: HostTrackFacts) {
-        val id = facts.identity.catalogId
-            ?.takeIf { it.catalog == LyricCatalog.QQ }
-            ?.id?.let(CatalogIds::qqSongId)
+        val id = CatalogIds.lyricId(facts.identity, LyricCatalog.QQ, CatalogIds::qqSongId)
             ?: facts.secondaryId
         if (id <= 0L) return
 

@@ -65,18 +65,16 @@ public final class SpotifyLyricAnalysis {
     public static final class HeaderSnapshot {
         @NonNull
         final Map<String, String> headers;
-        public final long generation;
         public final boolean valid;
 
-        private HeaderSnapshot(@NonNull Map<String, String> headers, long generation, boolean valid) {
+        private HeaderSnapshot(@NonNull Map<String, String> headers, boolean valid) {
             this.headers = headers;
-            this.generation = generation;
             this.valid = valid;
         }
     }
 
     private static final AtomicReference<HeaderSnapshot> sHeaders =
-        new AtomicReference<>(new HeaderSnapshot(Collections.emptyMap(), 0L, false));
+        new AtomicReference<>(new HeaderSnapshot(Collections.emptyMap(), false));
 
     private static volatile boolean sHeaderCompleteLogged = false;
 
@@ -93,20 +91,16 @@ public final class SpotifyLyricAnalysis {
     private SpotifyLyricAnalysis() {
     }
 
-    /**
-     * 判断是否为关键会话头（key 需已小写）
-     */
-    public static boolean isKeyRequired(@NonNull String keyLowercase) {
+    private static boolean isKeyRequired(@NonNull String keyLowercase) {
         return KEYS_REQUIRED.contains(keyLowercase);
     }
 
     /**
      * 从同一批 okhttp Headers 构造参数发布完整会话头快照
      *
-     * @return 本次数据是否包含全部关键头
+     * <p>只有 4 个关键头在同一批里齐全时才发布；快照不可变，供并发取词读取。
      */
-    @Nullable
-    public static HeaderSnapshot updateHeaders(@NonNull String[] namesAndValues) {
+    public static void updateHeaders(@NonNull String[] namesAndValues) {
         Map<String, String> captured = new LinkedHashMap<>();
         for (int i = 0; i + 1 < namesAndValues.length; i += 2) {
             String name = namesAndValues[i];
@@ -115,19 +109,19 @@ public final class SpotifyLyricAnalysis {
             String lower = name.toLowerCase(Locale.ENGLISH);
             if (isKeyRequired(lower)) captured.put(lower, value);
         }
-        if (!captured.keySet().containsAll(KEYS_REQUIRED)) return null;
+        if (!captured.keySet().containsAll(KEYS_REQUIRED)) return;
 
         Map<String, String> immutable = Collections.unmodifiableMap(captured);
         while (true) {
             HeaderSnapshot current = sHeaders.get();
-            if (current.valid && current.headers.equals(immutable)) return current;
-            HeaderSnapshot next = new HeaderSnapshot(immutable, current.generation + 1L, true);
+            if (current.valid && current.headers.equals(immutable)) return;
+            HeaderSnapshot next = new HeaderSnapshot(immutable, true);
             if (sHeaders.compareAndSet(current, next)) {
                 if (!sHeaderCompleteLogged) {
                     sHeaderCompleteLogged = true;
                     AndroidLog.logI(TAG, "All required session headers captured");
                 }
-                return next;
+                return;
             }
         }
     }
@@ -140,7 +134,7 @@ public final class SpotifyLyricAnalysis {
 
     public static void invalidate(@NonNull HeaderSnapshot requestSnapshot) {
         sHeaders.compareAndSet(requestSnapshot,
-            new HeaderSnapshot(Collections.emptyMap(), requestSnapshot.generation, false));
+            new HeaderSnapshot(Collections.emptyMap(), false));
     }
 
     /**
@@ -184,9 +178,6 @@ public final class SpotifyLyricAnalysis {
                 throw new HttpStatusException(code);
             }
 
-            if (response.body() == null) {
-                throw new IOException("Empty lyric response for " + id);
-            }
             long contentLength = response.body().contentLength();
             if (contentLength > LyricCacheStore.MAX_PAYLOAD_BYTES) {
                 throw new OversizeException(LyricCacheStore.MAX_PAYLOAD_BYTES);

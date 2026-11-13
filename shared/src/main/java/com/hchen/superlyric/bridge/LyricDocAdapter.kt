@@ -69,31 +69,6 @@ object LyricDocAdapter {
     }
 
     /**
-     * 将 4.0 模型读入内核模型；仅用于解析工具与测试，不进入核心会话。
-     */
-    fun fromLyric(lyric: Lyric?): LyricDoc {
-        if (lyric == null) return LyricDoc.EMPTY
-
-        return LyricDoc(
-            lines = lyric.lines.map { line ->
-                LyricLine(
-                    startMs = line.start,
-                    endMs = line.end,
-                    text = line.text,
-                    translation = line.translation?.takeIf { it.isNotEmpty() },
-                    phonetic = line.phonetic?.takeIf { it.isNotEmpty() },
-                    words = line.words?.map { LyricWord(it.text, it.start, it.end) }.orEmpty(),
-                )
-            },
-            title = lyric.title,
-            artist = lyric.artist,
-            album = lyric.album,
-            durationMs = lyric.duration,
-            lyricId = lyric.id.takeIf { it.isNotBlank() },
-        )
-    }
-
-    /**
      * 用系统 MediaSession 的时长补齐未知时长；已知时长保持不变。
      */
     fun withDuration(lyric: Lyric, durationMs: Long): Lyric {

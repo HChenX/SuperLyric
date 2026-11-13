@@ -27,13 +27,6 @@ import org.junit.jupiter.api.Test
 class LyricPayloadHeuristicsTest {
 
     @Test
-    fun `a full lyric needs both length and a time tag`() {
-        assertTrue(LyricPayloadHeuristics.looksLikeFullLyricText("x".repeat(200) + "[00:01.00]"))
-        assertFalse(LyricPayloadHeuristics.looksLikeFullLyricText("[00:01.00]short"))
-        assertFalse(LyricPayloadHeuristics.looksLikeFullLyricText("x".repeat(200)))
-    }
-
-    @Test
     fun `a single zero timestamp is not a timeline`() {
         assertFalse(LyricPayloadHeuristics.hasUsableTiming(LyricDoc(listOf(LyricLine(0, 100, "a")))))
         assertTrue(LyricPayloadHeuristics.hasUsableTiming(LyricDoc(listOf(LyricLine(1_000, 2_000, "a")))))

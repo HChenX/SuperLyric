@@ -23,6 +23,7 @@ import com.hchen.superlyric.kernel.parse.KuwoLrcxParser
 import com.hchen.superlyric.kernel.parse.LyricifyTextParser
 import com.hchen.superlyric.kernel.parse.SodaJsonParser
 import com.hchen.superlyric.kernel.parse.TtmlTextParser
+import com.hchen.superlyric.kernel.text.LyricTextLimits
 
 /**
  * 歌词文本的严格格式检测
@@ -54,9 +55,9 @@ internal object LyricFormatDetector {
         if (SodaJsonParser.canParse(text)) return LyricTextKind.SODA_JSON
         if (QrcCipher.isPlainQrc(text)) return LyricTextKind.QRC
         if (KuwoLrcxParser.canParse(text)) return LyricTextKind.LRCX
-        if (KRC_LINE.containsMatchIn(text)) return LyricTextKind.KRC
-        if (YRC_LINE.containsMatchIn(text)) return LyricTextKind.YRC
-        if (QRC_LINE.containsMatchIn(text)) return LyricTextKind.QRC
+        if (LyricTextLimits.anyLineMatches(text, KRC_LINE)) return LyricTextKind.KRC
+        if (LyricTextLimits.anyLineMatches(text, YRC_LINE)) return LyricTextKind.YRC
+        if (LyricTextLimits.anyLineMatches(text, QRC_LINE)) return LyricTextKind.QRC
         if (TtmlTextParser.canParse(text)) return LyricTextKind.TTML
         if (TrailingTimestampLrcParser.canParse(text)) return LyricTextKind.SALT
         if (LyricifyTextParser.canParse(text)) return LyricTextKind.LYRICIFY

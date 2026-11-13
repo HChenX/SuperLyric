@@ -54,7 +54,8 @@ class MiuiIdentitySource(private val providerTag: String) : BaseIdentitySource()
     ): TrackIdentity {
         val identity = TrackIdentity(
             source = providerTag,
-            stableId = mediaId.ifEmpty { null },
+            // 占位值不能当权威标识：MEDIA_ID 是占位串时退回标题/歌手/时长判据
+            stableId = TrackIdentity.usableId(mediaId),
             title = title,
             artist = artist,
             durationMs = durationMs,

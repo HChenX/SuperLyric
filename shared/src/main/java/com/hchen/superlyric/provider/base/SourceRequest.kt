@@ -20,7 +20,6 @@ package com.hchen.superlyric.provider.base
 
 import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * 一次取词请求的不可变快照
@@ -30,16 +29,14 @@ import java.util.concurrent.atomic.AtomicLong
 data class SourceRequest(
     val session: LyricSource.Session,
     val identity: TrackIdentity,
-    val generation: Long,
 )
 
 /**
- * 按请求代际筛选异步结果
+ * 当前请求的投递门
  *
  * 本地只做预筛；最终仍由编排器的 epoch 丢弃迟到投递。
  */
 class SourceRequestGate {
-    private val generation = AtomicLong()
     private val lock = Any()
 
     @Volatile
@@ -47,7 +44,7 @@ class SourceRequestGate {
 
     fun open(identity: TrackIdentity, session: LyricSource.Session): SourceRequest =
         synchronized(lock) {
-            val request = SourceRequest(session, identity, generation.incrementAndGet())
+            val request = SourceRequest(session, identity)
             current = request
             request
         }
@@ -56,7 +53,6 @@ class SourceRequestGate {
 
     fun invalidate() {
         synchronized(lock) {
-            generation.incrementAndGet()
             current = null
         }
     }

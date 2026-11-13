@@ -26,6 +26,7 @@ import com.hchen.superlyric.kernel.model.LyricLine
 import com.hchen.superlyric.kernel.model.LyricWord
 import com.hchen.superlyric.kernel.text.LrcTimestamps
 import com.hchen.superlyric.kernel.text.LyricText
+import com.hchen.superlyric.kernel.text.LyricTextLimits
 
 /**
  * QQ 音乐 QRC 明文解析器。
@@ -39,7 +40,7 @@ object QrcParser {
     private val LINE_PATTERN = Regex("""^\[(\d+),(\d+)](.*)$""")
 
     /**
-     * 词形式：`文字(start,dur)` 或 `文字(start,dur,flag)`
+     * 词标签：`(start,dur)` 或 `(start,dur,flag)`
      *
      * 文字位于时间标签之前，例如 `[138621,3336]我(138621,384)把(139005,305)…`：
      * 行起始 138621 与首词起始 138621 相等（行内相对偏移为 0）。
@@ -47,10 +48,7 @@ object QrcParser {
      * 按"标签在前、文字在后"捕获会让每个词错配到前一个词的时间上，
      * 且每行首个词被整段丢弃（"后会无期" → "会无期"）。
      */
-    private val WORD_PATTERN = Regex("""([^(]*)\((\d+),(\d+)(?:,\d+)?\)""")
-
-    /** 仅匹配时间标签本身，用于剥离标签、保留文字 */
-    private val WORD_TAG_ONLY = Regex("""\(\d+,\d+(?:,\d+)?\)""")
+    private val WORD_TAG_PATTERN = Regex("""\((\d+),(\d+)(?:,\d+)?\)""")
 
     /** 标签形式：`[ti:xxx]` */
     private val TAG_PATTERN = Regex("""^\[([a-zA-Z]+):(.*)]$""")
@@ -67,9 +65,6 @@ object QrcParser {
     private val LYRIC_TYPE_ATTR = Regex("""LyricType="(\d)"""")
 
     private const val DEFAULT_LINE_DURATION_MS = 1000L
-
-    /** 单行长度上限：超过它只可能是畸形载荷，而超长行会让词标签正则退化成 O(n²) */
-    private const val MAX_LINE_CHARS = 4 * 1024
 
     /** 整份载荷上限：正则/扫描都必须在有界输入上运行 */
     private const val MAX_INPUT_CHARS = 2_000_000
@@ -255,10 +250,8 @@ object QrcParser {
             if (line.isEmpty()) continue
             if (TAG_PATTERN.matches(line)) continue
 
-            // 词标签正则以 `([^(]*)` 开头，在没有 `(` 的超长行上会逐位置回溯成 O(n²)，
-            // 长时间占用解析线程。正常歌词行远小于此上限，超限只可能是畸形载荷。
-            // 内核不能打日志（零 Android 依赖），这里只能静默跳过
-            if (line.length > MAX_LINE_CHARS) {
+            // 与格式检测共用同一单行上限；内核无日志依赖，超限行静默跳过
+            if (line.length > LyricTextLimits.MAX_LINE_CHARS) {
                 stats?.let { it.skippedLongLines++ }
                 continue
             }
@@ -295,9 +288,9 @@ object QrcParser {
     ): LyricLine {
         val words = ArrayList<LyricWord>()
         val textBuilder = StringBuilder()
-        var consumed = 0
+        var cursor = 0
 
-        val matches = WORD_PATTERN.findAll(body).toList()
+        val tags = WORD_TAG_PATTERN.findAll(body).toList()
 
         // 词起始有两种真实排布：歌内绝对毫秒 与 行内相对偏移。二者必须区分，
         // 否则整行逐字时间会整体偏移一个行起始的量。
@@ -306,16 +299,20 @@ object QrcParser {
         // 必须逐行判定而非逐词：同一行内混用两种解释会自相矛盾。
         // 用未加 offset 的行起始做判定：若拿 startMs（已加 offset）来比，
         // 正 offset 会把绝对排布误判成相对排布，词时间被二次叠加行起始。
-        val absoluteTime = matches.firstOrNull()
-            ?.groupValues?.get(2)?.toLongOrNull()
+        val absoluteTime = tags.firstOrNull()
+            ?.groupValues?.get(1)?.toLongOrNull()
             ?.let { it >= rawLineStart }
             ?: true
 
-        for (match in matches) {
-            val wordText = LyricText.cleanInvisibleChars(LyricText.decodeEntities(match.groupValues[1]))
-            val rawStart = match.groupValues[2].toLongOrNull()
-            val rawDuration = match.groupValues[3].toLongOrNull() ?: 0L
-            consumed = match.range.last + 1
+        // 词文本位于其时间标签之前：按位置顺序把标签前的全部文字并入该词，
+        // 因此正文里的 ASCII 括号是普通文本，不会吞进词文本或整段丢失。
+        for (tag in tags) {
+            val wordText = LyricText.cleanInvisibleChars(
+                LyricText.decodeEntities(body.substring(cursor, tag.range.first)),
+            )
+            val rawStart = tag.groupValues[1].toLongOrNull()
+            val rawDuration = tag.groupValues[2].toLongOrNull() ?: 0L
+            cursor = tag.range.last + 1
 
             if (rawStart == null || wordText.isEmpty()) {
                 if (wordText.isEmpty()) stats?.let { it.emptyWords++ }
@@ -329,16 +326,16 @@ object QrcParser {
             textBuilder.append(wordText)
         }
 
-        // 末尾没有任何时间标签的残余文字（畸形载荷）同样属于本行，不能丢
-        if (consumed < body.length) {
+        // 最后一个标签之后没有任何标签的残余文字（畸形载荷）同样属于本行，不能丢
+        if (cursor < body.length) {
             textBuilder.append(
-                LyricText.cleanInvisibleChars(LyricText.decodeEntities(body.substring(consumed)))
+                LyricText.cleanInvisibleChars(LyricText.decodeEntities(body.substring(cursor))),
             )
         }
 
         if (words.isEmpty()) {
             val plain = LyricText.cleanInvisibleChars(
-                LyricText.decodeEntities(WORD_TAG_ONLY.replace(body, ""))
+                LyricText.decodeEntities(WORD_TAG_PATTERN.replace(body, "")),
             ).trim()
             return LyricLine(startMs = startMs, endMs = endMs, text = plain)
         }
@@ -373,7 +370,7 @@ object QrcParser {
             }
             val body = if (qrc != null) qrc.groupValues[3] else lrc!!.groupValues[4]
             val text = LyricText.cleanInvisibleChars(
-                LyricText.decodeEntities(WORD_TAG_ONLY.replace(body, ""))
+                LyricText.decodeEntities(WORD_TAG_PATTERN.replace(body, "")),
             ).trim()
 
             if (text.isEmpty()) continue

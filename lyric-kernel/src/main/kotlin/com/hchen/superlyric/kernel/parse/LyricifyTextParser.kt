@@ -20,6 +20,7 @@ package com.hchen.superlyric.kernel.parse
 
 import com.hchen.superlyric.kernel.map.SyncedLyricsMapper
 import com.hchen.superlyric.kernel.model.LyricDoc
+import com.hchen.superlyric.kernel.text.LyricTextLimits
 import com.mocharealm.accompanist.lyrics.core.parser.LyricifySyllableParser
 
 /**
@@ -40,7 +41,9 @@ internal object LyricifyTextParser {
     fun canParse(text: String): Boolean {
         for (raw in text.lineSequence()) {
             val line = raw.trim()
-            if (line.isEmpty() || LRC_HEAD.containsMatchIn(line)) continue
+            // 超长行只可能是畸形载荷：音节正则的回溯会按行宽平方增长
+            if (line.isEmpty() || line.length > LyricTextLimits.MAX_LINE_CHARS) continue
+            if (LRC_HEAD.containsMatchIn(line)) continue
             val count = SYLLABLE.findAll(line).count()
             // 单音节行只有带行属性时才足够可靠；普通文本里的一个括号数字对
             // 不足以判定整份载荷是 Lyricify。

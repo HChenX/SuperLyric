@@ -50,6 +50,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 非 Binder 的歌词运行时：发布者生命周期、会话、时钟、广播与两代数据边界。
@@ -60,6 +61,8 @@ import java.util.concurrent.TimeUnit;
 @SuppressWarnings("deprecation") // 3.x 边界：Binder 入参/出参仍使用 SuperLyricData
 public final class LyricRuntime {
     private static final String TAG = "LyricRuntime";
+
+    private static final long QUEUE_OFFER_TIMEOUT_MS = 2_000L;
 
     // Publisher.PublishResult 的线上取值
     static final int RESULT_OK = 0;
@@ -238,7 +241,7 @@ public final class LyricRuntime {
         boolean fullSource;
         int index;
         Lyric lyric;
-        byte[] frame;
+        byte[] frame = null;
 
         synchronized (publishers.lock) {
             PublisherRegistry.Session session = getOrCreateSessionLocked(packageName);
@@ -255,15 +258,18 @@ public final class LyricRuntime {
                 index = legacyIndex(lyric,
                     data.hasCurrentLyricIndex()
                         ? data.getCurrentLyricIndex() : lyric.indexAt(position));
-                playback.tracker.setLyrics(lyric);
-                if (data.hasPosition()) playback.tracker.onSessionPositionSynced(position);
-                if (session.playbackState != null
-                    && session.playbackState.getState() != PlaybackState.STATE_NONE) {
-                    playback.tracker.onPlaybackStateChanged(session.playbackState);
-                }
-                syncPlayState = playback.listener != null;
                 fullSource = true;
-                frame = fullFrameLocked(session, index, position);
+                shouldBroadcast = claimActiveLocked(packageName, session);
+                if (shouldBroadcast) {
+                    playback.tracker.setLyrics(lyric);
+                    if (data.hasPosition()) playback.tracker.onSessionPositionSynced(position);
+                    if (session.playbackState != null
+                        && session.playbackState.getState() != PlaybackState.STATE_NONE) {
+                        playback.tracker.onPlaybackStateChanged(session.playbackState);
+                    }
+                    syncPlayState = playback.listener != null;
+                    frame = fullFrameLocked(session, index, position);
+                }
             } else if (session.fullLyric && session.lyric != null) {
                 if (data.hasLyricId()
                     && !TextUtils.equals(data.getLyricId(), session.lyric.getId())) {
@@ -277,22 +283,26 @@ public final class LyricRuntime {
                 index = legacyIndex(lyric,
                     data.hasCurrentLyricIndex()
                         ? data.getCurrentLyricIndex() : lyric.indexAt(position));
-                if (data.hasPosition()) playback.tracker.onSessionPositionSynced(position);
                 fullSource = true;
-                frame = encode(Frame.state(buildStateLocked(session, index, position), packageName));
+                shouldBroadcast = claimActiveLocked(packageName, session);
+                if (shouldBroadcast) {
+                    if (data.hasPosition()) playback.tracker.onSessionPositionSynced(position);
+                    frame = encode(Frame.state(buildStateLocked(session, index, position), packageName));
+                }
             } else {
                 session.lyric = LyricDocAdapter.INSTANCE.withDuration(
                     incoming, session.mediaFacts.durationMs());
                 session.fullLyric = false;
                 session.positionMs = position;
-                playback.tracker.setLyrics(null);
                 lyric = session.lyric;
                 index = 0;
                 fullSource = false;
-                frame = fullFrameLocked(session, 0, position);
+                shouldBroadcast = claimActiveLocked(packageName, session);
+                if (shouldBroadcast) {
+                    playback.tracker.setLyrics(null);
+                    frame = fullFrameLocked(session, 0, position);
+                }
             }
-
-            shouldBroadcast = claimActiveLocked(packageName, session);
         }
 
         if (!shouldBroadcast) return;
@@ -319,7 +329,7 @@ public final class LyricRuntime {
 
         if (stop.wasActive()) {
             if (stop.stopFrame() != null) mLastStopFrame = stop.stopFrame();
-            notifyReceiver(packageName, "onStop", data, data,
+            notifyReceiver(packageName, "onStop", capability -> data,
                 (receiver, publisher, payload) -> receiver.onStop(publisher, payload));
             notifyFrames(packageName, stop.stopFrame());
         }
@@ -421,13 +431,14 @@ public final class LyricRuntime {
             session.lyric = cleanLyric;
             session.fullLyric = true;
             session.positionMs = position;
-            playback.tracker.setLyrics(cleanLyric);
-            if (state != null && state.getState() != PlaybackState.STATE_NONE) {
-                playback.tracker.onPlaybackStateChanged(state);
-            }
-
             shouldBroadcast = claimActiveLocked(packageName, session);
-            if (shouldBroadcast) syncPlayState = playback.listener != null;
+            if (shouldBroadcast) {
+                playback.tracker.setLyrics(cleanLyric);
+                if (state != null && state.getState() != PlaybackState.STATE_NONE) {
+                    playback.tracker.onPlaybackStateChanged(state);
+                }
+                syncPlayState = playback.listener != null;
+            }
         }
 
         if (!shouldBroadcast) {
@@ -464,7 +475,7 @@ public final class LyricRuntime {
             XposedLog.logI(TAG, "Cleared lyric for " + packageName + " (pid " + pid + ")");
             if (stop.stopFrame() != null) mLastStopFrame = stop.stopFrame();
             SuperLyricData empty = new SuperLyricData();
-            notifyReceiver(packageName, "onStop", empty, empty,
+            notifyReceiver(packageName, "onStop", capability -> empty,
                 (receiver, publisher, payload) -> receiver.onStop(publisher, payload));
             notifyFrames(packageName, stop.stopFrame());
         }
@@ -637,7 +648,7 @@ public final class LyricRuntime {
             if (frame != null) mLastStopFrame = frame;
         }
 
-        notifyReceiver(packageName, "onStop", data, data,
+        notifyReceiver(packageName, "onStop", capability -> data,
             (receiver, publisher, payload) -> receiver.onStop(publisher, payload));
         notifyFrames(packageName, frame);
     }
@@ -645,18 +656,26 @@ public final class LyricRuntime {
     private void notifyLegacyLyric(@NonNull String packageName, @NonNull Lyric lyric,
                                    int index, long position, boolean fullSource) {
         int legacyIndex = legacyIndex(lyric, index);
-        SuperLyricData full = fullSource
-            ? LyricDocAdapter.INSTANCE.toLegacyFull(lyric, legacyIndex, position) : null;
-        SuperLyricData line = legacyIndex < 0 ? full
-            : LyricDocAdapter.INSTANCE.toLegacyLine(lyric, legacyIndex, position);
         XposedLog.logD(TAG, "Legacy " + (legacyIndex < 0 ? "metadata-only" : "lyric")
             + " from " + packageName + ": index=" + legacyIndex + ", position=" + position + "ms");
-        notifyReceiver(packageName, "onLyric", full, line,
+        notifyReceiver(packageName, "onLyric",
+            supportsFullLyric -> legacyPayload(lyric, legacyIndex, position, fullSource,
+                supportsFullLyric),
             (receiver, publisher, payload) -> receiver.onLyric(publisher, payload));
     }
 
+    @Nullable
+    static SuperLyricData legacyPayload(@NonNull Lyric lyric, int legacyIndex, long position,
+                                        boolean fullSource, boolean supportsFullLyric) {
+        if (fullSource && (supportsFullLyric || legacyIndex < 0)) {
+            return LyricDocAdapter.INSTANCE.toLegacyFull(lyric, legacyIndex, position);
+        }
+        return legacyIndex < 0
+            ? null : LyricDocAdapter.INSTANCE.toLegacyLine(lyric, legacyIndex, position);
+    }
+
     private void notifyReceiver(@NonNull String publisher, @NonNull String action,
-                                @Nullable SuperLyricData full, @Nullable SuperLyricData line,
+                                @NonNull LegacyPayloadProvider payloads,
                                 @NonNull IReceiverCallback callback) {
         if (!isPublisher(publisher)) return;
         long generation = PublisherRegistry.generations.getOrDefault(publisher, 0L);
@@ -665,11 +684,42 @@ public final class LyricRuntime {
                 || PublisherRegistry.generations.getOrDefault(publisher, 0L) != generation) {
                 return;
             }
+            CapabilityPayloads cache = new CapabilityPayloads(payloads);
             mReceivers.broadcast(action, (receiver, supportsFullLyric) -> {
-                SuperLyricData payload = supportsFullLyric && full != null ? full : line;
+                SuperLyricData payload = cache.get(supportsFullLyric);
                 if (payload != null) callback.call(receiver, publisher, payload);
             });
         });
+    }
+
+    /** 按接收者能力提供 3.x 载荷；没有接收者时不会调用。 */
+    @FunctionalInterface
+    interface LegacyPayloadProvider {
+        @Nullable
+        SuperLyricData payloadFor(boolean supportsFullLyric);
+    }
+
+    /**
+     * 同一次广播内每种能力至多构造一次载荷：全量映射按行、按字分配，只在确有需要时发生。
+     */
+    static final class CapabilityPayloads {
+        private final LegacyPayloadProvider provider;
+        private final SuperLyricData[] payloads = new SuperLyricData[2];
+        private final boolean[] resolved = new boolean[2];
+
+        CapabilityPayloads(@NonNull LegacyPayloadProvider provider) {
+            this.provider = provider;
+        }
+
+        @Nullable
+        SuperLyricData get(boolean supportsFullLyric) {
+            int slot = supportsFullLyric ? 1 : 0;
+            if (!resolved[slot]) {
+                resolved[slot] = true;
+                payloads[slot] = provider.payloadFor(supportsFullLyric);
+            }
+            return payloads[slot];
+        }
     }
 
     private void notifyFrames(@NonNull String publisher, @Nullable byte[] frame) {
@@ -746,6 +796,12 @@ public final class LyricRuntime {
         return bytes;
     }
 
+    /**
+     * 判定并取得 active 权
+     *
+     * <p>只有成功后才允许调用方写共享播放时钟；被抑制的发布必须让 tracker 保持 active
+     * 发布者的歌词、位置与状态，否则当前播放应用的逐行推进会被晚到的发布覆盖。
+     */
     private boolean claimActiveLocked(@NonNull String packageName,
                                       @NonNull PublisherRegistry.Session session) {
         if (publishers.activePublisher == null) {
@@ -837,22 +893,30 @@ public final class LyricRuntime {
     }
 
     /**
-     * 单线程有界执行器；队列满时在调用方线程执行并记录，避免静默丢弃停止/全量任务。
-     * 这是明确的背压策略，不改变任务本身的发布语义。
+     * 单线程有界执行器
+     *
+     * <p>队列满时在调用线程按序阻塞入队，最多等 2 秒；仍满则丢弃并计数告警。拒绝策略不得
+     * 在调用线程执行广播：{@code RemoteCallbackList} 同时只允许一次广播，帧也必须由唯一的
+     * 广播线程按入队顺序投递。丢弃由 {@code latest()} 与下一次状态帧补偿。
      */
     private static ExecutorService boundedSingleThread(@NonNull String name, int capacity,
                                                        boolean guardRunnable) {
+        AtomicLong dropped = new AtomicLong();
         return new ThreadPoolExecutor(
             1, 1, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(capacity),
             daemonFactory(name, guardRunnable),
             (task, executor) -> {
                 if (executor.isShutdown()) return;
-                XposedLog.logW(TAG, name + " queue full (" + capacity + "); running task inline");
                 try {
-                    task.run();
-                } catch (Throwable t) {
-                    XposedLog.logE(TAG, name + " inline task failed", t);
+                    if (executor.getQueue().offer(task, QUEUE_OFFER_TIMEOUT_MS,
+                        TimeUnit.MILLISECONDS)) {
+                        return;
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
                 }
+                XposedLog.logW(TAG, name + " queue full after " + QUEUE_OFFER_TIMEOUT_MS
+                    + "ms; dropped task (" + dropped.incrementAndGet() + " dropped total)");
             });
     }
 

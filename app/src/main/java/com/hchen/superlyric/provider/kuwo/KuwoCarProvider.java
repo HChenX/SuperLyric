@@ -24,8 +24,8 @@ import com.hchen.processor.HookThis;
  * 酷我音乐（车机版）歌词提供者
  *
  * <p>与手机版共用 {@link KuwoBaseProvider} 的全部逻辑。两者歌词管线同构，
- * 但混淆后的包名不同（车机版是 {@code cn.kuwo.mod.lyric} 单数），锚点按候选包名
- * 逐个尝试，见 {@link KuwoAnchors}。
+ * 混淆后的包名不同（车机版是 {@code cn.kuwo.mod.lyric} 单数）；{@link KuwoAnchors}
+ * 用 {@code lrcx=} 字符串常量定位歌词模块类并取该类所在包，不依赖包名。
  *
  */
 @HookThis(targetPackage = "cn.kuwo.kwmusiccar")

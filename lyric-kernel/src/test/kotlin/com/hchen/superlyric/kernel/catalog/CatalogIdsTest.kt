@@ -18,6 +18,7 @@
  */
 package com.hchen.superlyric.kernel.catalog
 
+import com.hchen.superlyric.kernel.identity.TrackIdentity
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
@@ -53,6 +54,59 @@ class CatalogIdsTest {
     fun `spotify track id is base62 with a bounded length`() {
         assertEquals("4uLU6hMCjMI75M1A2tKUQC", CatalogIds.spotifyTrackId("4uLU6hMCjMI75M1A2tKUQC"))
         assertNull(CatalogIds.spotifyTrackId("../track"))
+    }
+
+    @Test
+    fun `lyric id prefers a matching catalog id over the stable id`() {
+        val identity = TrackIdentity(
+            source = "test",
+            stableId = "qq:AAAAAAAAAAAAAA",
+            catalogId = CatalogId(LyricCatalog.QQ, "001Qu4I30nRtz1"),
+        )
+
+        assertEquals(
+            "001Qu4I30nRtz1",
+            CatalogIds.lyricId(identity, LyricCatalog.QQ, CatalogIds::qqMid),
+        )
+    }
+
+    @Test
+    fun `lyric id ignores a catalog id from another catalog and falls back to the stable id`() {
+        val identity = TrackIdentity(
+            source = "test",
+            stableId = "qq:001Qu4I30nRtz1",
+            catalogId = CatalogId(LyricCatalog.KUGOU, "001Qu4I30nRtz1"),
+        )
+
+        assertEquals(
+            "001Qu4I30nRtz1",
+            CatalogIds.lyricId(identity, LyricCatalog.QQ, CatalogIds::qqMid),
+        )
+    }
+
+    @Test
+    fun `lyric id validates both sources with the catalog rule`() {
+        val identity = TrackIdentity(
+            source = "test",
+            stableId = "qq:001Qu4I30nRtz1",
+            catalogId = CatalogId(LyricCatalog.QQ, "not-a-mid"),
+        )
+
+        assertEquals(
+            "001Qu4I30nRtz1",
+            CatalogIds.lyricId(identity, LyricCatalog.QQ, CatalogIds::qqMid),
+        )
+    }
+
+    @Test
+    fun `lyric id is null when neither source is valid`() {
+        val identity = TrackIdentity(
+            source = "test",
+            stableId = "qq:??",
+            catalogId = CatalogId(LyricCatalog.QQ, "not-a-mid"),
+        )
+
+        assertNull(CatalogIds.lyricId(identity, LyricCatalog.QQ, CatalogIds::qqMid))
     }
 
 }

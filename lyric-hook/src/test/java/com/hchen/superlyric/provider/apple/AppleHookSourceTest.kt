@@ -19,16 +19,13 @@
 package com.hchen.superlyric.provider.apple
 
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
-import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 /**
  * Apple Music 的净化逻辑与回调归属判定
  *
  * 歌词由 JNI 侧以裸指针交给 Java 层，Provider 层中不依赖宿主对象的是
- * [AppleHookSource.cleanHtml]；[AppleHookSource.judgeTrack] 与
- * [AppleHookSource.admits] 决定回调结论是否属于当前曲目、是否被采纳。
+ * [AppleHookSource.cleanHtml] 与 [AppleHookSource.judgeTrack]。
  *
  */
 class AppleHookSourceTest {
@@ -85,9 +82,9 @@ class AppleHookSourceTest {
     }
 
     @Test
-    fun `an unverifiable verdict is delivered rather than silently dropped`() {
-        // 任一侧取不到标识即判为无从判定，上层仍会投递并记 W。
-        // 静默丢弃会让 Apple 的合法结论消失，而那条路只会让曲目显示为空
+    fun `a verdict without comparable ids is unverifiable`() {
+        // 任一侧取不到标识即判为无从判定；无从判定与不同曲目一样不采纳，
+        // 否则上一首的结论会挂到当前曲目上
         assertEquals(AppleHookSource.TrackVerdict.UNVERIFIABLE, source.judgeTrack(null, "123456"))
         assertEquals(AppleHookSource.TrackVerdict.UNVERIFIABLE, source.judgeTrack("123456", null))
         assertEquals(AppleHookSource.TrackVerdict.UNVERIFIABLE, source.judgeTrack("   ", "123456"))
@@ -100,23 +97,5 @@ class AppleHookSourceTest {
         // 此处固定该判据的实际范围
         assertEquals(AppleHookSource.TrackVerdict.SAME, source.judgeTrack("12345", "123456"))
         assertEquals(AppleHookSource.TrackVerdict.DIFFERENT, source.judgeTrack("12345", "54321"))
-    }
-
-    // 判等结果的采纳（六格）
-
-    @Test
-    fun `only a confirmed same track is admitted, and only the payload path is lenient`() {
-        // 六格逐一固定：终态结论只在判据成立时采纳，载荷路径放宽
-        assertTrue(source.admits(AppleHookSource.TrackVerdict.SAME, enforce = true))
-        assertTrue(source.admits(AppleHookSource.TrackVerdict.SAME, enforce = false))
-
-        // 终态结论（无词）：判据不成立即不采纳。判错的代价是曲目被永久判为纯音乐，
-        // 而无从判定说明判据不成立
-        assertFalse(source.admits(AppleHookSource.TrackVerdict.DIFFERENT, enforce = true))
-        assertFalse(source.admits(AppleHookSource.TrackVerdict.UNVERIFIABLE, enforce = true))
-
-        // 载荷：判错只会显示一首歌的词、下一次投递就纠正，因此不丢投递
-        assertTrue(source.admits(AppleHookSource.TrackVerdict.DIFFERENT, enforce = false))
-        assertTrue(source.admits(AppleHookSource.TrackVerdict.UNVERIFIABLE, enforce = false))
     }
 }

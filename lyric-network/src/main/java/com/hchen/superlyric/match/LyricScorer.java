@@ -82,6 +82,14 @@ public final class LyricScorer {
             + "nightcore|sped\\s+up|slowed|orchestral|instrumental|karaoke|"
             + "伴奏|纯音乐|现场|巡回|演唱会|片段|试听|铃声|双语|原版|重制|翻唱|版";
     /**
+     * 续作标记：Part/Pt. 编号与罗马数字续作
+     *
+     * <p>词边界防止 {@code Hawaii}、{@code Mix} 这类普通单词被当成续作；单字母罗马数字
+     * 歧义过大，只收多字符形态。
+     */
+    private static final String SEQUEL_MARKER_TOKENS =
+        "(?:part|pt)\\.?\\s+(?:[ivx]+|\\d+)|(?:ii|iii|iv|vi|vii|viii|ix)";
+    /**
      * 作品出处注解，例如 {@code From "Zootopia 2"}、{@code Music from Zootopia 2}
      *
      * <p>它说明歌曲出自哪部作品，不区分录音版本；平台曲库常省略这段，按版本标记
@@ -121,6 +129,7 @@ public final class LyricScorer {
         "(?:(?<![a-z0-9])(?:"
             + "sped\\s+up"
             + "|\\d+(?:\\s+\\d+)?x?"
+            + "|" + SEQUEL_MARKER_TOKENS
             + "|live|remaster(?:ed)?|cover|tribute|nightcore|slowed|orchestral|remix|acoustic|"
             + "demo|instrumental|karaoke|ver\\.?|version|original|"
             + "english|korean|japanese|chinese|china|japan|korea"
@@ -138,7 +147,8 @@ public final class LyricScorer {
      */
     private static final Pattern VARIANT_MARKER_PATTERN = Pattern.compile(
         "(?<![a-z])(?:\\d|" + VERSION_MARKER_TOKENS + "|original|"
-            + "chin(a|ese)|japan(ese)?|korean?|english|from)(?![a-z])",
+            + "chin(a|ese)|japan(ese)?|korean?|english|from|"
+            + SEQUEL_MARKER_TOKENS + ")(?![a-z])",
         Pattern.CASE_INSENSITIVE
     );
     /**
@@ -166,8 +176,7 @@ public final class LyricScorer {
     private static final Set<String> ARTIST_VERSION_TOKENS = Set.of(
         "tribute", "cover", "karaoke", "instrumental", "remix", "live",
         "acoustic", "demo", "remaster", "remastered", "slowed", "nightcore", "orchestral",
-        "version", "ver", "original", "from",
-        "english", "korean", "japanese", "chinese", "china", "japan", "korea"
+        "version", "ver", "original"
     );
 
     /**
@@ -233,15 +242,6 @@ public final class LyricScorer {
     }
 
     private LyricScorer() {
-    }
-
-    /**
-     * 清洗歌名并归一化：去掉扩展名、曲目序号、试听与铃声后缀、feat 段，
-     * 再去变音符号、标点转空格、压缩空白并折叠连续单字符拉丁 token。
-     */
-    @NonNull
-    public static String cleanTitle(@Nullable String raw) {
-        return normalizeForComparison(stripTitleDecorations(raw));
     }
 
     @NonNull

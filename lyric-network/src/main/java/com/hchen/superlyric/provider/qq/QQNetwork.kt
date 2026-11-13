@@ -60,9 +60,6 @@ object QQNetwork {
     private const val URL_PRIMARY = "https://u.y.qq.com/cgi-bin/musicu.fcg"
     private const val URL_FALLBACK = "https://shu6.y.qq.com/cgi-bin/musicu.fcg"
 
-    /** 磁盘缓存命名空间，须与 `LyricCacheStore.ONLINE_PROVIDERS` 一致 */
-    private const val PROVIDER_NAME = "QQ"
-
     private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
     /** (ct, cv, User-Agent) */
@@ -129,7 +126,7 @@ object QQNetwork {
                     if (outcome != null) {
                         // 只缓存已成功解析的响应（含 lyric / trans / roma 三路密文），
                         // 命中后连鉴权与两次端点尝试都省掉
-                        LyricCacheStore.putAsync(null, PROVIDER_NAME, cacheKey, data.toString())
+                        LyricCacheStore.putAsync(null, LyricCacheStore.PROVIDER_QQ, cacheKey, data.toString())
                         return outcome
                     }
                 } catch (t: Throwable) {
@@ -169,7 +166,7 @@ object QQNetwork {
      * 会把纯音乐占位钉死。
      */
     private fun readCached(key: String, identity: TrackIdentity): LyricOutcome? {
-        val bytes = LyricCacheStore.getBytes(null, PROVIDER_NAME, key) ?: return null
+        val bytes = LyricCacheStore.getBytes(null, LyricCacheStore.PROVIDER_QQ, key) ?: return null
 
         val data = runCatching { JSONObject(String(bytes, StandardCharsets.UTF_8)) }.getOrNull()
         val outcome = data?.let {
@@ -183,21 +180,33 @@ object QQNetwork {
         }
 
         AndroidLog.logW(TAG, "Discarding unusable cache entry for mid=$key")
-        LyricCacheStore.delete(null, PROVIDER_NAME, key)
+        LyricCacheStore.delete(null, LyricCacheStore.PROVIDER_QQ, key)
         return null
     }
 
     /**
-     * 按歌名 + 歌手检索，返回打分最高的 `mid to id`
-     *
-     * @return 未达到 [LyricScorer.MIN_ACCEPT_SCORE] 时返回 null
+     * 一条检索候选；打分与排序只依赖本结构，可在无 JSON / 无 HTTP 时单测
      */
-    fun searchBest(
+    data class CandidateItem(
+        val mid: String,
+        val songId: Long,
+        val title: String,
+        val artist: String,
+        val durationMs: Long,
+    )
+
+    /**
+     * 按歌名 + 歌手检索，返回达到采纳线的候选，按分数降序、同分保持检索顺序
+     *
+     * 同一首歌在平台曲库可能有多个 mid，歌词可用性各不相同；只取首位会在首位无歌词时
+     * 把有歌词的曲目判成无歌词，因此返回全部过线候选由调用方逐个尝试。
+     */
+    fun searchCandidates(
         identity: TrackIdentity,
         requests: FetchSlot? = null,
         isCurrent: () -> Boolean = { true },
-    ): Pair<String, Long>? {
-        if (identity.title.isBlank()) return null
+    ): List<CandidateItem> {
+        if (identity.title.isBlank()) return emptyList()
 
         val keyword = if (identity.artist.isBlank()) identity.title else "${identity.title} ${identity.artist}"
 
@@ -224,48 +233,66 @@ object QQNetwork {
 
         var json: String? = null
         for (url in listOf(URL_PRIMARY, URL_FALLBACK)) {
-            if (!isCurrent()) break
+            if (!isCurrent()) return emptyList()
             json = runCatching { post(url, payload.toString(), ANDROID_UA, requests) }.getOrNull()
             if (json != null) break
         }
         val body = json?.let {
             JSONObject(it).optJSONObject("req_0")?.optJSONObject("data")
                 ?.optJSONObject("body")
-        } ?: return null
+        } ?: return emptyList()
 
         val songs: JSONArray = body.optJSONArray("item_song")
             ?: body.optJSONObject("song")?.optJSONArray("list")
-            ?: return null
+            ?: return emptyList()
 
-        var best: Pair<String, Long>? = null
-        var bestScore = LyricScorer.MIN_ACCEPT_SCORE
+        val ranked = rankCandidates(identity, parseCandidates(songs))
+        if (ranked.isEmpty()) {
+            AndroidLog.logD(TAG, "No QQMusic candidate reached the acceptance threshold for \"$keyword\"")
+        }
+        return ranked
+    }
 
+    /**
+     * 打分并排序候选：只保留高于采纳线的，分数相同时保持传入顺序
+     *
+     * 同分取检索顺序而不是最后一个：同一曲目的不同版本可能登记为完全相同的歌名、歌手与时长，
+     * 打分器无从区分，取最后一个会随机配上错误版本的歌词。
+     */
+    internal fun rankCandidates(
+        identity: TrackIdentity,
+        candidates: List<CandidateItem>,
+    ): List<CandidateItem> =
+        candidates
+            .map { candidate ->
+                candidate to LyricScorer.scoreCandidate(
+                    identity.title,
+                    identity.artist,
+                    identity.durationMs,
+                    candidate.title,
+                    candidate.artist,
+                    candidate.durationMs,
+                )
+            }
+            .filter { it.second > LyricScorer.MIN_ACCEPT_SCORE }
+            .sortedByDescending { it.second }
+            .map { it.first }
+
+    private fun parseCandidates(songs: JSONArray): List<CandidateItem> {
+        val candidates = ArrayList<CandidateItem>(songs.length())
         for (index in 0 until songs.length()) {
             val item = songs.optJSONObject(index) ?: continue
             val mid = item.optString("mid", item.optString("songmid", ""))
             if (mid.isEmpty()) continue
-
-            val score = LyricScorer.scoreCandidate(
-                identity.title,
-                identity.artist,
-                identity.durationMs,
-                item.optString("title", item.optString("songname", "")),
-                readSingers(item),
-                item.optLong("interval", 0L) * 1000L,
+            candidates += CandidateItem(
+                mid = mid,
+                songId = item.optLong("id", item.optLong("songid", 0L)),
+                title = item.optString("title", item.optString("songname", "")),
+                artist = readSingers(item),
+                durationMs = item.optLong("interval", 0L) * 1000L,
             )
-            // 用 `>` 而不是 `>=`：同分时采纳检索的排序首位。
-            // 同一曲目的不同版本可能登记成完全相同的歌名/歌手/时长，打分器无从区分，
-            // 平局只能靠顺序决定，取最后一个会随机配上错误版本的歌词。
-            if (score > bestScore) {
-                bestScore = score
-                best = mid to item.optLong("id", item.optLong("songid", 0L))
-            }
         }
-
-        if (best == null) {
-            AndroidLog.logD(TAG, "No QQMusic candidate reached the acceptance threshold for \"$keyword\"")
-        }
-        return best
+        return candidates
     }
 
     private fun buildLyricRequest(ct: String, cv: String, songMid: String, songId: Long): String =

@@ -50,4 +50,19 @@ class StopEvidence {
      * @return 自 [snapshot] 之后没有记过任何证据时为 `true`
      */
     fun isStillValid(): Boolean = synchronized(lock) { evidence == armedAt }
+
+    /**
+     * 判定与停止动作在同一临界区完成
+     *
+     * 只读 [isStillValid] 再调用动作会让窗口内到达的证据丢失：确认成立之后发布的歌词
+     * 仍会被清掉。动作在证据锁内执行，与 [record] 串行；调用方不得在持有会反向进入
+     * 本类锁的锁（例如编排器锁）时调用本方法。
+     *
+     * @return 确认成立并执行了 [action] 时为 `true`
+     */
+    fun confirmIfStillValid(action: () -> Unit): Boolean = synchronized(lock) {
+        if (evidence != armedAt) return@synchronized false
+        action()
+        true
+    }
 }

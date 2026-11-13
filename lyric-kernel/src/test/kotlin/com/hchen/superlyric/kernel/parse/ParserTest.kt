@@ -116,6 +116,51 @@ class ParserTest {
     }
 
     @Test
+    fun `text before the first word tag keeps its ascii parentheses`() {
+        // `(` 不是标签分隔符：标签前的全部文字属于该词，括号是普通文本
+        val doc = QrcParser.parse("[0,3000]I love (you)(0,500)")
+
+        assertNotNull(doc)
+        val line = doc!!.lines.single()
+        assertEquals("I love (you)", line.text)
+        assertEquals(listOf("I love (you)"), line.words.map { it.text })
+        assertEquals(0L, line.words[0].startMs)
+        assertEquals(500L, line.words[0].endMs)
+    }
+
+    @Test
+    fun `parentheses between word tags stay in the text of the next word`() {
+        val doc = QrcParser.parse("[0,3000]Hello (World)(0,500) world(500,400)")
+
+        assertNotNull(doc)
+        val line = doc!!.lines.single()
+        assertEquals("Hello (World) world", line.text)
+        assertEquals(listOf("Hello (World)", " world"), line.words.map { it.text })
+        assertEquals(listOf(0L, 500L), line.words.map { it.startMs })
+    }
+
+    @Test
+    fun `a leading word tag leaves its residual text on the line`() {
+        // 标签前没有文字时该词被跳过，标签后的残余文字仍属于本行
+        val doc = QrcParser.parse("[0,2000](0,500)Hi")
+
+        assertNotNull(doc)
+        val line = doc!!.lines.single()
+        assertEquals("Hi", line.text)
+        assertTrue(line.words.isEmpty())
+    }
+
+    @Test
+    fun `cjk text keeps ascii parentheses around a word tag`() {
+        val doc = QrcParser.parse("[0,3000]我 (爱) 你(0,1000)")
+
+        assertNotNull(doc)
+        val line = doc!!.lines.single()
+        assertEquals("我 (爱) 你", line.text)
+        assertEquals(1, line.words.size)
+    }
+
+    @Test
     fun `xml wrapped qrc attaches Lyric_2 as translation rather than a main line`() {
         val xml = """
             <QrcInfos><LyricInfo>

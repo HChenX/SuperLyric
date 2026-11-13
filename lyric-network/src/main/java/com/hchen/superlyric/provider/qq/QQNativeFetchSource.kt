@@ -62,13 +62,10 @@ class QQNativeFetchSource(
         this.pendingIdentity = identity
         clearDedupState()
 
-        val rawId = TrackIdentity.normalizeStableId(identity.stableId)
-        val mid = identity.catalogId?.takeIf { it.catalog == LyricCatalog.QQ }?.id
-            ?.let(CatalogIds::qqMid)
-            ?: CatalogIds.qqMid(rawId)
+        val mid = CatalogIds.lyricId(identity, LyricCatalog.QQ, CatalogIds::qqMid)
         if (mid != null) {
-            val songId = CatalogIds.qqSongId(rawId) ?: 0L
-            fetchAsync(mid, songId, identity, fetches.open())
+            val songId = CatalogIds.qqSongId(TrackIdentity.normalizeStableId(identity.stableId)) ?: 0L
+            fetchAsync(mid, songId, identity)
         } else {
             AndroidLog.logD(sourceName, "Awaiting LyricLoadBean capture for songMID")
         }
@@ -82,25 +79,19 @@ class QQNativeFetchSource(
     }
 
     private fun onSongInfoCaptured(facts: HostTrackFacts) {
-        val mid = facts.identity.catalogId?.takeIf { it.catalog == LyricCatalog.QQ }?.id
-            ?.let(CatalogIds::qqMid)
-            ?: CatalogIds.qqMid(TrackIdentity.normalizeStableId(facts.identity.stableId))
-            ?: return
+        val mid = CatalogIds.lyricId(facts.identity, LyricCatalog.QQ, CatalogIds::qqMid) ?: return
         val songId = facts.secondaryId
         val title = facts.identity.title
         val artist = facts.identity.artist
 
-        val target = session ?: return
+        if (session == null) return
         val base = pendingIdentity ?: return
-        val baseMid = base.catalogId?.takeIf { it.catalog == LyricCatalog.QQ }?.id
-            ?.let(CatalogIds::qqMid)
-            ?: CatalogIds.qqMid(TrackIdentity.normalizeStableId(base.stableId))
+        val baseMid = CatalogIds.lyricId(base, LyricCatalog.QQ, CatalogIds::qqMid)
 
         if (baseMid != null && baseMid != mid) {
             AndroidLog.logD(
                 sourceName,
-                "Anchor for $mid predates the track change (current $baseMid); " +
-                        "capturedMid updated, deferring the fetch to start()",
+                "Anchor for $mid predates the track change (current $baseMid); ignoring it",
             )
             return
         }
@@ -112,10 +103,11 @@ class QQNativeFetchSource(
             catalogId = facts.identity.catalogId ?: base.catalogId,
         )
         pendingIdentity = identity
-        fetchAsync(mid, songId, identity, fetches.open())
+        fetchAsync(mid, songId, identity)
     }
 
-    private fun fetchAsync(mid: String, songId: Long, identity: TrackIdentity, token: Long) {
+    private fun fetchAsync(mid: String, songId: Long, identity: TrackIdentity) {
+        // 去重判定先于推进代际：重复捕获若先 open，会把在途取词的结果静默作废且不重发
         val claimed = synchronized(dedupLock) {
             if (mid == deliveredMid || mid == inFlightMid) {
                 false
@@ -125,6 +117,7 @@ class QQNativeFetchSource(
             }
         }
         if (!claimed) return
+        val token = fetches.open()
 
         fetches.execute {
             val outcome = QQNetwork.fetchByMid(
@@ -135,7 +128,10 @@ class QQNativeFetchSource(
             synchronized(dedupLock) {
                 if (inFlightMid == mid) inFlightMid = null
             }
-            if (!fetches.isCurrent(token)) return@execute
+            if (!fetches.isCurrent(token)) {
+                AndroidLog.logD(sourceName, "Discarding stale result for $mid: fetch was superseded")
+                return@execute
+            }
 
             val target = session
             val current = pendingIdentity

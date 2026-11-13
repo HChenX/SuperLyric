@@ -50,24 +50,28 @@ class QQApiSource : LyricSource {
     }
 
     private fun resolve(identity: TrackIdentity, token: Long): LyricOutcome {
-        // 元数据自带 mid 时直接直查，无需检索
-        val rawId = TrackIdentity.normalizeStableId(identity.stableId)
-        val directMid = identity.catalogId?.takeIf { it.catalog == LyricCatalog.QQ }?.id
-            ?.let(CatalogIds::qqMid)
-            ?: CatalogIds.qqMid(rawId)
+        // 元数据自带 mid 时直接直查：这是宿主/平台给出的权威标识，NoLyrics 仍是平台结论
+        val directMid = CatalogIds.lyricId(identity, LyricCatalog.QQ, CatalogIds::qqMid)
         if (directMid != null) {
+            val songId = CatalogIds.qqSongId(TrackIdentity.normalizeStableId(identity.stableId)) ?: 0L
             AndroidLog.logI(sourceName, "Direct fetch by mid=$directMid")
-            return QQNetwork.fetchByMid(directMid, CatalogIds.qqSongId(rawId) ?: 0L, identity,
+            return QQNetwork.fetchByMid(directMid, songId, identity,
                 isCurrent = { requests.isCurrent(token) }, requests = requests)
         }
 
-        val candidate = QQNetwork.searchBest(
+        val candidates = QQNetwork.searchCandidates(
             identity, requests,
             isCurrent = { requests.isCurrent(token) },
-        ) ?: return LyricOutcome.TransientFailure(null)
+        )
+        if (candidates.isEmpty()) return LyricOutcome.TransientFailure(null)
+        if (!requests.isCurrent(token)) return LyricOutcome.TransientFailure(null)
 
-        AndroidLog.logI(sourceName, "Matched candidate mid=${candidate.first}")
-        return QQNetwork.fetchByMid(candidate.first, candidate.second, identity,
-            isCurrent = { requests.isCurrent(token) }, requests = requests)
+        return fetchFirstUsable(candidates) { candidate ->
+            AndroidLog.logD(sourceName, "Trying candidate mid=${candidate.mid}")
+            QQNetwork.fetchByMid(
+                candidate.mid, candidate.songId, identity,
+                isCurrent = { requests.isCurrent(token) }, requests = requests,
+            )
+        }
     }
 }

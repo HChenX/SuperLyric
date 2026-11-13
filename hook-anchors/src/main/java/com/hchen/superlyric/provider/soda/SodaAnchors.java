@@ -93,6 +93,9 @@ public final class SodaAnchors {
 
     /**
      * 定位并挂载 Hook。幂等；失败只记录日志
+     *
+     * <p>两条锚点各自独立尝试：第一锚点失效时 TrackLyric 数据入口仍要安装，
+     * 否则恰好在本模块需要 fallback 的降级场景里 fallback 不存在。
      */
     public static void install(@NonNull PayloadListener subscriber) {
         subscribe(subscriber);
@@ -101,11 +104,19 @@ public final class SodaAnchors {
         PayloadListener listener = (type, language, payload, trackId) ->
             BUS.emit(new PayloadEvent(type, language, payload, trackId));
 
+        installLyricEntityHooks(listener);
+        installTrackLyricHooks(listener);
+    }
+
+    /**
+     * 第一锚点：截获 {@code Lyric} 实体的原始正文与格式声明
+     */
+    private static void installLyricEntityHooks(@NonNull PayloadListener listener) {
         try {
             Class<?> lyricClass = CoreTool.findClassIfExists(LYRIC_CLASS);
             if (lyricClass == null) {
                 AndroidLog.logW(TAG, "Lyric entity not found: " + LYRIC_CLASS
-                    + "; soda hook path is dead");
+                    + "; falling back to the TrackLyric data entry");
                 return;
             }
 
@@ -127,29 +138,32 @@ public final class SodaAnchors {
             if (targets.isEmpty()) {
                 AndroidLog.logW(TAG, "No (NetLyricType, String, …) constructor found on "
                     + LYRIC_CLASS);
-            } else {
-                CoreTool.hookAll(targets.toArray(new Constructor<?>[0]), new AbsHook() {
-                    @Override
-                    public void after() {
-                        dispatch(
-                            enumName(getArg(0)),
-                            enumName(getArg(2)),
-                            getArg(1) instanceof String payload ? payload.trim() : "",
-                            trackIdOf(getArg(3)),
-                            listener
-                        );
-                    }
-                });
-                AndroidLog.logI(TAG, "Hooked " + targets.size() + " lyric ctor(s)");
+                return;
             }
+            CoreTool.hookAll(targets.toArray(new Constructor<?>[0]), new AbsHook() {
+                @Override
+                public void after() {
+                    dispatch(
+                        enumName(getArg(0)),
+                        enumName(getArg(2)),
+                        getArg(1) instanceof String payload ? payload.trim() : "",
+                        trackIdOf(getArg(3)),
+                        listener
+                    );
+                }
+            });
+            AndroidLog.logI(TAG, "Hooked " + targets.size() + " lyric ctor(s)");
         } catch (Throwable t) {
-            AndroidLog.logE(TAG, "Failed to install soda anchors", t);
+            AndroidLog.logE(TAG, "Failed to install soda lyric entity anchors", t);
         }
+    }
 
+    private static void installTrackLyricHooks(@NonNull PayloadListener listener) {
         try {
-            installTrackLyricHooks(listener);
+            hookTrackLyricEntries(listener);
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "TrackLyric hooks unavailable: " + t.getMessage());
+            // 第二锚点独立于第一锚点：这里失败不影响已经安装的点位
+            AndroidLog.logW(TAG, "Failed to install TrackLyric anchors", t);
         }
     }
 
@@ -164,7 +178,7 @@ public final class SodaAnchors {
      * <p>{@code lyric} 字段可能由 Room 直接写字段，也可能走 setter，两种都要覆盖；再补一个
      * getter，任何读取路径都会把内容带出来。三处命中同一份内容时由去重键压掉。
      */
-    private static void installTrackLyricHooks(@NonNull PayloadListener listener) {
+    private static void hookTrackLyricEntries(@NonNull PayloadListener listener) {
         Class<?> entityClass = CoreTool.findClassIfExists(TRACK_LYRIC_CLASS);
         if (entityClass == null) {
             AndroidLog.logW(TAG, "TrackLyric entity not found: " + TRACK_LYRIC_CLASS);
@@ -267,12 +281,14 @@ public final class SodaAnchors {
             AndroidLog.logD(TAG, "Empty lyric payload (type=" + type + ", lang=" + language + ")");
             return;
         }
-        LyricDiag.dumpPayload(
-            TAG,
-            "SODA-PAYLOAD",
-            "type=" + type + " lang=" + language + " trackId=" + trackId
-                + " length=" + payload.length() + "\n" + payload
-        );
+        if (LyricDiag.INSTANCE.getEnabled()) {
+            LyricDiag.dumpPayload(
+                TAG,
+                "SODA-PAYLOAD",
+                "type=" + type + " lang=" + language + " trackId=" + trackId
+                    + " length=" + payload.length() + "\n" + payload
+            );
+        }
         listener.onPayload(type, language, payload, trackId);
     }
 

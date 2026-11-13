@@ -53,6 +53,8 @@ class SaltHookSource(
     private val requests = SourceRequestGate()
     private val docStash = KeyedStash<LyricDoc>()
 
+    /** start() 在编排线程重置，宿主回调线程读写；去重判断必须看到最新值 */
+    @Volatile
     private var lastSourceText: String? = null
 
     override fun install() {

@@ -27,7 +27,7 @@ import com.hchen.superlyric.kernel.model.LyricDoc
  */
 object LyricPayloadHeuristics {
 
-    /** 可视为"歌词全文"的最小长度；短文本通常是宿主辅助方法的单行 */
+    /** 短文本判定阈值；短文本通常是宿主辅助方法的单行 */
     const val MIN_FULL_TEXT_LENGTH = 200
 
     private val LRC_TIME_TAG = Regex("""\[\d{1,3}:\d{1,2}""")
@@ -35,9 +35,6 @@ object LyricPayloadHeuristics {
     fun isShortText(text: String): Boolean = text.length < MIN_FULL_TEXT_LENGTH
 
     fun hasLrcTimeTag(text: String): Boolean = LRC_TIME_TAG.containsMatchIn(text)
-
-    fun looksLikeFullLyricText(text: String): Boolean =
-        !isShortText(text) && hasLrcTimeTag(text)
 
     /**
      * 至少两个不同的起始时间，或首行起始非零；否则整份载荷没有可用时间轴

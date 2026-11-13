@@ -289,7 +289,6 @@ class LyricOrchestrator(
         if (age < 0L || age > config.provisionalGraceMs) return false
         val a = TrackIdentity.normalizeStableId(current.stableId) ?: return false
         val b = TrackIdentity.normalizeStableId(next.stableId) ?: return false
-        if (a == b) return true
         val aRid = a.substringBefore('#')
         if (aRid.isEmpty() || aRid != b.substringBefore('#')) return false
         return !a.contains('#') || !b.contains('#')

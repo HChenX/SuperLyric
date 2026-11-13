@@ -55,14 +55,13 @@ class SpotifyApiSource : LyricSource {
     }
 
     private fun resolve(identity: TrackIdentity, token: Long): LyricOutcome {
-        val rawId = TrackIdentity.normalizeStableId(identity.stableId)
-            ?: return LyricOutcome.Unsupported("spotify: no track id")
+        if (TrackIdentity.normalizeStableId(identity.stableId) == null) {
+            return LyricOutcome.Unsupported("spotify: no track id")
+        }
         // 这个 id 来自宿主上报的 MEDIA_ID，会被直接拼进请求 URL 的路径段，因此必须做
         // 格式校验：含 `/`、`..` 的值能改变请求路径（同域路径注入）。Spotify 的 track id
         // 是 base62，这里按字符集与长度区间收紧，与酷狗/网易的 HASH/NUMERIC 校验同一目的
-        val trackId = identity.catalogId?.takeIf { it.catalog == LyricCatalog.SPOTIFY }?.id
-            ?.let(CatalogIds::spotifyTrackId)
-            ?: CatalogIds.spotifyTrackId(rawId)
+        val trackId = CatalogIds.lyricId(identity, LyricCatalog.SPOTIFY, CatalogIds::spotifyTrackId)
         if (trackId == null) {
             AndroidLog.logW(sourceName, "Rejecting malformed track id")
             return LyricOutcome.Unsupported("spotify: malformed track id")
@@ -101,7 +100,7 @@ class SpotifyApiSource : LyricSource {
                 SpotifyLyricAnalysis.invalidate(headers)
                 // 只缓存已成功解析的 protobuf 原始响应；命中后连会话头都不再需要，
                 // 于是 VIP 过期 / 断网时仍能拿到已缓存曲目的歌词
-                LyricCacheStore.putAsync(null, PROVIDER_NAME, cacheKey, data)
+                LyricCacheStore.putAsync(null, LyricCacheStore.PROVIDER_SPOTIFY, cacheKey, data)
 
                 val doc = toDoc(lines, identity)
                 LyricDiag.dumpDoc(sourceName, doc)
@@ -142,7 +141,7 @@ class SpotifyApiSource : LyricSource {
      * 不带语言会在切换应用语言后继续返回切换前语言的歌词。
      */
     private fun readCached(key: String, identity: TrackIdentity): LyricOutcome? {
-        val bytes = LyricCacheStore.getBytes(null, PROVIDER_NAME, key) ?: return null
+        val bytes = LyricCacheStore.getBytes(null, LyricCacheStore.PROVIDER_SPOTIFY, key) ?: return null
 
         val lines = runCatching { SpotifyLyricParser.parseLyrics(bytes) }.getOrNull().orEmpty()
         if (lines.isNotEmpty() && SpotifyLyricParser.hasUsableTimeline(lines)) {
@@ -153,7 +152,7 @@ class SpotifyApiSource : LyricSource {
         }
 
         AndroidLog.logW(sourceName, "Discarding unusable cache entry for $key")
-        LyricCacheStore.delete(null, PROVIDER_NAME, key)
+        LyricCacheStore.delete(null, LyricCacheStore.PROVIDER_SPOTIFY, key)
         return null
     }
 
@@ -187,9 +186,6 @@ class SpotifyApiSource : LyricSource {
     }
 
     private companion object {
-        /** 磁盘缓存命名空间，须与 `LyricCacheStore.ONLINE_PROVIDERS` 一致 */
-        const val PROVIDER_NAME = "Spotify"
-
         const val MAX_ATTEMPTS = 3
         const val HEADER_WAIT_MS = 400L
 

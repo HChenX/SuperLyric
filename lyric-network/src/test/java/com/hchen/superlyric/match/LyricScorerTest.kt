@@ -406,7 +406,7 @@ class LyricScorerTest {
             "Adele" to "Adele Cover",
             "Taylor Swift" to "Taylor Swift Version",
             "The Weeknd" to "The Weeknd Original",
-            "Adele" to "Adele From Movie",
+            "Adele" to "Adele Acoustic",
             "The Weeknd" to "The Weeknd Ver",
         ).forEach { (targetArtist, candidateArtist) ->
             assertEquals(
@@ -421,6 +421,27 @@ class LyricScorerTest {
             )
             assertEquals(70.0, score, 0.01, candidateArtist)
             assertTrue(score < ACCEPT_SCORE, "score=$score")
+        }
+    }
+
+    @Test
+    fun `artist language words do not zero real artist names`() {
+        // The English Beat、China Crisis 是真实艺人名；语言与国名不是录音版本词
+        assertTrue(
+            LyricScorer.calculateArtistSimilarity(
+                "The English Beat",
+                "The English Beat / Ranking Roger",
+            ) > 0.0,
+        )
+        listOf(
+            "The English Beat" to "The English Beat / Ranking Roger",
+            "China Crisis" to "China Crisis / Walter Becker",
+        ).forEach { (targetArtist, candidateArtist) ->
+            val score = LyricScorer.scoreCandidate(
+                "Save It for Later", targetArtist, 200_000L,
+                "Save It for Later", candidateArtist, 200_000L,
+            )
+            assertTrue(score >= ACCEPT_SCORE, "$candidateArtist score=$score")
         }
     }
 
@@ -688,6 +709,55 @@ class LyricScorerTest {
     }
 
     @Test
+    fun `roman numeral sequels are version markers`() {
+        listOf(
+            "A Thousand Years II",
+            "A Thousand Years III",
+            "A Thousand Years IV",
+            "A Thousand Years VI",
+            "A Thousand Years VII",
+            "A Thousand Years VIII",
+            "A Thousand Years IX",
+            "A Thousand Years Part II",
+            "A Thousand Years Pt. II",
+        ).forEach { sequel ->
+            assertEquals(
+                0.0,
+                LyricScorer.calculateTitleSimilarity(sequel, "A Thousand Years"),
+                0.001,
+                sequel,
+            )
+            val score = LyricScorer.scoreCandidate(
+                sequel, "Christina Perri", 293_000L,
+                "A Thousand Years", "Christina Perri", 293_000L,
+            )
+            assertTrue(score < ACCEPT_SCORE, "$sequel score=$score")
+        }
+        // 反向：目标无续作、候选有续作同样不得采纳
+        val reverse = LyricScorer.scoreCandidate(
+            "A Thousand Years", "Christina Perri", 293_000L,
+            "A Thousand Years II", "Christina Perri", 293_000L,
+        )
+        assertTrue(reverse < ACCEPT_SCORE, "score=$reverse")
+    }
+
+    @Test
+    fun `sequel markers require word boundaries`() {
+        // Hawaii 的 ii、Mix 的 ix 都在单词内部，不是续作标记
+        assertEquals(
+            0.45,
+            LyricScorer.calculateTitleSimilarity("Hawaii Mix", "Hawaii"),
+            0.001,
+        )
+        assertEquals(
+            0.45,
+            LyricScorer.calculateTitleSimilarity("Sixty Mix", "Sixty"),
+            0.001,
+        )
+        assertTrue(LyricScorer.calculateTitleSimilarity("Hawaii II", "Hawaii") < 0.5)
+    }
+
+    @Test
     fun `feat and VIP decorations do not hide a plain version suffix`() {
         listOf(
             "NIGHT DANCER Live feat. X",
@@ -891,14 +961,6 @@ class LyricScorerTest {
             LyricScorer.scoreCandidate("未来へ", "kiroro", 30_000L, "未来へ", "kiroro", 300_000L),
             0.01,
         )
-    }
-
-    @Test
-    fun `existing title decoration cleanup still applies`() {
-        assertEquals("song", LyricScorer.cleanTitle("01 - Song.mp3"))
-        assertEquals("song", LyricScorer.cleanTitle("Song.flac"))
-        assertEquals("song", LyricScorer.cleanTitle("Song VIP"))
-        assertEquals("song", LyricScorer.cleanTitle("Song feat. Artist"))
     }
 
     @Test

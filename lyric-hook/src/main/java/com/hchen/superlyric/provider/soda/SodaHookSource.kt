@@ -87,6 +87,8 @@ class SodaHookSource : InstallableLyricSource {
 
     private var scheduled: ScheduledFuture<*>? = null
 
+    /** 调度线程写、宿主回调线程读，两条路径都可能在锁外访问 */
+    @Volatile
     private var deliveredKey: String? = null
 
     override fun install() {

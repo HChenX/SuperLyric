@@ -171,7 +171,7 @@ class NeteaseApiSource : LyricSource {
      */
     private fun readCached(songId: Long): JSONObject? {
         val key = songId.toString()
-        val bytes = LyricCacheStore.getBytes(null, PROVIDER_NAME, key) ?: return null
+        val bytes = LyricCacheStore.getBytes(null, LyricCacheStore.PROVIDER_NETEASE, key) ?: return null
 
         val payload = runCatching { JSONObject(String(bytes, StandardCharsets.UTF_8)) }.getOrNull()
         if (payload != null && hasMainLyricChannel(payload)) {
@@ -181,13 +181,13 @@ class NeteaseApiSource : LyricSource {
         }
 
         AndroidLog.logW(sourceName, "Discarding unusable cached payload for id=$key")
-        LyricCacheStore.delete(null, PROVIDER_NAME, key)
+        LyricCacheStore.delete(null, LyricCacheStore.PROVIDER_NETEASE, key)
         return null
     }
 
     /** 写盘并原样返回，便于在取词路径上内联调用 */
     private fun cache(songId: Long, payload: JSONObject): JSONObject {
-        LyricCacheStore.putAsync(null, PROVIDER_NAME, songId.toString(), payload.toString())
+        LyricCacheStore.putAsync(null, LyricCacheStore.PROVIDER_NETEASE, songId.toString(), payload.toString())
         return payload
     }
 
@@ -250,9 +250,7 @@ class NeteaseApiSource : LyricSource {
     }
 
     private fun songIdOf(identity: TrackIdentity): Long? =
-        identity.catalogId?.takeIf { it.catalog == LyricCatalog.NETEASE }?.id
-            ?.let(CatalogIds::neteaseSongId)
-            ?: CatalogIds.neteaseSongId(TrackIdentity.normalizeStableId(identity.stableId))
+        CatalogIds.lyricId(identity, LyricCatalog.NETEASE, CatalogIds::neteaseSongId)
 
     private fun lyricText(payload: JSONObject, key: String): String =
         payload.optJSONObject(key)?.optString("lyric", "").orEmpty()
@@ -341,9 +339,6 @@ class NeteaseApiSource : LyricSource {
     }
 
     private companion object {
-        /** 磁盘缓存命名空间，须与 `LyricCacheStore.ONLINE_PROVIDERS` 一致 */
-        const val PROVIDER_NAME = "Netease"
-
         const val URL_V1 = "https://interface3.music.163.com/api/song/lyric/v1"
         const val URL_LEGACY = "https://music.163.com/api/song/lyric"
         const val URL_SEARCH = "https://music.163.com/api/search/get"

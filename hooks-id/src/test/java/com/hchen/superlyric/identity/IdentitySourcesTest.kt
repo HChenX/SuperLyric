@@ -291,4 +291,16 @@ class IdentitySourcesTest {
         assertEquals("abc", appleIdentity.stableId)
         assertNull(appleIdentity.catalogId)
     }
+
+    @Test
+    fun `apple and miui drop placeholder metadata ids`() {
+        // 占位值经 normalizeStableId 仍非空，会参与 TrackIdentity.matches 的恒等比较
+        val placeholders = listOf("0", "-1", "unknown", "none")
+        val apple = AppleIdentitySource("Apple")
+        val miui = MiuiIdentitySource("Miui")
+        for (placeholder in placeholders) {
+            assertNull(apple.current(placeholder, "Song", "Artist", 1_000L).stableId)
+            assertNull(miui.current(placeholder, "Song", "Artist", 1_000L).stableId)
+        }
+    }
 }

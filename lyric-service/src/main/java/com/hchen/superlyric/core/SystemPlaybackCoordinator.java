@@ -134,6 +134,8 @@ final class SystemPlaybackCoordinator {
 
         boolean notifyLyric = false;
         Lyric lyricToNotify = null;
+        boolean stopPrevious = false;
+        String previousPublisher = null;
 
         synchronized (registry.lock) {
             PublisherRegistry.Session session = registry.getOrCreateSession(packageName);
@@ -159,7 +161,8 @@ final class SystemPlaybackCoordinator {
                         } else {
                             tracker.setLyrics(null);
                             if (!TextUtils.isEmpty(prevPublisher)) {
-                                host.onStop(prevPublisher, StopReason.STOPPED);
+                                previousPublisher = prevPublisher;
+                                stopPrevious = true;
                             }
                         }
                     } else if (session.fullLyric) {
@@ -182,6 +185,10 @@ final class SystemPlaybackCoordinator {
             }
         }
 
+        // 先停旧发布者再发新歌词：两个回调都在 registry.lock 外，且保持切换顺序
+        if (stopPrevious) {
+            host.onStop(previousPublisher, StopReason.STOPPED);
+        }
         if (notifyLyric && lyricToNotify != null) {
             host.onLyric(packageName, lyricToNotify);
         }
@@ -254,7 +261,12 @@ final class SystemPlaybackCoordinator {
         StopReason reason = StopReason.STOPPED;
         synchronized (registry.lock) {
             PublisherRegistry.Session session = registry.sessions.get(packageName);
-            if (session == null) return;
+            if (session == null) {
+                // 会话已被缓存裁剪：排期原因同样作废，不能留给下一次停止继承
+                pendingStopReasons.remove(packageName);
+                XposedLog.logD(TAG, "Stop for " + packageName + " dropped: session already evicted");
+                return;
+            }
             if (!evidence(packageName).isStillValid()) {
                 pendingStopReasons.remove(packageName);
                 XposedLog.logD(TAG, "Stop for " + packageName

@@ -159,10 +159,6 @@ final class PublisherRegistry {
         return registrations == null ? 0 : registrations.size();
     }
 
-    Session session(@NonNull String packageName) {
-        return sessions.get(packageName);
-    }
-
     @Nullable
     DeathResult onProcessDied(@NonNull String packageName, int pid,
                               @NonNull SystemPlaybackCoordinator playback) {

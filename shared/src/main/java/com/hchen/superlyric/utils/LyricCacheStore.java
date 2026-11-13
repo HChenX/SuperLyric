@@ -93,7 +93,13 @@ public final class LyricCacheStore {
     private static final long FRAME_MAX_BYTES =
         FRAME_HEAD_BYTES.length + MAX_LENGTH_DIGITS + FRAME_SEPARATOR_BYTES.length
             + MAX_PAYLOAD_BYTES + 1L;
-    private static final String[] ONLINE_PROVIDERS = {"Netease", "Kugou", "QQ", "Spotify"};
+    public static final String PROVIDER_NETEASE = "Netease";
+    public static final String PROVIDER_KUGOU = "Kugou";
+    public static final String PROVIDER_QQ = "QQ";
+    public static final String PROVIDER_SPOTIFY = "Spotify";
+    private static final String[] ONLINE_PROVIDERS = {
+        PROVIDER_NETEASE, PROVIDER_KUGOU, PROVIDER_QQ, PROVIDER_SPOTIFY
+    };
     private static final Pattern SAFE_SEGMENT = Pattern.compile("[A-Za-z0-9._-]+");
     private static final Pattern SAFE_KEY = Pattern.compile("[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*");
     private static final AtomicInteger sWriteCounter = new AtomicInteger(0);

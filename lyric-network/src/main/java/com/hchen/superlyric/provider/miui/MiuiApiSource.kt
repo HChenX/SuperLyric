@@ -26,6 +26,7 @@ import com.hchen.superlyric.kernel.orchestrate.LyricSource
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.provider.base.FetchSlot
 import com.hchen.superlyric.provider.qq.QQNetwork
+import com.hchen.superlyric.provider.qq.fetchFirstUsable
 import com.hchen.superlyric.shared.HostIdentitySource
 import com.hchen.superlyric.shared.matches
 
@@ -51,24 +52,28 @@ class MiuiApiSource(
     private fun resolve(identity: TrackIdentity, token: Long): LyricOutcome {
         identityFeed.refresh()
         val facts = identityFeed.currentFacts()
-        val hostId = facts?.identity?.catalogId
-            ?.takeIf { it.catalog == LyricCatalog.QQ }
-            ?.id?.let(CatalogIds::qqSongId)
-            ?: facts?.secondaryId?.takeIf { it > 0L }
+        val hostId = facts?.let {
+            CatalogIds.lyricId(it.identity, LyricCatalog.QQ, CatalogIds::qqSongId)
+        } ?: facts?.secondaryId?.takeIf { it > 0L }
         if (facts != null && hostId != null && facts.matches(identity)) {
             AndroidLog.logI(sourceName, "Direct fetch by host songID=$hostId")
             return QQNetwork.fetchByMid("", hostId, identity,
                 isCurrent = { requests.isCurrent(token) }, requests = requests)
         }
 
-        val candidate = QQNetwork.searchBest(
+        val candidates = QQNetwork.searchCandidates(
             identity, requests,
             isCurrent = { requests.isCurrent(token) },
         )
-            ?: return LyricOutcome.TransientFailure(null)
+        if (candidates.isEmpty()) return LyricOutcome.TransientFailure(null)
+        if (!requests.isCurrent(token)) return LyricOutcome.TransientFailure(null)
 
-        AndroidLog.logI(sourceName, "Matched candidate mid=${candidate.first}")
-        return QQNetwork.fetchByMid(candidate.first, candidate.second, identity,
-            isCurrent = { requests.isCurrent(token) }, requests = requests)
+        return fetchFirstUsable(candidates) { candidate ->
+            AndroidLog.logD(sourceName, "Trying candidate mid=${candidate.mid}")
+            QQNetwork.fetchByMid(
+                candidate.mid, candidate.songId, identity,
+                isCurrent = { requests.isCurrent(token) }, requests = requests,
+            )
+        }
     }
 }

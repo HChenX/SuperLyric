@@ -18,6 +18,8 @@
  */
 package com.hchen.superlyric.kernel.catalog
 
+import com.hchen.superlyric.kernel.identity.TrackIdentity
+
 /**
  * 曲库命名空间
  */
@@ -68,6 +70,22 @@ object CatalogIds {
         raw?.trim()?.let { NUMERIC_ID.matches(it) } == true
 
     fun qqSongId(raw: String?): Long? = numericId(raw)
+
+    /**
+     * 身份的曲库取词标识
+     *
+     * 与 [catalog] 一致的 catalogId 优先，否则归一化 stableId；两条来源都经 [normalize] 校验，
+     * 各曲库的校验函数保持独立。
+     */
+    @JvmStatic
+    fun <T> lyricId(
+        identity: TrackIdentity,
+        catalog: LyricCatalog,
+        normalize: (String?) -> T?,
+    ): T? {
+        val fromCatalog = identity.catalogId?.takeIf { it.catalog == catalog }?.id?.let(normalize)
+        return fromCatalog ?: normalize(TrackIdentity.normalizeStableId(identity.stableId))
+    }
 
     fun kugouHash(raw: String?): String? =
         raw?.trim()?.takeIf { KUGOU_HASH.matches(it) }

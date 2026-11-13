@@ -72,8 +72,7 @@ object LyricDiag {
     }.getOrNull()
 
     /** 单次载荷输出的字符上限，防止畸形报文撑爆日志缓冲区 */
-    @JvmField
-    var maxPayloadChars: Int = 120_000
+    private const val MAX_PAYLOAD_CHARS = 120_000
 
     // logcat 单条约 4KB，中文每字符 UTF-8 占 3 字节：2600 字符约 7.8KB，会被截断。
     // 取 1200 字符，最坏 3.6KB 加前缀，仍在单条上限内。
@@ -330,8 +329,9 @@ object LyricDiag {
      * 带序号、后续行无法归属，更难读。
      */
     private fun dumpText(source: String, label: String, text: String) {
-        val safe = if (text.length > maxPayloadChars) {
-            text.substring(0, maxPayloadChars) + "⏎…[TRUNCATED ${text.length - maxPayloadChars} chars]"
+        val safe = if (text.length > MAX_PAYLOAD_CHARS) {
+            text.substring(0, MAX_PAYLOAD_CHARS) +
+                    "⏎…[TRUNCATED ${text.length - MAX_PAYLOAD_CHARS} chars]"
         } else {
             text
         }.replace('\n', '⏎')

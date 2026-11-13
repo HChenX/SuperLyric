@@ -68,63 +68,44 @@ class AppleHookSource : InstallableLyricSource {
      */
     private fun onNoLyricVerdict(itemId: String?) {
         val current = requests.current() ?: return
-        if (!trackGuard(itemId, current.identity.stableId, "no-lyric verdict", enforce = true)) return
+        if (!trackGuard(itemId, current.identity.stableId, "no-lyric verdict")) return
 
         current.session.deliver(LyricOutcome.NoLyrics("apple: host reports no lyric"))
     }
 
     /**
-     * 判定回调是否属于当前曲目，并按 [enforce] 决定不匹配时的后果
+     * 判定回调是否属于当前曲目；只有判为同一首才放行
      *
      * [AppleAnchors] 的取词有 350ms 去抖，`requestLyrics(item)` 可能在切歌后完成，
-     * 回调携带的 itemId 可能属于上一首。必须用当前请求身份校验，否则过期歌词会挂到新曲目，
-     * 无词结论还会错误下发纯音乐占位。
+     * 回调携带的 itemId 可能属于上一首。过期载荷挂到新曲目会显示错词，无词结论还会
+     * 错误下发纯音乐占位；无从判定与判定为不同曲目都不得采纳。
      */
     private fun trackGuard(
         itemId: String?,
         stableId: String?,
         what: String,
-        enforce: Boolean,
     ): Boolean {
         val verdict = judgeTrack(itemId, stableId)
-        val admit = admits(verdict, enforce)
         val reported = TrackIdentity.normalizeStableId(itemId)
         val current = TrackIdentity.normalizeStableId(stableId)
 
         when (verdict) {
-            TrackVerdict.SAME -> AndroidLog.logD(sourceName, "Accepting $what for $reported")
+            TrackVerdict.SAME -> {
+                AndroidLog.logD(sourceName, "Accepting $what for $reported")
+                return true
+            }
 
             TrackVerdict.UNVERIFIABLE -> AndroidLog.logW(
                 sourceName,
-                "$what has no comparable track id (reported=$reported, current=$current); " +
-                        if (admit) "delivering anyway" else "not adopting the verdict",
+                "Dropping $what: no comparable track id (reported=$reported, current=$current)",
             )
 
             TrackVerdict.DIFFERENT -> AndroidLog.logW(
                 sourceName,
-                if (admit) {
-                    "$what is for $reported but the current track is $current; delivering anyway " +
-                            "(the two id schemes are unverified — see judgeTrack)"
-                } else {
-                    "Dropping $what for $reported: the current track is $current"
-                },
+                "Dropping $what for $reported: the current track is $current",
             )
         }
-
-        return admit
-    }
-
-    /**
-     * [trackGuard] 的纯判定部分
-     *
-     * 仅 `SAME` 放行；`UNVERIFIABLE` 与 `DIFFERENT` 只在未启用 [enforce] 时放行。
-     * 该规则覆盖六种判定组合，单测固定这些边界。
-     *
-     * @param enforce 判据不成立时是否拒绝投递
-     */
-    internal fun admits(verdict: TrackVerdict, enforce: Boolean): Boolean = when (verdict) {
-        TrackVerdict.SAME -> true
-        TrackVerdict.UNVERIFIABLE, TrackVerdict.DIFFERENT -> !enforce
+        return false
     }
 
     /** [judgeTrack] 的三种结论 */
@@ -148,7 +129,7 @@ class AppleHookSource : InstallableLyricSource {
     private fun onExtracted(lines: List<AppleLine>, itemId: String?) {
         val current = requests.current() ?: return
         val identity = current.identity
-        if (!trackGuard(itemId, identity.stableId, "lyric payload", enforce = true)) return
+        if (!trackGuard(itemId, identity.stableId, "lyric payload")) return
 
         // 宿主原始模型（含 HTML 标记）；Apple 没有协议报文，这就是未解析数据。
         // 诊断关闭时不得先构建整份字符串，否则 release 也付 O(payload) 的复制成本。

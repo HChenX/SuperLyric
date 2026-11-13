@@ -47,7 +47,8 @@ class AppleIdentitySource(private val providerTag: String) : BaseIdentitySource(
     internal fun current(mediaId: String, title: String, artist: String, durationMs: Long): TrackIdentity =
         TrackIdentity(
             source = providerTag,
-            stableId = mediaId.ifEmpty { null },
+            // 占位值不能当权威标识，否则不同曲目会被判成同一首
+            stableId = TrackIdentity.usableId(mediaId),
             title = title,
             artist = artist,
             durationMs = durationMs,
