@@ -90,6 +90,7 @@ class MobileMusicAnchorsTest {
             )) {
                 set(this, target, Manager::class.java.getField(host))
             }
+            set(this, "legacyModel", true)
             set(this, "installed", true)
         }
     }

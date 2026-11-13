@@ -4,7 +4,7 @@
  * SuperLyric is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as
  * published by the Free Software Foundation, either version 3 of the
- * License.
+ * License, or (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -24,8 +24,6 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.hchen.dexkitcache.DexkitCache;
-import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.hook.AbsHook;
 import com.hchen.hooktool.log.AndroidLog;
@@ -34,55 +32,41 @@ import com.hchen.superlyric.anchors.BuildConfig;
 import com.hchen.superlyric.kernel.merge.TimeText;
 import com.hchen.superlyric.kernel.parse.MobileMusicLyricParser.NativeLine;
 
-import org.luckypray.dexkit.DexKitBridge;
-import org.luckypray.dexkit.query.FindClass;
-import org.luckypray.dexkit.query.matchers.ClassMatcher;
-import org.luckypray.dexkit.result.ClassData;
-import org.luckypray.dexkit.result.ClassDataList;
-
 import java.io.File;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.Set;
+import java.util.HashSet;
 
 /**
- * 咪咕歌词解析入口的 DexKit 锚点
+ * 咪咕歌词解析入口的锚点
  *
- * <p>加固宿主把音乐 SDK 放进动态 dex，APK 扫描失败时从宿主类加载器扫描并缓存。
+ * <p>8.9.6 起音乐 SDK 放进动态 dex，但类名没有混淆：直接按稳定类名定位
+ * 管理器、数据对象、解析入口与歌词视图，不依赖 DexKit 扫描。
  * 只观察整首歌词、TRC 与偏移变更；播放状态和进度由公共框架处理。
  * 宿主会原地复用列表，因此在解析入口返回后复制数据，后续映射不持有宿主模型。
  */
 public final class MobileMusicAnchors {
     private static final String TAG = "MobileMusicAnchors";
 
-    private static final String MANAGER_CACHE_KEY = "migu_lyric_manager_v1";
-    private static final String MANAGER_ANCHOR = "musicplay lrc parseLyricsFile";
-    private static final String PLAYER_CACHE_KEY = "migu_player_controller_v1";
-    private static final String PLAYER_ANCHOR = "PlayerController initialize";
-    private static final String VIEW_CACHE_KEY = "migu_lyric_view_v2";
+    private static final String MANAGER_CLASS = "com.migu.music.lyrics.LrcManager";
+    private static final String PLAYER_CLASS = "com.migu.music.player.PlayerController";
+    private static final String DATA_CLASS = "com.migu.music.lyrics.LrcDataInfo";
+    private static final String PARSER_CLASS = "com.migu.music.lyrics.LrcDataManager";
+    private static final String VIEW_CLASS = "com.migu.music.lyrics.view.NormalLyricView";
 
     /**
-     * 末尾空格是宿主字符串常量的一部分，精确匹配时必须保留
-     */
-    private static final String VIEW_ANCHOR = "treasure song Normal lyrics view apply skin mApplySkinChange = ";
-
-    /**
-     * 按类缓存无参 getter
-     *
-     * <p>使用自建映射而不是 {@link ClassValue}：后者在 Android 上是 API 34 才有的类，
-     * 而本模块 {@code minSdk 30}，类初始化时就会在 Android 11–13 上失败。
-     * 读取路径由 JVM 单元测试直接驱动，CoreTool 的调用需要 Xposed 环境，故保留纯 JDK 反射。
+     * 无参 getter 的反射缓存，读取路径需要能在 JVM 单测里直接驱动。
      */
     private static final ConcurrentHashMap<Class<?>, Map<String, Method>> GETTERS =
         new ConcurrentHashMap<>();
@@ -115,11 +99,17 @@ public final class MobileMusicAnchors {
     private Field translationLines;
     private Field lyricParser;
     private Field isMrc;
+    private Field currentData;
+    private Field dataLines;
+    private Field dataTranslations;
+    private Field dataOffset;
+    private Field dataIsStatic;
+    private boolean legacyModel;
     private volatile OffsetSnapshot liveOffset;
     private Listener listener;
     private boolean subscribed;
 
-    private record OffsetSnapshot(Object song, Object parser, WeakReference<Object> view) {
+    private record OffsetSnapshot(Object song, Object token, WeakReference<Object> view) {
     }
 
     public boolean isInstalled() {
@@ -146,21 +136,14 @@ public final class MobileMusicAnchors {
             return offsetHooks.size() == 2;
         }
         try {
-            Class<?> manager = locateClass(loader, MANAGER_CACHE_KEY, MANAGER_ANCHOR);
-            Class<?> player = locateClass(loader, PLAYER_CACHE_KEY, PLAYER_ANCHOR);
+            Class<?> manager = CoreTool.findClassIfExists(MANAGER_CLASS, loader);
+            Class<?> player = CoreTool.findClassIfExists(PLAYER_CLASS, loader);
             if (manager == null || player == null) return false;
 
-            parsedSong = manager.getField("mCurrentParseSong");
-            lyricLines = manager.getField("mLrcLineList");
-            translationLines = manager.getField("mLrcTrcsLineList");
-            lyricParser = manager.getField("lyricsParser");
-            isMrc = manager.getField("isMrc");
-            getManager = manager.getMethod("getIntance");
-            getSong = player.getMethod("getUseSong");
-            Class<?> song = parsedSong.getType();
-            Method parsed = manager.getDeclaredMethod("parseLyricsFile", String.class, song);
-            Method translated = manager.getDeclaredMethod("parseTrc", File.class);
-            this.listener = listener;
+            getManager = CoreTool.findMethod(manager, "getIntance");
+            getSong = CoreTool.findMethod(player, "getUseSong");
+            parsedSong = CoreTool.findField(manager, "mCurrentParseSong");
+            Class<?> songClass = parsedSong.getType();
 
             AbsHook capture = new AbsHook() {
                 @Override
@@ -168,15 +151,42 @@ public final class MobileMusicAnchors {
                     refreshCurrent();
                 }
             };
-            // 部分挂载成功后继续重试时，不能重复安装已经生效的回调。
-            if (!lyricHooks.contains(parsed)) {
-                CoreTool.hook(parsed, capture);
-                lyricHooks.add(parsed);
+
+            if (CoreTool.hasField(manager, "mLrcLineList")) {
+                legacyModel = true;
+                lyricLines = CoreTool.findField(manager, "mLrcLineList");
+                translationLines = CoreTool.findField(manager, "mLrcTrcsLineList");
+                lyricParser = CoreTool.findField(manager, "lyricsParser");
+                isMrc = CoreTool.findField(manager, "isMrc");
+                hookMethod(CoreTool.findMethod(manager, "parseLyricsFile", String.class, songClass), capture);
+                hookMethod(CoreTool.findMethod(manager, "parseTrc", File.class), capture);
+            } else {
+                legacyModel = false;
+                Class<?> dataClass = CoreTool.findClassIfExists(DATA_CLASS, loader);
+                if (dataClass == null) return false;
+                currentData = CoreTool.findField(manager, "currentSongLrcInfo");
+                dataLines = CoreTool.findField(dataClass, "mLrcLineList");
+                dataTranslations = CoreTool.findField(dataClass, "mLrcTrcsLineList");
+                dataOffset = CoreTool.findField(dataClass, "lrcOffset");
+                dataIsStatic = CoreTool.findField(dataClass, "isStaticLrc");
+
+                Class<?> parserClass = CoreTool.findClassIfExists(PARSER_CLASS, loader);
+                if (parserClass != null) {
+                    for (Method method : parserClass.getDeclaredMethods()) {
+                        if (!isParseEntry(method)) continue;
+                        hookMethod(method, capture);
+                    }
+                }
+                // 原生解析完成后由管理器回调通知整首歌词；回调参数即当前数据对象
+                for (Method method : manager.getDeclaredMethods()) {
+                    String name = method.getName();
+                    if (name.startsWith("callBackLrcFinish") || name.startsWith("callBackTrcFinish")) {
+                        hookMethod(method, capture);
+                    }
+                }
             }
-            if (!lyricHooks.contains(translated)) {
-                CoreTool.hook(translated, capture);
-                lyricHooks.add(translated);
-            }
+
+            this.listener = listener;
             installed = true;
             installOffsets(loader);
             diagnose("Installed native full-song lyric hooks");
@@ -213,23 +223,20 @@ public final class MobileMusicAnchors {
             String artist = invoke(song, "getSingerName") instanceof String text ? text : "";
             long durationMs = durationMs(((Number) invoke(song, "getMicroSecondsDuration")).longValue());
             String album = invoke(song, "getAlbum") instanceof String text ? text : "";
-            if (Boolean.TRUE.equals(invoke(song, "isVideoResource")) ||
-                Boolean.TRUE.equals(invoke(manager, "isStaticLrc"))) {
-                return new Capture(songId, title, artist, durationMs, album, List.of(), List.of(), 0L, "static lyrics or video");
+            boolean legacy = legacyModel;
+            Object data = legacy ? manager : CoreTool.getField(currentData, manager);
+            if (data == null) return null;
+            Object isStatic = legacy
+                ? invoke(manager, "isStaticLrc")
+                : CoreTool.getField(dataIsStatic, data);
+            if (Boolean.TRUE.equals(invoke(song, "isVideoResource"))
+                || Boolean.TRUE.equals(isStatic)) {
+                return new Capture(songId, title, artist, durationMs, album, List.of(), List.of(), 0L,
+                    "static lyrics or video");
             }
-            Object parser = CoreTool.getField(lyricParser, manager);
-            long offset = 0L;
-            OffsetSnapshot live = liveOffset;
-            Object offsetView = live == null ? null : live.view.get();
-            // 普通 LRC 没有 MRC 解析器，歌词视图里调整的偏移仍须保留。
-            // 视图重置会直接清零字段，因此快照读取当前值，且不延长已销毁界面的生命周期。
-            if (offsetView != null && live.parser == parser && sameSong(song, live.song)) {
-                offset = ((Number) invoke(offsetView, "getOffset")).longValue();
-            } else if (Boolean.TRUE.equals(CoreTool.getField(isMrc, manager)) && parser != null) {
-                offset = ((Number) invoke(parser, "getPlayOffset")).longValue();
-            }
+            long offset = readOffset(song, manager, data, legacy);
             List<NativeLine> lines = new ArrayList<>();
-            Object nativeLines = CoreTool.getField(lyricLines, manager);
+            Object nativeLines = CoreTool.getField(legacy ? lyricLines : dataLines, data);
             if (nativeLines instanceof List<?> list) {
                 for (Object line : list) {
                     String[] words = (String[]) invoke(line, "getLyricsWords");
@@ -245,7 +252,8 @@ public final class MobileMusicAnchors {
                 }
             }
             List<TimeText> translations = new ArrayList<>();
-            Object nativeTranslations = CoreTool.getField(translationLines, manager);
+            Object nativeTranslations = CoreTool.getField(
+                legacy ? translationLines : dataTranslations, data);
             if (nativeTranslations instanceof List<?> list) {
                 for (Object line : list) {
                     translations.add(new TimeText(((Number) invoke(line, "getStartTime")).longValue(),
@@ -265,6 +273,26 @@ public final class MobileMusicAnchors {
         }
     }
 
+    private long readOffset(@NonNull Object song, @NonNull Object manager, @NonNull Object data,
+                            boolean legacy) {
+        OffsetSnapshot live = liveOffset;
+        Object offsetView = live == null ? null : live.view.get();
+        Object token = legacy ? CoreTool.getField(lyricParser, manager) : data;
+        if (offsetView != null && live.token == token && sameSong(song, live.song)) {
+            return ((Number) invoke(offsetView, "getOffset")).longValue();
+        }
+        if (!legacy) {
+            Object value = CoreTool.getField(dataOffset, data);
+            return value instanceof Number number ? number.longValue() : 0L;
+        }
+        boolean mrc = Boolean.TRUE.equals(CoreTool.getField(isMrc, manager));
+        Object parser = CoreTool.getField(lyricParser, manager);
+        if (mrc && parser != null) {
+            return ((Number) invoke(parser, "getPlayOffset")).longValue();
+        }
+        return 0L;
+    }
+
     /**
      * 读取当前快照并发布给所有监听者；调用方可在返回后立即读取身份 feed。
      */
@@ -278,45 +306,44 @@ public final class MobileMusicAnchors {
     private void installOffsets(ClassLoader loader) {
         if (offsetHooks.size() == 2) return;
         try {
-            // 锚点必须由视图本身输出，匿名监听器不包含偏移 setter。
-            Class<?> view = locateClass(loader, VIEW_CACHE_KEY, VIEW_ANCHOR);
+            Class<?> view = CoreTool.findClassIfExists(VIEW_CLASS, loader);
             if (view == null) {
                 diagnose("Lyric view anchor not ready; offset hooks will be retried");
                 return;
             }
-            Method relative = view.getDeclaredMethod("setProgressOffset", int.class);
-            Method absolute = view.getDeclaredMethod("setCurrentOffset", int.class);
+            Method relative = CoreTool.findMethod(view, "setProgressOffset", int.class);
+            Method absolute = CoreTool.findMethod(view, "setCurrentOffset", int.class);
             AbsHook capture = new AbsHook() {
                 @Override
                 public void after() {
-                    Object lyricsView = getThisObject();
-                    if (!Boolean.TRUE.equals(invoke(lyricsView, "isPlayerLyricsMode")) &&
-                        !Boolean.TRUE.equals(invoke(lyricsView, "isTreasureLyricsMode"))) {
-                        diagnose("Discarding offset from a non-player lyric view");
-                        return;
+                    try {
+                        Object lyricsView = getThisObject();
+                        if (!Boolean.TRUE.equals(invoke(lyricsView, "isPlayerLyricsMode"))
+                            && !Boolean.TRUE.equals(invoke(lyricsView, "isTreasureLyricsMode"))) {
+                            diagnose("Discarding offset from a non-player lyric view");
+                            return;
+                        }
+                        Object song = CoreTool.callStaticMethod(getSong);
+                        Object manager = CoreTool.callStaticMethod(getManager);
+                        if (song == null || manager == null
+                            || !sameSong(song, CoreTool.getField(parsedSong, manager))) {
+                            diagnose("Discarding offset without a matching current lyric parser");
+                            return;
+                        }
+                        Object token = legacyModel
+                            ? CoreTool.getField(lyricParser, manager)
+                            : CoreTool.getField(currentData, manager);
+                        liveOffset = new OffsetSnapshot(song, token, new WeakReference<>(lyricsView));
+                        diagnose("Captured view offset: offset="
+                            + ((Number) invoke(lyricsView, "getOffset")).longValue() + "ms");
+                        refreshCurrent();
+                    } catch (Throwable error) {
+                        diagnose("Failed to capture view offset: " + error.getMessage());
                     }
-                    Object song = CoreTool.callStaticMethod(getSong);
-                    Object manager = CoreTool.callStaticMethod(getManager);
-                    if (song == null || manager == null
-                        || !sameSong(song, CoreTool.getField(parsedSong, manager))) {
-                        diagnose("Discarding offset without a matching current lyric parser");
-                        return;
-                    }
-                    liveOffset = new OffsetSnapshot(song, CoreTool.getField(lyricParser, manager),
-                        new WeakReference<>(lyricsView));
-                    diagnose("Captured view offset: offset="
-                        + ((Number) invoke(lyricsView, "getOffset")).longValue() + "ms");
-                    refreshCurrent();
                 }
             };
-            if (!offsetHooks.contains(relative.getName())) {
-                CoreTool.hook(relative, capture);
-                offsetHooks.add(relative.getName());
-            }
-            if (!offsetHooks.contains(absolute.getName())) {
-                CoreTool.hook(absolute, capture);
-                offsetHooks.add(absolute.getName());
-            }
+            hookOffset(relative, capture);
+            hookOffset(absolute, capture);
             diagnose("Installed lyric view offset hooks");
         } catch (Throwable error) {
             AndroidLog.logW(TAG, "Live lyric offset hooks unavailable: " + error.getMessage());
@@ -324,32 +351,29 @@ public final class MobileMusicAnchors {
         }
     }
 
+    private void hookMethod(@NonNull Method method, @NonNull AbsHook hook) {
+        method.setAccessible(true);
+        if (lyricHooks.add(method)) CoreTool.hook(method, hook);
+    }
+
+    private void hookOffset(@NonNull Method method, @NonNull AbsHook hook) {
+        method.setAccessible(true);
+        if (offsetHooks.add(method.getName())) CoreTool.hook(method, hook);
+    }
+
+    private static boolean isParseEntry(@NonNull Method method) {
+        if (method.getParameterCount() < 2) return false;
+        if (method.getParameterTypes()[0] != String.class) return false;
+        return switch (method.getName()) {
+            case "parseLyricsFile", "parseTrcLyricsFile", "parseLrcFile", "parseTrcFile" -> true;
+            default -> false;
+        };
+    }
+
     private static void diagnose(String message) {
         AndroidLog.logD(TAG, message);
         // 调试包同时使用 Android 日志，减少对 Xposed 日志转发的依赖。
         if (BuildConfig.DEBUG) Log.i(TAG, message);
-    }
-
-    @Nullable
-    private static Class<?> locateClass(ClassLoader loader, String key, String anchor) {
-        DexKitBridge[] runtime = new DexKitBridge[1];
-        try {
-            return DexkitCache.findMember(key, loader, new IDexkit<ClassData>() {
-                @Override
-                public ClassData dexkit(DexKitBridge bridge) {
-                    FindClass query = FindClass.create().matcher(ClassMatcher.create().usingEqStrings(anchor));
-                    ClassDataList classes = bridge.findClass(query);
-                    if (classes.isEmpty()) {
-                        runtime[0] = DexKitBridge.create(loader, true);
-                        classes = runtime[0].findClass(query);
-                    }
-                    ClassData nonInner = classes.firstOrNull(data -> !data.getName().contains("$"));
-                    return nonInner != null ? nonInner : classes.firstOrNull();
-                }
-            });
-        } finally {
-            if (runtime[0] != null) runtime[0].close();
-        }
     }
 
     /**
