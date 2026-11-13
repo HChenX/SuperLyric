@@ -66,7 +66,8 @@ object AppleLyricParser {
                 text = text,
                 translation = cleanHtml(line.translation).takeIf { it.isNotEmpty() },
                 words = line.words.mapNotNull { word ->
-                    val wordText = cleanHtml(word.text)
+                    // 逐字拼接须保留词间空格，否则按字符偏移高亮会漏掉句尾。
+                    val wordText = cleanHtml(word.text, trim = false)
                     if (wordText.isEmpty()) null
                     else LyricWord(wordText, word.startMs, word.endMs)
                 },
@@ -86,10 +87,11 @@ object AppleLyricParser {
     /**
      * 剥离 HTML 标记、还原实体，再清理零宽字符
      */
-    fun cleanHtml(raw: String?): String {
+    fun cleanHtml(raw: String?, trim: Boolean = true): String {
         if (raw.isNullOrEmpty()) return ""
         val withBreaks = HTML_BREAK.replace(raw, " ")
         val withoutTags = HTML_TAG.replace(withBreaks, "")
-        return LyricText.cleanInvisibleChars(LyricText.decodeEntities(withoutTags)).trim()
+        val clean = LyricText.cleanInvisibleChars(LyricText.decodeEntities(withoutTags))
+        return if (trim) clean.trim() else clean
     }
 }
