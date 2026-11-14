@@ -30,7 +30,8 @@ android {
                 storePassword properties.getProperty('keyStorePassword')
                 keyAlias properties.getProperty('keyAlias')
                 keyPassword properties.getProperty('keyAliasPassword')
-                enableV1Signing true
+                // minSdk 30：安装与校验只使用 V2/V3，V1 的 META-INF 签名文件是纯冗余
+                enableV1Signing false
                 enableV2Signing true
                 enableV3Signing true
                 enableV4Signing true
@@ -83,6 +84,28 @@ android {
 
     androidResources {
         generateLocaleConfig = true
+        // 应用只有默认（英文）与 values-zh-rCN 文案；依赖库附带的其余语言资源不在支持范围
+        localeFilters.addAll(['zh-rCN', 'zh-rHK', 'zh-rTW'])
+        // 依赖 AAR 附带的资产：OkHttp PublicSuffixDatabase 只服务 topPrivateDomain，
+        // baseline profile 只服务 Play 云端下发；本项目均不使用
+        ignoreAssetsPatterns.addAll(['PublicSuffixDatabase.list', 'baseline.prof', 'baseline.profm'])
+    }
+
+    // 运行时不会读取的依赖资源：
+    // - PublicSuffixDatabase.list 只被 OkHttp HttpUrl.topPrivateDomain 惰性读取，本项目不使用
+    // - baseline.prof/profm 只服务 Play 云端 profile，侧载模块不需要
+    // - DebugProbesKt.bin 只服务 kotlinx-coroutines-debug，未引入
+    // - kotlin/*.kotlin_builtins 只服务 kotlin-reflect，运行时不包含 reflect 实现
+    packaging {
+        resources {
+            excludes += [
+                '/DebugProbesKt.bin',
+                '/kotlin/**',
+                'assets/dexopt/baseline.prof',
+                'assets/dexopt/baseline.profm',
+                'META-INF/version-control-info.textproto',
+            ]
+        }
     }
 
     lint {
