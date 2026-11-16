@@ -26,6 +26,7 @@ import java.util.Set;
 public final class SupportedApps {
     public static final Set<String> PACKAGES = Set.of(
         "com.apple.android.music",
+        "com.cidercollective.cider",
         "cn.wenyu.bodian",
         "com.kugou.android",
         "com.kugou.android.lite",

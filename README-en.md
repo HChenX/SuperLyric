@@ -15,6 +15,7 @@ An LSPosed module that publishes lyrics from music apps to Android over Binder.
 | App | Package | Mode |
 | :--- | :--- | :--- |
 | Apple Music | com.apple.android.music | Hook |
+| Cider for Android | com.cidercollective.cider | Hook + Kugou fallback |
 | BoDian Music | cn.wenyu.bodian | Hook + Kugou fallback |
 | Kugou Music | com.kugou.android | Network |
 | Kugou Music Lite | com.kugou.android.lite | Network |
