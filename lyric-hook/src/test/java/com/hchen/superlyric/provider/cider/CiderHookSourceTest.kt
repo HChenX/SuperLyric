@@ -53,35 +53,19 @@ class CiderHookSourceTest {
 
     private fun capture(
         id: String,
-        timing: String = "Word",
-        empty: Boolean = false,
-        translation: String? = "你好世界",
+        texts: List<String> = listOf("[00:01.000]Hello world"),
         instrumental: Boolean = false,
-    ) =
-        CiderAnchors.Capture(
-            id, "Host song", "Host artist", "Album", 5_000L, timing,
-            if (empty) emptyList() else listOf(
-                CiderAnchors.Line(
-                    "Hello world", translation, 1_000L, 3_000L,
-                    listOf(
-                        CiderAnchors.Word("Hello ", 1_000L, 2_000L),
-                        CiderAnchors.Word("world", 2_000L, 3_000L),
-                    ),
-                    false, null,
-                ),
-            ),
-            instrumental,
-        )
+    ) = CiderAnchors.Capture(id, texts, instrumental, "Album")
 
     @Test
-    fun `start actively requests the catalog id and accepts a synchronous cache snapshot`() {
+    fun `start actively requests the catalog id and parses a synchronous cache payload`() {
         val executor = QueueExecutor()
         val requested = mutableListOf<String>()
         lateinit var source: CiderHookSource
-        source = CiderHookSource(executor) { id ->
+        source = CiderHookSource(executor, requestLyrics = { id ->
             requested += id
             source.onCaptured(capture(id))
-        }
+        })
         val session = Session()
 
         source.start(identity("123"), session)
@@ -93,14 +77,16 @@ class CiderHookSourceTest {
         assertEquals("cider:123", result.doc.lyricId)
         assertEquals("Song", result.doc.title)
         assertEquals("Album", result.doc.album)
-        assertEquals("你好世界", result.doc.lines.single().translation)
-        assertEquals("Hello world", result.doc.lines.single().words.joinToString("") { it.text })
+        assertEquals("Artist", result.doc.artist)
+        assertEquals(5_000L, result.doc.durationMs)
+        assertEquals("Hello world", result.doc.lines.single().text)
+        assertEquals(1_000L, result.doc.lines.single().startMs)
     }
 
     @Test
     fun `late results and similar catalog ids cannot attach to the new track`() {
         val executor = QueueExecutor()
-        val source = CiderHookSource(executor) {}
+        val source = CiderHookSource(executor, {})
         val old = Session()
         val current = Session()
         source.start(identity("123"), old)
@@ -118,7 +104,7 @@ class CiderHookSourceTest {
     @Test
     fun `same track restart and cancel invalidate queued parsing`() {
         val executor = QueueExecutor()
-        val source = CiderHookSource(executor) {}
+        val source = CiderHookSource(executor, {})
         val old = Session()
         val restarted = Session()
         source.start(identity("123"), old)
@@ -135,38 +121,100 @@ class CiderHookSourceTest {
     }
 
     @Test
-    fun `empty and untimed host models allow fallback without instrumental verdicts`() {
+    fun `a source change invalidates queued payloads while waiting for refreshed acquisition`() {
         val executor = QueueExecutor()
-        val source = CiderHookSource(executor) {}
-        for (snapshot in listOf(capture("123", "None"), capture("123", empty = true))) {
+        var refreshCount = 0
+        val source = CiderHookSource(executor, {}, Runnable { refreshCount++ })
+        val old = Session()
+        source.start(identity("123"), old)
+        source.onCaptured(capture("123"))
+
+        source.onSelectionChanged()
+        source.onCaptured(capture("123"))
+        executor.drain()
+
+        assertEquals(1, refreshCount)
+        assertTrue(old.outcomes.isEmpty())
+    }
+
+    @Test
+    fun `changing source refreshes the same track before delivering new payloads`() {
+        val executor = QueueExecutor()
+        val requested = mutableListOf<String>()
+        val old = Session()
+        val refreshed = Session()
+        lateinit var source: CiderHookSource
+        source = CiderHookSource(
+            executor,
+            requested::add,
+            Runnable {
+                // 刷新回调执行前旧请求已失效；身份不变也要建立新的歌词会话。
+                source.onCaptured(capture("123", listOf("[00:01.000]Old pending result")))
+                source.start(identity("123"), refreshed)
+                source.onCaptured(capture("123", listOf("[00:01.000]Selected source")))
+            },
+        )
+        source.start(identity("123"), old)
+        source.onCaptured(capture("123", listOf("[00:01.000]Old source")))
+
+        source.onSelectionChanged()
+        executor.drain()
+
+        assertTrue(old.outcomes.isEmpty())
+        assertEquals(listOf("123", "123"), requested)
+        val result = refreshed.outcomes.single() as LyricOutcome.Success
+        assertEquals("Selected source", result.doc.lines.single().text)
+        assertEquals("cider:123", result.doc.lyricId)
+    }
+
+    @Test
+    fun `empty malformed and untimed payloads never produce instrumental verdicts`() {
+        val executor = QueueExecutor()
+        val source = CiderHookSource(executor, {})
+        for (texts in listOf(
+            emptyList(),
+            listOf("", "  "),
+            listOf("<tt><body><p begin=\"broken\">"),
+            listOf("ordinary untimed text"),
+        )) {
             val session = Session()
             source.start(identity("123"), session)
-            source.onCaptured(snapshot)
+            source.onCaptured(capture("123", texts))
             executor.drain()
-            assertTrue(session.outcomes.single() is LyricOutcome.Unsupported)
+            val outcome = session.outcomes.single()
+            assertTrue(outcome is LyricOutcome.Unsupported || outcome is LyricOutcome.TransientFailure)
         }
     }
 
     @Test
-    fun `absent host translation still delivers native lyrics`() {
-        val source = CiderHookSource(Executor { it.run() }) {}
+    fun `unsupported richsync data does not hide the same response line body`() {
+        val source = CiderHookSource(Executor { it.run() }, {})
         val session = Session()
         source.start(identity("123"), session)
-        source.onCaptured(capture("123", translation = null))
+        source.onCaptured(
+            capture(
+                "123",
+                listOf(
+                    "[{\"ts\":1.0,\"te\":2.0,\"x\":\"richsync\",\"l\":[]}]",
+                    "[00:01.000]Line body",
+                    "[00:02.000]Unused later candidate",
+                ),
+            ),
+        )
 
         val result = session.outcomes.single() as LyricOutcome.Success
-        assertEquals("Hello world", result.doc.lines.single().text)
-        assertEquals(null, result.doc.lines.single().translation)
+        assertEquals("Line body", result.doc.lines.single().text)
+        assertEquals(1_000L, result.doc.lines.single().startMs)
     }
 
     @Test
     fun `only a matching explicit instrumental flag produces a no lyrics verdict`() {
-        val source = CiderHookSource(Executor { it.run() }) {}
+        val source = CiderHookSource(Executor { it.run() }, {})
         val session = Session()
         source.start(identity("123"), session)
-        source.onCaptured(capture("456", empty = true, instrumental = true))
+        source.onCaptured(capture("456", emptyList(), instrumental = true))
         assertTrue(session.outcomes.isEmpty())
-        source.onCaptured(capture("123", empty = true, instrumental = true))
+        source.onCaptured(capture("123", emptyList(), instrumental = true))
         assertTrue(session.outcomes.single() is LyricOutcome.NoLyrics)
     }
 
@@ -182,5 +230,41 @@ class CiderHookSourceTest {
 
         assertTrue(requests.isEmpty())
         assertTrue(session.outcomes.single() is LyricOutcome.Unsupported)
+    }
+
+    @Test
+    fun `raw lrc fractions and offsets use the built in timeline parser`() {
+        val source = CiderHookSource(Executor { it.run() }, {})
+        val session = Session()
+        source.start(identity("123"), session)
+        source.onCaptured(
+            capture("123", listOf("[offset:+250]\n[00:01.25]one\n[00:03:500]two")),
+        )
+
+        val result = session.outcomes.single() as LyricOutcome.Success
+        assertEquals(listOf("one", "two"), result.doc.lines.map { it.text })
+        assertEquals(listOf(1_500L, 3_750L), result.doc.lines.map { it.startMs })
+    }
+
+    @Test
+    fun `raw ttml preserves words translation and romanization through the built in parser`() {
+        val ttml = """
+            <tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata">
+            <body><div><p begin="00:00:01.000" end="00:00:03.000"><span begin="00:00:01.000" end="00:00:02.000">你</span><span begin="00:00:02.000" end="00:00:03.000">好</span><span ttm:role="x-translation">Hello</span><span ttm:role="x-roman">ni hao</span></p></div></body></tt>
+        """.trimIndent()
+        val source = CiderHookSource(Executor { it.run() }, {})
+        val session = Session()
+        source.start(identity("123"), session)
+        source.onCaptured(capture("123", listOf(ttml)))
+
+        val result = session.outcomes.single() as LyricOutcome.Success
+        val line = result.doc.lines.single()
+        assertEquals("你好", line.text)
+        assertEquals("Hello", line.translation)
+        assertEquals("ni hao", line.phonetic)
+        assertEquals(listOf("你", "好"), line.words.map { it.text })
+        assertEquals(line.text, line.words.joinToString("") { it.text })
+        assertEquals(listOf(1_000L, 2_000L), line.words.map { it.startMs })
+        assertEquals(listOf(2_000L, 3_000L), line.words.map { it.endMs })
     }
 }

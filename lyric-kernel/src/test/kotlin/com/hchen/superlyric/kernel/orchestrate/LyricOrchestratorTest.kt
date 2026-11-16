@@ -89,8 +89,14 @@ class LyricOrchestratorTest {
         var idleCount = 0
         var lastNoLyricsIdentity: TrackIdentity? = null
         var lastUnavailableIdentity: TrackIdentity? = null
+        val changedTracks = ArrayList<TrackIdentity>()
         val transitions = ArrayList<LyricOrchestrator.State>()
         var onState: ((LyricOrchestrator.State) -> Unit)? = null
+
+        override fun onTrackChanged(identity: TrackIdentity) {
+            changedTracks += identity
+            resolved = null
+        }
 
         override fun onLyricResolved(outcome: LyricOutcome.Success) {
             resolved = outcome
@@ -216,6 +222,107 @@ class LyricOrchestratorTest {
 
         assertEquals(1, f.hookSource.startCount, "同一首曲目不得重复取词")
         assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
+    }
+
+    @Test
+    fun `explicit refresh clears the current lyric and invalidates the old hook session`() {
+        val f = Fixture(api = false)
+        val identity = track("A")
+        f.orchestrator.onTrackChanged(identity)
+        f.hookSource!!.deliver(success())
+        val oldSession = f.hookSource.sessions.last()
+
+        f.orchestrator.refreshCurrentTrack()
+
+        assertEquals(LyricOrchestrator.State.RESOLVING_HOOK, f.orchestrator.state)
+        assertEquals(identity, f.orchestrator.activeIdentity)
+        assertEquals(listOf(identity, identity), f.listener.changedTracks)
+        assertEquals(listOf(identity, identity), f.hookSource.identities)
+        assertEquals(2, f.hookSource.startCount)
+        assertEquals(1, f.hookSource.cancelCount)
+        assertEquals(1, f.scheduler.pending)
+        assertNull(f.listener.resolved)
+        assertEquals(0, f.listener.idleCount)
+
+        oldSession.deliver(success())
+        assertNull(f.listener.resolved)
+        assertEquals(1, f.listener.resolvedCount)
+
+        val refreshed = LyricOutcome.Success(
+            doc.copy(lines = listOf(LyricLine(0L, 1_000L, "refreshed"))),
+        )
+        f.hookSource.deliver(refreshed)
+        assertEquals(refreshed, f.listener.resolved)
+        assertEquals(2, f.listener.resolvedCount)
+        assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
+    }
+
+    @Test
+    fun `refresh cancels pending api acquisition and rejects its late result`() {
+        val f = Fixture()
+        val identity = track("A")
+        f.orchestrator.onTrackChanged(identity)
+        f.hookSource!!.deliver(LyricOutcome.Unsupported("no native lyric"))
+        val oldSession = f.apiSource!!.sessions.last()
+
+        f.orchestrator.refreshCurrentTrack()
+
+        assertEquals(LyricOrchestrator.State.RESOLVING_HOOK, f.orchestrator.state)
+        assertEquals(1, f.hookSource.cancelCount)
+        assertEquals(1, f.apiSource.cancelCount)
+        assertEquals(2, f.hookSource.startCount)
+        assertEquals(1, f.apiSource.startCount)
+        oldSession.deliver(success())
+        assertNull(f.listener.resolved)
+
+        f.hookSource.deliver(LyricOutcome.Unsupported("no native lyric"))
+        assertEquals(listOf(identity, identity), f.apiSource.identities)
+        f.apiSource.deliver(success())
+        assertEquals(LyricOrchestrator.State.ACTIVE, f.orchestrator.state)
+        assertEquals(1, f.listener.resolvedCount)
+    }
+
+    @Test
+    fun `refresh restarts an api only plan with the original identity`() {
+        val f = Fixture(hook = false)
+        val identity = track("A")
+        f.orchestrator.onTrackChanged(identity)
+        val oldSession = f.apiSource!!.sessions.last()
+
+        f.orchestrator.refreshCurrentTrack()
+
+        assertEquals(LyricOrchestrator.State.FETCHING_API, f.orchestrator.state)
+        assertEquals(2, f.apiSource.startCount)
+        assertEquals(1, f.apiSource.cancelCount)
+        assertEquals(listOf(identity, identity), f.apiSource.identities)
+        oldSession.deliver(success())
+        assertNull(f.listener.resolved)
+        f.apiSource.deliver(success())
+        assertEquals(1, f.listener.resolvedCount)
+    }
+
+    @Test
+    fun `refresh without an active track does not create or resurrect a session`() {
+        val f = Fixture(api = false)
+        f.orchestrator.refreshCurrentTrack()
+        assertEquals(0, f.hookSource!!.startCount)
+        assertEquals(0, f.hookSource.cancelCount)
+        assertEquals(0, f.listener.idleCount)
+        assertEquals(emptyList<TrackIdentity>(), f.listener.changedTracks)
+
+        f.orchestrator.onTrackChanged(track("A"))
+        val oldSession = f.hookSource.sessions.last()
+        f.orchestrator.onPlaybackStopped()
+        f.orchestrator.refreshCurrentTrack()
+        oldSession.deliver(success())
+
+        assertEquals(LyricOrchestrator.State.IDLE, f.orchestrator.state)
+        assertNull(f.orchestrator.activeIdentity)
+        assertNull(f.listener.resolved)
+        assertEquals(1, f.hookSource.startCount)
+        assertEquals(1, f.hookSource.cancelCount)
+        assertEquals(1, f.listener.idleCount)
+        assertEquals(listOf(track("A")), f.listener.changedTracks)
     }
 
 

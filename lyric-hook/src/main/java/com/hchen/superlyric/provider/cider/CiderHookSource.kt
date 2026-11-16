@@ -21,7 +21,8 @@ package com.hchen.superlyric.provider.cider
 import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
-import com.hchen.superlyric.kernel.parse.CiderLyricParser
+import com.hchen.superlyric.kernel.pipeline.LyricFormat
+import com.hchen.superlyric.kernel.pipeline.LyricRequest
 import com.hchen.superlyric.provider.base.InstallableLyricSource
 import com.hchen.superlyric.provider.base.SourceRequestGate
 import com.hchen.superlyric.provider.base.withMetadata
@@ -29,20 +30,32 @@ import com.hchen.superlyric.utils.LyricDiag
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
-/** 主动加载宿主当前曲目的完整歌词，解析在后台执行。 */
+/** 截获宿主原始歌词载荷，由内置解析管线在后台处理。 */
 class CiderHookSource @JvmOverloads constructor(
     private val executor: Executor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "SuperLyric-CiderHook").apply { isDaemon = true }
     },
     private val requestLyrics: (String) -> Unit = CiderAnchors::request,
+    private val onSourceChanged: Runnable = Runnable {},
 ) : InstallableLyricSource {
+
+    constructor(onSourceChanged: Runnable) : this(
+        requestLyrics = CiderAnchors::request,
+        onSourceChanged = onSourceChanged,
+    )
 
     override val sourceName: String = "CiderHook"
     private val requests = SourceRequestGate()
 
     override fun install() {
         CiderAnchors.subscribe(::onCaptured)
+        CiderAnchors.subscribeSelection(::onSelectionChanged)
         CiderAnchors.install()
+    }
+
+    internal fun onSelectionChanged() {
+        requests.invalidate()
+        onSourceChanged.run()
     }
 
     override fun start(identity: TrackIdentity, session: LyricSource.Session) {
@@ -63,42 +76,36 @@ class CiderHookSource @JvmOverloads constructor(
 
         executor.execute {
             if (!requests.isCurrent(request)) return@execute
-            val outcome = runCatching {
-                if (LyricDiag.enabled) {
-                    LyricDiag.dumpPayload(sourceName, "RAW-HOST-MODEL", capture.toString())
-                }
-                if (capture.instrumental()) {
-                    LyricOutcome.NoLyrics("cider: host reports instrumental audio")
-                } else if (capture.timingType() == "None") {
-                    LyricOutcome.Unsupported("cider: untimed lyrics")
-                } else {
-                    val doc = CiderLyricParser.parse(
-                        capture.lines().map { it.toParserLine() },
-                        capture.durationMs(),
-                    )
-                    if (doc == null) {
-                        LyricOutcome.Unsupported("cider: no usable timed line")
-                    } else {
-                        val result = doc.copy(album = capture.album())
-                            .withMetadata(request.identity, capture.title(), capture.artist())
-                        LyricDiag.dumpDocSummary(sourceName, result)
-                        LyricOutcome.Success(result)
+            val outcome = if (capture.instrumental()) {
+                LyricOutcome.NoLyrics("cider: host reports instrumental audio")
+            } else {
+                var failure: Throwable? = null
+                val doc = capture.texts().asSequence()
+                    .filter { it.isNotBlank() }
+                    .mapNotNull { text ->
+                        runCatching {
+                            LyricDiag.parse(
+                                sourceName,
+                                LyricRequest(
+                                    format = LyricFormat.AUTO,
+                                    text = text,
+                                    title = request.identity.title,
+                                    artist = request.identity.artist,
+                                    album = capture.album(),
+                                    durationMs = request.identity.durationMs,
+                                    lyricId = request.identity.stableId,
+                                ),
+                            )
+                        }.onFailure { failure = it }.getOrNull()
                     }
-                }
-            }.getOrElse { LyricOutcome.TransientFailure(it) }
+                    .firstOrNull { !it.isEmpty }
+                doc?.let { LyricOutcome.Success(it.withMetadata(request.identity)) }
+                    ?: failure?.let { LyricOutcome.TransientFailure(it) }
+                    ?: LyricOutcome.Unsupported("cider: no usable lyric payload")
+            }
             // 相同曲目重新开始也属于新请求，不能把旧解析结果交给新会话。
             if (requests.isCurrent(request)) request.session.deliver(outcome)
         }
     }
 
-    private fun CiderAnchors.Line.toParserLine(includeBackground: Boolean = true): CiderLyricParser.Line =
-        CiderLyricParser.Line(
-            text = text(),
-            translation = translation().orEmpty(),
-            startMs = startMs(),
-            endMs = endMs(),
-            words = words().map { CiderLyricParser.Word(it.text(), it.startMs(), it.endMs()) },
-            empty = empty(),
-            background = if (includeBackground) background()?.toParserLine(false) else null,
-        )
 }

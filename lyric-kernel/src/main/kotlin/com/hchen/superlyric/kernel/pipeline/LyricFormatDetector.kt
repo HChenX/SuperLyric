@@ -21,6 +21,7 @@ package com.hchen.superlyric.kernel.pipeline
 import com.hchen.superlyric.kernel.decode.QrcCipher
 import com.hchen.superlyric.kernel.parse.KuwoLrcxParser
 import com.hchen.superlyric.kernel.parse.LyricifyTextParser
+import com.hchen.superlyric.kernel.parse.RichSyncJsonParser
 import com.hchen.superlyric.kernel.parse.SodaJsonParser
 import com.hchen.superlyric.kernel.parse.TtmlTextParser
 import com.hchen.superlyric.kernel.text.LyricTextLimits
@@ -33,6 +34,7 @@ import com.hchen.superlyric.kernel.text.LyricTextLimits
  */
 internal enum class LyricTextKind {
     SODA_JSON,
+    RICH_SYNC_JSON,
     QRC,
     KRC,
     LRCX,
@@ -53,6 +55,7 @@ internal object LyricFormatDetector {
 
     fun detect(text: String): LyricTextKind {
         if (SodaJsonParser.canParse(text)) return LyricTextKind.SODA_JSON
+        if (RichSyncJsonParser.canParse(text)) return LyricTextKind.RICH_SYNC_JSON
         if (QrcCipher.isPlainQrc(text)) return LyricTextKind.QRC
         if (KuwoLrcxParser.canParse(text)) return LyricTextKind.LRCX
         if (LyricTextLimits.anyLineMatches(text, KRC_LINE)) return LyricTextKind.KRC

@@ -47,7 +47,10 @@ public class CiderProvider extends MusicProvider {
     @NonNull
     @Override
     protected LyricPlan createLyricPlan() {
-        return new LyricPlan(new CiderHookSource(), new KuGouApiSource());
+        return new LyricPlan(
+            new CiderHookSource(() -> getOrchestrator().refreshCurrentTrack()),
+            new KuGouApiSource()
+        );
     }
 
     @NonNull
