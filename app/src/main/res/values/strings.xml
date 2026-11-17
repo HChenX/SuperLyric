@@ -128,6 +128,7 @@
     <!-- Music App Instructions -->
     <string name="jiaoyan_music">No additional setup required, play normally</string>
     <string name="apple_music">No additional setup required, play normally</string>
+    <string name="cider_music">No additional setup required, play normally</string>
     <string name="bodian_music">No additional setup required, play normally</string>
     <string name="kugou_music">No additional setup required, play normally</string>
     <string name="kugou_lite_music">No additional setup required, play normally</string>

@@ -15,6 +15,7 @@
 | 应用 | 包名 | 获取方式 |
 | :--- | :--- | :--- |
 | Apple Music | com.apple.android.music | Hook 获取 |
+| Cider for Android | com.cidercollective.cider | Hook 获取 + 酷狗兜底 |
 | 波点音乐 | cn.wenyu.bodian | Hook 获取 + 酷狗兜底 |
 | 酷狗音乐 | com.kugou.android | 网络获取 |
 | 酷狗概念版 | com.kugou.android.lite | 网络获取 |

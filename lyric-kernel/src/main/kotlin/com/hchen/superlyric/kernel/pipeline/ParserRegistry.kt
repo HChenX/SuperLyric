@@ -25,6 +25,7 @@ import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.parse.KuwoLrcxParser
 import com.hchen.superlyric.kernel.parse.LyricifyTextParser
 import com.hchen.superlyric.kernel.parse.QrcParser
+import com.hchen.superlyric.kernel.parse.RichSyncJsonParser
 import com.hchen.superlyric.kernel.parse.SodaJsonParser
 import com.hchen.superlyric.kernel.parse.TtmlTextParser
 import com.hchen.superlyric.kernel.text.LrcOffset
@@ -65,6 +66,12 @@ internal object ParserRegistry {
                 "soda",
                 { SodaJsonParser.canParse(text) },
                 { SodaJsonParser.parse(text) },
+            )
+
+            LyricTextKind.RICH_SYNC_JSON -> add(
+                "rich-sync",
+                { RichSyncJsonParser.canParse(text) },
+                { RichSyncJsonParser.parse(text) },
             )
 
             LyricTextKind.QRC -> {
@@ -118,7 +125,7 @@ internal object ParserRegistry {
         }
 
         // 结构化 JSON 没有通用文本兜底；其余格式失败后仍尝试其他明确结构和通用库。
-        if (kind != LyricTextKind.SODA_JSON) {
+        if (kind != LyricTextKind.SODA_JSON && kind != LyricTextKind.RICH_SYNC_JSON) {
             if (kind != LyricTextKind.TTML && TtmlTextParser.canParse(text)) {
                 add("ttml-fallback", { true }, { TtmlTextParser.parse(text) })
             }
