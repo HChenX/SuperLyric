@@ -72,6 +72,15 @@ final class CiderRawStore {
         return true;
     }
 
+    synchronized boolean setSelection(@Nullable String catalogId, @Nullable Source source, boolean force) {
+        boolean changed = setSelection(source);
+        if (!changed && !force) return false;
+        if (!changed) selectionEpoch++;
+        // 自动模式会复用宿主当前结果，不能清掉该结果对应的原文缓存。
+        if (source != null) invalidate(catalogId, source);
+        return true;
+    }
+
     void enter(@Nullable String catalogId, Source source, @Nullable Object continuation, boolean enhanced) {
         Request request;
         synchronized (this) {

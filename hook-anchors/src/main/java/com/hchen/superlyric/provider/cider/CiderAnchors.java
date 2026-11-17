@@ -197,12 +197,14 @@ public final class CiderAnchors {
                 @Override
                 public void before() {
                     Source selected = sourceOf(getArg(1));
-                    if (RAW.setSelection(selected)) {
-                        Object queueObject = getArg(0);
-                        Object id = CoreTool.getField(access.queueId, queueObject);
-                        if (id instanceof String catalogId) RAW.invalidate(catalogId, selected);
-                        notifySelectionChanged();
-                    }
+                    Object id = CoreTool.getField(access.queueId, getArg(0));
+                    RAW.setSelection(id instanceof String catalogId ? catalogId : null, selected, true);
+                }
+
+                @Override
+                public void after() {
+                    // 宿主先更新偏好并启动取词，刷新会话才能读取已生效的来源。
+                    if (getThrowable() == null) notifySelectionChanged();
                 }
             });
             sInstalled = true;
@@ -222,8 +224,7 @@ public final class CiderAnchors {
                 if (queue == null || !catalogId.equals(access.queueId.get(queue))) return;
                 Object selected = access.selection.read();
                 Source source = sourceOf(selected);
-                if (RAW.setSelection(source)) {
-                    RAW.invalidate(catalogId, source);
+                if (RAW.setSelection(catalogId, source, false)) {
                     notifySelectionChanged();
                     return;
                 }

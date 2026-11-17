@@ -19,7 +19,10 @@
 package com.hchen.superlyric.provider.cider
 
 import com.hchen.superlyric.kernel.identity.TrackIdentity
+import com.hchen.superlyric.kernel.orchestrate.Cancellable
+import com.hchen.superlyric.kernel.orchestrate.LyricOrchestrator
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
+import com.hchen.superlyric.kernel.orchestrate.Scheduler
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -165,6 +168,57 @@ class CiderHookSourceTest {
         val result = refreshed.outcomes.single() as LyricOutcome.Success
         assertEquals("Selected source", result.doc.lines.single().text)
         assertEquals("cider:123", result.doc.lyricId)
+    }
+
+    @Test
+    fun `source changes replace active lyrics with the same track id and do not resurrect playback after stop`() {
+        val executor = QueueExecutor()
+        val requested = mutableListOf<String>()
+        val published = mutableListOf<LyricOutcome.Success>()
+        lateinit var orchestrator: LyricOrchestrator
+        val source = CiderHookSource(executor, requested::add, Runnable { orchestrator.refreshCurrentTrack() })
+        orchestrator = LyricOrchestrator(
+            source,
+            null,
+            object : Scheduler {
+                override fun schedule(delayMs: Long, task: () -> Unit) = Cancellable {}
+            },
+            object : LyricOrchestrator.Listener {
+                override fun onLyricResolved(outcome: LyricOutcome.Success) {
+                    published += outcome
+                }
+
+                override fun onNoLyrics(identity: TrackIdentity?) = error("Unexpected instrumental result")
+                override fun onUnavailable(identity: TrackIdentity?) = error("Unexpected unavailable result")
+                override fun onIdle() = Unit
+            },
+        )
+        orchestrator.onTrackChanged(identity("123"))
+        source.onCaptured(capture("123", listOf("[00:01.000]Initial lyrics")))
+        executor.drain()
+        assertEquals(LyricOrchestrator.State.ACTIVE, orchestrator.state)
+
+        val choices = listOf("Musixmatch", "Netease", "Community", "Auto", "Apple", "Auto")
+        for (choice in choices) {
+            source.onCaptured(capture("123", listOf("[00:01.000]Previous queued lyrics")))
+            source.onSelectionChanged()
+            assertEquals(LyricOrchestrator.State.RESOLVING_HOOK, orchestrator.state)
+            source.onCaptured(capture("123", listOf("[00:01.000]$choice")))
+            executor.drain()
+            assertEquals(LyricOrchestrator.State.ACTIVE, orchestrator.state)
+        }
+
+        assertEquals(listOf("Initial lyrics") + choices, published.map { it.doc.lines.single().text })
+        assertTrue(published.all { it.doc.lyricId == "cider:123" })
+        assertEquals(List(choices.size + 1) { "123" }, requested)
+
+        source.onCaptured(capture("123"))
+        orchestrator.onPlaybackStopped()
+        source.onSelectionChanged()
+        executor.drain()
+        assertEquals(LyricOrchestrator.State.IDLE, orchestrator.state)
+        assertEquals(choices.size + 1, requested.size)
+        assertEquals(choices.size + 1, published.size)
     }
 
     @Test

@@ -85,6 +85,93 @@ class CiderRawStoreTest {
     }
 
     @Test
+    fun `returning to automatic selection replays the raw source of the retained host result`() {
+        val store = CiderRawStore()
+        store.setSelection(null)
+        capture(store, "A", Source.APPLE, listOf("automatic apple"))
+        capture(store, "A", Source.COMMUNITY, listOf("automatic community"))
+
+        store.setSelection("A", Source.APPLE, true)
+        assertTrue(store.selected("A", Source.APPLE).isEmpty())
+        capture(store, "A", Source.APPLE, listOf("selected apple"))
+
+        // 自动模式会复用当前歌词，不经过原文请求入口。
+        store.setSelection("A", null, true)
+
+        assertEquals(listOf("selected apple"), store.selected("A", Source.APPLE))
+        assertEquals(listOf("automatic community"), store.selected("A", Source.COMMUNITY))
+        assertTrue(store.selected("A", null).isEmpty())
+    }
+
+    @Test
+    fun `selecting the same explicit source again invalidates its cache and pending request`() {
+        val store = CiderRawStore()
+        store.setSelection(Source.APPLE)
+        capture(store, "A", Source.APPLE, listOf("previous apple"))
+        capture(store, "A", Source.COMMUNITY, listOf("community"))
+        capture(store, "B", Source.APPLE, listOf("other track"))
+        store.enter("A", Source.APPLE, null, false)
+        val stale = store.current()!!
+        store.exit()
+
+        store.setSelection("A", Source.APPLE, true)
+        store.capture(stale, listOf("late previous request"))
+        assertTrue(store.selected("A", Source.APPLE).isEmpty())
+        assertEquals(listOf("other track"), store.selected("B", Source.APPLE))
+
+        capture(store, "A", Source.APPLE, listOf("refreshed apple"))
+        assertEquals(listOf("refreshed apple"), store.selected("A", Source.APPLE))
+        store.setSelection("A", null, true)
+        assertEquals(listOf("community"), store.selected("A", Source.COMMUNITY))
+    }
+
+    @Test
+    fun `each explicit source can be selected and returned to auto without losing its raw payload`() {
+        val store = CiderRawStore()
+        store.setSelection(null)
+        for (source in Source.values()) {
+            capture(store, "A", source, listOf("cached $source"))
+        }
+
+        for (source in Source.values()) {
+            store.setSelection("A", source, true)
+            assertTrue(store.selected("A", source).isEmpty())
+            capture(store, "A", source, listOf("selected $source"))
+            store.enter("A", source, null, false)
+            val pending = store.current()!!
+            store.exit()
+
+            store.setSelection("A", null, true)
+            store.capture(pending, listOf("late $source"))
+            assertEquals(listOf("selected $source"), store.selected("A", source))
+        }
+    }
+
+    @Test
+    fun `preference synchronization retains unchanged requests and preserves raw payloads when returning to auto`() {
+        val store = CiderRawStore()
+        store.setSelection(Source.APPLE)
+        capture(store, "A", Source.APPLE, listOf("cached apple"))
+        capture(store, "A", Source.NETEASE, listOf("cached netease"))
+        store.enter("A", Source.APPLE, null, false)
+        val pending = store.current()!!
+        store.exit()
+
+        assertFalse(store.setSelection("A", Source.APPLE, false))
+        store.capture(pending, listOf("current apple"))
+        assertEquals(listOf("current apple"), store.selected("A", Source.APPLE))
+
+        assertTrue(store.setSelection("A", Source.NETEASE, false))
+        assertTrue(store.selected("A", Source.NETEASE).isEmpty())
+        store.capture(pending, listOf("stale apple"))
+        capture(store, "A", Source.NETEASE, listOf("selected netease"))
+
+        assertTrue(store.setSelection("A", null, false))
+        assertEquals(listOf("current apple"), store.selected("A", Source.APPLE))
+        assertEquals(listOf("selected netease"), store.selected("A", Source.NETEASE))
+    }
+
+    @Test
     fun `a continuation keeps its original catalog id epoch and enhanced request across threads`() {
         val store = CiderRawStore()
         store.setSelection(null)
