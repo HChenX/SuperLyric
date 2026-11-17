@@ -115,6 +115,9 @@ object LyricPipeline {
 
     private const val MAX_TEXT_CHARS = 2_000_000
 
+    /** 主行 + 一条伴随行；第三条通常是罗马音，保留会破坏通用库的行序约束 */
+    private const val MAX_LINES_PER_TIMESTAMP = 2
+
     /**
      * 解析一次请求
      *
@@ -192,7 +195,10 @@ object LyricPipeline {
                 else -> null
             }
         }.getOrNull()
-        val body = split?.main ?: source
+        // 没有可识别的伴随行时，同一时间戳最多保留两条。译文、罗马音常以独立块
+        // 追加在正文后，同一时间戳出现三次；通用库按文件顺序把行结束设为下一行
+        // 起始，第三行会让前一行倒挂并在 require(end >= start) 处抛异常，整首丢失。
+        val body = split?.main ?: capDuplicateTimestamps(source)
         val requestForFinalize = if (split == null) request else request.withSplitChannels(split)
         val candidates = runCatching {
             ParserRegistry.candidates(kind, body, split, qrcStats)
@@ -249,6 +255,28 @@ object LyricPipeline {
         -> true
 
         else -> false
+    }
+
+    /**
+     * 同一时间戳最多保留两条歌词行
+     *
+     * 只做行过滤，不改时间戳和正文；超出的行（通常是罗马音块）整行丢弃。
+     */
+    private fun capDuplicateTimestamps(text: String): String {
+        val seen = HashMap<Long, Int>()
+        val builder = StringBuilder(text.length)
+        for (line in text.lineSequence()) {
+            val head = LrcTimestamps.LINE_HEAD.find(line)
+            if (head == null) {
+                builder.append(line).append('\n')
+                continue
+            }
+            val startMs = LrcTimestamps.timestampOf(head.value)
+            val count = (seen[startMs] ?: 0) + 1
+            seen[startMs] = count
+            if (count <= MAX_LINES_PER_TIMESTAMP) builder.append(line).append('\n')
+        }
+        return builder.toString()
     }
 
     /** 把拆分出的伴随通道并入请求，统一交给 [finalize] 对齐 */
