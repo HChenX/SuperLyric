@@ -43,6 +43,7 @@ public final class SupportApps {
         Map.entry("com.maxmpz.audioplayer", R.string.poweramp_music),
         Map.entry("com.luna.music", R.string.qishui_music),
         Map.entry("com.tencent.qqmusic", R.string.qq_music),
+        Map.entry("com.tencent.freemusic", R.string.qq_music_concise),
         Map.entry("com.salt.music", R.string.jiaoyan_music),
         Map.entry("com.spotify.music", R.string.spotify_music)
     );

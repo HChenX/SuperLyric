@@ -25,6 +25,7 @@
 | 网易云音乐 | com.netease.cloudmusic | 网络获取 |
 | Poweramp | com.maxmpz.audioplayer | Hook 获取（本地 LRC / 歌词缓存）+ 酷狗兜底 |
 | QQ 音乐 | com.tencent.qqmusic | Hook 获取 |
+| QQ 音乐简洁版 | com.tencent.freemusic | Hook 获取 + QQ 音乐 API 兜底 |
 | 椒盐音乐 | com.salt.music | Hook 获取 + 酷狗兜底 |
 | 汽水音乐 | com.luna.music | Hook 获取 + 酷狗兜底 |
 | Spotify | com.spotify.music | 网络获取 |
