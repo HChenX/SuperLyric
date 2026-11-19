@@ -134,6 +134,7 @@
     <string name="migu_music">No additional setup required, play normally</string>
     <string name="miui_music">No additional setup required, play normally</string>
     <string name="qq_music">No additional setup required, play normally</string>
+    <string name="qq_music_concise">Uses the player lyrics first, with online matching as a fallback</string>
     <string name="wangyiyun_music">Keep network connected, play normally</string>
     <string name="spotify_music">Keep network connected, play normally</string>
     <string name="poweramp_music">No additional setup required, play normally</string>

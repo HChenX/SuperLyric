@@ -37,6 +37,7 @@ public final class SupportedApps {
         "com.maxmpz.audioplayer",
         "com.luna.music",
         "com.tencent.qqmusic",
+        "com.tencent.freemusic",
         "com.salt.music",
         "com.spotify.music"
     );

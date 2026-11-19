@@ -25,6 +25,7 @@ An LSPosed module that publishes lyrics from music apps to Android over Binder.
 | NetEase Cloud Music | com.netease.cloudmusic | Network |
 | Poweramp | com.maxmpz.audioplayer | Hook (local LRC / lyric cache) + Kugou fallback |
 | QQ Music | com.tencent.qqmusic | Hook |
+| QQ Music Concise | com.tencent.freemusic | Hook + QQ Music API fallback |
 | Salt Music | com.salt.music | Hook + Kugou fallback |
 | Soda Music | com.luna.music | Hook + Kugou fallback |
 | Spotify | com.spotify.music | Network |
