@@ -23,30 +23,29 @@ import android.os.SystemClock;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.hchen.dexkitcache.DexkitCache;
+import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.hooktool.log.XposedLog;
 
 import org.luckypray.dexkit.DexKitBridge;
-import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.FindClass;
-import org.luckypray.dexkit.result.ClassData;
-import org.luckypray.dexkit.result.ClassDataList;
-import org.luckypray.dexkit.result.MethodDataList;
+import org.luckypray.dexkit.query.FindMethod;
 import org.luckypray.dexkit.query.enums.StringMatchType;
 import org.luckypray.dexkit.query.matchers.ClassMatcher;
 import org.luckypray.dexkit.query.matchers.InterfacesMatcher;
 import org.luckypray.dexkit.query.matchers.MethodMatcher;
 import org.luckypray.dexkit.query.matchers.ParameterMatcher;
 import org.luckypray.dexkit.query.matchers.ParametersMatcher;
+import org.luckypray.dexkit.result.ClassData;
+import org.luckypray.dexkit.result.ClassDataList;
+import org.luckypray.dexkit.result.MethodDataList;
 
-import com.hchen.dexkitcache.DexkitCache;
-import com.hchen.dexkitcache.IDexkit;
-
-import java.lang.reflect.Modifier;
-import java.lang.reflect.Method;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -186,12 +185,12 @@ public final class KuwoAnchors {
         }
         sInstallAttempts++;
         sLastInstallAttemptAt = now;
-        AndroidLog.logI(TAG, "Install attempt #" + sInstallAttempts + "/" + MAX_INSTALL_ATTEMPTS);
+        XposedLog.logI(TAG, "Install attempt #" + sInstallAttempts + "/" + MAX_INSTALL_ATTEMPTS);
 
         // 失败保留后续重试机会：本次尝试已计数，异常不越过 retryInstallIfNeeded。
         try {
             if (!installParsers(listener)) {
-                AndroidLog.logW(TAG, "Parser entry not hooked yet (attempt #"
+                XposedLog.logW(TAG, "Parser entry not hooked yet (attempt #"
                     + sInstallAttempts + "); will retry on a later track change");
             }
             if (!sDecryptorsInstalled) {
@@ -200,7 +199,7 @@ public final class KuwoAnchors {
                 installDecryptors(listener);
             }
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Install attempt #" + sInstallAttempts + " failed: " + t.getMessage());
+            XposedLog.logW(TAG, "Install attempt #" + sInstallAttempts + " failed: " + t.getMessage());
         }
         return sParserInstalled;
     }
@@ -215,7 +214,7 @@ public final class KuwoAnchors {
     private static List<Method> locateParserMethods() {
         String lyricPackage = locateLyricPackage();
         if (lyricPackage == null) {
-            AndroidLog.logW(TAG, "Lyric module not located; parser hook unavailable");
+            XposedLog.logW(TAG, "Lyric module not located; parser hook unavailable");
             return List.of();
         }
         // LinkedHashSet：两条路径会命中同一批方法，去重必须按方法身份而不是名字
@@ -226,7 +225,7 @@ public final class KuwoAnchors {
             // 收紧判据无结果时才退回宽松判据，避免整条路径空手
             collectParsersByReflection(lyricPackage, found, false);
         }
-        AndroidLog.logI(TAG, "Parser entries located: " + found.size()
+        XposedLog.logI(TAG, "Parser entries located: " + found.size()
             + " for " + lyricPackage);
         return new ArrayList<>(found);
     }
@@ -253,7 +252,7 @@ public final class KuwoAnchors {
                             )
                         );
                         if (implementers.isEmpty()) {
-                            AndroidLog.logW(TAG, "No lyric interface implementer in " + lyricPackage);
+                            XposedLog.logW(TAG, "No lyric interface implementer in " + lyricPackage);
                             return null;
                         }
 
@@ -289,7 +288,7 @@ public final class KuwoAnchors {
                 if (isLyricParser(method, lyricPackage)) out.add(method);
             }
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "DexKit parser lookup failed: " + t.getMessage());
+            XposedLog.logW(TAG, "DexKit parser lookup failed: " + t.getMessage());
         }
     }
 
@@ -319,7 +318,7 @@ public final class KuwoAnchors {
             }
         }
         if (strictOnly && skipped > 0) {
-            AndroidLog.logI(TAG, "Reflection path skipped " + skipped
+            XposedLog.logI(TAG, "Reflection path skipped " + skipped
                 + " non-lyric method(s) in " + lyricPackage);
         }
     }
@@ -367,11 +366,11 @@ public final class KuwoAnchors {
         });
 
         if (located == null) {
-            AndroidLog.logW(TAG, "Lyric module not located by anchor: " + ANCHOR_LRCX_PARAM);
+            XposedLog.logW(TAG, "Lyric module not located by anchor: " + ANCHOR_LRCX_PARAM);
             return null;
         }
         String name = located.getName();
-        AndroidLog.logD(TAG, "Lyric module anchor class: " + name);
+        XposedLog.logD(TAG, "Lyric module anchor class: " + name);
         int dot = name.lastIndexOf('.');
         return dot > 0 ? name.substring(0, dot) : null;
     }
@@ -436,7 +435,7 @@ public final class KuwoAnchors {
             });
             if (located != null) Collections.addAll(found, located);
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to locate decrypt methods: " + t.getMessage());
+            XposedLog.logW(TAG, "Failed to locate decrypt methods: " + t.getMessage());
         }
         return found;
     }
@@ -448,9 +447,9 @@ public final class KuwoAnchors {
      */
     private static void installDecryptors(@NonNull LyricTextListener listener) {
         List<Method> located = locateDecryptMethods();
-        AndroidLog.logD(TAG, "locateDecryptors: dexkit=" + located.size());
+        XposedLog.logD(TAG, "locateDecryptors: dexkit=" + located.size());
         if (located.isEmpty()) {
-            AndroidLog.logD(TAG, "DexKit located no decrypt method; skipped");
+            XposedLog.logD(TAG, "DexKit located no decrypt method; skipped");
             return;
         }
         located.forEach(method -> method.setAccessible(true));
@@ -463,13 +462,13 @@ public final class KuwoAnchors {
                 }
             }
         });
-        AndroidLog.logI(TAG, "Hooked " + located.size() + " decrypt entry(ies) via DexKit");
+        XposedLog.logI(TAG, "Hooked " + located.size() + " decrypt entry(ies) via DexKit");
     }
 
     private static boolean installParsers(@NonNull LyricTextListener listener) {
         List<Method> located = locateParserMethods();
         if (located.isEmpty()) {
-            AndroidLog.logW(TAG, "No lyric parser entry hooked; Kuwo hook path is dead");
+            XposedLog.logW(TAG, "No lyric parser entry hooked; Kuwo hook path is dead");
             return false;
         }
 
@@ -485,10 +484,10 @@ public final class KuwoAnchors {
             // hookAll stops at the first failure; retrying would re-hook the entries already
             // installed and stack callbacks, so this attempt is final.
             sParserInstalled = true;
-            AndroidLog.logW(TAG, "Parser hook install failed; not retrying", t);
+            XposedLog.logW(TAG, "Parser hook install failed; not retrying", t);
             return true;
         }
-        AndroidLog.logI(TAG, "Hooked " + located.size() + " lyric parser entry(ies)");
+        XposedLog.logI(TAG, "Hooked " + located.size() + " lyric parser entry(ies)");
         sParserInstalled = true;
         return true;
     }
@@ -516,10 +515,10 @@ public final class KuwoAnchors {
         List<Constructor<?>> entryCtors = locateTrackConstructors();
         members.addAll(entryMethods);
         members.addAll(entryCtors);
-        AndroidLog.logI(TAG, "locateTrackProbes: methods=" + entryMethods.size()
+        XposedLog.logI(TAG, "locateTrackProbes: methods=" + entryMethods.size()
             + " ctors=" + entryCtors.size());
         if (members.isEmpty()) {
-            AndroidLog.logW(TAG, "No (Music, boolean, Music) entry found; track probe unavailable");
+            XposedLog.logW(TAG, "No (Music, boolean, Music) entry found; track probe unavailable");
             return;
         }
 
@@ -541,7 +540,7 @@ public final class KuwoAnchors {
                     artist == null ? "" : String.valueOf(artist).trim());
             }
         });
-        AndroidLog.logI(TAG, "Hooked " + members.size() + " track entry(ies)");
+        XposedLog.logI(TAG, "Hooked " + members.size() + " track entry(ies)");
     }
 
     /**
@@ -605,7 +604,7 @@ public final class KuwoAnchors {
                 });
             if (classes != null) Collections.addAll(result, classes);
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to enumerate package " + packageName + ": " + t.getMessage());
+            XposedLog.logW(TAG, "Failed to enumerate package " + packageName + ": " + t.getMessage());
         }
         return result;
     }

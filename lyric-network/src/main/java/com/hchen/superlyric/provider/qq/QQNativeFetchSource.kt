@@ -18,7 +18,7 @@
  */
 package com.hchen.superlyric.provider.qq
 
-import com.hchen.hooktool.log.AndroidLog
+import com.hchen.hooktool.log.XposedLog
 import com.hchen.superlyric.kernel.catalog.CatalogIds
 import com.hchen.superlyric.kernel.catalog.LyricCatalog
 import com.hchen.superlyric.kernel.identity.TrackIdentity
@@ -41,6 +41,7 @@ class QQNativeFetchSource(
 
     private val fetches = FetchSlot()
     private val dedupLock = Any()
+
     @Volatile
     private var session: LyricSource.Session? = null
 
@@ -67,7 +68,7 @@ class QQNativeFetchSource(
             val songId = CatalogIds.qqSongId(TrackIdentity.normalizeStableId(identity.stableId)) ?: 0L
             fetchAsync(mid, songId, identity)
         } else {
-            AndroidLog.logD(sourceName, "Awaiting LyricLoadBean capture for songMID")
+            XposedLog.logD(sourceName, "Awaiting LyricLoadBean capture for songMID")
         }
     }
 
@@ -89,7 +90,7 @@ class QQNativeFetchSource(
         val baseMid = CatalogIds.lyricId(base, LyricCatalog.QQ, CatalogIds::qqMid)
 
         if (baseMid != null && baseMid != mid) {
-            AndroidLog.logD(
+            XposedLog.logD(
                 sourceName,
                 "Anchor for $mid predates the track change (current $baseMid); ignoring it",
             )
@@ -129,7 +130,7 @@ class QQNativeFetchSource(
                 if (inFlightMid == mid) inFlightMid = null
             }
             if (!fetches.isCurrent(token)) {
-                AndroidLog.logD(sourceName, "Discarding stale result for $mid: fetch was superseded")
+                XposedLog.logD(sourceName, "Discarding stale result for $mid: fetch was superseded")
                 return@execute
             }
 
@@ -139,7 +140,7 @@ class QQNativeFetchSource(
                     TrackIdentity.normalizeStableId(current.stableId)
                 )
             ) {
-                AndroidLog.logD(sourceName, "Discarding result for $mid: no longer the current track")
+                XposedLog.logD(sourceName, "Discarding result for $mid: no longer the current track")
                 return@execute
             }
 

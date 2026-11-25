@@ -24,7 +24,7 @@ import android.net.Uri
 import android.os.Environment
 import android.os.storage.StorageManager
 
-import com.hchen.hooktool.log.AndroidLog
+import com.hchen.hooktool.log.XposedLog
 import com.hchen.superlyric.kernel.decode.PowerampTextDecoder
 import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.model.LyricDoc
@@ -77,7 +77,7 @@ class PowerampHookSource : InstallableLyricSource {
         val request = requests.open(identity, session)
         val key = identityToken(identity)
         docStash.takeIf(key)?.let { stashed ->
-            AndroidLog.logD(sourceName, "Replaying stashed lyric for $key")
+            XposedLog.logD(sourceName, "Replaying stashed lyric for $key")
             session.deliver(LyricOutcome.Success(stashed.withMetadata(identity)))
             return
         }
@@ -97,7 +97,7 @@ class PowerampHookSource : InstallableLyricSource {
         if (database == null) {
             // DB 连接由 RestProvider.getWritableDatabase 钩子填充；首次切歌时可能还没打开。
             // 记 W 让“没查成”与“查了没歌词”可区分，下一次 start/retryAnchors 会再试。
-            AndroidLog.logW(sourceName, "Host database not ready for \"${identity.title}\"")
+            XposedLog.logW(sourceName, "Host database not ready for \"${identity.title}\"")
             return
         }
 
@@ -105,10 +105,10 @@ class PowerampHookSource : InstallableLyricSource {
         val rows = try {
             queryRows(database, identity, trackId)
         } catch (t: Throwable) {
-            AndroidLog.logW(sourceName, "Failed to query host lyrics: ${t.message}")
+            XposedLog.logW(sourceName, "Failed to query host lyrics: ${t.message}")
             return
         }
-        AndroidLog.logD(
+        XposedLog.logD(
             sourceName,
             "track=\"${identity.title}\" id=$trackId rows=${rows.size} " +
                     rows.take(3).joinToString { row ->
@@ -135,10 +135,10 @@ class PowerampHookSource : InstallableLyricSource {
             if (PowerampAnchors.parseLrcViaHost(withFile.lrcPath)) {
                 return
             }
-            AndroidLog.logW(sourceName, "Host LRC parse returned without delivering text: ${withFile.lrcPath}")
+            XposedLog.logW(sourceName, "Host LRC parse returned without delivering text: ${withFile.lrcPath}")
         }
 
-        AndroidLog.logD(
+        XposedLog.logD(
             sourceName,
             "Host row(s) found for \"${identity.title}\" but no usable lyric " +
                     "(matching=${matching.size})",
@@ -283,7 +283,7 @@ class PowerampHookSource : InstallableLyricSource {
                 }
             }
         } catch (t: Throwable) {
-            AndroidLog.logD(sourceName, "Query $table failed: ${t.message}")
+            XposedLog.logD(sourceName, "Query $table failed: ${t.message}")
         }
     }
 
@@ -348,7 +348,7 @@ class PowerampHookSource : InstallableLyricSource {
                         readBounded(it, LyricCacheStore.MAX_PAYLOAD_BYTES.toLong())
                     }
             } catch (t: Throwable) {
-                AndroidLog.logD(sourceName, "Failed to read $rawPath: ${t.message}")
+                XposedLog.logD(sourceName, "Failed to read $rawPath: ${t.message}")
                 null
             }
         }
@@ -356,12 +356,12 @@ class PowerampHookSource : InstallableLyricSource {
         val file = resolveFile(rawPath) ?: return null
         return try {
             if (file.length() > LyricCacheStore.MAX_PAYLOAD_BYTES) {
-                AndroidLog.logW(sourceName, "LRC file too large: $file (${file.length()} bytes)")
+                XposedLog.logW(sourceName, "LRC file too large: $file (${file.length()} bytes)")
                 return null
             }
             file.readBytes()
         } catch (t: Throwable) {
-            AndroidLog.logD(sourceName, "Failed to read $file: ${t.message}")
+            XposedLog.logD(sourceName, "Failed to read $file: ${t.message}")
             null
         }
     }
@@ -424,7 +424,7 @@ class PowerampHookSource : InstallableLyricSource {
         durationMs: Long,
     ) {
         val identity = requests.current()?.identity ?: run {
-            AndroidLog.logD(sourceName, "$source: no session yet, ignoring")
+            XposedLog.logD(sourceName, "$source: no session yet, ignoring")
             return
         }
 
@@ -440,7 +440,7 @@ class PowerampHookSource : InstallableLyricSource {
                 durationMs = if (durationMs > 0L) durationMs else identity.durationMs,
             )
             if (!identity.matches(candidate)) {
-                AndroidLog.logD(
+                XposedLog.logD(
                     sourceName,
                     "$source: lyric for \"$title\" does not match \"${identity.title}\"; ignoring",
                 )
@@ -449,7 +449,7 @@ class PowerampHookSource : InstallableLyricSource {
         } else if (source != "lrc.own") {
             // 宿主歌词界面可能预加载下一首；只有本模块为当前曲目主动发起的
             // 解析才允许无标题投递
-            AndroidLog.logD(sourceName, "$source: no track identity; ignoring")
+            XposedLog.logD(sourceName, "$source: no track identity; ignoring")
             return
         }
 
@@ -457,7 +457,7 @@ class PowerampHookSource : InstallableLyricSource {
         executor.execute {
             val text = readIfPath(raw)
             if (text.isNullOrEmpty()) {
-                AndroidLog.logW(sourceName, "$source: empty payload")
+                XposedLog.logW(sourceName, "$source: empty payload")
                 return@execute
             }
             deliverParsed(text, source, identity, key)
@@ -480,12 +480,12 @@ class PowerampHookSource : InstallableLyricSource {
                 ),
             )
         } catch (t: Throwable) {
-            AndroidLog.logW(sourceName, "$source: parse failed: ${t.message}")
+            XposedLog.logW(sourceName, "$source: parse failed: ${t.message}")
             return false
         }
 
         if (doc == null || doc.isEmpty) {
-            AndroidLog.logW(
+            XposedLog.logW(
                 sourceName,
                 "$source: parsed no lines from ${text.length} chars (first=${text.take(32)})",
             )
@@ -493,7 +493,7 @@ class PowerampHookSource : InstallableLyricSource {
         }
 
         docStash.put(key, doc)
-        AndroidLog.logI(sourceName, "$source: parsed ${doc.lines.size} lines for $key")
+        XposedLog.logI(sourceName, "$source: parsed ${doc.lines.size} lines for $key")
 
         val activeAtDelivery = requests.current()
         val target = activeAtDelivery?.session
@@ -501,7 +501,7 @@ class PowerampHookSource : InstallableLyricSource {
         if (target != null && current != null && key == identityToken(current)) {
             target.deliver(LyricOutcome.Success(doc.withMetadata(current)))
         } else {
-            AndroidLog.logD(sourceName, "$source: stashed until its session is up")
+            XposedLog.logD(sourceName, "$source: stashed until its session is up")
         }
         return true
     }
@@ -512,17 +512,17 @@ class PowerampHookSource : InstallableLyricSource {
 
         val file = File(path.removePrefix("file:"))
         if (!file.isFile || file.length() == 0L) {
-            AndroidLog.logD(sourceName, "Lyric file is missing or empty: ${file.absolutePath}")
+            XposedLog.logD(sourceName, "Lyric file is missing or empty: ${file.absolutePath}")
             return null
         }
         if (file.length() > LyricCacheStore.MAX_PAYLOAD_BYTES) {
-            AndroidLog.logW(sourceName, "Lyric file too large: ${file.absolutePath}")
+            XposedLog.logW(sourceName, "Lyric file too large: ${file.absolutePath}")
             return null
         }
         return try {
             PowerampTextDecoder.decode(file.readBytes())
         } catch (t: Throwable) {
-            AndroidLog.logD(sourceName, "Failed to read lyric file: ${t.message}")
+            XposedLog.logD(sourceName, "Failed to read lyric file: ${t.message}")
             null
         }
     }
@@ -541,7 +541,7 @@ class PowerampHookSource : InstallableLyricSource {
             if (read < 0) break
             total += read
             if (total > limit) {
-                AndroidLog.logW(sourceName, "Lyric stream exceeds $limit bytes")
+                XposedLog.logW(sourceName, "Lyric stream exceeds $limit bytes")
                 return null
             }
             output.write(buffer, 0, read)

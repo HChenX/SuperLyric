@@ -18,7 +18,7 @@
  */
 package com.hchen.superlyric.provider.bodian
 
-import com.hchen.hooktool.log.AndroidLog
+import com.hchen.hooktool.log.XposedLog
 import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
@@ -75,7 +75,7 @@ class BodianHookSource : InstallableLyricSource {
         lastProcessedPath = null
 
         docStash.takeIf(identity.stableId)?.let { stashed ->
-            AndroidLog.logD(sourceName, "Replaying stashed lyric for id=${identity.stableId}")
+            XposedLog.logD(sourceName, "Replaying stashed lyric for id=${identity.stableId}")
             session.deliver(LyricOutcome.Success(stashed.doc.withMetadata(identity)))
         }
 
@@ -99,15 +99,15 @@ class BodianHookSource : InstallableLyricSource {
         val active = requests.current()
         if (active == null) {
             if (filePath.isEmpty()) {
-                AndroidLog.logW(sourceName, "No session yet and host reported no lyric file; dropping")
+                XposedLog.logW(sourceName, "No session yet and host reported no lyric file; dropping")
                 return
             }
             if (rid.isEmpty()) {
-                AndroidLog.logW(sourceName, "No session yet and no rid; cannot associate the file: $filePath")
+                XposedLog.logW(sourceName, "No session yet and no rid; cannot associate the file: $filePath")
                 return
             }
             pathStash.put(TrackIdentity.normalizeStableId(rid), PathStash(rid, filePath, title, artist, album))
-            AndroidLog.logD(sourceName, "Stashed lyric file until its session is up: rid=$rid")
+            XposedLog.logD(sourceName, "Stashed lyric file until its session is up: rid=$rid")
             return
         }
         val base = active.identity
@@ -125,14 +125,14 @@ class BodianHookSource : InstallableLyricSource {
             // rid 为空时 identity 退化为 base.stableId，上述判据恒等，预载曲目的“无词”
             // 会投给当前曲目。无词是终态，只能在同一 rid 的证据下采纳。
             if (rid.isEmpty() || identity.stableId == null || identity.stableId != base.stableId) {
-                AndroidLog.logW(
+                XposedLog.logW(
                     sourceName,
                     "Discarding no-lyric verdict without a matching rid: rid=\"$rid\", " +
                             "verdict=${identity.stableId}, pending=${base.stableId}",
                 )
                 return
             }
-            AndroidLog.logD(sourceName, "Host reported no lyric file for this track")
+            XposedLog.logD(sourceName, "Host reported no lyric file for this track")
             active.session.deliver(LyricOutcome.NoLyrics("bodian: host has no lyric"))
             return
         }
@@ -153,7 +153,7 @@ class BodianHookSource : InstallableLyricSource {
             val current = activeAtDelivery?.identity
             val sameTrack = identity.stableId == current?.stableId || base.stableId == current?.stableId
             if (activeAtDelivery == null || !sameTrack) {
-                AndroidLog.logD(
+                XposedLog.logD(
                     sourceName,
                     "Stashed lyric for ${identity.stableId}; will replay once its session is up",
                 )
@@ -175,13 +175,13 @@ class BodianHookSource : InstallableLyricSource {
     ): LyricOutcome {
         val file = File(filePath)
         if (!file.isFile || file.length() == 0L) {
-            AndroidLog.logW(sourceName, "Lyric file is missing or empty: $filePath")
+            XposedLog.logW(sourceName, "Lyric file is missing or empty: $filePath")
             return LyricOutcome.Unsupported("bodian: file unreadable")
         }
         // 文件由宿主给出，大小不受本层控制；整块读取超大文件会耗尽宿主内存。
         // 上限复用网络路径的同一常量
         if (file.length() > LyricCacheStore.MAX_PAYLOAD_BYTES) {
-            AndroidLog.logW(
+            XposedLog.logW(
                 sourceName,
                 "Lyric file exceeds ${LyricCacheStore.MAX_PAYLOAD_BYTES} bytes, refusing to read: $filePath",
             )
@@ -191,7 +191,7 @@ class BodianHookSource : InstallableLyricSource {
         val text = try {
             file.readText()
         } catch (t: Throwable) {
-            AndroidLog.logW(sourceName, "Failed to read lyric file: ${t.message}")
+            XposedLog.logW(sourceName, "Failed to read lyric file: ${t.message}")
             return LyricOutcome.Unsupported("bodian: file read failed")
         }
 
@@ -207,16 +207,16 @@ class BodianHookSource : InstallableLyricSource {
                 )
             )
         } catch (t: Throwable) {
-            AndroidLog.logW(sourceName, "Failed to parse lyric file: ${t.message}")
+            XposedLog.logW(sourceName, "Failed to parse lyric file: ${t.message}")
             return LyricOutcome.TransientFailure(t)
         }
 
         if (doc == null || doc.isEmpty) {
-            AndroidLog.logW(sourceName, "Parsed no lines from $filePath")
+            XposedLog.logW(sourceName, "Parsed no lines from $filePath")
             return LyricOutcome.Unsupported("bodian: parsed empty")
         }
 
-        AndroidLog.logI(sourceName, "Parsed local lyric file, lines=${doc.lines.size}")
+        XposedLog.logI(sourceName, "Parsed local lyric file, lines=${doc.lines.size}")
         return LyricOutcome.Success(doc)
     }
 

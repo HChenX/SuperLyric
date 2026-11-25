@@ -21,7 +21,7 @@ package com.hchen.superlyric.anchors;
 import androidx.annotation.NonNull;
 
 import com.hchen.dexkitcache.DexkitCache;
-import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.hooktool.log.XposedLog;
 
 import io.github.libxposed.api.XposedModuleInterface;
 
@@ -45,7 +45,7 @@ public final class DexKitRuntime {
             );
         } catch (Throwable t) {
             // 缓存初始化失败只能降级 DexKit 查找，不能中断 packageReady 里其余模块。
-            AndroidLog.logE(TAG, "Failed to initialize DexKit cache", t);
+            XposedLog.logE(TAG, "Failed to initialize DexKit cache", t);
         }
     }
 
@@ -53,7 +53,7 @@ public final class DexKitRuntime {
         try {
             DexkitCache.close();
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to close DexKit cache", t);
+            XposedLog.logW(TAG, "Failed to close DexKit cache", t);
         }
     }
 }

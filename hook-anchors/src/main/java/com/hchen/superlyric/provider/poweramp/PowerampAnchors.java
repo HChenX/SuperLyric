@@ -28,7 +28,7 @@ import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyric.kernel.decode.PowerampTextDecoder;
 import com.hchen.superlyric.publisher.AbsPublisher;
 import com.hchen.superlyric.utils.LyricCacheStore;
@@ -152,7 +152,7 @@ public final class PowerampAnchors {
         if (sRestHookInstalled) return;
         Class<?> provider = CoreTool.findClassIfExists(REST_PROVIDER);
         if (provider == null) {
-            AndroidLog.logW(TAG, REST_PROVIDER + " not found");
+            XposedLog.logW(TAG, REST_PROVIDER + " not found");
             return;
         }
         try {
@@ -167,9 +167,9 @@ public final class PowerampAnchors {
                 }
             });
             sRestHookInstalled = true;
-            AndroidLog.logI(TAG, "Hooked RestProvider.getWritableDatabase");
+            XposedLog.logI(TAG, "Hooked RestProvider.getWritableDatabase");
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Hook getWritableDatabase failed: " + t);
+            XposedLog.logW(TAG, "Hook getWritableDatabase failed: " + t);
         }
     }
 
@@ -192,12 +192,12 @@ public final class PowerampAnchors {
     public static boolean parseLrcViaHost(@NonNull String path) {
         Engine engine = engine();
         if (engine == null) {
-            AndroidLog.logW(TAG, "LRC engine unavailable");
+            XposedLog.logW(TAG, "LRC engine unavailable");
             return false;
         }
         Context context = AbsPublisher.getAppContext();
         if (context == null) {
-            AndroidLog.logW(TAG, "No app context for host lyric parse");
+            XposedLog.logW(TAG, "No app context for host lyric parse");
             return false;
         }
 
@@ -217,7 +217,7 @@ public final class PowerampAnchors {
             // 安装失败、宿主换线程读取都会让回调永不发生，调用方必须能区分。
             return Boolean.TRUE.equals(sCaptureDelivered.get());
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Host lyric parse failed: " + t);
+            XposedLog.logW(TAG, "Host lyric parse failed: " + t);
             return false;
         } finally {
             sHostParse.remove();
@@ -237,7 +237,7 @@ public final class PowerampAnchors {
         if (sLrcHookInstalled) return;
         Engine engine = engine();
         if (engine == null) {
-            AndroidLog.logW(TAG, "LRC engine unavailable; will retry after Application init");
+            XposedLog.logW(TAG, "LRC engine unavailable; will retry after Application init");
             return;
         }
 
@@ -277,9 +277,9 @@ public final class PowerampAnchors {
                 }
             });
             sLrcHookInstalled = true;
-            AndroidLog.logI(TAG, "Hooked Poweramp LRC storage");
+            XposedLog.logI(TAG, "Hooked Poweramp LRC storage");
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Hook LRC storage failed: " + t);
+            XposedLog.logW(TAG, "Hook LRC storage failed: " + t);
         }
     }
 
@@ -296,14 +296,14 @@ public final class PowerampAnchors {
             while ((read = input.read(buffer)) != -1) {
                 total += read;
                 if (total > LyricCacheStore.MAX_PAYLOAD_BYTES) {
-                    AndroidLog.logW(TAG, "Lyric stream exceeds " + LyricCacheStore.MAX_PAYLOAD_BYTES + " bytes");
+                    XposedLog.logW(TAG, "Lyric stream exceeds " + LyricCacheStore.MAX_PAYLOAD_BYTES + " bytes");
                     return null;
                 }
                 output.write(buffer, 0, read);
             }
             return output.toByteArray();
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to read lyric stream: " + t);
+            XposedLog.logW(TAG, "Failed to read lyric stream: " + t);
             return null;
         }
     }
@@ -334,7 +334,7 @@ public final class PowerampAnchors {
                     }
                 );
                 if (parserClass == null) {
-                    AndroidLog.logW(TAG, "DexKit could not locate LrcParser");
+                    XposedLog.logW(TAG, "DexKit could not locate LrcParser");
                     return null;
                 }
 
@@ -352,7 +352,7 @@ public final class PowerampAnchors {
                     }
                 }
                 if (fileMethod == null) {
-                    AndroidLog.logW(TAG, "LrcParser file entry not found");
+                    XposedLog.logW(TAG, "LrcParser file entry not found");
                     return null;
                 }
 
@@ -369,7 +369,7 @@ public final class PowerampAnchors {
                     }
                 }
                 if (openMethod == null) {
-                    AndroidLog.logW(TAG, "Lyric storage opener not found");
+                    XposedLog.logW(TAG, "Lyric storage opener not found");
                     return null;
                 }
 
@@ -378,7 +378,7 @@ public final class PowerampAnchors {
                 sEngine = new Engine(parserClass, storageClass, fileMethod, openMethod);
                 return sEngine;
             } catch (Throwable t) {
-                AndroidLog.logW(TAG, "Failed to locate LrcParser: " + t);
+                XposedLog.logW(TAG, "Failed to locate LrcParser: " + t);
                 return null;
             }
         }
@@ -388,7 +388,7 @@ public final class PowerampAnchors {
         if (sTagSetTagsInstalled && sTagUnsyncInstalled) return;
         Class<?> tagClass = CoreTool.findClassIfExists(TAG_AND_META);
         if (tagClass == null) {
-            AndroidLog.logW(TAG, TAG_AND_META + " not found");
+            XposedLog.logW(TAG, TAG_AND_META + " not found");
             return;
         }
 
@@ -407,9 +407,9 @@ public final class PowerampAnchors {
                     }
                 });
                 sTagSetTagsInstalled = true;
-                AndroidLog.logI(TAG, "Hooked TagAndMeta.setTags");
+                XposedLog.logI(TAG, "Hooked TagAndMeta.setTags");
             } catch (Throwable t) {
-                AndroidLog.logW(TAG, "Hook setTags failed: " + t);
+                XposedLog.logW(TAG, "Hook setTags failed: " + t);
             }
         }
 
@@ -429,9 +429,9 @@ public final class PowerampAnchors {
                     }
                 });
                 sTagUnsyncInstalled = true;
-                AndroidLog.logI(TAG, "Hooked TagAndMeta.getUnsyncLyrics");
+                XposedLog.logI(TAG, "Hooked TagAndMeta.getUnsyncLyrics");
             } catch (Throwable t) {
-                AndroidLog.logW(TAG, "Hook getUnsyncLyrics failed: " + t);
+                XposedLog.logW(TAG, "Hook getUnsyncLyrics failed: " + t);
             }
         }
     }
@@ -479,9 +479,9 @@ public final class PowerampAnchors {
                 }
             });
             sActivityHookInstalled = true;
-            AndroidLog.logI(TAG, "Hooked LyricsActivity lyric entry");
+            XposedLog.logI(TAG, "Hooked LyricsActivity lyric entry");
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Hook LyricsActivity failed: " + t);
+            XposedLog.logW(TAG, "Hook LyricsActivity failed: " + t);
         }
     }
 

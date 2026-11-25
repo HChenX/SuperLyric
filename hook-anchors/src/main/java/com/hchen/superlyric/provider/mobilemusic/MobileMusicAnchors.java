@@ -19,16 +19,13 @@
  */
 package com.hchen.superlyric.provider.mobilemusic;
 
-import android.util.Log;
-
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyric.anchors.AnchorBus;
-import com.hchen.superlyric.anchors.BuildConfig;
 import com.hchen.superlyric.kernel.merge.TimeText;
 import com.hchen.superlyric.kernel.parse.MobileMusicLyricParser.NativeLine;
 
@@ -40,13 +37,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.WeakHashMap;
 import java.util.Objects;
 import java.util.Set;
-import java.util.HashSet;
+import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 咪咕歌词解析入口的锚点
@@ -198,7 +195,7 @@ public final class MobileMusicAnchors {
             refreshCurrent();
             return offsetHooks.size() == 2;
         } catch (Throwable error) {
-            AndroidLog.logW(TAG, "Native lyric anchors not ready: " + error.getMessage());
+            XposedLog.logW(TAG, "Native lyric anchors not ready: " + error.getMessage());
             return false;
         }
     }
@@ -220,7 +217,7 @@ public final class MobileMusicAnchors {
         if (song == null || manager == null) return null;
         synchronized (manager) {
             if (!sameSong(song, CoreTool.getField(parsedSong, manager))) {
-                AndroidLog.logD(TAG, "Waiting for a lyric parser belonging to the current song");
+                XposedLog.logD(TAG, "Waiting for a lyric parser belonging to the current song");
                 return null;
             }
             String songId = rawSongIdOf(song);
@@ -351,7 +348,7 @@ public final class MobileMusicAnchors {
             hookOffset(absolute, capture);
             diagnose("Installed lyric view offset hooks");
         } catch (Throwable error) {
-            AndroidLog.logW(TAG, "Live lyric offset hooks unavailable: " + error.getMessage());
+            XposedLog.logW(TAG, "Live lyric offset hooks unavailable: " + error.getMessage());
             diagnose("Live lyric offset hooks unavailable: " + error.getMessage());
         }
     }
@@ -384,9 +381,7 @@ public final class MobileMusicAnchors {
     }
 
     private static void diagnose(String message) {
-        AndroidLog.logD(TAG, message);
-        // 调试包同时使用 Android 日志，减少对 Xposed 日志转发的依赖。
-        if (BuildConfig.DEBUG) Log.i(TAG, message);
+        XposedLog.logD(TAG, message);
     }
 
     /**

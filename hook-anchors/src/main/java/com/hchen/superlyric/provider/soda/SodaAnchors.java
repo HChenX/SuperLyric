@@ -23,7 +23,7 @@ import androidx.annotation.Nullable;
 
 import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyric.anchors.AnchorBus;
 import com.hchen.superlyric.utils.LyricDiag;
 
@@ -115,7 +115,7 @@ public final class SodaAnchors {
         try {
             Class<?> lyricClass = CoreTool.findClassIfExists(LYRIC_CLASS);
             if (lyricClass == null) {
-                AndroidLog.logW(TAG, "Lyric entity not found: " + LYRIC_CLASS
+                XposedLog.logW(TAG, "Lyric entity not found: " + LYRIC_CLASS
                     + "; falling back to the TrackLyric data entry");
                 return;
             }
@@ -136,7 +136,7 @@ public final class SodaAnchors {
                 targets.add(constructor);
             }
             if (targets.isEmpty()) {
-                AndroidLog.logW(TAG, "No (NetLyricType, String, …) constructor found on "
+                XposedLog.logW(TAG, "No (NetLyricType, String, …) constructor found on "
                     + LYRIC_CLASS);
                 return;
             }
@@ -152,9 +152,9 @@ public final class SodaAnchors {
                     );
                 }
             });
-            AndroidLog.logI(TAG, "Hooked " + targets.size() + " lyric ctor(s)");
+            XposedLog.logI(TAG, "Hooked " + targets.size() + " lyric ctor(s)");
         } catch (Throwable t) {
-            AndroidLog.logE(TAG, "Failed to install soda lyric entity anchors", t);
+            XposedLog.logE(TAG, "Failed to install soda lyric entity anchors", t);
         }
     }
 
@@ -163,7 +163,7 @@ public final class SodaAnchors {
             hookTrackLyricEntries(listener);
         } catch (Throwable t) {
             // 第二锚点独立于第一锚点：这里失败不影响已经安装的点位
-            AndroidLog.logW(TAG, "Failed to install TrackLyric anchors", t);
+            XposedLog.logW(TAG, "Failed to install TrackLyric anchors", t);
         }
     }
 
@@ -181,7 +181,7 @@ public final class SodaAnchors {
     private static void hookTrackLyricEntries(@NonNull PayloadListener listener) {
         Class<?> entityClass = CoreTool.findClassIfExists(TRACK_LYRIC_CLASS);
         if (entityClass == null) {
-            AndroidLog.logW(TAG, "TrackLyric entity not found: " + TRACK_LYRIC_CLASS);
+            XposedLog.logW(TAG, "TrackLyric entity not found: " + TRACK_LYRIC_CLASS);
             return;
         }
 
@@ -213,7 +213,7 @@ public final class SodaAnchors {
             });
             hooked++;
         } catch (Throwable t) {
-            AndroidLog.logD(TAG, "No setLyric(String): " + t.getMessage());
+            XposedLog.logD(TAG, "No setLyric(String): " + t.getMessage());
         }
 
         try {
@@ -232,13 +232,13 @@ public final class SodaAnchors {
             });
             hooked++;
         } catch (Throwable t) {
-            AndroidLog.logD(TAG, "No getLyric(): " + t.getMessage());
+            XposedLog.logD(TAG, "No getLyric(): " + t.getMessage());
         }
 
         if (hooked == 0) {
-            AndroidLog.logW(TAG, "No usable TrackLyric entry; data path unavailable");
+            XposedLog.logW(TAG, "No usable TrackLyric entry; data path unavailable");
         } else {
-            AndroidLog.logI(TAG, "Hooked TrackLyric data entries: " + hooked);
+            XposedLog.logI(TAG, "Hooked TrackLyric data entries: " + hooked);
         }
     }
 
@@ -278,7 +278,7 @@ public final class SodaAnchors {
         if (payload.isEmpty()) {
             // 宿主会为正在加载或确实没有歌词的曲目构造空载荷。空载荷不构成无歌词的
             // 证据，交回上层按读取失败处理，不在此下结论
-            AndroidLog.logD(TAG, "Empty lyric payload (type=" + type + ", lang=" + language + ")");
+            XposedLog.logD(TAG, "Empty lyric payload (type=" + type + ", lang=" + language + ")");
             return;
         }
         if (LyricDiag.INSTANCE.getEnabled()) {
@@ -333,7 +333,7 @@ public final class SodaAnchors {
             return trimmed.isEmpty() ? null : trimmed;
         } catch (Throwable t) {
             // 队列项实现类可能不可访问；标识拿不到只是失去一次校验，不影响取词
-            AndroidLog.logD(TAG, "Track id unavailable: " + t.getClass().getSimpleName());
+            XposedLog.logD(TAG, "Track id unavailable: " + t.getClass().getSimpleName());
             return null;
         }
     }

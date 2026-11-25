@@ -19,21 +19,18 @@
 package com.hchen.superlyric.provider.soda
 
 import android.os.SystemClock
-
-import com.hchen.hooktool.log.AndroidLog
+import com.hchen.hooktool.log.XposedLog
 import com.hchen.superlyric.kernel.identity.TrackIdentity
-import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
-import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.parse.LyricPayloadHeuristics
+import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
 import com.hchen.superlyric.provider.base.InstallableLyricSource
 import com.hchen.superlyric.provider.base.SourceRequest
 import com.hchen.superlyric.provider.base.SourceRequestGate
 import com.hchen.superlyric.provider.base.withMetadata
 import com.hchen.superlyric.utils.LyricDiag
-
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
@@ -107,7 +104,7 @@ class SodaHookSource : InstallableLyricSource {
             val key = usableId(identity.stableId)
             val stashed = key?.let { stash[it] }
             if (stashed != null && (stashed.main != null || stashed.translation != null)) {
-                AndroidLog.logD(sourceName, "Replaying stashed payload for ${identity.stableId}")
+                XposedLog.logD(sourceName, "Replaying stashed payload for ${identity.stableId}")
                 stashed.main?.let { accept(it, true) }
                 stashed.translation?.let { accept(it, true) }
                 return
@@ -119,7 +116,7 @@ class SodaHookSource : InstallableLyricSource {
             if (SystemClock.elapsedRealtime() - cached.atMs > STASH_WINDOW_MS) return
             if (!matchesCurrent(cached.trackId)) return
 
-            AndroidLog.logD(sourceName, "Replaying recent payload for ${identity.stableId}")
+            XposedLog.logD(sourceName, "Replaying recent payload for ${identity.stableId}")
             // 补投过一次就作废：同一份载荷在下一首的会话里再被取用就是错歌
             lastCaptured = null
             accept(cached, true)
@@ -180,7 +177,7 @@ class SodaHookSource : InstallableLyricSource {
                 }
 
                 else -> {
-                    AndroidLog.logD(
+                    XposedLog.logD(
                         sourceName,
                         "Keeping earlier payload ${existing.trackId} over ${captured.trackId}",
                     )
@@ -221,13 +218,13 @@ class SodaHookSource : InstallableLyricSource {
         val outcome = parse(batch.main, batch.translation, batch.request.identity)
         if (outcome !is LyricOutcome.Success) {
             // 读不出来不等于没有歌词；投出去会把这一代际关死（见类注释）
-            AndroidLog.logD(sourceName, "No usable lyric in ${batch.main.type} payload; staying silent")
+            XposedLog.logD(sourceName, "No usable lyric in ${batch.main.type} payload; staying silent")
             return
         }
         deliveredKey = key
         if (!batch.matched) {
             // 两套命名空间下的 id 不相等是常态，这条日志是"取到的是当前曲目"的旁证
-            AndroidLog.logI(
+            XposedLog.logI(
                 sourceName,
                 "Publishing by arrival order: payload id ${batch.main.trackId} != " +
                         "identity ${batch.request.identity.stableId}",
@@ -271,21 +268,21 @@ class SodaHookSource : InstallableLyricSource {
                 ),
             )
         } catch (t: Throwable) {
-            AndroidLog.logW(sourceName, "Failed to parse ${main.type} payload: ${t.message}")
+            XposedLog.logW(sourceName, "Failed to parse ${main.type} payload: ${t.message}")
             return LyricOutcome.Unsupported("soda: payload unreadable")
         }
 
         if (doc == null || doc.isEmpty) {
-            AndroidLog.logD(sourceName, "Parsed no lines from ${main.type} payload")
+            XposedLog.logD(sourceName, "Parsed no lines from ${main.type} payload")
             return LyricOutcome.Unsupported("soda: no parseable line")
         }
         if (!LyricPayloadHeuristics.hasUsableTiming(doc)) {
             // 纯文本歌词会解析成一堆 startMs=0 的行；发出去等于把整首词钉在开头
-            AndroidLog.logD(sourceName, "Parsed ${doc.lines.size} lines without timeline (${main.type})")
+            XposedLog.logD(sourceName, "Parsed ${doc.lines.size} lines without timeline (${main.type})")
             return LyricOutcome.Unsupported("soda: no timeline")
         }
 
-        AndroidLog.logI(sourceName, "Parsed ${doc.lines.size} lines (${main.type})")
+        XposedLog.logI(sourceName, "Parsed ${doc.lines.size} lines (${main.type})")
         return LyricOutcome.Success(doc.withMetadata(current))
     }
 
@@ -305,7 +302,7 @@ class SodaHookSource : InstallableLyricSource {
         val left = usableId(payloadId) ?: return true
         val right = usableId(requests.current()?.identity?.stableId) ?: return true
         if (left == right) return true
-        AndroidLog.logD(sourceName, "Track id differs: payload=$left identity=$right")
+        XposedLog.logD(sourceName, "Track id differs: payload=$left identity=$right")
         return false
     }
 

@@ -18,7 +18,7 @@
  */
 package com.hchen.superlyric.provider.kuwo
 
-import com.hchen.hooktool.log.AndroidLog
+import com.hchen.hooktool.log.XposedLog
 import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
@@ -97,7 +97,7 @@ class KuwoHookSource(
             // 只取走刚刚读到的那一份：解析线程可能在两步之间把同一 rid 换成了新正文
             synchronized(stashByRid) { if (stashByRid[key] === stashed) stashByRid.remove(key) }
             val rid = TrackIdentity.normalizeStableId(identity.stableId).orEmpty()
-            AndroidLog.logD(sourceName, "Replaying stashed lyric for id=${identity.stableId}")
+            XposedLog.logD(sourceName, "Replaying stashed lyric for id=${identity.stableId}")
             session.deliver(
                 LyricOutcome.Success(
                     stashed.doc.withMetadata(identity, meta?.title(rid).orEmpty(), meta?.artist(rid).orEmpty())
@@ -148,7 +148,7 @@ class KuwoHookSource(
                     )
                 )
             } catch (t: Throwable) {
-                AndroidLog.logW(sourceName, "Failed to parse lyric text: ${t.message}")
+                XposedLog.logW(sourceName, "Failed to parse lyric text: ${t.message}")
                 null
             }
             val parsed = doc
@@ -166,7 +166,7 @@ class KuwoHookSource(
                 // 反之，载荷足够长却仍解不出行，才说明本模块读不懂，此时判 Unsupported：
                 // NoLyrics 允许下发纯音乐占位，把有歌词曲目误判为无歌词的后果更严重。
                 if (LyricPayloadHeuristics.isShortText(text)) {
-                    AndroidLog.logD(
+                    XposedLog.logD(
                         sourceName,
                         "Ignoring short lyric payload (len=${text.length}); not a full lyric",
                     )
@@ -176,13 +176,13 @@ class KuwoHookSource(
                 // 解析入口一旦多挂锚点，路径、JSON、搜索结果等长文本也会经过这里；
                 // 判成 Unsupported 会把整首曲目标为不可用，而它只是走错锚点。
                 if (!LyricPayloadHeuristics.hasLrcTimeTag(text)) {
-                    AndroidLog.logD(
+                    XposedLog.logD(
                         sourceName,
                         "Ignoring payload without LRC time tags (len=${text.length})",
                     )
                     return@execute
                 }
-                AndroidLog.logW(sourceName, "Parsed no lines from lyric text (len=${text.length})")
+                XposedLog.logW(sourceName, "Parsed no lines from lyric text (len=${text.length})")
                 // 终态结论同样必须属于当前曲目：切歌后迟到的旧载荷不能把新曲目锁成
                 // UNAVAILABLE（Kuwo 没有网络源可回退）。
                 val unsupportedTarget = requests.current()
@@ -196,7 +196,7 @@ class KuwoHookSource(
                         LyricOutcome.Unsupported("kuwo: parsed empty")
                     )
                 } else {
-                    AndroidLog.logD(sourceName, "Dropped empty-lyric verdict for a stale track")
+                    XposedLog.logD(sourceName, "Dropped empty-lyric verdict for a stale track")
                 }
                 return@execute
             }
@@ -209,7 +209,7 @@ class KuwoHookSource(
             // 命中去重分支，而宿主随后可能不再回调。
             lastDelivered = stableId to text
             lastAttempted = null
-            AndroidLog.logI(sourceName, "Parsed lyric text, lines=${parsed.lines.size}")
+            XposedLog.logI(sourceName, "Parsed lyric text, lines=${parsed.lines.size}")
 
             // 只有结果属于当前会话时才直接投递；否则留给 start() 补投。
             // 不得投给属于其它曲目的会话，那会被当作新曲目歌词发布。
@@ -235,7 +235,7 @@ class KuwoHookSource(
                     )
                 )
             } else {
-                AndroidLog.logD(
+                XposedLog.logD(
                     sourceName,
                     "Stashed lyric for $stableId; will replay once its session is up",
                 )

@@ -128,13 +128,13 @@ Run every module suite:
       :lyric-service:testDebugUnitTest :app:testDebugUnitTest
 
 Also run :app:assembleDebug, :app:assembleRelease, and git diff --check. A behavior change needs
-device observation and evidence. Code reading is not device evidence. LyricDiag tag SLDiag is the
-first log source; Mobile MCP is the first device interface, ADB is fallback.
+device observation and evidence, not code reading. Host logs use XposedLog, which reaches logcat
+and the persisted LSPosed log; only module UI uses AndroidLog. LyricDiag tag SLDiag. Mobile MCP
+is the first device interface; ADB is fallback.
 
 Code rules:
 
-- Delete unused code, resources, constants, parameters, and write-only fields. Do not keep code
-  "for later".
+- Delete unused code, resources, constants, parameters, and write-only fields; keep nothing later.
 - Keep only fallbacks that classify failure, protect the host, or prevent data corruption. Do not
   guard states the code cannot produce.
 - One rule, mapping, parser, and conversion is implemented once. Reuse existing helpers.
