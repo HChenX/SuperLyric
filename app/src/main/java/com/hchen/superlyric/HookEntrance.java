@@ -29,7 +29,7 @@ import com.hchen.hooktool.AbsModule;
 import com.hchen.hooktool.ModuleConfig;
 import com.hchen.hooktool.ModuleData;
 import com.hchen.hooktool.ModuleEntrance;
-import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.hooktool.log.XposedLog;
 import com.hchen.hooktool.utils.PrefsTool;
 import com.hchen.processor.HookMaps;
 import com.hchen.superlyric.anchors.DexKitRuntime;
@@ -77,15 +77,14 @@ public final class HookEntrance extends ModuleEntrance {
         };
     }
 
-    private final ConcurrentHashMap<String, List<AbsModule>> modules = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, ClassLoader> moduleClassLoaders = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, List<AbsModule>> modules = new ConcurrentHashMap<>();
     private final ExecutorService cacheMigrationExecutor = Executors.newSingleThreadExecutor();
     @Nullable
     private volatile Context lastApplicationContext;
 
     @Override
     public void handlePackageReady(@NonNull PackageReadyParam param) {
-        AndroidLog.logD(TAG, "handlePackageReady: " + param.getPackageName() + " with loader: " + param.getClassLoader());
+        XposedLog.logD(TAG, "handlePackageReady: " + param.getPackageName() + " with loader: " + param.getClassLoader());
         super.handlePackageReady(param);
 
         String packageName = param.getPackageName();
@@ -97,22 +96,16 @@ public final class HookEntrance extends ModuleEntrance {
                 ModuleData.setClassLoader(param.getClassLoader());
                 DexKitRuntime.initialize(param, version);
 
-                ClassLoader previousLoader = moduleClassLoaders.get(packageName);
                 List<AbsModule> previousModules = modules.get(packageName);
-                if (previousModules != null && previousLoader == param.getClassLoader()) {
+                if (previousModules != null) {
                     for (AbsModule module : previousModules) {
                         try {
                             module.handlePackageReady(param);
                         } catch (Throwable t) {
-                            // 单个模块失败不能中断其余模块。
-                            AndroidLog.logE(TAG, "Module " + module.getClass().getName()
+                            XposedLog.logE(TAG, "Module " + module.getClass().getName()
                                 + " failed during re-registration; skipping it", t);
                         }
                     }
-                    return;
-                }
-                if (previousLoader != null && previousLoader != param.getClassLoader()) {
-                    AndroidLog.logE(TAG, "Ignore package reload with different ClassLoader: " + packageName);
                     return;
                 }
 
@@ -124,11 +117,10 @@ public final class HookEntrance extends ModuleEntrance {
                         module.handlePackageReady(param);
                         packageModules.add(module);
                     } catch (Throwable t) {
-                        AndroidLog.logE(TAG, "Module " + path + " failed during package ready; skipping it", t);
+                        XposedLog.logE(TAG, "Module " + path + " failed during package ready; skipping it", t);
                     }
                 }
                 modules.put(packageName, packageModules);
-                moduleClassLoaders.put(packageName, param.getClassLoader());
             } finally {
                 DexKitRuntime.close();
             }
@@ -137,7 +129,7 @@ public final class HookEntrance extends ModuleEntrance {
 
     @Override
     public void handleApplicationCreated(@NonNull Context context) {
-        AndroidLog.logD(TAG, "handleApplicationCreated: " + context.getPackageName());
+        XposedLog.logD(TAG, "handleApplicationCreated: " + context.getPackageName());
         super.handleApplicationCreated(context);
 
         if (lastApplicationContext == context) return;
@@ -148,7 +140,7 @@ public final class HookEntrance extends ModuleEntrance {
                 try {
                     module.handleApplicationCreated(context);
                 } catch (Throwable t) {
-                    AndroidLog.logE(TAG, "Module " + module.getClass().getName()
+                    XposedLog.logE(TAG, "Module " + module.getClass().getName()
                         + " failed during application created; skipping it", t);
                 }
             }
@@ -162,7 +154,7 @@ public final class HookEntrance extends ModuleEntrance {
             int current = LyricCacheStore.cacheVersion();
             if (lastCleared == current) return;
             if (!LyricCacheStore.clearOnlineProviderCaches(context)) {
-                AndroidLog.logE(TAG, "Lyric cache format migration incomplete; retry on next startup");
+                XposedLog.logE(TAG, "Lyric cache format migration incomplete; retry on next startup");
                 return;
             }
             boolean committed = PrefsTool.prefs(context)
@@ -170,12 +162,12 @@ public final class HookEntrance extends ModuleEntrance {
                 .putInt(PrefsKey.CACHE_FORMAT, current)
                 .commit();
             if (!committed) {
-                AndroidLog.logE(TAG, "Failed to persist lyric cache format migration; retry on next startup");
+                XposedLog.logE(TAG, "Failed to persist lyric cache format migration; retry on next startup");
                 return;
             }
-            AndroidLog.logD(TAG, "Lyric cache cleared on format upgrade: " + lastCleared + " -> " + current);
+            XposedLog.logD(TAG, "Lyric cache cleared on format upgrade: " + lastCleared + " -> " + current);
         } catch (Throwable t) {
-            AndroidLog.logE(TAG, "Failed to clear lyric cache on format upgrade", t);
+            XposedLog.logE(TAG, "Failed to clear lyric cache on format upgrade", t);
         }
     }
 
@@ -192,7 +184,7 @@ public final class HookEntrance extends ModuleEntrance {
             try {
                 module.handleSystemServerStarting(param);
             } catch (Throwable t) {
-                AndroidLog.logE(TAG, "Module " + path + " failed during system start; skipping it", t);
+                XposedLog.logE(TAG, "Module " + path + " failed during system start; skipping it", t);
             }
         }
     }
@@ -205,7 +197,7 @@ public final class HookEntrance extends ModuleEntrance {
                 .getDeclaredConstructor()
                 .newInstance();
         } catch (Throwable t) {
-            AndroidLog.logE(TAG, "Failed to load module " + path + "; skipping it", t);
+            XposedLog.logE(TAG, "Failed to load module " + path + "; skipping it", t);
             return null;
         }
     }
