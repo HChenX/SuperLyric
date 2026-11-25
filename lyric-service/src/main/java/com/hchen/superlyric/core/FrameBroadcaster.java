@@ -65,7 +65,9 @@ final class FrameBroadcaster {
     }
 
     private final SubscriberBudget budget = new SubscriberBudget();
-    /** 配额、listeners 与死亡回调共用；broadcast 只负责快照/投递。 */
+    /**
+     * 配额、listeners 与死亡回调共用；broadcast 只负责快照/投递。
+     */
     private final Object registrationLock = new Object();
     private final ConcurrentHashMap<IBinder, Entry> listeners = new ConcurrentHashMap<>();
 

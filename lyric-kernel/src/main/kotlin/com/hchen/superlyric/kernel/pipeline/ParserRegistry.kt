@@ -114,7 +114,7 @@ internal object ParserRegistry {
 
             LyricTextKind.LRC,
             LyricTextKind.UNKNOWN,
-            -> Unit
+                -> Unit
         }
 
         // 结构化 JSON 没有通用文本兜底；其余格式失败后仍尝试其他明确结构和通用库。

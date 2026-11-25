@@ -692,7 +692,9 @@ public final class LyricRuntime {
         });
     }
 
-    /** 按接收者能力提供 3.x 载荷；没有接收者时不会调用。 */
+    /**
+     * 按接收者能力提供 3.x 载荷；没有接收者时不会调用。
+     */
     @FunctionalInterface
     interface LegacyPayloadProvider {
         @Nullable

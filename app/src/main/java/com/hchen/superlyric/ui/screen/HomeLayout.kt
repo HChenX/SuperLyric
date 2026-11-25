@@ -73,6 +73,7 @@ import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
 import com.hchen.superlyric.ui.screen.settings.HomeSettingsController
 import com.hchen.superlyric.ui.viewmodel.MainUiAction
 import com.hchen.superlyric.utils.LauncherIconController
+import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.DropdownEntry
@@ -99,7 +100,6 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.textStyles
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
-import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.window.WindowDialog
 
 @Composable

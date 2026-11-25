@@ -102,9 +102,9 @@ internal object SpeakerLabelMerger {
         if (name.length !in 1..16) return null
         if (isSectionName(name)) return null
         val isSpeaker = COMMON_LABELS.any { name.equals(it, ignoreCase = true) } ||
-            (name.length <= 8 && name.any { it in "男女合唱" }) ||
-            SHORT_LATIN_SLOT.matches(name) ||
-            SINGER_PREFIX.matches(name)
+                (name.length <= 8 && name.any { it in "男女合唱" }) ||
+                SHORT_LATIN_SLOT.matches(name) ||
+                SINGER_PREFIX.matches(name)
         return if (isSpeaker) name + "：" else null
     }
 

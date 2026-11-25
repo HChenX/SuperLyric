@@ -68,7 +68,7 @@ public final class SpotifyLyricParser {
 
     /**
      * 判断解析结果是否有可用时间轴。
-     *
+     * <p>
      * 全部行共用 0 起点时是平台返回的未同步歌词：行序与索引都无法随播放推进，
      * 按定时文档发布会让客户端永远高亮首行。单行 0 起点仍是合法歌词。
      */
@@ -353,7 +353,7 @@ public final class SpotifyLyricParser {
     }
 
     private static List<LyricWord> toWords(String text, List<Syllable> syllables,
-                                                      long lineStart, long lineEnd) {
+                                           long lineStart, long lineEnd) {
         if (syllables == null || syllables.isEmpty()) return null;
 
         List<LyricWord> result = new ArrayList<>(syllables.size());
@@ -381,6 +381,7 @@ public final class SpotifyLyricParser {
         }
         return cursor == text.length() ? result : null;
     }
+
     public static final class Line {
         public final String text;
         public final long startTimeMs;

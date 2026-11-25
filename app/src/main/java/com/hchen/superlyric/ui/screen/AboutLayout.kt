@@ -72,8 +72,8 @@ import com.hchen.superlyric.ui.data.LocalPagerState
 import com.hchen.superlyric.ui.data.UIConstants
 import com.hchen.superlyric.ui.effect.BgEffectBackground
 import com.hchen.superlyric.ui.effect.BlurredBar
-import com.hchen.superlyric.ui.effect.cardBlur
 import com.hchen.superlyric.ui.effect.cardBlendColors
+import com.hchen.superlyric.ui.effect.cardBlur
 import com.hchen.superlyric.ui.effect.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card

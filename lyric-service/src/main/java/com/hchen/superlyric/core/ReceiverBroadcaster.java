@@ -75,7 +75,9 @@ final class ReceiverBroadcaster {
         };
     }
 
-    /** 测试可注入 callback 列表；生产默认构造器保留真实的死亡回调。 */
+    /**
+     * 测试可注入 callback 列表；生产默认构造器保留真实的死亡回调。
+     */
     ReceiverBroadcaster(@NonNull RemoteCallbackList<ISuperLyricReceiver> callbacks) {
         this.callbacks = callbacks;
     }

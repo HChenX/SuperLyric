@@ -19,12 +19,10 @@
 package com.hchen.superlyric.network
 
 import com.hchen.superlyric.utils.LyricCacheStore
-
+import okhttp3.ResponseBody
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.nio.charset.StandardCharsets
-
-import okhttp3.ResponseBody
 
 /**
  * 读取响应体文本，超过上限即中止

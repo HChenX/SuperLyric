@@ -20,10 +20,10 @@ package com.hchen.superlyric.utils
 
 import android.media.session.PlaybackState
 import com.hchen.superlyric.kernel.orchestrate.PlaybackSignal
-import com.hchen.superlyricapi.model.PlaybackState as V4PlaybackState
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import com.hchen.superlyricapi.model.PlaybackState as V4PlaybackState
 
 /**
  * Android 播放常量到 v4 播放状态的映射

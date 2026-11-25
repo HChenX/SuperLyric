@@ -18,8 +18,8 @@
  */
 package com.hchen.superlyric.ui
 
-import android.os.Bundle
 import android.content.SharedPreferences
+import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -99,7 +99,6 @@ import top.yukonga.miuix.kmp.theme.ThemeController
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 import top.yukonga.miuix.kmp.window.WindowDialog
-
 import java.util.function.Consumer
 
 class MainActivity : ComponentActivity() {
