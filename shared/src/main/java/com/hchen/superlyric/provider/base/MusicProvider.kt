@@ -26,10 +26,8 @@ import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
-
 import com.hchen.hooktool.hook.AbsHook
-import com.hchen.hooktool.log.AndroidLog
-import com.hchen.superlyric.shared.BuildConfig
+import com.hchen.hooktool.log.XposedLog
 import com.hchen.superlyric.bridge.LyricPublishBridge
 import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.orchestrate.LyricOrchestrator
@@ -38,18 +36,17 @@ import com.hchen.superlyric.kernel.orchestrate.PlaybackSignal
 import com.hchen.superlyric.kernel.orchestrate.StopEvidence
 import com.hchen.superlyric.kernel.orchestrate.StopGate
 import com.hchen.superlyric.publisher.AbsPublisher
+import com.hchen.superlyric.shared.BuildConfig
 import com.hchen.superlyric.shared.HostIdentitySource
 import com.hchen.superlyric.shared.hostString
 import com.hchen.superlyric.shared.toTrackIdentity
 import com.hchen.superlyric.utils.LyricDiag
 import com.hchen.superlyric.utils.PlaybackStates
-
 import io.github.libxposed.api.XposedModuleInterface
-
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 音乐应用 Provider 骨架：子类只提供身份源与取词计划。
@@ -93,14 +90,14 @@ abstract class MusicProvider : AbsPublisher() {
                     task.run()
                 } catch (t: Throwable) {
                     // stopConfirmer 会丢弃 Future 的异常；未记录时停止确认失败无法从日志发现。
-                    AndroidLog.logE(providerTag, "Stop confirmation task failed", t)
+                    XposedLog.logE(providerTag, "Stop confirmation task failed", t)
                 }
             }, delayMs, TimeUnit.MILLISECONDS)
         },
         onConfirmed = Runnable {
             // 判定与停止动作在同一临界区：只读判定会让窗口内到达的证据丢失，清掉刚发布的内容
             stopEvidence.confirmIfStillValid {
-                AndroidLog.logD(providerTag, "Playback stopped (confirmed)")
+                XposedLog.logD(providerTag, "Playback stopped (confirmed)")
                 orchestrator.onPlaybackStopped()
             }
         },
@@ -127,7 +124,7 @@ abstract class MusicProvider : AbsPublisher() {
         super.onPackageReady(param)
         identitySource = createIdentitySource()?.also { source ->
             runCatching { source.install() }
-                .onFailure { AndroidLog.logE(providerTag, "Failed to install identity source", it) }
+                .onFailure { XposedLog.logE(providerTag, "Failed to install identity source", it) }
         }
         val plan = createLyricPlan()
         nativeSource = plan.native
@@ -141,12 +138,12 @@ abstract class MusicProvider : AbsPublisher() {
             ExecutorScheduler("$providerTag-Scheduler"),
             LyricPublishBridge { lastSeenIdentity },
             orchestratorConfig(),
-            diagnostics = { reason -> AndroidLog.logD(providerTag, reason) },
+            diagnostics = { reason -> XposedLog.logD(providerTag, reason) },
         )
 
         hookMediaSession()
 
-        AndroidLog.logD(
+        XposedLog.logI(
             providerTag,
             "Provider ready for ${param.packageName}: native=${plan.native?.sourceName ?: "none"}, " +
                     "generic=${plan.generic?.sourceName ?: "none"}",
@@ -156,7 +153,7 @@ abstract class MusicProvider : AbsPublisher() {
     private fun installSource(source: LyricSource?) {
         (source as? InstallableLyricSource)?.let {
             runCatching { it.install() }
-                .onFailure { error -> AndroidLog.logE(providerTag, "Failed to install lyric source", error) }
+                .onFailure { error -> XposedLog.logE(providerTag, "Failed to install lyric source", error) }
         }
     }
 
@@ -164,7 +161,7 @@ abstract class MusicProvider : AbsPublisher() {
         val installable = source as? InstallableLyricSource ?: return
         runCatching { installable.onApplicationCreated(context) }
             .onFailure { error ->
-                AndroidLog.logE(
+                XposedLog.logE(
                     providerTag,
                     "Failed to initialize ${installable.sourceName} on application create",
                     error,
@@ -215,7 +212,7 @@ abstract class MusicProvider : AbsPublisher() {
      */
     private fun onPlaybackStateChanged(state: PlaybackState) {
         val signal = PlaybackStates.toSignal(state.state)
-        AndroidLog.logD(
+        XposedLog.logD(
             providerTag,
             "Playback state=${state.state}, signal=$signal, pendingStop=${stopGate.isPending}, " +
                     "id=${lastSeenIdentity?.stableId}"
@@ -233,16 +230,16 @@ abstract class MusicProvider : AbsPublisher() {
         when (stopGate.onSignal(signal)) {
             StopGate.Decision.ARMED -> {
                 stopEvidence.snapshot()
-                AndroidLog.logD(providerTag, "$signal received; awaiting confirmation")
+                XposedLog.logD(providerTag, "$signal received; awaiting confirmation")
             }
 
             StopGate.Decision.CANCELLED ->
-                AndroidLog.logD(providerTag, "Pending stop cancelled by $signal")
+                XposedLog.logD(providerTag, "Pending stop cancelled by $signal")
 
             // 只有存在待确认停止时才记录。
             StopGate.Decision.IGNORED ->
                 if (stopGate.isPending) {
-                    AndroidLog.logD(providerTag, "$signal ignored while a stop is pending")
+                    XposedLog.logD(providerTag, "$signal ignored while a stop is pending")
                 }
         }
 
@@ -253,7 +250,7 @@ abstract class MusicProvider : AbsPublisher() {
         ) {
             val identity = lastSeenIdentity
             if (identity != null) {
-                AndroidLog.logD(providerTag, "Playback resumed after stop; restarting resolution")
+                XposedLog.logD(providerTag, "Playback resumed after stop; restarting resolution")
                 orchestrator.onTrackChanged(identity)
             }
         }
@@ -264,7 +261,7 @@ abstract class MusicProvider : AbsPublisher() {
         // 元数据到达同样是“播放仍在继续”的证据，先记账，再读取 StopGate 的判定
         stopEvidence.record()
         if (stopGate.onEvidence() == StopGate.Decision.CANCELLED) {
-            AndroidLog.logD(providerTag, "Pending stop cancelled by $reason")
+            XposedLog.logD(providerTag, "Pending stop cancelled by $reason")
         }
     }
 
@@ -276,7 +273,7 @@ abstract class MusicProvider : AbsPublisher() {
 
         // 过渡期空元数据既不是切歌也不是停止。
         if (identity.title.isEmpty() && !identity.hasStableId) {
-            AndroidLog.logD(providerTag, "Ignoring metadata without title or stable id")
+            XposedLog.logD(providerTag, "Ignoring metadata without title or stable id")
             return
         }
 
@@ -287,7 +284,7 @@ abstract class MusicProvider : AbsPublisher() {
             lastSeenIdentity = identity
         }
         if (changed) {
-            AndroidLog.logD(
+            XposedLog.logD(
                 providerTag,
                 "Metadata changed: id=${identity.stableId}, title=\"${identity.title}\", " +
                         "artist=\"${identity.artist}\", duration=${identity.durationMs}ms",
@@ -335,7 +332,7 @@ abstract class MusicProvider : AbsPublisher() {
         } catch (t: Throwable) {
             // 注册失败要允许后续回调重试，不能永久占住“已注册”标志。
             seekReceiverRegistered.set(false)
-            AndroidLog.logW(providerTag, "Failed to register seek simulator", t)
+            XposedLog.logW(providerTag, "Failed to register seek simulator", t)
         }
     }
 
@@ -351,7 +348,7 @@ abstract class MusicProvider : AbsPublisher() {
         val current = hostPlaybackState
         if (session == null || current == null) {
             // 本进程不持有会话；多进程宿主中常见。
-            AndroidLog.logW(
+            XposedLog.logW(
                 providerTag,
                 "Seek simulator reached a process without host session/state " +
                         "(session=${session != null}, state=${current != null})",
@@ -359,7 +356,7 @@ abstract class MusicProvider : AbsPublisher() {
             return
         }
 
-        AndroidLog.logI(providerTag, "Simulating seek to ${positionMs}ms")
+        XposedLog.logD(providerTag, "Simulating seek to ${positionMs}ms")
         session.setPlaybackState(
             PlaybackState.Builder(current)
                 .setState(current.state, positionMs, current.playbackSpeed)
