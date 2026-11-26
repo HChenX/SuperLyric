@@ -32,6 +32,7 @@ public final class SupportApps {
 
     public static final Map<String, Integer> sPackageLabelRes = Map.ofEntries(
         Map.entry("com.apple.android.music", R.string.apple_music),
+        Map.entry("com.cidercollective.cider", R.string.cider_music),
         Map.entry("cn.wenyu.bodian", R.string.bodian_music),
         Map.entry("com.kugou.android", R.string.kugou_music),
         Map.entry("com.kugou.android.lite", R.string.kugou_lite_music),

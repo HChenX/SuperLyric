@@ -32,6 +32,7 @@ stops the chain.
 | QRC | QRC XML, or `[start,dur]` plus `(start,dur)` | QrcParser | yes | XML block | request channel | QRC-to-LRC, library |
 | LRCX | `[kuwo:...]` | KuwoLrcxParser | yes | inline | no | library |
 | Soda JSON | root JSON with `sentences` | SodaJsonParser | yes | `translations.cn` | no | none |
+| Musixmatch richsync JSON | array of `ts`, `te`, and `l` word slices | RichSyncJsonParser | yes | request channel | request channel | none |
 | Salt trailing | LRC line head, text, then square timestamp | TrailingTimestampLrcParser, CompanionSplitter | yes | sidecar | sidecar | library |
 
 ## 3. Host model formats
@@ -63,7 +64,7 @@ A parse failure returns null and is not converted to NoLyrics.
 
 - Plain LRC, enhanced LRC, TTML, Lyricify, KRC, YRC, QRC, LRCX and Salt trailing
   are covered by text fixtures.
-- Soda JSON is schema-specific and has no generic text fallback.
+- Soda and richsync JSON are schema-specific and have no generic text fallback.
 - Apple, Spotify and Migu host models are schema-specific; host changes fail over
   to null rather than being guessed.
 - Unknown types inside KRC `[language:]` are ignored rather than attached to a

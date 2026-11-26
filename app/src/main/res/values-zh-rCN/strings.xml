@@ -126,6 +126,7 @@
     <!-- Music App Instructions -->
     <string name="jiaoyan_music">无需额外设置，正常播放即可</string>
     <string name="apple_music">无需额外设置，正常播放即可</string>
+    <string name="cider_music">无需额外设置，正常播放即可</string>
     <string name="bodian_music">无需额外设置，正常播放即可</string>
     <string name="kugou_music">无需额外设置，正常播放即可</string>
     <string name="kugou_lite_music">无需额外设置，正常播放即可</string>

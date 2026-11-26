@@ -167,7 +167,7 @@ object LyricPipeline {
         val base = krcLanguage?.main ?: content
 
         // 普通 LRC 的 [mm:ss]、[mm:ss:ff] 和 [mm:ss.xx] 统一成通用库可检测的
-        // 三位小数；QRC/KRC/LRCX/Soda 使用各自的时间轴，不能改写。
+        // 三位小数；QRC/KRC/LRCX/Soda/richsync 使用各自的时间轴，不能改写。
         val canonical = if (kind.usesPlainTextTimeline()) {
             LrcTimestamps.canonicalize(base)
         } else {

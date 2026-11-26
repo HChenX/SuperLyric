@@ -67,7 +67,7 @@ interface LyricSource {
  * 状态：IDLE 无活动音轨；RESOLVING_HOOK 等 Hook；FETCHING_API 请求网络源；ACTIVE 已发布；
  * NO_LYRICS 终态可下发占位；UNAVAILABLE 尚未取得歌词，不得下发占位。
  *
- * 每次切歌与停止都自增 epoch，异步回投按 epoch 丢弃过期结果。
+ * 每次切歌、显式重新取词与停止都自增 epoch，异步回投按 epoch 丢弃过期结果。
  * 共享状态由 lock 保护；锁内只构造 Plan，锁外执行，不在持锁时做 Binder 发布或来源启动。
  */
 class LyricOrchestrator(
@@ -94,10 +94,10 @@ class LyricOrchestrator(
      */
     interface Listener {
         /**
-         * 确认切换到新曲目，且该曲目尚无歌词
+         * 确认曲目需要重新取词，且尚无歌词
          *
-         * 下游应据此立即作废上一首的展示：上一首的歌词与当前播放已无关系，
-         * 继续显示会让界面呈现错误内容。具体下发内容由下游决定，
+         * 下游应立即作废已发布的展示：切歌或刷新来源后，旧歌词不再代表本次取词结果。
+         * 具体下发内容由下游决定，
          * 宿主侧下发切歌包，把空窗期呈现方式交给客户端。
          */
         fun onTrackChanged(identity: TrackIdentity) = Unit
@@ -189,6 +189,13 @@ class LyricOrchestrator(
         synchronized(lock) { planTrackChanged(identity) }?.let(::execute)
     }
 
+    /** 保持当前曲目身份，作废在途结果并重新取词；停止后不恢复会话。 */
+    fun refreshCurrentTrack() {
+        synchronized(lock) {
+            currentIdentity?.let { planTrackChanged(it, force = true) }
+        }?.let(::execute)
+    }
+
     /**
      * Hook 来源回投结果
      */
@@ -225,11 +232,11 @@ class LyricOrchestrator(
     }
 
     /**
-     * @return 待执行的动作；判定为同一首曲目时返回 null
+     * @return 待执行的动作；普通上报判定为同一首曲目时返回 null
      */
-    private fun planTrackChanged(identity: TrackIdentity): Plan? {
+    private fun planTrackChanged(identity: TrackIdentity, force: Boolean = false): Plan? {
         val current = currentIdentity
-        if (current != null) {
+        if (current != null && !force) {
             if (current.matches(identity) || isTitleEnrichment(current, identity)) {
                 // 同一首曲目只刷新元数据，不重启取词；宿主高频改写标题/歌手时
                 // 重启会反复取词，并重复下发占位。
@@ -249,7 +256,7 @@ class LyricOrchestrator(
         epoch++
         val startedEpoch = epoch
         diagnostics(
-            "new track epoch=" + startedEpoch +
+            (if (force) "refresh track epoch=" else "new track epoch=") + startedEpoch +
                     " prev=" + current?.stableId + "/" + current?.title +
                     " next=" + identity.stableId + "/" + identity.title,
         )
@@ -266,6 +273,10 @@ class LyricOrchestrator(
             newTrack = identity
             plannedEpoch = startedEpoch
             this.identity = identity
+            if (force) {
+                actions += Action.CancelHook
+                actions += Action.CancelApi
+            }
         }
 
         if (hookSource != null) {
