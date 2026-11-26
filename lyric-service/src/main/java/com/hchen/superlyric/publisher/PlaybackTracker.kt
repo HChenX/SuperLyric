@@ -23,7 +23,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
 
-import com.hchen.hooktool.log.AndroidLog
+import com.hchen.hooktool.log.XposedLog
 import com.hchen.superlyric.kernel.clock.PlaybackClock
 import com.hchen.superlyric.kernel.clock.PlaybackStatus
 import com.hchen.superlyricapi.model.Lyric
@@ -244,7 +244,7 @@ class PlaybackTracker @JvmOverloads constructor(
         if (index < 0 || index == shownIndex) return
         shownIndex = index
 
-        AndroidLog.logD(
+        XposedLog.logD(
             TAG,
             "Advance line [$index/${current.lineCount}] at ${positionMs}ms: " +
                     "\"${current.lines[index].text}\""

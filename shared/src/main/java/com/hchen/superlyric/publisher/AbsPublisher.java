@@ -28,7 +28,7 @@ import androidx.annotation.Nullable;
 
 import com.hchen.hooktool.AbsModule;
 import com.hchen.hooktool.ModuleData;
-import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyric.bridge.LyricDocAdapter;
 import com.hchen.superlyric.kernel.model.LyricDoc;
 import com.hchen.superlyric.utils.LyricSanitizer;
@@ -83,7 +83,7 @@ public abstract class AbsPublisher extends AbsModule {
         } catch (Throwable t) {
             if (!sContextFallbackLogged) {
                 sContextFallbackLogged = true;
-                AndroidLog.logW("AbsPublisher",
+                XposedLog.logW("AbsPublisher",
                     "Cannot resolve Application context via ActivityThread", t);
             }
         }
@@ -100,18 +100,18 @@ public abstract class AbsPublisher extends AbsModule {
     public static void publishFullLyric(@NonNull LyricDoc doc) {
         Lyric lyric = LyricDocAdapter.INSTANCE.toLyric(doc);
         if (lyric == null) {
-            AndroidLog.logW(TAG, "Dropping lyric: no publishable line");
+            XposedLog.logW(TAG, "Dropping lyric: no publishable line");
             return;
         }
         lyric = LyricSanitizer.sanitizeLyric(lyric);
         if (lyric == null) {
-            AndroidLog.logW(TAG, "Dropping lyric: sanitization failed");
+            XposedLog.logW(TAG, "Dropping lyric: sanitization failed");
             return;
         }
         if (lyric.getTitle().trim().isEmpty()) {
             // 4.0 的 Publisher 要求 title 非空白；在此拦截，避免 IllegalArgumentException
             // 从 host 进程抛给调用方。
-            AndroidLog.logW(TAG, "Dropping lyric: title is blank (lyricId=" + lyric.getId() + ")");
+            XposedLog.logW(TAG, "Dropping lyric: title is blank (lyricId=" + lyric.getId() + ")");
             return;
         }
 
@@ -120,7 +120,7 @@ public abstract class AbsPublisher extends AbsModule {
             if (result != Publisher.PublishResult.OK) {
                 // REJECTED 表示服务端拒收，多为切歌竞态导致的内容与当前曲目不一致；
                 // 留痕用于区分"服务端未安装"与"服务端拒收"
-                AndroidLog.logW(TAG,
+                XposedLog.logW(TAG,
                     "Publish result: " + result + " (lyricId=" + lyric.getId() + ")");
             }
         }

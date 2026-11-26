@@ -27,7 +27,7 @@ import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyric.utils.LyricDiag;
 
 import org.luckypray.dexkit.DexKitBridge;
@@ -89,7 +89,7 @@ public final class QQAnchors {
         if (process != null && process.indexOf(':') >= 0 && !process.endsWith(TARGET_PROCESS_SUFFIX)) {
             // 用 I 级而非 D 级：判据是写死的子进程名，宿主改名后本层不会挂载且没有
             // 其他信号，默认日志级别下必须能看见未挂载
-            AndroidLog.logI(TAG, "Skipping lyric anchor in non-player sub-process: " + process
+            XposedLog.logI(TAG, "Skipping lyric anchor in non-player sub-process: " + process
                 + " (expected suffix: " + TARGET_PROCESS_SUFFIX + ")");
             return;
         }
@@ -97,7 +97,7 @@ public final class QQAnchors {
         try {
             Class<?> beanClass = locateBeanClass();
             if (beanClass == null) {
-                AndroidLog.logW(TAG, "DexKit could not locate LyricLoadBean");
+                XposedLog.logW(TAG, "DexKit could not locate LyricLoadBean");
                 return;
             }
 
@@ -117,7 +117,7 @@ public final class QQAnchors {
                 targets.add(constructor);
             }
             if (targets.isEmpty()) {
-                AndroidLog.logW(TAG, "No SongInfo-typed LyricLoadBean constructor found");
+                XposedLog.logW(TAG, "No SongInfo-typed LyricLoadBean constructor found");
                 return;
             }
 
@@ -128,10 +128,10 @@ public final class QQAnchors {
                 }
             });
             for (Constructor<?> constructor : targets) {
-                AndroidLog.logD(TAG, "Hooked LyricLoadBean ctor: " + constructor.toGenericString());
+                XposedLog.logD(TAG, "Hooked LyricLoadBean ctor: " + constructor.toGenericString());
             }
         } catch (Throwable t) {
-            AndroidLog.logE(TAG, "Failed to install QQ anchors", t);
+            XposedLog.logE(TAG, "Failed to install QQ anchors", t);
         }
     }
 

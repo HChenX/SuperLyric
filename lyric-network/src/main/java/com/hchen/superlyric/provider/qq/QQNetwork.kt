@@ -18,8 +18,7 @@
  */
 package com.hchen.superlyric.provider.qq
 
-import com.hchen.hooktool.log.AndroidLog
-import com.hchen.superlyric.match.LyricScorer
+import com.hchen.hooktool.log.XposedLog
 import com.hchen.superlyric.kernel.decode.DecodeException
 import com.hchen.superlyric.kernel.decode.PayloadBytes
 import com.hchen.superlyric.kernel.decode.QrcCipher
@@ -27,22 +26,20 @@ import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
+import com.hchen.superlyric.match.LyricScorer
 import com.hchen.superlyric.network.HttpClients
 import com.hchen.superlyric.network.readTextBounded
 import com.hchen.superlyric.provider.base.FetchSlot
 import com.hchen.superlyric.utils.LyricCacheStore
 import com.hchen.superlyric.utils.LyricDiag
-
-import org.json.JSONArray
-import org.json.JSONObject
-
-import java.io.IOException
-import java.nio.charset.StandardCharsets
-
 import okhttp3.Call
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.IOException
+import java.nio.charset.StandardCharsets
 
 /**
  * QQ 音乐官方接口访问层，供 Hook 路径与 API 路径共用
@@ -131,7 +128,7 @@ object QQNetwork {
                     }
                 } catch (t: Throwable) {
                     lastFailure = t
-                    AndroidLog.logW(TAG, "fetchByMid ($url) failed: ${t.message}")
+                    XposedLog.logD(TAG, "fetchByMid ($url) failed: ${t.message}")
                 }
             }
         }
@@ -143,7 +140,7 @@ object QQNetwork {
             // 这不构成平台无歌词的结论：判成无歌词会把有歌词的曲目钉成纯音乐占位。
             // 也不返回 null：调用方用 null 表达另一种含义
             sawLyricPayload -> {
-                AndroidLog.logW(
+                XposedLog.logW(
                     TAG,
                     "Platform returned a lyric payload that could not be decoded; treating it as retryable",
                 )
@@ -171,15 +168,15 @@ object QQNetwork {
         val data = runCatching { JSONObject(String(bytes, StandardCharsets.UTF_8)) }.getOrNull()
         val outcome = data?.let {
             runCatching { parsePayloads(it.optString("lyric", ""), it, identity) }
-                .onFailure { error -> AndroidLog.logW(TAG, "Cached payload unusable: ${error.message}") }
+                .onFailure { error -> XposedLog.logW(TAG, "Cached payload unusable: ${error.message}") }
                 .getOrNull()
         }
         if (outcome != null) {
-            AndroidLog.logI(TAG, "Lyric disk cache hit for mid=$key")
+            XposedLog.logD(TAG, "Lyric disk cache hit for mid=$key")
             return outcome
         }
 
-        AndroidLog.logW(TAG, "Discarding unusable cache entry for mid=$key")
+        XposedLog.logW(TAG, "Discarding unusable cache entry for mid=$key")
         LyricCacheStore.delete(null, LyricCacheStore.PROVIDER_QQ, key)
         return null
     }
@@ -248,7 +245,7 @@ object QQNetwork {
 
         val ranked = rankCandidates(identity, parseCandidates(songs))
         if (ranked.isEmpty()) {
-            AndroidLog.logD(TAG, "No QQMusic candidate reached the acceptance threshold for \"$keyword\"")
+            XposedLog.logD(TAG, "No QQMusic candidate reached the acceptance threshold for \"$keyword\"")
         }
         return ranked
     }
@@ -331,10 +328,10 @@ object QQNetwork {
 
         // 译文/罗马音是可选通道：任一路解不开不应拖垮已经成功解出的主歌词。
         val translationText = runCatching { decryptField(data.optString("trans", "")) }
-            .onFailure { AndroidLog.logW(TAG, "qq: trans channel undecodable: ${it.message}") }
+            .onFailure { XposedLog.logD(TAG, "qq: trans channel undecodable: ${it.message}") }
             .getOrNull()
         val phoneticText = runCatching { decryptField(data.optString("roma", "")) }
-            .onFailure { AndroidLog.logW(TAG, "qq: roma channel undecodable: ${it.message}") }
+            .onFailure { XposedLog.logD(TAG, "qq: roma channel undecodable: ${it.message}") }
             .getOrNull()
 
         val doc = LyricDiag.parse(
@@ -351,7 +348,7 @@ object QQNetwork {
             )
         ) ?: return null
 
-        AndroidLog.logI(
+        XposedLog.logI(
             TAG,
             "Fetched QRC: lines=${doc.lines.size}, " +
                     "translation=${doc.lines.any { it.hasTranslation }}, " +

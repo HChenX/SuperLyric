@@ -20,8 +20,8 @@ package com.hchen.superlyric.provider.base
 
 import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.model.LyricDoc
-import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
+import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull

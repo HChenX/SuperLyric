@@ -81,7 +81,9 @@ final class SubscriberBudget {
         }
     }
 
-    /** 一次成功回调会重置连续超时计数 */
+    /**
+     * 一次成功回调会重置连续超时计数
+     */
     void recordSuccess(@NonNull IBinder subscriber) {
         synchronized (lock) {
             consecutiveTimeouts.remove(subscriber);

@@ -24,7 +24,7 @@ import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyric.shared.SessionHeadersFeed;
 
 import org.luckypray.dexkit.DexKitBridge;
@@ -73,16 +73,16 @@ public final class SpotifyAnchors {
         try {
             Class<?> headersClass = CoreTool.findClass("okhttp3.Headers");
             CoreTool.hookAllConstructor(headersClass, capture);
-            AndroidLog.logI(TAG, "Hooked plaintext okhttp3.Headers");
+            XposedLog.logI(TAG, "Hooked plaintext okhttp3.Headers");
             return;
         } catch (Throwable t) {
-            AndroidLog.logD(TAG, "Plaintext okhttp3.Headers unavailable, falling back to DexKit");
+            XposedLog.logD(TAG, "Plaintext okhttp3.Headers unavailable, falling back to DexKit");
         }
 
         // 结构指纹兜底
         List<Class<?>> candidates = findHeaderCandidateClasses();
         if (candidates.isEmpty()) {
-            AndroidLog.logW(TAG, "No headers candidate hooked; color-lyrics requests will stay unauthorized");
+            XposedLog.logW(TAG, "No headers candidate hooked; color-lyrics requests will stay unauthorized");
             return;
         }
         List<Executable> constructors = new ArrayList<>();
@@ -91,10 +91,10 @@ public final class SpotifyAnchors {
         }
         try {
             CoreTool.hookAll(constructors.toArray(new Executable[0]), capture);
-            AndroidLog.logI(TAG, "Hooked " + constructors.size() + " constructor(s) in "
+            XposedLog.logI(TAG, "Hooked " + constructors.size() + " constructor(s) in "
                 + candidates.size() + " DexKit candidate class(es) by <init>(String[]) fingerprint");
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to hook headers candidates", t);
+            XposedLog.logW(TAG, "Failed to hook headers candidates", t);
         }
     }
 
@@ -150,7 +150,7 @@ public final class SpotifyAnchors {
             if (candidate.getDeclaredFields().length == 0) continue;
             filtered.add(candidate);
         }
-        AndroidLog.logI(TAG, "Loose fingerprint matched " + loose.length
+        XposedLog.logI(TAG, "Loose fingerprint matched " + loose.length
             + " class(es), narrowed to " + filtered.size() + " header-like candidate(s)");
         return filtered;
     }

@@ -22,15 +22,16 @@ import android.annotation.SuppressLint
 import android.media.MediaMetadata
 import android.os.Bundle
 import com.hchen.hooktool.ModuleConfig
-import com.hchen.hooktool.log.AndroidLog
-import com.hchen.superlyric.shared.BuildConfig
+import com.hchen.hooktool.log.XposedLog
 import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.model.LyricLine
 import com.hchen.superlyric.kernel.parse.QrcParser
 import com.hchen.superlyric.kernel.pipeline.LyricPipeline
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
-import java.lang.reflect.Field
+import com.hchen.superlyric.shared.BuildConfig
+import com.hchen.superlyric.utils.LyricDiag.textOf
 import org.json.JSONObject
+import java.lang.reflect.Field
 
 /**
  * 全量诊断输出
@@ -40,14 +41,14 @@ import org.json.JSONObject
  */
 object LyricDiag {
 
-    /** 所有诊断输出的统一 tag，便于用一条 `-s` 抓全 */
+    /** 所有诊断输出的统一 tag，便于在 logcat 与 LSPosed 日志里筛选 */
     const val TAG = "SLDiag"
 
     /**
      * 总开关
      *
      * 判据取自 HookTool 的日志等级，不另读一遍偏好设置：宿主进程里
-     * `AndroidLog.logD` 能否输出只由 [ModuleConfig.getLogLevel] 决定，跟着同一个值走
+     * `XposedLog.logD` 能否输出只由 [ModuleConfig.getLogLevel] 决定，跟着同一个值走
      * 才不会出现"日志等级为调试、诊断却无输出"的分歧。
      *
      * 用 getter 而非字段：等级由模块入口在加载时写入，可能晚于本对象的首次访问，
@@ -74,8 +75,8 @@ object LyricDiag {
     /** 单次载荷输出的字符上限，防止畸形报文撑爆日志缓冲区 */
     private const val MAX_PAYLOAD_CHARS = 120_000
 
-    // logcat 单条约 4KB，中文每字符 UTF-8 占 3 字节：2600 字符约 7.8KB，会被截断。
-    // 取 1200 字符，最坏 3.6KB 加前缀，仍在单条上限内。
+    // 日志同时进 logcat 与 LSPosed 日志：logcat 单条约 4KB，中文每字符 UTF-8 占 3 字节，
+    // 2600 字符约 7.8KB 会被截断。取 1200 字符，最坏 3.6KB 加前缀，仍在单条上限内。
     private const val CHUNK = 1200
 
     /**
@@ -116,8 +117,8 @@ object LyricDiag {
     /**
      * 源码级只输出摘要
      *
-     * 完整正文由发布入口 [dumpDoc] 输出一次即可；两处都出全文会让两股分块流在 logcat
-     * 中交错，既难读又浪费缓冲区。
+     * 完整正文由发布入口 [dumpDoc] 输出一次即可；两处都出全文会让两股分块流在日志中
+     * 交错，既难读又浪费缓冲区。
      */
     @JvmStatic
     fun dumpDocSummary(source: String, doc: LyricDoc?) {
@@ -209,7 +210,7 @@ object LyricDiag {
     /**
      * 输出一段尚未解密的原始字段：只给规模与前 96 字符预览
      *
-     * 加密载荷常有数十 KB，全文输出会撑爆 logcat 缓冲区，而判断字段形态只需要看头部。
+     * 加密载荷常有数十 KB，全文输出会撑爆日志，而判断字段形态只需要看头部。
      */
     @JvmStatic
     fun dumpRawPreview(source: String, label: String, text: String?) {
@@ -325,8 +326,8 @@ object LyricDiag {
     /**
      * 分块输出长文本，每块带 `[i/n]` 序号，可完整还原
      *
-     * 换行会被替换为可见标记 `⏎`：logcat 会把消息里的 `\n` 拆成独立的行，只有首块
-     * 带序号、后续行无法归属，更难读。
+     * 换行会被替换为可见标记 `⏎`：按行渲染的日志会把消息里的 `\n` 拆成独立的行，
+     * 只有首块带序号、后续行无法归属，更难读。
      */
     private fun dumpText(source: String, label: String, text: String) {
         val safe = if (text.length > MAX_PAYLOAD_CHARS) {
@@ -348,14 +349,14 @@ object LyricDiag {
         var index = 1
         while (offset < safe.length) {
             val end = minOf(offset + CHUNK, safe.length)
-            AndroidLog.logI(TAG, "[$source] $label[$index/$chunks] " + safe.substring(offset, end))
+            XposedLog.logD(TAG, "[$source] $label[$index/$chunks] " + safe.substring(offset, end))
             offset = end
             index++
         }
     }
 
     private fun log(source: String, message: String) {
-        AndroidLog.logI(TAG, "[$source] $message")
+        XposedLog.logD(TAG, "[$source] $message")
     }
 
     private fun ms(value: Long): String {

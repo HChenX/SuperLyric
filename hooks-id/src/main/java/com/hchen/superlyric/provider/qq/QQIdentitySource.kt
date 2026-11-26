@@ -19,7 +19,7 @@
 package com.hchen.superlyric.provider.qq
 
 import android.media.MediaMetadata
-import com.hchen.hooktool.log.AndroidLog
+import com.hchen.hooktool.log.XposedLog
 import com.hchen.superlyric.identity.BaseIdentitySource
 import com.hchen.superlyric.kernel.catalog.CatalogId
 import com.hchen.superlyric.kernel.catalog.CatalogIds
@@ -105,7 +105,7 @@ class QQIdentitySource(private val providerTag: String) : BaseIdentitySource() {
         }
 
         if (songMid.isEmpty() && songId <= 0L) {
-            AndroidLog.logW(
+            XposedLog.logW(
                 TAG,
                 "LyricLoadBean captured but no usable song id; rawLen=${raw.length}, " +
                         "shortMessageLen=${shortMessage.length}",

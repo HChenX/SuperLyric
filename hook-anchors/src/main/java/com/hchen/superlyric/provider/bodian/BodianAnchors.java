@@ -23,10 +23,10 @@ import androidx.annotation.Nullable;
 
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.superlyric.anchors.AnchorBus;
 import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.hooktool.log.XposedLog;
+import com.hchen.superlyric.anchors.AnchorBus;
 
 import org.luckypray.dexkit.DexKitBridge;
 import org.luckypray.dexkit.query.FindClass;
@@ -75,7 +75,8 @@ public final class BodianAnchors {
     }
 
     public record LyricFileEvent(@NonNull String filePath, @NonNull String title,
-                                 @NonNull String artist, @NonNull String album, @NonNull String rid) {
+                                 @NonNull String artist, @NonNull String album,
+                                 @NonNull String rid) {
     }
 
     public static AutoCloseable subscribe(@NonNull LyricFileListener listener) {
@@ -94,7 +95,7 @@ public final class BodianAnchors {
         try {
             Class<?> runnerClass = locateRunnerClass();
             if (runnerClass == null) {
-                AndroidLog.logW(TAG, "DexKit could not locate LyricsRunner4Flutter");
+                XposedLog.logW(TAG, "DexKit could not locate LyricsRunner4Flutter");
                 return;
             }
 
@@ -112,7 +113,7 @@ public final class BodianAnchors {
                 break;
             }
             if (target == null) {
-                AndroidLog.logW(TAG, "No matching (Object, *, String) constructor found on LyricsRunner4Flutter");
+                XposedLog.logW(TAG, "No matching (Object, *, String) constructor found on LyricsRunner4Flutter");
                 return;
             }
 
@@ -130,9 +131,9 @@ public final class BodianAnchors {
                     ));
                 }
             });
-            AndroidLog.logI(TAG, "Hooked LyricsRunner4Flutter constructor");
+            XposedLog.logI(TAG, "Hooked LyricsRunner4Flutter constructor");
         } catch (Throwable t) {
-            AndroidLog.logE(TAG, "Failed to install Bodian anchors", t);
+            XposedLog.logE(TAG, "Failed to install Bodian anchors", t);
         }
     }
 

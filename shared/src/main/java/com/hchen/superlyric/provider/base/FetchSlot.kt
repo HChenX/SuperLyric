@@ -18,7 +18,7 @@
  */
 package com.hchen.superlyric.provider.base
 
-import com.hchen.hooktool.log.AndroidLog
+import com.hchen.hooktool.log.XposedLog
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
 
@@ -77,7 +77,7 @@ class FetchSlot(private val executor: Executor = FETCH_POOL) {
         execute {
             if (!isCurrent(token)) return@execute
             val outcome = runCatching { resolve(token) }.getOrElse {
-                AndroidLog.logW(tag, "Fetch failed: " + it.message)
+                XposedLog.logW(tag, "Fetch failed: " + it.message)
                 LyricOutcome.TransientFailure(it)
             }
             if (isCurrent(token)) session.deliver(outcome)

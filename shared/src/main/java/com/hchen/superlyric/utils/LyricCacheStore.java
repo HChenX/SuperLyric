@@ -23,7 +23,7 @@ import android.content.Context;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyric.kernel.decode.PayloadLimits;
 import com.hchen.superlyric.publisher.AbsPublisher;
 
@@ -120,7 +120,7 @@ public final class LyricCacheStore {
         // 缓存是 best-effort：队列满时丢弃写，但必须留下计数，不能静默。
         long dropped = sDroppedWrites.incrementAndGet();
         if (dropped == 1 || dropped % 32 == 0) {
-            AndroidLog.logW(TAG, "Lyric cache write queue full; dropped " + dropped
+            XposedLog.logW(TAG, "Lyric cache write queue full; dropped " + dropped
                 + " write(s) since process start");
         }
     });
@@ -159,18 +159,18 @@ public final class LyricCacheStore {
      */
     private static void put(@Nullable Context context, @NonNull String provider, @NonNull String key, @NonNull byte[] data) {
         if (data.length == 0 || data.length > MAX_PAYLOAD_BYTES) {
-            AndroidLog.logW(TAG, "Reject lyric cache payload: provider=" + provider + ", bytes=" + data.length);
+            XposedLog.logW(TAG, "Reject lyric cache payload: provider=" + provider + ", bytes=" + data.length);
             return;
         }
         Context ctx = resolveContext(context);
         if (ctx == null) {
-            AndroidLog.logW(TAG, "Cannot write cache, Context unresolved for provider=" + provider + ", key=" + key);
+            XposedLog.logW(TAG, "Cannot write cache, Context unresolved for provider=" + provider + ", key=" + key);
             return;
         }
 
         File file = getFile(ctx, provider, key);
         if (file == null) {
-            AndroidLog.logW(TAG, "Cannot write cache, getFile returned null for provider=" + provider + ", key=" + key);
+            XposedLog.logW(TAG, "Cannot write cache, getFile returned null for provider=" + provider + ", key=" + key);
             return;
         }
         synchronized (WRITE_LOCK) {
@@ -178,7 +178,7 @@ public final class LyricCacheStore {
             try {
                 File parent = file.getParentFile();
                 if (parent != null && !parent.exists() && !parent.mkdirs()) {
-                    AndroidLog.logW(TAG, "Failed to create directory: " + parent.getAbsolutePath());
+                    XposedLog.logW(TAG, "Failed to create directory: " + parent.getAbsolutePath());
                     return;
                 }
                 temp = File.createTempFile(file.getName() + ".", ".tmp", parent);
@@ -190,19 +190,19 @@ public final class LyricCacheStore {
                     // 退化为非原子替换：读侧不加锁，依赖"写走 tmp + 原子改名"这一前提；
                     // 该分支下读侧可能读到半成品并判废删除。仅在文件系统不支持原子改名时
                     // 进入，必须留痕，否则未进入与每次都进入在日志上无法分辨
-                    AndroidLog.logW(TAG, "Atomic move unsupported; falling back to non-atomic replace for "
+                    XposedLog.logW(TAG, "Atomic move unsupported; falling back to non-atomic replace for "
                         + file.getAbsolutePath());
                     Files.move(temp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING);
                 }
-                AndroidLog.logI(TAG, "Successfully cached lyric on disk: " + file.getAbsolutePath() + " (" + data.length + " bytes)");
+                XposedLog.logD(TAG, "Successfully cached lyric on disk: " + file.getAbsolutePath() + " (" + data.length + " bytes)");
 
                 // 周期性节流：每写 PRUNE_INTERVAL 次才触发一次磁盘扫描与容量清理，避免每次遍历排序目录
                 if (sWriteCounter.incrementAndGet() % PRUNE_INTERVAL == 0) {
-                    AndroidLog.logD(TAG, "Triggering scheduled disk cache prune for provider=" + provider);
+                    XposedLog.logD(TAG, "Triggering scheduled disk cache prune for provider=" + provider);
                     pruneProviderLocked(ctx, provider);
                 }
             } catch (IOException | SecurityException e) {
-                AndroidLog.logE(TAG, "Failed to write lyric cache: " + file.getAbsolutePath(), e);
+                XposedLog.logE(TAG, "Failed to write lyric cache: " + file.getAbsolutePath(), e);
             } finally {
                 if (temp != null && temp.exists()) {
                     deleteCachePath(temp);
@@ -289,23 +289,23 @@ public final class LyricCacheStore {
     public static byte[] getBytes(@Nullable Context context, @NonNull String provider, @NonNull String key) {
         Context ctx = resolveContext(context);
         if (ctx == null) {
-            AndroidLog.logD(TAG, "get: Context unresolved for provider=" + provider + ", key=" + key);
+            XposedLog.logD(TAG, "get: Context unresolved for provider=" + provider + ", key=" + key);
             return null;
         }
 
         File file = getFile(ctx, provider, key);
         if (file == null) {
-            AndroidLog.logD(TAG, "get: Invalid cache path for provider=" + provider + ", key=" + key);
+            XposedLog.logD(TAG, "get: Invalid cache path for provider=" + provider + ", key=" + key);
             return null;
         }
         if (!file.isFile()) {
-            AndroidLog.logD(TAG, "get: Disk cache MISS (file not found): " + file.getAbsolutePath());
+            XposedLog.logD(TAG, "get: Disk cache MISS (file not found): " + file.getAbsolutePath());
             return null;
         }
         if (isExpired(file.lastModified(), System.currentTimeMillis())) {
             // prune 只在写入时按次数触发，读路径若不校验年龄，很少写入的 provider
             // 会把过期歌词无限期当成命中。
-            AndroidLog.logD(TAG, "get: Disk cache expired: " + file.getAbsolutePath());
+            XposedLog.logD(TAG, "get: Disk cache expired: " + file.getAbsolutePath());
             deleteCachePath(file);
             return null;
         }
@@ -315,21 +315,21 @@ public final class LyricCacheStore {
         // 并返回未命中
         try {
             if (!isReadableCacheSize(file)) {
-                AndroidLog.logW(TAG, "get: Corrupted file size (" + file.length() + "), deleting: " + file.getAbsolutePath());
+                XposedLog.logW(TAG, "get: Corrupted file size (" + file.length() + "), deleting: " + file.getAbsolutePath());
                 Files.deleteIfExists(file.toPath());
                 return null;
             }
             StringBuilder reason = new StringBuilder();
             byte[] payload = unpack(Files.readAllBytes(file.toPath()), reason);
             if (payload == null) {
-                AndroidLog.logW(TAG, "get: Unpack failed (" + reason + "), deleting: " + file.getAbsolutePath());
+                XposedLog.logW(TAG, "get: Unpack failed (" + reason + "), deleting: " + file.getAbsolutePath());
                 Files.deleteIfExists(file.toPath());
                 return null;
             }
-            AndroidLog.logI(TAG, "get: Disk cache HIT: " + file.getAbsolutePath() + " (" + payload.length + " bytes)");
+            XposedLog.logD(TAG, "get: Disk cache HIT: " + file.getAbsolutePath() + " (" + payload.length + " bytes)");
             return payload;
         } catch (IOException | SecurityException e) {
-            AndroidLog.logW(TAG, "Failed to read lyric cache from " + file.getAbsolutePath(), e);
+            XposedLog.logW(TAG, "Failed to read lyric cache from " + file.getAbsolutePath(), e);
             return null;
         }
     }
@@ -340,7 +340,7 @@ public final class LyricCacheStore {
     public static void delete(@Nullable Context context, @NonNull String provider, @NonNull String key) {
         Context ctx = resolveContext(context);
         if (ctx == null) {
-            AndroidLog.logW(TAG, "Cannot delete cache without a Context: provider=" + provider + ", key=" + key);
+            XposedLog.logW(TAG, "Cannot delete cache without a Context: provider=" + provider + ", key=" + key);
             return;
         }
 
@@ -349,9 +349,9 @@ public final class LyricCacheStore {
         synchronized (WRITE_LOCK) {
             try {
                 Files.deleteIfExists(file.toPath());
-                AndroidLog.logD(TAG, "Deleted cache file: " + file.getAbsolutePath());
+                XposedLog.logD(TAG, "Deleted cache file: " + file.getAbsolutePath());
             } catch (IOException | SecurityException e) {
-                AndroidLog.logW(TAG, "Failed to delete lyric cache: " + file.getAbsolutePath(), e);
+                XposedLog.logW(TAG, "Failed to delete lyric cache: " + file.getAbsolutePath(), e);
             }
         }
     }
@@ -411,7 +411,7 @@ public final class LyricCacheStore {
     public static boolean clearOnlineProviderCaches(@Nullable Context context) {
         Context ctx = resolveContext(context);
         if (ctx == null) {
-            AndroidLog.logW(TAG, "clearOnlineProviderCaches: Context unresolved");
+            XposedLog.logW(TAG, "clearOnlineProviderCaches: Context unresolved");
             return false;
         }
 
@@ -419,7 +419,7 @@ public final class LyricCacheStore {
         synchronized (WRITE_LOCK) {
             for (String provider : ONLINE_PROVIDERS) {
                 if (!clearProviderCacheLocked(ctx, provider)) {
-                    AndroidLog.logW(TAG, "Failed to clear cache namespace: provider=" + provider
+                    XposedLog.logW(TAG, "Failed to clear cache namespace: provider=" + provider
                         + ", cacheDir=" + ctx.getCacheDir());
                     success = false;
                 }
@@ -431,14 +431,14 @@ public final class LyricCacheStore {
     private static boolean clearProviderCacheLocked(@NonNull Context context, @NonNull String provider) {
         String providerDir = sanitizeSegment(provider);
         if (providerDir == null) {
-            AndroidLog.logW(TAG, "clearProviderCache rejected: illegal provider name=" + provider);
+            XposedLog.logW(TAG, "clearProviderCache rejected: illegal provider name=" + provider);
             return false;
         }
 
         File cacheDir = context.getCacheDir();
         File root = new File(cacheDir, CACHE_ROOT);
         if (hasSymbolicLinkBetween(root, cacheDir)) {
-            AndroidLog.logW(TAG, "clearProviderCache rejected: symlink between cacheDir=" + cacheDir
+            XposedLog.logW(TAG, "clearProviderCache rejected: symlink between cacheDir=" + cacheDir
                 + " and cacheRoot=" + root);
             return false;
         }
@@ -462,7 +462,7 @@ public final class LyricCacheStore {
         if (file.isDirectory()) {
             File[] children = file.listFiles();
             if (children == null) {
-                AndroidLog.logW(TAG, "Failed to list lyric cache directory");
+                XposedLog.logW(TAG, "Failed to list lyric cache directory");
                 return false;
             }
             for (File child : children) {
@@ -482,7 +482,7 @@ public final class LyricCacheStore {
             Files.deleteIfExists(file.toPath());
             return true;
         } catch (IOException | SecurityException e) {
-            AndroidLog.logW(TAG, "Failed to clear lyric cache", e);
+            XposedLog.logW(TAG, "Failed to clear lyric cache", e);
             return false;
         }
     }
@@ -495,13 +495,13 @@ public final class LyricCacheStore {
         String providerDir = sanitizeSegment(provider);
         String keyPath = sanitizeKey(key);
         if (providerDir == null || keyPath == null) {
-            AndroidLog.logW(TAG, "getFile rejected: provider=" + provider + ", key=" + key);
+            XposedLog.logW(TAG, "getFile rejected: provider=" + provider + ", key=" + key);
             return null;
         }
 
         File cacheDir = context.getCacheDir();
         if (cacheDir == null) {
-            AndroidLog.logW(TAG, "getFile failed: context.getCacheDir() returned null");
+            XposedLog.logW(TAG, "getFile failed: context.getCacheDir() returned null");
             return null;
         }
 
@@ -509,12 +509,12 @@ public final class LyricCacheStore {
         if (hasSymbolicLinkBetween(providerDirFile, cacheDir)) {
             // canonical 前缀只保证 target 在 providerDir 下；如果 providerDir 本身是符号链接，
             // 它仍然会以自己为前缀放行到 cacheDir 之外。读写路径必须和清理路径用同一判据。
-            AndroidLog.logW(TAG, "getFile rejected: symbolic link in provider path: " + providerDirFile);
+            XposedLog.logW(TAG, "getFile rejected: symbolic link in provider path: " + providerDirFile);
             return null;
         }
         File file = new File(providerDirFile, keyPath + ".json");
         if (!isSafeCachePath(providerDirFile, file)) {
-            AndroidLog.logW(TAG, "getFile rejected by isSafeCachePath: " + file.getPath());
+            XposedLog.logW(TAG, "getFile rejected by isSafeCachePath: " + file.getPath());
             return null;
         }
         return file;
@@ -536,7 +536,7 @@ public final class LyricCacheStore {
             String prefix = canonicalProviderDir.getPath() + File.separator;
             return canonicalTarget.getPath().startsWith(prefix);
         } catch (IOException | SecurityException e) {
-            AndroidLog.logW(TAG, "isSafeCachePath failed for target " + target.getPath() + ": " + e.getMessage());
+            XposedLog.logW(TAG, "isSafeCachePath failed for target " + target.getPath() + ": " + e.getMessage());
             return false;
         }
     }

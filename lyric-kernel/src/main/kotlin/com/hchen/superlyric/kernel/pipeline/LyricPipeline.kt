@@ -26,6 +26,7 @@ import com.hchen.superlyric.kernel.merge.TranslationMerger
 import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.parse.KrcLanguage
 import com.hchen.superlyric.kernel.parse.QrcParser
+import com.hchen.superlyric.kernel.pipeline.LyricPipeline.finalize
 import com.hchen.superlyric.kernel.text.LrcOffset
 import com.hchen.superlyric.kernel.text.LrcTimestamps
 import java.nio.charset.StandardCharsets
@@ -187,7 +188,7 @@ object LyricPipeline {
                 LyricTextKind.SALT,
                 LyricTextKind.LRC,
                 LyricTextKind.UNKNOWN,
-                -> CompanionSplitter.split(source)
+                    -> CompanionSplitter.split(source)
 
                 else -> null
             }
@@ -246,7 +247,7 @@ object LyricPipeline {
         LyricTextKind.SALT,
         LyricTextKind.LRC,
         LyricTextKind.UNKNOWN,
-        -> true
+            -> true
 
         else -> false
     }

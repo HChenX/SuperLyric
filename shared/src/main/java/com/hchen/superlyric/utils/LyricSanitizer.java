@@ -21,7 +21,7 @@ package com.hchen.superlyric.utils;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyric.kernel.text.LyricText;
 import com.hchen.superlyricapi.model.Line;
 import com.hchen.superlyricapi.model.Lyric;
@@ -87,9 +87,19 @@ public final class LyricSanitizer {
 
         try {
             List<Line> cleanLines = new ArrayList<>(lyric.getLines().size());
+            int droppedWordLines = 0;
             for (Line line : lyric.getLines()) {
                 Line clean = sanitizeLine(line);
-                if (clean != null) cleanLines.add(clean);
+                if (clean == null) continue;
+                cleanLines.add(clean);
+                List<Word> rawWords = line.getWords();
+                if (clean.getWords() == null && rawWords != null && !rawWords.isEmpty()) {
+                    droppedWordLines++;
+                }
+            }
+            if (droppedWordLines > 0) {
+                XposedLog.logW(TAG, "Dropped word data on " + droppedWordLines
+                    + " line(s) to keep line text safe; per-line cause is logged at debug level");
             }
             if (cleanLines.isEmpty()) return null;
 
@@ -102,7 +112,7 @@ public final class LyricSanitizer {
                 cleanLines
             );
         } catch (Throwable t) {
-            AndroidLog.logE(TAG, "Dropping lyric: sanitization failed", t);
+            XposedLog.logE(TAG, "Dropping lyric: sanitization failed", t);
             return null;
         }
     }
@@ -118,7 +128,7 @@ public final class LyricSanitizer {
         for (int i = 0; i < rawWords.size(); i++) {
             Word word = rawWords.get(i);
             if (word == null) {
-                AndroidLog.logW(TAG, "Sanitizer: dropping words due to null word element at index "
+                XposedLog.logD(TAG, "Sanitizer: dropping words due to null word element at index "
                     + i + " for line: \"" + cleanLineText + "\"");
                 return null;
             }
@@ -140,7 +150,7 @@ public final class LyricSanitizer {
         }
 
         if (combined.length() > cleanLineText.length()) {
-            AndroidLog.logW(TAG, "Sanitizer: DROPPING CORRUPTED WORDS! Total words length ("
+            XposedLog.logD(TAG, "Sanitizer: dropping corrupted words: total words length ("
                 + combined.length() + ") exceeds line text length (" + cleanLineText.length()
                 + ") | line=\"" + cleanLineText + "\" | combinedWords=\"" + combined + "\"");
             return null;
@@ -151,7 +161,7 @@ public final class LyricSanitizer {
             String combinedNoSpace = combined.replaceAll("[\\s\\u3000]+", "");
             String lineNoSpace = cleanLineText.replaceAll("[\\s\\u3000]+", "");
             if (!combinedNoSpace.equals(lineNoSpace)) {
-                AndroidLog.logW(TAG, "Sanitizer: DROPPING MISMATCHED WORDS! Combined words mismatch line text"
+                XposedLog.logD(TAG, "Sanitizer: dropping mismatched words: combined words mismatch line text"
                     + " | line=\"" + cleanLineText + "\" | combined=\"" + combined + "\"");
                 return null;
             }

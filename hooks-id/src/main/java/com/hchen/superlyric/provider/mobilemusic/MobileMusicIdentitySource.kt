@@ -82,9 +82,9 @@ class MobileMusicIdentitySource : BaseIdentitySource() {
         // 有些宿主会把当前歌词行写进 TITLE；只有标题变化、而歌手/时长/标识都不变时
         // 不能据此判为切歌，否则每换一行都会清一次歌词。
         val idDiffers = id != null && native.stableId != null &&
-            TrackIdentity.normalizeStableId(id) != TrackIdentity.normalizeStableId(native.stableId)
+                TrackIdentity.normalizeStableId(id) != TrackIdentity.normalizeStableId(native.stableId)
         val durationConflicts = mediaDurationMs > 0L && native.durationMs > 0L &&
-            kotlin.math.abs(mediaDurationMs - native.durationMs) > TrackIdentity.DURATION_TOLERANCE_MS
+                kotlin.math.abs(mediaDurationMs - native.durationMs) > TrackIdentity.DURATION_TOLERANCE_MS
         if (!artistDiffers && !idDiffers && !durationConflicts) return native
         return TrackIdentity(
             source = PROVIDER_TAG,

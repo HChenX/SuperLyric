@@ -23,7 +23,7 @@ import androidx.annotation.Nullable;
 
 import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.hooktool.log.XposedLog;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -113,12 +113,12 @@ public final class MiuiAnchors {
 
             if (hooked == 0) {
                 // 与“挂上了但没触发”必须能区分：这一行缺失时，日志里完全看不出模块有没有生效
-                AndroidLog.logW(TAG, "No capture hook installed; only the direct snapshot read is left");
+                XposedLog.logW(TAG, "No capture hook installed; only the direct snapshot read is left");
             } else {
-                AndroidLog.logI(TAG, "Installed " + hooked + " capture hook(s)");
+                XposedLog.logI(TAG, "Installed " + hooked + " capture hook(s)");
             }
         } catch (Throwable t) {
-            AndroidLog.logE(TAG, "Failed to install Miui anchors", t);
+            XposedLog.logE(TAG, "Failed to install Miui anchors", t);
         }
     }
 
@@ -147,7 +147,7 @@ public final class MiuiAnchors {
                 SongSnapshot snapshot = snapshotOf(getPlaySong.invoke(helper));
                 if (snapshot != null) return snapshot;
             } catch (Throwable t) {
-                AndroidLog.logD(TAG, "readCurrentSong via " + className + " failed: " + t.getMessage());
+                XposedLog.logD(TAG, "readCurrentSong via " + className + " failed: " + t.getMessage());
             }
         }
         return null;
@@ -156,7 +156,7 @@ public final class MiuiAnchors {
     private static int hookRemoteControlManager(@NonNull SongInfoListener listener) {
         Class<?> clazz = CoreTool.findClassIfExists(REMOTE_CONTROL_MANAGER);
         if (clazz == null) {
-            AndroidLog.logW(TAG, REMOTE_CONTROL_MANAGER + " not found");
+            XposedLog.logW(TAG, REMOTE_CONTROL_MANAGER + " not found");
             return 0;
         }
 

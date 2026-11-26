@@ -18,31 +18,28 @@
  */
 package com.hchen.superlyric.provider.kugou
 
-import com.hchen.hooktool.log.AndroidLog
+import com.hchen.hooktool.log.XposedLog
 import com.hchen.superlyric.kernel.catalog.CatalogIds
 import com.hchen.superlyric.kernel.catalog.LyricCatalog
-import com.hchen.superlyric.match.LyricScorer
+import com.hchen.superlyric.kernel.decode.PayloadBytes
 import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
-import com.hchen.superlyric.kernel.decode.PayloadBytes
-import com.hchen.superlyric.provider.base.FetchSlot
+import com.hchen.superlyric.match.LyricScorer
 import com.hchen.superlyric.network.HttpClients
 import com.hchen.superlyric.network.readTextBounded
+import com.hchen.superlyric.provider.base.FetchSlot
 import com.hchen.superlyric.utils.LyricCacheStore
 import com.hchen.superlyric.utils.LyricDiag
-
+import okhttp3.Request
+import okhttp3.Response
 import org.json.JSONObject
-
 import java.io.IOException
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.Locale
-
-import okhttp3.Request
-import okhttp3.Response
 
 /**
  * 酷狗开放接口取词来源：官方 KRC 接口直查与检索
@@ -78,7 +75,7 @@ class KuGouApiSource : LyricSource {
                 is LyricOutcome.TransientFailure -> outcome.cause?.let { lastFailure = it }
                 else -> Unit
             }
-            AndroidLog.logD(
+            XposedLog.logD(
                 sourceName,
                 "Direct hash lookup yielded no lyric: $direct; falling back to keyword search",
             )
@@ -112,13 +109,13 @@ class KuGouApiSource : LyricSource {
         return try {
             val krcPayload = cached ?: downloadKrc(hash, identity.durationMs)
             if (krcPayload == null) {
-                AndroidLog.logD(sourceName, "No KRC payload for hash=$hash")
+                XposedLog.logD(sourceName, "No KRC payload for hash=$hash")
                 return null
             }
 
             val bytes = PayloadBytes.decode(krcPayload)
             if (bytes.isEmpty()) {
-                AndroidLog.logD(sourceName, "Empty KRC payload for hash=$hash")
+                XposedLog.logD(sourceName, "Empty KRC payload for hash=$hash")
                 return null
             }
 
@@ -134,7 +131,7 @@ class KuGouApiSource : LyricSource {
                 )
             )
             if (doc == null || doc.isEmpty) {
-                AndroidLog.logD(sourceName, "Parsed no lines for hash=$hash")
+                XposedLog.logD(sourceName, "Parsed no lines for hash=$hash")
                 return null
             }
 
@@ -143,11 +140,11 @@ class KuGouApiSource : LyricSource {
             if (cached == null) {
                 LyricCacheStore.putAsync(null, LyricCacheStore.PROVIDER_KUGOU, hash, krcPayload)
             }
-            AndroidLog.logI(sourceName, "Fetched KRC for hash=$hash, lines=${doc.lines.size}")
+            XposedLog.logI(sourceName, "Fetched KRC for hash=$hash, lines=${doc.lines.size}")
             LyricOutcome.Success(doc)
         } catch (e: Exception) {
             // 单个候选的下载、解码或解析失败只否定该哈希，不能终止整个候选遍历
-            AndroidLog.logW(sourceName, "KRC candidate failed for hash=$hash: ${e.message}")
+            XposedLog.logD(sourceName, "KRC candidate failed for hash=$hash: ${e.message}")
             // 损坏的缓存条目会让该哈希每次都失败：删除后下次回退到网络重取
             if (cached != null) LyricCacheStore.delete(null, LyricCacheStore.PROVIDER_KUGOU, hash)
             LyricOutcome.TransientFailure(e)
@@ -203,14 +200,14 @@ class KuGouApiSource : LyricSource {
 
         // 无论是否命中都要输出候选明细：仅看“通过/未通过”无法判断是检索未找对歌、
         // 正确版本不在候选内，还是打分将其淘汰；这三种情况的处理不同。
-        AndroidLog.logD(
+        XposedLog.logD(
             sourceName,
             "Candidates for \"$keyword\" (target \"${identity.title}\"/\"${identity.artist}\"/" +
                     "${identity.durationMs / 1000}s): ${candidates.joinToString(" | ").ifEmpty { "none" }}",
         )
 
         if (accepted.isEmpty()) {
-            AndroidLog.logD(sourceName, "No KuGou candidate reached the acceptance threshold for \"$keyword\"")
+            XposedLog.logD(sourceName, "No KuGou candidate reached the acceptance threshold for \"$keyword\"")
         }
         // 稳定排序：同分候选保持检索顺序，首位优先
         return accepted.sortedByDescending { it.second }.map { it.first }
@@ -245,7 +242,7 @@ class KuGouApiSource : LyricSource {
      */
     private fun readCachedKrc(hash: String): String? {
         val bytes = LyricCacheStore.getBytes(null, LyricCacheStore.PROVIDER_KUGOU, hash) ?: return null
-        AndroidLog.logI(sourceName, "Lyric disk cache hit for hash=$hash")
+        XposedLog.logD(sourceName, "Lyric disk cache hit for hash=$hash")
         return String(bytes, StandardCharsets.UTF_8)
     }
 

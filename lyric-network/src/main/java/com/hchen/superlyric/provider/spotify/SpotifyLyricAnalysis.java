@@ -21,7 +21,7 @@ package com.hchen.superlyric.provider.spotify;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyric.utils.LyricCacheStore;
 
 import java.io.ByteArrayOutputStream;
@@ -119,7 +119,7 @@ public final class SpotifyLyricAnalysis {
             if (sHeaders.compareAndSet(current, next)) {
                 if (!sHeaderCompleteLogged) {
                     sHeaderCompleteLogged = true;
-                    AndroidLog.logI(TAG, "All required session headers captured");
+                    XposedLog.logI(TAG, "All required session headers captured");
                 }
                 return;
             }

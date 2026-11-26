@@ -18,11 +18,11 @@
  */
 package com.hchen.superlyric.provider.apple
 
-import com.hchen.hooktool.log.AndroidLog
+import com.hchen.hooktool.log.XposedLog
 import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
-import com.hchen.superlyric.kernel.parse.AppleLyricParser
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
+import com.hchen.superlyric.kernel.parse.AppleLyricParser
 import com.hchen.superlyric.provider.apple.AppleAnchors.AppleLine
 import com.hchen.superlyric.provider.base.InstallableLyricSource
 import com.hchen.superlyric.provider.base.SourceRequestGate
@@ -91,16 +91,16 @@ class AppleHookSource : InstallableLyricSource {
 
         when (verdict) {
             TrackVerdict.SAME -> {
-                AndroidLog.logD(sourceName, "Accepting $what for $reported")
+                XposedLog.logD(sourceName, "Accepting $what for $reported")
                 return true
             }
 
-            TrackVerdict.UNVERIFIABLE -> AndroidLog.logW(
+            TrackVerdict.UNVERIFIABLE -> XposedLog.logW(
                 sourceName,
                 "Dropping $what: no comparable track id (reported=$reported, current=$current)",
             )
 
-            TrackVerdict.DIFFERENT -> AndroidLog.logW(
+            TrackVerdict.DIFFERENT -> XposedLog.logW(
                 sourceName,
                 "Dropping $what for $reported: the current track is $current",
             )
@@ -161,7 +161,7 @@ class AppleHookSource : InstallableLyricSource {
         }
         LyricDiag.dumpDoc(sourceName, doc)
 
-        AndroidLog.logI(sourceName, "Extracted ${doc.lines.size} lines from host model")
+        XposedLog.logI(sourceName, "Extracted ${doc.lines.size} lines from host model")
         current.session.deliver(LyricOutcome.Success(doc))
     }
 

@@ -20,14 +20,14 @@ package com.hchen.superlyric.anchors;
 
 import androidx.annotation.NonNull;
 
-import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.hooktool.log.XposedLog;
 
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /**
  * 一个 anchor 的监听者集合
- *
+ * <p>
  * 同一事件按注册顺序同步派发；单个监听者异常不会中断其余监听者或宿主。
  * 新监听者会收到最后一次事件，避免安装时的同步 capture 丢失。
  */
@@ -45,7 +45,7 @@ public final class AnchorBus<T> {
             try {
                 listener.accept(current);
             } catch (Throwable t) {
-                AndroidLog.logE(TAG, "Anchor listener failed on replay", t);
+                XposedLog.logE(TAG, "Anchor listener failed on replay", t);
             }
         }
         return () -> listeners.remove(listener);
@@ -57,7 +57,7 @@ public final class AnchorBus<T> {
             try {
                 listener.accept(event);
             } catch (Throwable t) {
-                AndroidLog.logE(TAG, "Anchor listener failed", t);
+                XposedLog.logE(TAG, "Anchor listener failed", t);
             }
         }
     }

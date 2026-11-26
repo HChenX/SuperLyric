@@ -35,7 +35,7 @@ import io.github.libxposed.api.XposedModuleInterface;
 
 /**
  * 在 system_server 中创建运行时与两代 Binder 服务，并安装 AMS 钩子。
- *
+ * <p>
  * 锚点缺失时只记日志，不下发服务。
  */
 public final class SuperLyricSystemService extends CoreTool {
@@ -45,7 +45,9 @@ public final class SuperLyricSystemService extends CoreTool {
     private static volatile SuperLyricService sSuperLyricService;
     private static volatile SuperLyricV4Service sSuperLyricV4Service;
 
-    /** attachApplicationLocked 与 getCommonServicesLocked 在同一线程同步执行。 */
+    /**
+     * attachApplicationLocked 与 getCommonServicesLocked 在同一线程同步执行。
+     */
     private static final ThreadLocal<Integer> sBindUid = new ThreadLocal<>();
 
     private static volatile boolean sProcLockMissingLogged;
@@ -246,7 +248,9 @@ public final class SuperLyricSystemService extends CoreTool {
         );
     }
 
-    /** HookTool 校验返回值必须是声明类型的实例；AMS 可能声明为 ArrayMap。 */
+    /**
+     * HookTool 校验返回值必须是声明类型的实例；AMS 可能声明为 ArrayMap。
+     */
     private static Map<Object, Object> newResultMap(Method method) {
         Class<?> returnType = method.getReturnType();
         Map<Object, Object> result;

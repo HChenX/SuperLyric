@@ -18,7 +18,7 @@
  */
 package com.hchen.superlyric.provider.salt
 
-import com.hchen.hooktool.log.AndroidLog
+import com.hchen.hooktool.log.XposedLog
 import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
@@ -70,7 +70,7 @@ class SaltHookSource(
         lastSourceText = null
         docStash.takeIf(identity.stableId)?.let { stashed ->
             val id = TrackIdentity.normalizeStableId(identity.stableId).orEmpty()
-            AndroidLog.logD(sourceName, "Replaying stashed lyric for id=${identity.stableId}")
+            XposedLog.logD(sourceName, "Replaying stashed lyric for id=${identity.stableId}")
             session.deliver(
                 LyricOutcome.Success(
                     stashed.withMetadata(identity, meta.title(id), meta.artist(id))
@@ -104,17 +104,17 @@ class SaltHookSource(
                     )
                 )
             } catch (t: Throwable) {
-                AndroidLog.logW(sourceName, "Failed to parse sourceText: ${t.message}")
+                XposedLog.logW(sourceName, "Failed to parse sourceText: ${t.message}")
                 null
             }
 
             if (doc == null || doc.isEmpty) {
-                AndroidLog.logW(sourceName, "Parsed no lines from sourceText")
+                XposedLog.logW(sourceName, "Parsed no lines from sourceText")
                 return@execute
             }
 
             docStash.put(stableId, doc)
-            AndroidLog.logI(sourceName, "Parsed sourceText, lines=${doc.lines.size}")
+            XposedLog.logI(sourceName, "Parsed sourceText, lines=${doc.lines.size}")
 
             // 只有当这份结果确实属于当前会话时才直接投递；否则留给 start() 补投。
             // 投给别的曲目的会话会被当作新曲目的歌词发布出去。
@@ -128,7 +128,7 @@ class SaltHookSource(
                     )
                 )
             } else {
-                AndroidLog.logD(
+                XposedLog.logD(
                     sourceName,
                     "Stashed lyric for $stableId; will replay once its session is up",
                 )

@@ -18,7 +18,7 @@
  */
 package com.hchen.superlyric.provider.miui
 
-import com.hchen.hooktool.log.AndroidLog
+import com.hchen.hooktool.log.XposedLog
 import com.hchen.superlyric.kernel.catalog.CatalogIds
 import com.hchen.superlyric.kernel.catalog.LyricCatalog
 import com.hchen.superlyric.kernel.identity.TrackIdentity
@@ -28,8 +28,8 @@ import com.hchen.superlyric.provider.base.InstallableLyricSource
 import com.hchen.superlyric.provider.qq.QQNetwork
 import com.hchen.superlyric.shared.HostIdentitySource
 import com.hchen.superlyric.shared.HostTrackFacts
-import com.hchen.superlyric.shared.merge
 import com.hchen.superlyric.shared.matches
+import com.hchen.superlyric.shared.merge
 
 /**
  * 小米音乐 Native 路径的网络取词源：身份来自 hooks-id，按宿主 songID 直查 QQ 曲库。
@@ -72,7 +72,7 @@ class MiuiNativeFetchSource(
         if (facts != null) {
             onSongInfo(facts)
         } else {
-            AndroidLog.logD(sourceName, "No SongInfo snapshot yet; awaiting host capture")
+            XposedLog.logD(sourceName, "No SongInfo snapshot yet; awaiting host capture")
         }
     }
 
@@ -92,7 +92,7 @@ class MiuiNativeFetchSource(
         val base = pendingIdentity ?: return
 
         if (!facts.matches(base)) {
-            AndroidLog.logD(
+            XposedLog.logD(
                 sourceName,
                 "$facts does not match the current track (\"${base.title}\"); waiting",
             )
@@ -120,7 +120,7 @@ class MiuiNativeFetchSource(
             markAttempted(id)
 
             if (!fetches.isCurrent(token) || session !== this.session || pendingId != id) {
-                AndroidLog.logD(sourceName, "Discarding result for id=$id: no longer the current track")
+                XposedLog.logD(sourceName, "Discarding result for id=$id: no longer the current track")
                 return@execute
             }
 

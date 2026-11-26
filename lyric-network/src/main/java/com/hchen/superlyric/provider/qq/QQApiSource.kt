@@ -18,7 +18,7 @@
  */
 package com.hchen.superlyric.provider.qq
 
-import com.hchen.hooktool.log.AndroidLog
+import com.hchen.hooktool.log.XposedLog
 import com.hchen.superlyric.kernel.catalog.CatalogIds
 import com.hchen.superlyric.kernel.catalog.LyricCatalog
 import com.hchen.superlyric.kernel.identity.TrackIdentity
@@ -54,9 +54,11 @@ class QQApiSource : LyricSource {
         val directMid = CatalogIds.lyricId(identity, LyricCatalog.QQ, CatalogIds::qqMid)
         if (directMid != null) {
             val songId = CatalogIds.qqSongId(TrackIdentity.normalizeStableId(identity.stableId)) ?: 0L
-            AndroidLog.logI(sourceName, "Direct fetch by mid=$directMid")
-            return QQNetwork.fetchByMid(directMid, songId, identity,
-                isCurrent = { requests.isCurrent(token) }, requests = requests)
+            XposedLog.logI(sourceName, "Direct fetch by mid=$directMid")
+            return QQNetwork.fetchByMid(
+                directMid, songId, identity,
+                isCurrent = { requests.isCurrent(token) }, requests = requests
+            )
         }
 
         val candidates = QQNetwork.searchCandidates(
@@ -67,7 +69,7 @@ class QQApiSource : LyricSource {
         if (!requests.isCurrent(token)) return LyricOutcome.TransientFailure(null)
 
         return fetchFirstUsable(candidates) { candidate ->
-            AndroidLog.logD(sourceName, "Trying candidate mid=${candidate.mid}")
+            XposedLog.logD(sourceName, "Trying candidate mid=${candidate.mid}")
             QQNetwork.fetchByMid(
                 candidate.mid, candidate.songId, identity,
                 isCurrent = { requests.isCurrent(token) }, requests = requests,

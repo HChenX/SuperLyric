@@ -18,15 +18,15 @@
  */
 package com.hchen.superlyric.provider.spotify
 
-import com.hchen.hooktool.log.AndroidLog
+import com.hchen.hooktool.log.XposedLog
 import com.hchen.superlyric.kernel.catalog.CatalogIds
 import com.hchen.superlyric.kernel.catalog.LyricCatalog
 import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.model.LyricLine
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
-import com.hchen.superlyric.kernel.parse.SpotifyLyricParser
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
+import com.hchen.superlyric.kernel.parse.SpotifyLyricParser
 import com.hchen.superlyric.provider.base.FetchSlot
 import com.hchen.superlyric.utils.LyricCacheStore
 import com.hchen.superlyric.utils.LyricDiag
@@ -63,7 +63,7 @@ class SpotifyApiSource : LyricSource {
         // 是 base62，这里按字符集与长度区间收紧，与酷狗/网易的 HASH/NUMERIC 校验同一目的
         val trackId = CatalogIds.lyricId(identity, LyricCatalog.SPOTIFY, CatalogIds::spotifyTrackId)
         if (trackId == null) {
-            AndroidLog.logW(sourceName, "Rejecting malformed track id")
+            XposedLog.logW(sourceName, "Rejecting malformed track id")
             return LyricOutcome.Unsupported("spotify: malformed track id")
         }
 
@@ -89,7 +89,7 @@ class SpotifyApiSource : LyricSource {
                 if (!SpotifyLyricParser.hasUsableTimeline(lines)) {
                     // 未同步歌词：所有行都是 0 起点，发布后索引无法随播放推进。
                     // 这是来源服务不了定时歌词，不是读取失败，也不能下发占位
-                    AndroidLog.logW(sourceName, "Rejecting unsynced lyric for $trackId")
+                    XposedLog.logW(sourceName, "Rejecting unsynced lyric for $trackId")
                     return LyricOutcome.Unsupported("spotify: lyric has no timeline")
                 }
                 if (lines.isEmpty()) {
@@ -104,7 +104,7 @@ class SpotifyApiSource : LyricSource {
 
                 val doc = toDoc(lines, identity)
                 LyricDiag.dumpDoc(sourceName, doc)
-                AndroidLog.logI(
+                XposedLog.logI(
                     sourceName,
                     "Fetched lyric for $trackId, lines=${doc.lines.size}, " +
                             "wordTimed=${doc.lines.any { it.hasWords }}, " +
@@ -119,14 +119,14 @@ class SpotifyApiSource : LyricSource {
                 sleep(HEADER_WAIT_MS)
             } catch (e: Throwable) {
                 lastError = e
-                AndroidLog.logW(sourceName, "Attempt ${attempt + 1} failed: ${e.message}")
+                XposedLog.logD(sourceName, "Attempt ${attempt + 1} failed: ${e.message}")
                 sleep(HEADER_WAIT_MS)
             }
         }
 
         // 会话头未捕获或网络、解析异常都属读取失败，返回可重试失败
         if (lastError is AuthenticationException) {
-            AndroidLog.logW(sourceName, "Session headers were never captured; retry later")
+            XposedLog.logW(sourceName, "Session headers were never captured; retry later")
         }
         return LyricOutcome.TransientFailure(lastError)
     }
@@ -145,13 +145,13 @@ class SpotifyApiSource : LyricSource {
 
         val lines = runCatching { SpotifyLyricParser.parseLyrics(bytes) }.getOrNull().orEmpty()
         if (lines.isNotEmpty() && SpotifyLyricParser.hasUsableTimeline(lines)) {
-            AndroidLog.logI(sourceName, "Lyric disk cache hit for $key")
+            XposedLog.logD(sourceName, "Lyric disk cache hit for $key")
             val doc = toDoc(lines, identity)
             LyricDiag.dumpDoc(sourceName, doc)
             return LyricOutcome.Success(doc)
         }
 
-        AndroidLog.logW(sourceName, "Discarding unusable cache entry for $key")
+        XposedLog.logW(sourceName, "Discarding unusable cache entry for $key")
         LyricCacheStore.delete(null, LyricCacheStore.PROVIDER_SPOTIFY, key)
         return null
     }

@@ -21,7 +21,7 @@ package com.hchen.superlyric.provider.mobilemusic
 
 import android.content.Context
 import com.hchen.hooktool.ModuleData
-import com.hchen.hooktool.log.AndroidLog
+import com.hchen.hooktool.log.XposedLog
 import com.hchen.superlyric.kernel.identity.TrackIdentity
 import com.hchen.superlyric.kernel.orchestrate.LyricSource
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
@@ -92,7 +92,7 @@ class MobileMusicHookSource internal constructor(
             } else {
                 "Native anchors unavailable; waiting for host lyrics"
             }
-            AndroidLog.logW(sourceName, message)
+            XposedLog.logW(sourceName, message)
         }
     }
 
@@ -116,11 +116,13 @@ class MobileMusicHookSource internal constructor(
                     return@execute
                 }
             } catch (error: Throwable) {
-                AndroidLog.logE(sourceName, "Cannot read native lyric snapshot", error)
+                XposedLog.logE(sourceName, "Cannot read native lyric snapshot", error)
             }
             if (attempt + 1 < MAX_REFRESH_ATTEMPTS && executor is ScheduledExecutorService) {
-                executor.schedule({ refresh(target, attempt + 1) },
-                    REFRESH_RETRY_DELAY_MS, TimeUnit.MILLISECONDS)
+                executor.schedule(
+                    { refresh(target, attempt + 1) },
+                    REFRESH_RETRY_DELAY_MS, TimeUnit.MILLISECONDS
+                )
             }
         }
     }
@@ -150,11 +152,11 @@ class MobileMusicHookSource internal constructor(
             (target.identity.artist.isBlank() || current.artist.isBlank() ||
                     target.identity.durationMs <= 0L || current.durationMs <= 0L)
         ) {
-            AndroidLog.logD(sourceName, "Discarding a provisional snapshot without artist and duration evidence")
+            XposedLog.logD(sourceName, "Discarding a provisional snapshot without artist and duration evidence")
             return
         }
         if (!target.identity.matches(current)) {
-            AndroidLog.logD(
+            XposedLog.logD(
                 sourceName,
                 "Discarding snapshot for ${current.stableId}; waiting for ${target.identity.stableId}",
             )
@@ -166,17 +168,17 @@ class MobileMusicHookSource internal constructor(
             kotlin.math.abs(target.identity.durationMs - current.durationMs) >
             TrackIdentity.DURATION_TOLERANCE_MS
         ) {
-            AndroidLog.logW(
+            XposedLog.logW(
                 sourceName,
                 "Discarding snapshot with conflicting duration for ${current.stableId}: " +
                         "${current.durationMs}ms vs ${target.identity.durationMs}ms",
             )
             return
         }
-        AndroidLog.logD(sourceName, "Accepting native snapshot for ${current.stableId}")
+        XposedLog.logD(sourceName, "Accepting native snapshot for ${current.stableId}")
         if (snapshot.unavailableReason() != null) {
             // 下载中的占位数据不能抢占首次结果，后续原生回调仍可在等待窗口内完成取词。
-            AndroidLog.logD(sourceName, "Waiting for native lyrics: ${snapshot.unavailableReason()}")
+            XposedLog.logD(sourceName, "Waiting for native lyrics: ${snapshot.unavailableReason()}")
             return
         }
 
@@ -193,7 +195,7 @@ class MobileMusicHookSource internal constructor(
         )
         if (request !== target) return
         if (doc == null || doc.isEmpty) {
-            AndroidLog.logD(sourceName, "Waiting for readable native lyrics")
+            XposedLog.logD(sourceName, "Waiting for readable native lyrics")
             return
         }
         if (LyricDiag.enabled) LyricDiag.dumpPayload(sourceName, "RAW-HOST-MODEL", snapshot.toString())

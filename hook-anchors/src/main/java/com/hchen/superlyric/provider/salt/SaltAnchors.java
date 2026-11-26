@@ -23,10 +23,10 @@ import androidx.annotation.Nullable;
 
 import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
-import com.hchen.superlyric.anchors.AnchorBus;
 import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.hooktool.log.XposedLog;
+import com.hchen.superlyric.anchors.AnchorBus;
 import com.hchen.superlyric.utils.LyricDiag;
 
 import org.luckypray.dexkit.DexKitBridge;
@@ -135,18 +135,18 @@ public final class SaltAnchors {
         try {
             Class<?> documentClass = locateDocumentClass();
             if (documentClass == null) {
-                AndroidLog.logW(TAG, "DexKit could not locate LyricsDocument");
+                XposedLog.logW(TAG, "DexKit could not locate LyricsDocument");
                 return;
             }
             Field sourceField = findSourceTextField(documentClass);
             if (sourceField == null) {
-                AndroidLog.logW(TAG, "No String field found on LyricsDocument");
+                XposedLog.logW(TAG, "No String field found on LyricsDocument");
                 return;
             }
 
             Class<?> controllerClass = CoreTool.findClassIfExists(CONTROLLER_CLASS);
             if (controllerClass == null) {
-                AndroidLog.logW(TAG, "MusicController not found");
+                XposedLog.logW(TAG, "MusicController not found");
                 return;
             }
 
@@ -167,7 +167,7 @@ public final class SaltAnchors {
                 break;
             }
             if (target == null) {
-                AndroidLog.logW(TAG, "No matching lyric entry method on MusicController");
+                XposedLog.logW(TAG, "No matching lyric entry method on MusicController");
                 return;
             }
 
@@ -182,9 +182,9 @@ public final class SaltAnchors {
                     listener.onLyrics(sourceText, getArg(1) instanceof String songId ? songId.trim() : "");
                 }
             });
-            AndroidLog.logI(TAG, "Hooked MusicController lyric entry");
+            XposedLog.logI(TAG, "Hooked MusicController lyric entry");
         } catch (Throwable t) {
-            AndroidLog.logE(TAG, "Failed to install Salt anchors", t);
+            XposedLog.logE(TAG, "Failed to install Salt anchors", t);
         }
     }
 
@@ -218,7 +218,7 @@ public final class SaltAnchors {
         try {
             Class<?> songClass = CoreTool.findClassIfExists(SONG_CLASS);
             if (songClass == null) {
-                AndroidLog.logW(TAG, SONG_CLASS + " not found");
+                XposedLog.logW(TAG, SONG_CLASS + " not found");
                 return;
             }
 
@@ -227,13 +227,13 @@ public final class SaltAnchors {
                 new Class<?>[]{songClass, long.class, long.class, Long.class}
             );
             if (hooked == 0) {
-                AndroidLog.logW(TAG, "Song callback signature not found; real track info unavailable");
+                XposedLog.logW(TAG, "Song callback signature not found; real track info unavailable");
                 return;
             }
 
-            AndroidLog.logD(TAG, "Hooked " + hooked + " Song callback(s)");
+            XposedLog.logD(TAG, "Hooked " + hooked + " Song callback(s)");
         } catch (Throwable t) {
-            AndroidLog.logE(TAG, "Failed to install song probe", t);
+            XposedLog.logE(TAG, "Failed to install song probe", t);
         }
     }
 
@@ -274,7 +274,7 @@ public final class SaltAnchors {
         if (songId == null || songId.isEmpty()) {
             // 取不到宿主标识就无法把歌词与曲目关联。不得把异常类型标记串当作真实值传下去：
             // songStore 以标记为键永远查不中，真曲名丢失后只能退回被歌词污染的 MediaMetadata。
-            AndroidLog.logW(TAG, "Song.getId() unavailable; skipping track info for this callback");
+            XposedLog.logW(TAG, "Song.getId() unavailable; skipping track info for this callback");
             return;
         }
 
@@ -319,7 +319,7 @@ public final class SaltAnchors {
             if (field.getType() != String.class) continue;
             if (candidate != null) {
                 // 出现第二个字符串字段说明类型唯一性假设不成立，宁可不挂
-                AndroidLog.logW(TAG, "LyricsDocument has more than one String field; aborting");
+                XposedLog.logW(TAG, "LyricsDocument has more than one String field; aborting");
                 return null;
             }
             field.setAccessible(true);

@@ -41,7 +41,9 @@ android {
 
     namespace "com.hchen.superlyric"
     compileSdk {
-        version = release(37)
+        version = release(37) {
+            minorApiLevel = 1
+        }
     }
 
     defaultConfig {

@@ -21,11 +21,11 @@ package com.hchen.superlyric.bridge
 import com.hchen.superlyric.kernel.model.LyricDoc
 import com.hchen.superlyric.kernel.model.LyricLine
 import com.hchen.superlyric.kernel.model.LyricWord
-import com.hchen.superlyricapi.wire.Frame
 import com.hchen.superlyricapi.model.PlaybackState
 import com.hchen.superlyricapi.model.State
 import com.hchen.superlyricapi.model.Stop
 import com.hchen.superlyricapi.model.StopReason
+import com.hchen.superlyricapi.wire.Frame
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test

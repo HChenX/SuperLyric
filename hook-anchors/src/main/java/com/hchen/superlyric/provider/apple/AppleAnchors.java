@@ -30,7 +30,7 @@ import com.hchen.dexkitcache.DexkitCache;
 import com.hchen.dexkitcache.IDexkit;
 import com.hchen.hooktool.core.CoreTool;
 import com.hchen.hooktool.hook.AbsHook;
-import com.hchen.hooktool.log.AndroidLog;
+import com.hchen.hooktool.log.XposedLog;
 import com.hchen.superlyric.anchors.AnchorBus;
 import com.hchen.superlyric.kernel.identity.TrackIdentity;
 import com.hchen.superlyric.publisher.AbsPublisher;
@@ -48,9 +48,9 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
-import java.util.function.Consumer;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 /**
  * Apple Music Hook 锚点：遍历 JNI 歌词向量取出文本、译文与逐字时戳。
@@ -160,11 +160,12 @@ public final class AppleAnchors {
     /**
      * 一次 Apple 抽取结果。
      *
-     * @param itemId  结果所属曲目；取不到时为 null
-     * @param lines   歌词行；noLyrics 时为空
+     * @param itemId   结果所属曲目；取不到时为 null
+     * @param lines    歌词行；noLyrics 时为空
      * @param noLyrics 宿主明确表示无歌词
      */
-    public record AppleEvent(@Nullable String itemId, @NonNull List<AppleLine> lines, boolean noLyrics) {
+    public record AppleEvent(@Nullable String itemId, @NonNull List<AppleLine> lines,
+                             boolean noLyrics) {
     }
 
     public static AutoCloseable subscribe(@NonNull Consumer<AppleEvent> listener) {
@@ -196,7 +197,7 @@ public final class AppleAnchors {
                     }
                 });
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to hook AppleMusicApplication.onCreate: " + t.getMessage());
+            XposedLog.logW(TAG, "Failed to hook AppleMusicApplication.onCreate: " + t.getMessage());
         }
     }
 
@@ -204,9 +205,9 @@ public final class AppleAnchors {
         if (sLyricViewModel != null || sLoadLyricsMethod == null) return;
         try {
             sLyricViewModel = CoreTool.newInstance(sLoadLyricsMethod.getDeclaringClass(), application);
-            AndroidLog.logI(TAG, "Initialized lyric view model");
+            XposedLog.logI(TAG, "Initialized lyric view model");
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to instantiate lyric view model: " + t.getMessage());
+            XposedLog.logW(TAG, "Failed to instantiate lyric view model: " + t.getMessage());
         }
     }
 
@@ -222,7 +223,7 @@ public final class AppleAnchors {
         try {
             Class<?> viewModelClass = locateClass(VIEW_MODEL_CACHE_KEY, VIEW_MODEL_ANCHOR);
             if (viewModelClass == null) {
-                AndroidLog.logW(TAG, "DexKit could not locate lyric view model");
+                XposedLog.logW(TAG, "DexKit could not locate lyric view model");
                 return;
             }
             Method loadLyrics = findVoidMethod(viewModelClass, CoreTool.findClass(PLAYBACK_ITEM_CLASS));
@@ -236,9 +237,9 @@ public final class AppleAnchors {
                 }
             });
             sLoadLyricsMethod = loadLyrics;
-            AndroidLog.logI(TAG, "Hooked lyric view model: " + viewModelClass.getName());
+            XposedLog.logI(TAG, "Hooked lyric view model: " + viewModelClass.getName());
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to hook lyric view model: " + t.getMessage());
+            XposedLog.logW(TAG, "Failed to hook lyric view model: " + t.getMessage());
         }
     }
 
@@ -246,7 +247,7 @@ public final class AppleAnchors {
         try {
             Class<?> managerClass = locateClass(PM_CACHE_KEY, PM_ANCHOR);
             if (managerClass == null) {
-                AndroidLog.logW(TAG, "DexKit could not locate MediaPlaybackManager");
+                XposedLog.logW(TAG, "DexKit could not locate MediaPlaybackManager");
                 return;
             }
             Class<?> controllerClass = CoreTool.findClass("com.apple.android.music.playback.controller.MediaPlayerController");
@@ -268,9 +269,9 @@ public final class AppleAnchors {
                     }
                 });
 
-            AndroidLog.logI(TAG, "Hooked MediaPlaybackManager: " + managerClass.getName());
+            XposedLog.logI(TAG, "Hooked MediaPlaybackManager: " + managerClass.getName());
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to hook MediaPlaybackManager: " + t.getMessage());
+            XposedLog.logW(TAG, "Failed to hook MediaPlaybackManager: " + t.getMessage());
         }
     }
 
@@ -284,7 +285,7 @@ public final class AppleAnchors {
                 );
                 ClassData first = classes.firstOrNull();
                 if (first != null && classes.size() > 1) {
-                    AndroidLog.logW(TAG, "Anchor " + anchor + " matched " + classes.size()
+                    XposedLog.logW(TAG, "Anchor " + anchor + " matched " + classes.size()
                         + " classes; using the first: " + first.getName());
                 }
                 return first;
@@ -344,14 +345,14 @@ public final class AppleAnchors {
                         // 并发自增可能跳过阈值；compareAndSet 保证只输出一次
                         if (sSetIdProbes.get() >= SET_ID_REPORT_AFTER && sSetIdCaptures.get() == 0
                             && sSetIdDeadReported.compareAndSet(false, true)) {
-                            AndroidLog.logW(TAG, "PlaybackItem.setId fallback anchor matched nothing in "
+                            XposedLog.logW(TAG, "PlaybackItem.setId fallback anchor matched nothing in "
                                 + sSetIdProbes.get() + " invocations; the getItemAtIndex/.accept frames "
                                 + "were probably renamed. Lyric requests rely on MediaPlaybackManager alone.");
                         }
                     }
                 });
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to hook PlaybackItem.setId: " + t.getMessage());
+            XposedLog.logW(TAG, "Failed to hook PlaybackItem.setId: " + t.getMessage());
         }
     }
 
@@ -380,7 +381,7 @@ public final class AppleAnchors {
 
     private static void reportDeadQueueTrigger(@NonNull String reason) {
         if (sQueueTriggerDeadReported.compareAndSet(false, true)) {
-            AndroidLog.logW(TAG, "Apple queue trigger is not usable: " + reason);
+            XposedLog.logW(TAG, "Apple queue trigger is not usable: " + reason);
         }
     }
 
@@ -407,7 +408,7 @@ public final class AppleAnchors {
     private static boolean requestLyrics(@NonNull Object playbackItem) {
         try {
             if (!hasLyrics(playbackItem)) {
-                AndroidLog.logI(TAG, "PlaybackItem reports no lyrics available");
+                XposedLog.logI(TAG, "PlaybackItem reports no lyrics available");
                 notifyNoLyrics(readItemId(playbackItem));
                 return true;
             }
@@ -415,14 +416,14 @@ public final class AppleAnchors {
             ensureLyricViewModel();
             Object viewModel = sLyricViewModel;
             if (viewModel == null) {
-                AndroidLog.logD(TAG, "PlayerLyricsViewModel unavailable; cannot request lyrics");
+                XposedLog.logD(TAG, "PlayerLyricsViewModel unavailable; cannot request lyrics");
                 return false;
             }
-            AndroidLog.logD(TAG, "Requesting lyrics for " + readItemId(playbackItem));
+            XposedLog.logD(TAG, "Requesting lyrics for " + readItemId(playbackItem));
             sLoadLyricsMethod.invoke(viewModel, playbackItem);
             return true;
         } catch (Throwable t) {
-            AndroidLog.logW(TAG, "Failed to call loadLyrics: " + t.getMessage());
+            XposedLog.logW(TAG, "Failed to call loadLyrics: " + t.getMessage());
             return false;
         }
     }
@@ -473,7 +474,7 @@ public final class AppleAnchors {
 
         Object sections = CoreTool.callMethodIfExists(songInfo, "getSections");
         if (sections == null) {
-            AndroidLog.logW(TAG, "Cannot read lyric sections; leaving the verdict to the orchestrator");
+            XposedLog.logW(TAG, "Cannot read lyric sections; leaving the verdict to the orchestrator");
             return;
         }
 
@@ -487,7 +488,7 @@ public final class AppleAnchors {
             Object section = Objects.requireNonNullElse(CoreTool.callMethodIfExists(pointer, "get"), pointer);
             Object sectionLines = CoreTool.callMethodIfExists(section, "getLines");
             if (sectionLines == null) {
-                AndroidLog.logW(TAG, "Cannot read lines of lyric section; skipping it");
+                XposedLog.logW(TAG, "Cannot read lines of lyric section; skipping it");
                 continue;
             }
 
@@ -506,7 +507,7 @@ public final class AppleAnchors {
         }
 
         if (lines.isEmpty()) {
-            AndroidLog.logW(TAG, "No usable lyric lines for " + itemId + "; not a no-lyrics verdict");
+            XposedLog.logW(TAG, "No usable lyric lines for " + itemId + "; not a no-lyrics verdict");
             return;
         }
         BUS.emit(new AppleEvent(itemId, Collections.unmodifiableList(lines), false));

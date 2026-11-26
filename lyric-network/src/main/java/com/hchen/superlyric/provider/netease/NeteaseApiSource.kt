@@ -21,8 +21,7 @@ package com.hchen.superlyric.provider.netease
 import android.os.Handler
 import android.os.Looper
 import android.webkit.CookieManager
-
-import com.hchen.hooktool.log.AndroidLog
+import com.hchen.hooktool.log.XposedLog
 import com.hchen.superlyric.kernel.catalog.CatalogIds
 import com.hchen.superlyric.kernel.catalog.LyricCatalog
 import com.hchen.superlyric.kernel.identity.TrackIdentity
@@ -30,23 +29,20 @@ import com.hchen.superlyric.kernel.orchestrate.LyricSource
 import com.hchen.superlyric.kernel.outcome.LyricOutcome
 import com.hchen.superlyric.kernel.pipeline.LyricFormat
 import com.hchen.superlyric.kernel.pipeline.LyricRequest
-import com.hchen.superlyric.provider.base.FetchSlot
 import com.hchen.superlyric.network.HttpClients
 import com.hchen.superlyric.network.readTextBounded
+import com.hchen.superlyric.provider.base.FetchSlot
 import com.hchen.superlyric.publisher.AbsPublisher
 import com.hchen.superlyric.utils.LyricCacheStore
 import com.hchen.superlyric.utils.LyricDiag
-
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 
 /**
  * 网易云音乐官方接口取词来源
@@ -99,7 +95,7 @@ class NeteaseApiSource : LyricSource {
             // 走到这里只说明两个端点的歌词通道都空，可能是空壳响应（参数、区域或鉴权导致
             // 本模块没取到），而不是平台就该曲目表态。判成 NoLyrics 会把有歌词的曲目
             // 标记为无歌词；此处按可重试失败处理
-            AndroidLog.logW(sourceName, "No lyric channel in the primary or legacy response; treating as retryable")
+            XposedLog.logW(sourceName, "No lyric channel in the primary or legacy response; treating as retryable")
             return LyricOutcome.TransientFailure(null)
         }
 
@@ -122,7 +118,7 @@ class NeteaseApiSource : LyricSource {
         // 歌词体非空而没有解析出行，说明本次没有读出来，不是平台没有歌词。
         // 判成 NoLyrics 会下发纯音乐占位，把有歌词的曲目钉死
 
-        AndroidLog.logI(
+        XposedLog.logI(
             sourceName,
             "Fetched lyric for id=$songId, lines=${doc.lines.size}, " +
                     "wordTimed=${doc.lines.any { it.hasWords }}, " +
@@ -175,12 +171,12 @@ class NeteaseApiSource : LyricSource {
 
         val payload = runCatching { JSONObject(String(bytes, StandardCharsets.UTF_8)) }.getOrNull()
         if (payload != null && hasMainLyricChannel(payload)) {
-            AndroidLog.logI(sourceName, "Lyric disk cache hit for id=$key")
+            XposedLog.logD(sourceName, "Lyric disk cache hit for id=$key")
             LyricDiag.dumpNeteaseChannels("NeteaseApi/Disk", key, payload)
             return payload
         }
 
-        AndroidLog.logW(sourceName, "Discarding unusable cached payload for id=$key")
+        XposedLog.logW(sourceName, "Discarding unusable cached payload for id=$key")
         LyricCacheStore.delete(null, LyricCacheStore.PROVIDER_NETEASE, key)
         return null
     }
@@ -209,16 +205,16 @@ class NeteaseApiSource : LyricSource {
         val keyword = if (identity.artist.isBlank()) identity.title else "${identity.title} ${identity.artist}"
         val json = get("$URL_SEARCH?s=${URLEncoder.encode(keyword, StandardCharsets.UTF_8.name())}&type=1&limit=5")
             ?: run {
-                AndroidLog.logW(sourceName, "Search request failed for \"$keyword\"")
+                XposedLog.logD(sourceName, "Search request failed for \"$keyword\"")
                 return null
             }
 
         val songs = json.optJSONObject("result")?.optJSONArray("songs") ?: run {
-            AndroidLog.logW(sourceName, "Search response has no result.songs for \"$keyword\"")
+            XposedLog.logW(sourceName, "Search response has no result.songs for \"$keyword\"")
             return null
         }
         if (songs.length() == 0) {
-            AndroidLog.logD(sourceName, "No NetEase search candidate for \"$keyword\"")
+            XposedLog.logD(sourceName, "No NetEase search candidate for \"$keyword\"")
             return null
         }
 
@@ -234,7 +230,7 @@ class NeteaseApiSource : LyricSource {
             val id = song.optLong("id", 0L)
             if (id > 0L) return id
         }
-        AndroidLog.logD(sourceName, "No credible NetEase candidate for \"$keyword\"")
+        XposedLog.logD(sourceName, "No credible NetEase candidate for \"$keyword\"")
         return null
     }
 
@@ -267,14 +263,14 @@ class NeteaseApiSource : LyricSource {
         val call = HttpClients.standard.newCall(request)
         requests.withCall(call) { call.execute() }.use { response ->
             if (!response.isSuccessful) {
-                AndroidLog.logW(sourceName, "HTTP ${response.code} from ${request.url.host}")
+                XposedLog.logD(sourceName, "HTTP ${response.code} from ${request.url.host}")
                 null
             } else {
                 response.body.readTextBounded().let(::JSONObject)
             }
         }
     } catch (t: Throwable) {
-        AndroidLog.logW(sourceName, "POST failed: ${t.message}")
+        XposedLog.logD(sourceName, "POST failed: ${t.message}")
         null
     }
 
@@ -289,14 +285,14 @@ class NeteaseApiSource : LyricSource {
         val call = HttpClients.standard.newCall(request)
         requests.withCall(call) { call.execute() }.use { response ->
             if (!response.isSuccessful) {
-                AndroidLog.logW(sourceName, "HTTP ${response.code} from ${request.url.host}")
+                XposedLog.logD(sourceName, "HTTP ${response.code} from ${request.url.host}")
                 null
             } else {
                 response.body.readTextBounded().let(::JSONObject)
             }
         }
     } catch (t: Throwable) {
-        AndroidLog.logW(sourceName, "GET failed: ${t.message}")
+        XposedLog.logD(sourceName, "GET failed: ${t.message}")
         null
     }
 
@@ -318,7 +314,7 @@ class NeteaseApiSource : LyricSource {
         } else {
             val context = AbsPublisher.getAppContext()
             if (context == null) {
-                AndroidLog.logD(sourceName, "No app context; skipping host cookie")
+                XposedLog.logD(sourceName, "No app context; skipping host cookie")
                 return null
             }
             val latch = CountDownLatch(1)
@@ -328,7 +324,7 @@ class NeteaseApiSource : LyricSource {
                 latch.countDown()
             }
             if (!latch.await(1, TimeUnit.SECONDS)) {
-                AndroidLog.logD(sourceName, "Host cookie lookup timed out; continuing without it")
+                XposedLog.logD(sourceName, "Host cookie lookup timed out; continuing without it")
                 return null
             }
             result
